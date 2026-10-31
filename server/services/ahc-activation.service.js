@@ -1,4 +1,5 @@
 import { postgresSequelize as db } from '../db/postgres-sequelize.js';
+import { validityPeriodToInterval } from './health-package-policy.js';
 const problem = (message, status = 400) => Object.assign(new Error(message), { status });
 export async function activateAhcBatch({ corporateId, batchId, packageId }) {
     if (!/^[A-Za-z0-9_-]{1,150}$/.test(String(packageId || '')))
@@ -20,8 +21,9 @@ export async function activateAhcBatch({ corporateId, batchId, packageId }) {
         const [count] = await query(`SELECT COUNT(*)::int AS total FROM user_health_packages WHERE "packageId"=:packageId AND status='active' AND "userId" NOT IN (:ids)`, { packageId: String(packageId), ids });
         if (count.total + members.length > plan.max_users)
             throw problem('Package employee capacity exceeded', 409);
+        const validityInterval = validityPeriodToInterval(plan.metadata.validityPeriod);
         for (const member of members) {
-            await query(`INSERT INTO user_health_packages ("userId",corporate_id,"packageId","packageName","packageDetails","validFrom","validTo",status,"createdAt","updatedAt") VALUES (:userId,:corporateId,:packageId,:name,:details,CURRENT_DATE,CASE WHEN :years = 0 THEN NULL ELSE CURRENT_DATE+make_interval(years=>:years) END,'active',NOW(),NOW()) ON CONFLICT ("userId","packageId") DO UPDATE SET "packageName"=EXCLUDED."packageName","packageDetails"=EXCLUDED."packageDetails",status='active',"updatedAt"=NOW() RETURNING id`, { userId: member.userId, corporateId, packageId: String(packageId), name: plan.name, details: JSON.stringify(plan.features), years: plan.metadata.validityPeriod === 'Lifetime' ? 0 : parseInt(plan.metadata.validityPeriod) || 1 });
+            await query(`INSERT INTO user_health_packages ("userId",corporate_id,"packageId","packageName","packageDetails","validFrom","validTo",status,"createdAt","updatedAt") VALUES (:userId,:corporateId,:packageId,:name,:details,CURRENT_DATE,CASE WHEN :years = 0 AND :days = 0 THEN NULL ELSE CURRENT_DATE+make_interval(years=>:years,days=>:days) END,'active',NOW(),NOW()) ON CONFLICT ("userId","packageId") DO UPDATE SET "packageName"=EXCLUDED."packageName","packageDetails"=EXCLUDED."packageDetails",status='active',"updatedAt"=NOW() RETURNING id`, { userId: member.userId, corporateId, packageId: String(packageId), name: plan.name, details: JSON.stringify(plan.features), years: validityInterval.years, days: validityInterval.days });
             await query(`INSERT INTO notifications ("userId","userType",type,title,message,"isRead",status,channels,"webRoute","createdAt","updatedAt") VALUES (:userId,'patient','reminder','Annual Health Checkup Available','Your annual health checkup package is available. Open Health Checkups to select a diagnostic centre and book.',false,'sent',ARRAY['app'],'/health-checkups',NOW(),NOW()) RETURNING id`, { userId: member.userId });
         }
         await query(`UPDATE corporate_ahc_enrollments e SET status='invited',updated_at=NOW() WHERE batch_id=:batchId AND corporate_id=:corporateId AND status IN ('pending','invited') AND EXISTS (SELECT 1 FROM corporate_employees ce WHERE ce.corporate_id=e.corporate_id AND ce."employeeId"=e.employee_id AND ce."userId" IN (:ids) AND ce."isActive"=true) RETURNING id`, { batchId, corporateId, ids });

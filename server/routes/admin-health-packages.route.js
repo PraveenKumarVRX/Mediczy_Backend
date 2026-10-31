@@ -1,7 +1,7 @@
 import express from 'express';
 import { updatePackageEmployeeAssignments } from '../services/health-package-employee-assignments.service.js';
 import { HEALTH_CHECKUP_VENUES_SQL } from '../services/health-checkup-venues.js';
-import { eligibleRelations, validRelations, BENEFICIARY_RELATIONS } from '../services/health-package-policy.js';
+import { eligibleRelations, validRelations, BENEFICIARY_RELATIONS, isValidValidityPeriod, validityPeriodToInterval } from '../services/health-package-policy.js';
 import crypto from 'node:crypto';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { postgresSequelize as db } from '../db/postgres-sequelize.js';
@@ -72,7 +72,7 @@ catch (e) {
 } });
 async function save(req, res) {
     const b = req.body || {}, price = Number(b.costPerEmployee), capacity = Number(b.maxEmployees);
-    if (!/^\d+$/.test(String(b.corporateId)) || !String(b.packageName || '').trim() || String(b.packageName).trim().length > 255 || !Array.isArray(b.tests) || !b.tests.length || b.tests.some(t => typeof t !== 'string' || !t.trim()) || !Number.isFinite(price) || price < 0 || !Number.isInteger(capacity) || capacity < 1 || !['Active', 'Inactive', 'Draft', 'Expired'].includes(b.status) || !['Annual', 'Bi-Annual', 'Quarterly', 'Monthly'].includes(b.frequency) || !['1 Year', '2 Years', '3 Years', 'Lifetime'].includes(b.validityPeriod))
+    if (!/^\d+$/.test(String(b.corporateId)) || !String(b.packageName || '').trim() || String(b.packageName).trim().length > 255 || !Array.isArray(b.tests) || !b.tests.length || b.tests.some(t => typeof t !== 'string' || !t.trim()) || !Number.isFinite(price) || price < 0 || !Number.isInteger(capacity) || capacity < 1 || !['Active', 'Inactive', 'Draft', 'Expired'].includes(b.status) || !['Annual', 'Bi-Annual', 'Quarterly', 'Monthly'].includes(b.frequency) || !isValidValidityPeriod(b.validityPeriod))
         return res.status(400).json({ success: false, message: 'Provide a corporate, package name, tests, valid status, frequency, validity, nonnegative cost and positive employee capacity' });
     if ((b.eligibleRelations !== undefined && !validRelations(b.eligibleRelations)) || (b.venueMode !== undefined && !['inherit','restricted'].includes(b.venueMode)) || (b.venues !== undefined && (!Array.isArray(b.venues) || b.venues.some(v => !/^\d+$/.test(String(v.partnerId)) || !['lab','hospital'].includes(v.partnerType) || !['all',...BENEFICIARY_RELATIONS].includes(v.relation))))) return res.status(400).json({success:false,message:'Provide valid eligible relations and network venues'});
     if (b.venueMode === 'restricted' && !b.venues?.length) return res.status(400).json({success:false,message:'Select at least one venue for restricted packages'});
@@ -150,8 +150,9 @@ router.post('/:id/tag-employees', async (req, res) => {
             const [count] = await query(`SELECT COUNT(*)::int AS total FROM user_health_packages WHERE "packageId"=:id AND LOWER(status)='active' AND "userId" NOT IN (:ids)`, { id: String(p.id), ids }, transaction);
             if (count.total + employees.length > p.max_users)
                 throw Object.assign(new Error('Package employee capacity exceeded'), { status: 409 });
+            const validityInterval = validityPeriodToInterval(p.metadata.validityPeriod);
             for (const employee of employees)
-                await query(`INSERT INTO user_health_packages ("userId",corporate_id,"packageId","packageName","packageDetails","validFrom","validTo",status,"createdAt","updatedAt") VALUES (:userId,:corporateId,:packageId,:name,:details,CURRENT_DATE,CASE WHEN :years = 0 THEN NULL ELSE CURRENT_DATE+make_interval(years=>:years) END,'active',NOW(),NOW()) ON CONFLICT ("userId","packageId") DO UPDATE SET "packageName"=EXCLUDED."packageName","packageDetails"=EXCLUDED."packageDetails",status='active',"updatedAt"=NOW() RETURNING id`, { userId: employee.userId, corporateId: p.metadata.corporateId, packageId: String(p.id), name: p.name, details: JSON.stringify(p.features), years: p.metadata.validityPeriod === 'Lifetime' ? 0 : parseInt(p.metadata.validityPeriod) }, transaction);
+                await query(`INSERT INTO user_health_packages ("userId",corporate_id,"packageId","packageName","packageDetails","validFrom","validTo",status,"createdAt","updatedAt") VALUES (:userId,:corporateId,:packageId,:name,:details,CURRENT_DATE,CASE WHEN :years = 0 AND :days = 0 THEN NULL ELSE CURRENT_DATE+make_interval(years=>:years,days=>:days) END,'active',NOW(),NOW()) ON CONFLICT ("userId","packageId") DO UPDATE SET "packageName"=EXCLUDED."packageName","packageDetails"=EXCLUDED."packageDetails",status='active',"updatedAt"=NOW() RETURNING id`, { userId: employee.userId, corporateId: p.metadata.corporateId, packageId: String(p.id), name: p.name, details: JSON.stringify(p.features), years: validityInterval.years, days: validityInterval.days }, transaction);
             return employees.length;
         });
         return res.json({ success: true, data: { tagged: result } });

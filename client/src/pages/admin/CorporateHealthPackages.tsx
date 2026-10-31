@@ -61,7 +61,7 @@ interface Employee {
 }
 
 const frequencies = ['Annual', 'Bi-Annual', 'Quarterly', 'Monthly'];
-const validityPeriods = ['1 Year', '2 Years', '3 Years', 'Lifetime'];
+const validityPeriods = ['1 Year', '2 Years', '3 Years', '30 Days', '45 Days', '60 Days', '90 Days', 'Lifetime'];
 const packageStatuses = ['Active', 'Inactive', 'Draft', 'Expired'];
 
 const CorporateHealthPackages = () => {
