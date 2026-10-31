@@ -7691,7 +7691,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                   )}
 
                   <Dialog open={showSendReviewModal} onOpenChange={setShowSendReviewModal}>
-                    <DialogContent className="max-w-2xl">
+                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                       <DialogHeader>
                         <DialogTitle>Review before sending</DialogTitle>
                         <DialogDescription>Confirm recipients and message content for {selectedCorporate?.companyName}.</DialogDescription>
@@ -8457,7 +8457,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
         {/* Add Corporate Dialog */}
         <Dialog open={showAddCorporateDialog} onOpenChange={setShowAddCorporateDialog}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Onboard New Corporate</DialogTitle>
               <DialogDescription className="sr-only">Onboard a new corporate client</DialogDescription>
@@ -9294,7 +9294,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
         {/* Edit Package Dialog */}
         <Dialog open={showEditPackageDialog} onOpenChange={setShowEditPackageDialog}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Health Package</DialogTitle>
               <DialogDescription className="sr-only">Edit package details</DialogDescription>
@@ -9764,7 +9764,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
         {/* Assign Package Dialog */}
         <Dialog open={showAssignPackageDialog} onOpenChange={setShowAssignPackageDialog}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Assign Package: {assigningPackage?.name}</DialogTitle>
               <DialogDescription className="sr-only">Assign package to employees</DialogDescription>
@@ -10394,7 +10394,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
         {/* Create Package Dialog */}
         <Dialog open={showAddPackageDialog} onOpenChange={setShowAddPackageDialog}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create Health Package</DialogTitle>
               <DialogDescription className="sr-only">Create a new health package</DialogDescription>
