@@ -406,8 +406,14 @@ export async function signInUser(req, res) {
   const rawPhone = req.body.phoneNumber || req.body.phone || req.body.identifier;
   const password = req.body.password;
 
+  // Admin/HR-provisioned corporate employees log in with the 6-char, kind-prefixed
+  // UID their corporate_employees roster row got on creation (see CLAUDE.md's
+  // Entity UID Rule) rather than an email — same text box, detected by shape.
+  const CORPORATE_EMPLOYEE_UID_RE = /^[A-Za-z][A-Za-z0-9]{5}$/;
+
   let email = null;
   let phoneNumber = null;
+  let corporateEmployeeUid = null;
   if (rawEmail) {
     const emailValue = String(rawEmail).trim();
     const normalized = emailValue.replace(/[^0-9]/g, '');
@@ -416,15 +422,22 @@ export async function signInUser(req, res) {
       email = emailValue.toLowerCase();
     } else if (normalized.length >= 10) {
       phoneNumber = normalized.length > 10 ? normalized.slice(-10) : normalized;
+    } else if (CORPORATE_EMPLOYEE_UID_RE.test(emailValue)) {
+      corporateEmployeeUid = emailValue.toUpperCase();
     }
   }
 
-  if (!phoneNumber && rawPhone) {
-    const normalized = String(rawPhone).replace(/[^0-9]/g, '');
-    phoneNumber = normalized.length > 10 ? normalized.slice(-10) : normalized;
+  if (!phoneNumber && !corporateEmployeeUid && rawPhone) {
+    const rawPhoneValue = String(rawPhone).trim();
+    const normalized = rawPhoneValue.replace(/[^0-9]/g, '');
+    if (normalized.length >= 10) {
+      phoneNumber = normalized.length > 10 ? normalized.slice(-10) : normalized;
+    } else if (CORPORATE_EMPLOYEE_UID_RE.test(rawPhoneValue)) {
+      corporateEmployeeUid = rawPhoneValue.toUpperCase();
+    }
   }
 
-  const loginIdentifier = email || phoneNumber;
+  const loginIdentifier = email || phoneNumber || corporateEmployeeUid;
   const maskedIdentifier = loginIdentifier
     ? (String(loginIdentifier).includes('@')
       ? String(loginIdentifier).replace(/(^.).*(@.*$)/, '$1***$2')
@@ -450,6 +463,14 @@ export async function signInUser(req, res) {
         user = await User.findOne({
           where: { phoneNumber },
         });
+      }
+    } else if (corporateEmployeeUid) {
+      const [employeeLink] = await postgresSequelize.query(
+        `SELECT "userId" FROM corporate_employees WHERE unique_id = :uid AND "isActive" = true LIMIT 1`,
+        { replacements: { uid: corporateEmployeeUid }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (employeeLink?.userId) {
+        user = await User.findByPk(employeeLink.userId);
       }
     }
     console.log('[LOGIN DEBUG] User found:', !!user, 'User ID:', user?.id);

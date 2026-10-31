@@ -23,6 +23,7 @@ import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
+import { dispatchCorporateEmployeeWelcomeEmail } from '../services/corporate-employee-welcome.service.js';
 import { normalizeFlexibleDate } from '../utils/flexibleDate.js';
 import { auditAction } from '../utils/action-audit.js';
 import {
@@ -2436,81 +2437,6 @@ router.put('/corporate-users/:corporateId/:userId', authUser, requireRole(['admi
   }
 });
 
-async function dispatchCorporateEmployeeWelcomeEmail({
-  welcomeEmailMode = 'draft',
-  welcomeEmailData,
-  temporaryPassword,
-  teamUserId,
-  corporateId,
-  throwOnSendFailure = false,
-}) {
-  const normalizedMode = welcomeEmailMode === 'send'
-    ? 'send'
-    : (welcomeEmailMode === 'prepare' ? 'draft' : welcomeEmailMode);
-
-  if (!temporaryPassword || !welcomeEmailData?.email) {
-    return {
-      emailStatus: 'not_applicable',
-      emailSent: false,
-      emailError: null,
-      welcomeEmailDraft: null,
-    };
-  }
-
-  const emailOptions = { teamUserId, corporateId };
-
-  if (normalizedMode === 'send') {
-    try {
-      await welcomeEmailService.sendCorporateEmployeeWelcomeEmail(
-        welcomeEmailData,
-        temporaryPassword,
-        emailOptions
-      );
-      return {
-        emailStatus: 'queued',
-        emailSent: true,
-        emailError: null,
-        welcomeEmailDraft: null,
-      };
-    } catch (error) {
-      if (throwOnSendFailure) {
-        throw error;
-      }
-      return {
-        emailStatus: 'failed',
-        emailSent: false,
-        emailError: error?.message || 'Failed to send welcome email',
-        welcomeEmailDraft: null,
-      };
-    }
-  }
-
-  if (normalizedMode === 'draft') {
-    const draft = await welcomeEmailService.buildCorporateEmployeeWelcomeEmail(
-      welcomeEmailData,
-      WELCOME_DRAFT_PASSWORD_PLACEHOLDER,
-      emailOptions
-    );
-    return {
-      emailStatus: 'draft',
-      emailSent: false,
-      emailError: null,
-      welcomeEmailDraft: {
-        to: draft.to,
-        subject: draft.subject,
-        html: draft.html,
-      },
-    };
-  }
-
-  return {
-    emailStatus: 'skipped',
-    emailSent: false,
-    emailError: null,
-    welcomeEmailDraft: null,
-  };
-}
-
 const WELCOME_DRAFT_PASSWORD_PLACEHOLDER = '[generated securely at send time]';
 const WELCOME_DRAFT_TTL_HOURS = Math.max(1, Math.min(parseInt(String(process.env.WELCOME_DRAFT_TTL_HOURS || '24'), 10) || 24, 168));
 
@@ -3789,6 +3715,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
               welcomeEmailMode: welcomeMode,
               welcomeEmailData,
               temporaryPassword,
+              userId,
               teamUserId,
               corporateId,
             });
@@ -4031,6 +3958,7 @@ router.post('/corporate-employee-welcome-emails/resend', authUser, requireRole([
           welcomeEmailMode: 'send',
           welcomeEmailData,
           temporaryPassword,
+          userId: employee.id,
           teamUserId,
           corporateId,
           throwOnSendFailure: true,

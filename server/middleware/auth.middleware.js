@@ -13,6 +13,7 @@ import DoctorPostgres from "../models/postgres/doctor.model.postgres.js";
 import NursePostgres from "../models/postgres/nurse.model.postgres.js";
 import AssistantPostgres from "../models/postgres/doctor-assistant.model.postgres.js";
 import { validateMembership, checkMembershipExpiry } from "./membership.middleware.js";
+import { checkPasswordChangeRequired } from "./password-change.middleware.js";
 // Centralized role constants — single source of truth (no local duplicates)
 import {
   TENANT_BYPASS_ROLES,
@@ -555,12 +556,18 @@ export const authUser = async (req, res, next) => {
       return res.status(tenantBinding.status).json(tenantBinding.body);
     }
 
-    // Validate membership for regular users (not admins)
-    if (req.userRole === 'user' && !user.isAdmin) {
-      return validateMembership(req, res, next);
-    }
+    // Admin/HR-provisioned accounts (metadata.requirePasswordChange) must set a
+    // real password before anything else — ahead of the membership check below,
+    // since a brand-new temp-password account has no business being membership-
+    // gated yet. No-ops for every other session (the flag is absent/false).
+    return checkPasswordChangeRequired(req, res, () => {
+      // Validate membership for regular users (not admins)
+      if (req.userRole === 'user' && !user.isAdmin) {
+        return validateMembership(req, res, next);
+      }
 
-    return next();
+      return next();
+    });
   } catch (error) {
     console.log("❌ Token verification FAILED. Error:", error.message);
     return res.status(401).json({ message: error.message });

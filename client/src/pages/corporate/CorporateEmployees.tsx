@@ -70,6 +70,7 @@ type EmployeeFormState = {
   employeeId: string;
   name: string;
   email: string;
+  phone: string;
   businessUnit: string;
   department: string;
   designation: string;
@@ -83,6 +84,7 @@ const emptyEmployeeForm = (): EmployeeFormState => ({
   employeeId: '',
   name: '',
   email: '',
+  phone: '',
   businessUnit: '',
   department: '',
   designation: '',
@@ -584,7 +586,14 @@ const CorporateEmployees: React.FC = () => {
             <div className="grid grid-cols-1 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} placeholder="employee@company.com — required to send app invites" />
+                <Input id="email" type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} placeholder="employee@company.com — required to auto-provision their app login" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="phone">Phone</Label>
+                <Input id="phone" type="tel" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} placeholder="+919876543210 — optional, used for SMS/WhatsApp login delivery" />
               </div>
             </div>
 
@@ -1030,7 +1039,7 @@ const CorporateEmployees: React.FC = () => {
               </ul>
               <p className="font-semibold mt-2">Optional Fields:</p>
               <ul className="list-disc list-inside ml-2 space-y-0.5">
-                <li>email (needed to send app invites), businessUnit, department, designation, joiningDate</li>
+                <li>email (needed to auto-provision their login and send the welcome email), phone (needed for SMS/WhatsApp delivery of login details), businessUnit, department, designation, joiningDate</li>
               </ul>
             </div>
           </div>

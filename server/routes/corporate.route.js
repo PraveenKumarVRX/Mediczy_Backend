@@ -29,8 +29,11 @@ import {
 } from '../controller/corporate.controller.js';
 import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import bcrypt from 'bcrypt';
 import { reactivateCorporateEmployeeAccount } from '../services/corporate-employee-activation.service.js';
 import { EmployeeConflictError } from '../services/corporate-employee-create.service.js';
+import welcomeEmailService from '../services/welcome-email.service.js';
+import { dispatchCorporateEmployeeWelcomeEmail } from '../services/corporate-employee-welcome.service.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import {
   generateCorporateMisReport,
@@ -1249,7 +1252,7 @@ router.post('/employees', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
-  const { employeeId, name, email, businessUnit, department, designation, joiningDate } = req.body || {};
+  const { employeeId, name, email, phone, businessUnit, department, designation, joiningDate } = req.body || {};
 
   if (!name || !employeeId) {
     return res.status(400).json({ success: false, message: 'name and employeeId are required' });
@@ -1314,6 +1317,7 @@ router.post('/employees', authCorporate, async (req, res) => {
     // one. Without this, a plain `LIMIT 1` with no ORDER BY can nondeterministically
     // link to the wrong account (this is exactly how TEST-SK01 got linked to a
     // years-old placeholder "User1234" seed account instead of the real one).
+    const normalizedPhone = phone ? String(phone).trim() : null;
     let linkedUserId = null;
     if (normalizedEmail) {
       const [existingUser] = await postgresSequelize.query(
@@ -1325,11 +1329,54 @@ router.post('/employees', authCorporate, async (req, res) => {
       if (existingUser) linkedUserId = existingUser.id;
     }
 
-    await postgresSequelize.query(
+    // No existing account to link — admin-provision one immediately rather than
+    // waiting on self-registration, so the welcome notification below can hand
+    // the employee a working login right away. Requires an email (users.email
+    // has no safe placeholder to fall back to); without one the roster row is
+    // created same as before and the employee still has the self-registration
+    // path at /register.
+    let newAccountCreated = false;
+    let temporaryPassword = null;
+    if (!linkedUserId && normalizedEmail) {
+      const [corporateRecord] = await postgresSequelize.query(
+        `SELECT id, "companyName", aggregator_id, aggregator_type, tenant_id FROM corporates WHERE id = :id AND status = 'Active' LIMIT 1`,
+        { replacements: { id: corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (corporateRecord) {
+        temporaryPassword = welcomeEmailService.generateSecurePassword();
+        const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+        const [newUser] = await postgresSequelize.query(
+          `INSERT INTO users (email, "phoneNumber", password, "firstName", "lastName", "emailVerified", "phoneVerified",
+             status, "isVerified", "isCorporate", organization_id, organization_type, tenant_id,
+             aggregator_id, aggregator_type, metadata, "createdAt", "updatedAt")
+           VALUES (:email, :phone, :password, :firstName, :lastName, true, :phoneVerified,
+             'active', true, true, :corporateId, 'corporate', :tenantId,
+             :aggregatorId, :aggregatorType, '{"requirePasswordChange": true}'::jsonb, NOW(), NOW())
+           RETURNING id`,
+          {
+            replacements: {
+              email: normalizedEmail, phone: normalizedPhone || '', password: hashedPassword,
+              firstName, lastName: lastNameParts.join(' ') || firstName, phoneVerified: !!normalizedPhone,
+              corporateId, tenantId: corporateRecord.tenant_id || null,
+              aggregatorId: corporateRecord.aggregator_id || null, aggregatorType: corporateRecord.aggregator_type || null,
+            },
+            type: postgresSequelize.QueryTypes.SELECT,
+          }
+        );
+        if (newUser?.id) {
+          linkedUserId = newUser.id;
+          newAccountCreated = true;
+        }
+      }
+    }
+
+    const [employeeRow] = await postgresSequelize.query(
       `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-       VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())`,
-      { replacements: { corporateId, userId: linkedUserId, employeeId: normalizedEmployeeId, email: normalizedEmail, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata } }
+       VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
+       RETURNING unique_id`,
+      { replacements: { corporateId, userId: linkedUserId, employeeId: normalizedEmployeeId, email: normalizedEmail, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata }, type: postgresSequelize.QueryTypes.SELECT }
     );
+    const employeeUid = employeeRow?.unique_id || null;
 
     let appStatus = 'not_invited';
     if (linkedUserId) {
@@ -1347,7 +1394,42 @@ router.post('/employees', authCorporate, async (req, res) => {
       appStatus = 'active';
     }
 
-    const created = { id: normalizedEmployeeId, employeeId: normalizedEmployeeId, name, email: normalizedEmail || '', phone: '', businessUnit: businessUnit || '', department: department || '', designation: designation || '', joiningDate: joiningDate || '', healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan', appStatus };
+    let welcomeDispatch = null;
+    if (newAccountCreated && temporaryPassword) {
+      const [corporateForWelcome] = await postgresSequelize.query(
+        `SELECT "companyName" FROM corporates WHERE id = :id LIMIT 1`,
+        { replacements: { id: corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      try {
+        welcomeDispatch = await dispatchCorporateEmployeeWelcomeEmail({
+          welcomeEmailMode: 'send',
+          welcomeEmailData: {
+            email: normalizedEmail,
+            firstName,
+            lastName: lastNameParts.join(' '),
+            companyName: corporateForWelcome?.companyName || '',
+            employeeId: normalizedEmployeeId,
+            department: department || '',
+            loginUid: employeeUid,
+          },
+          temporaryPassword,
+          userId: linkedUserId,
+          corporateId,
+        });
+      } catch (dispatchError) {
+        console.error('[corporate] POST /employees welcome dispatch failed:', dispatchError.message);
+        welcomeDispatch = { emailStatus: 'failed', emailError: dispatchError.message };
+      }
+    }
+
+    const created = {
+      id: normalizedEmployeeId, employeeId: normalizedEmployeeId, uid: employeeUid, name,
+      email: normalizedEmail || '', phone: normalizedPhone || '',
+      businessUnit: businessUnit || '', department: department || '', designation: designation || '', joiningDate: joiningDate || '',
+      healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan', appStatus,
+      accountProvisioned: newAccountCreated,
+      welcomeNotification: welcomeDispatch ? { email: welcomeDispatch.emailStatus, sms: welcomeDispatch.smsStatus, whatsapp: welcomeDispatch.whatsappStatus } : null,
+    };
     return res.status(201).json({ success: true, data: { employee: created } });
   } catch (err) {
     if (err instanceof EmployeeConflictError) {
@@ -1497,6 +1579,7 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
       }
       // Link to an existing user account by email, same as the single-employee
       // create path — deterministic ORDER BY, see the comment there.
+      const normalizedPhone = emp.phone ? String(emp.phone).trim() : null;
       let linkedUserId = null;
       if (normalizedEmail) {
         const [existingUser] = await postgresSequelize.query(
@@ -1508,11 +1591,49 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
         if (existingUser) linkedUserId = existingUser.id;
       }
 
-      await postgresSequelize.query(
+      // No existing account — admin-provision one immediately (same as single add).
+      let newAccountCreated = false;
+      let temporaryPassword = null;
+      if (!linkedUserId && normalizedEmail) {
+        const [corporateRecord] = await postgresSequelize.query(
+          `SELECT id, "companyName", aggregator_id, aggregator_type, tenant_id FROM corporates WHERE id = :id AND status = 'Active' LIMIT 1`,
+          { replacements: { id: corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+        );
+        if (corporateRecord) {
+          temporaryPassword = welcomeEmailService.generateSecurePassword();
+          const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+          const [newUser] = await postgresSequelize.query(
+            `INSERT INTO users (email, "phoneNumber", password, "firstName", "lastName", "emailVerified", "phoneVerified",
+               status, "isVerified", "isCorporate", organization_id, organization_type, tenant_id,
+               aggregator_id, aggregator_type, metadata, "createdAt", "updatedAt")
+             VALUES (:email, :phone, :password, :firstName, :lastName, true, :phoneVerified,
+               'active', true, true, :corporateId, 'corporate', :tenantId,
+               :aggregatorId, :aggregatorType, '{"requirePasswordChange": true}'::jsonb, NOW(), NOW())
+             RETURNING id`,
+            {
+              replacements: {
+                email: normalizedEmail, phone: normalizedPhone || '', password: hashedPassword,
+                firstName, lastName: lastNameParts.join(' ') || firstName, phoneVerified: !!normalizedPhone,
+                corporateId, tenantId: corporateRecord.tenant_id || null,
+                aggregatorId: corporateRecord.aggregator_id || null, aggregatorType: corporateRecord.aggregator_type || null,
+              },
+              type: postgresSequelize.QueryTypes.SELECT,
+            }
+          );
+          if (newUser?.id) {
+            linkedUserId = newUser.id;
+            newAccountCreated = true;
+          }
+        }
+      }
+
+      const [employeeRow] = await postgresSequelize.query(
         `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-         VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())`,
-        { replacements: { corporateId, userId: linkedUserId, employeeId: generatedEmployeeId, email: normalizedEmail, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata } }
+         VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
+         RETURNING unique_id`,
+        { replacements: { corporateId, userId: linkedUserId, employeeId: generatedEmployeeId, email: normalizedEmail, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata }, type: postgresSequelize.QueryTypes.SELECT }
       );
+      const employeeUid = employeeRow?.unique_id || null;
 
       if (linkedUserId) {
         await postgresSequelize.query(
@@ -1528,7 +1649,37 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
         await reactivateCorporateEmployeeAccount(linkedUserId);
       }
 
-      successfulUploads.push({ employeeId: generatedEmployeeId, name: emp.name, linked: Boolean(linkedUserId) });
+      // Fire-and-forget — a large roster upload must not hang the HTTP response
+      // waiting on hundreds of emails/SMS/WhatsApp sends.
+      if (newAccountCreated && temporaryPassword) {
+        (async () => {
+          try {
+            const [corporateForWelcome] = await postgresSequelize.query(
+              `SELECT "companyName" FROM corporates WHERE id = :id LIMIT 1`,
+              { replacements: { id: corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+            );
+            await dispatchCorporateEmployeeWelcomeEmail({
+              welcomeEmailMode: 'send',
+              welcomeEmailData: {
+                email: normalizedEmail,
+                firstName,
+                lastName: lastNameParts.join(' '),
+                companyName: corporateForWelcome?.companyName || '',
+                employeeId: generatedEmployeeId,
+                department: emp.department || '',
+                loginUid: employeeUid,
+              },
+              temporaryPassword,
+              userId: linkedUserId,
+              corporateId,
+            });
+          } catch (dispatchError) {
+            console.error(`[corporate] bulk-upload welcome dispatch failed for row ${index + 1}:`, dispatchError.message);
+          }
+        })();
+      }
+
+      successfulUploads.push({ employeeId: generatedEmployeeId, uid: employeeUid, name: emp.name, linked: Boolean(linkedUserId), accountProvisioned: newAccountCreated });
     } catch (rowErr) {
       errors.push({ row: index + 1, employee: emp, error: rowErr.message });
     }
@@ -1546,8 +1697,8 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
 
 // Download employee template CSV
 router.get('/employees/download-template', authCorporate, async (req, res) => {
-  const csvHeader = 'employeeId,name,email,businessUnit,department,designation,joiningDate\n';
-  const csvSample = 'EMP001,John Doe,john.doe@example.com,Technology BU,Engineering,Software Engineer,2024-01-15\n';
+  const csvHeader = 'employeeId,name,email,phone,businessUnit,department,designation,joiningDate\n';
+  const csvSample = 'EMP001,John Doe,john.doe@example.com,+919876543210,Technology BU,Engineering,Software Engineer,2024-01-15\n';
   const csvTemplate = csvHeader + csvSample;
   
   res.setHeader('Content-Type', 'text/csv');

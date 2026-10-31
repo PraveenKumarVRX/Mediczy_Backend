@@ -54,10 +54,14 @@ export function buildCorporateEmployeeTemplateVars(employeeData, temporaryPasswo
     companyName,
     employeeId,
     department,
+    loginUid,
   } = employeeData;
   const plan = formatCorporateEmployeePlan(employeeData);
   const planBenefitsText = plan.benefits.join(', ');
-  const loginIdentifier = email || employeeId || '';
+  // loginUid is the platform-issued 6-char corporate_employees.unique_id — the actual
+  // login identifier when this account was admin/HR-provisioned rather than
+  // self-registered. email/employeeId remain the fallback for older flows.
+  const loginIdentifier = loginUid || email || employeeId || '';
   const employeeName = `${firstName || ''} ${lastName || ''}`.trim() || 'Employee';
 
   return {

@@ -41,8 +41,11 @@ router.post(
         const normalized = emailValue.replace(/[^0-9]/g, '');
         const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue);
         const isPhone = normalized.length >= 10;
-        if (!isEmail && !isPhone) {
-          throw new Error('Must be a valid email or phone number');
+        // Admin/HR-provisioned corporate employees log in with their 6-char
+        // corporate_employees UID (e.g. E7K2PX) instead of an email.
+        const isLoginUid = /^[A-Za-z][A-Za-z0-9]{5}$/.test(emailValue);
+        if (!isEmail && !isPhone && !isLoginUid) {
+          throw new Error('Must be a valid email, phone number, or login ID');
         }
       }
 

@@ -689,12 +689,14 @@ function renderPlanBenefitsList(benefits = []) {
 }
 
 export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword, options = {}) {
-  const { email, firstName, lastName, companyName, employeeId, department } = employeeData;
+  const { email, firstName, lastName, companyName, employeeId, department, loginUid } = employeeData;
   const employeeName = `${firstName || ''} ${lastName || ''}`.trim() || firstName || 'Employee';
   const plan = formatCorporateEmployeePlan(employeeData);
   const planBenefitsHtml = renderPlanBenefitsList(plan.benefits);
   const planBenefitsText = plan.benefits.join(", " );
-  const loginIdentifier = email || employeeId || "";
+  // loginUid (the platform-issued 6-char corporate_employees.unique_id) is the real
+  // login identifier for admin/HR-provisioned accounts; email is the fallback.
+  const loginIdentifier = loginUid || email || employeeId || "";
 
   const msg = {
     to: email,
@@ -739,7 +741,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
           <div style="background-color: #fef3c7; border: 2px solid #fbbf24; padding: 20px; margin: 25px 0; border-radius: 8px;">
             <h3 style="color: #92400e; margin-top: 0;">🔐 Your Login Credentials</h3>
             <p style="margin: 10px 0; color: #78350f;">
-              <strong>Login Email:</strong> ${email}<br>
+              <strong>Login ID:</strong> ${loginIdentifier}<br>
               <strong>Temporary Password:</strong> <code style="background: #fff; padding: 5px 10px; border-radius: 4px; font-size: 14px; color: #dc2626;">${temporaryPassword}</code>
             </p>
             <p style="margin: 15px 0 0; color: #92400e; font-size: 14px;">
@@ -802,11 +804,11 @@ export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryP
  * generated temporary password.
  */
 export async function buildCorporateEmployeeReminderEmail(employeeData, temporaryPassword, options = {}) {
-  const { email, firstName, lastName, companyName, employeeId, department } = employeeData;
+  const { email, firstName, lastName, companyName, employeeId, department, loginUid } = employeeData;
   const plan = formatCorporateEmployeePlan(employeeData);
   const planBenefitsHtml = renderPlanBenefitsList(plan.benefits);
   const planBenefitsText = plan.benefits.join(", ");
-  const loginIdentifier = email || employeeId || "";
+  const loginIdentifier = loginUid || email || employeeId || "";
 
   const msg = {
     to: email,
@@ -851,7 +853,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
           <div style="background-color: #fef3c7; border: 2px solid #fbbf24; padding: 20px; margin: 25px 0; border-radius: 8px;">
             <h3 style="color: #92400e; margin-top: 0;">🔐 Your New Login Credentials</h3>
             <p style="margin: 10px 0; color: #78350f;">
-              <strong>Login Email:</strong> ${email}<br>
+              <strong>Login ID:</strong> ${loginIdentifier}<br>
               <strong>Temporary Password:</strong> <code style="background: #fff; padding: 5px 10px; border-radius: 4px; font-size: 14px; color: #dc2626;">${temporaryPassword}</code>
             </p>
             <p style="margin: 15px 0 0; color: #92400e; font-size: 14px;">

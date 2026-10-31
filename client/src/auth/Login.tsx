@@ -50,15 +50,18 @@ import api from "@/utils/api";
 import { clearAuthTokens } from "@/hooks/auth";
 
 const formSchema = z.object({
-  email: z.string().min(1, "Email or phone number is required").refine(
+  email: z.string().min(1, "Email, phone number, or login ID is required").refine(
     (val) => {
       const trimmed = val.trim();
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
       const digits = trimmed.replace(/[^0-9]/g, '');
       const isPhone = digits.length >= 7 && digits.length <= 15 && !trimmed.includes('@');
-      return isEmail || isPhone;
+      // Admin/HR-provisioned corporate employees log in with their 6-char
+      // corporate_employees UID (e.g. E7K2PX) instead of an email.
+      const isLoginUid = /^[A-Za-z][A-Za-z0-9]{5}$/.test(trimmed);
+      return isEmail || isPhone || isLoginUid;
     },
-    { message: 'Must be a valid email address or phone number' }
+    { message: 'Must be a valid email address, phone number, or login ID' }
   ),
   password: z.string().min(1, "Password is required"),
 });
@@ -91,7 +94,10 @@ function isIdentifierValid(value: string): boolean {
   const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
   const digits = trimmed.replace(/[^0-9]/g, '');
   const isPhone = digits.length >= 7 && digits.length <= 15 && !trimmed.includes('@');
-  return isEmail || isPhone;
+  // Admin/HR-provisioned corporate employees log in with their 6-char
+  // corporate_employees UID (e.g. E7K2PX) instead of an email.
+  const isLoginUid = /^[A-Za-z][A-Za-z0-9]{5}$/.test(trimmed);
+  return isEmail || isPhone || isLoginUid;
 }
 
 function getInactiveAccountResolution(error: any): {
@@ -611,7 +617,7 @@ const Login = () => {
                               <Input
                                 {...field}
                                 type="text"
-                                placeholder="Email or mobile number"
+                                placeholder="Email, mobile number, or login ID"
                                 autoComplete="username"
                                 className="h-12 pl-10 pr-10 border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                               />
