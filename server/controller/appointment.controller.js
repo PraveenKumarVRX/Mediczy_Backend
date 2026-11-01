@@ -6,6 +6,12 @@ import DoctorAvailability from '../models/doctorAvailability.model.intelligent.j
 import Doctor from '../models/doctor.model.intelligent.js';
 import User from '../models/user.model.intelligent.js';
 import { Op } from 'sequelize';
+
+// Some doctor rows carry multi-megabyte base64 KYC documents in `documents` (idProof,
+// medicalDegree, councilCertificate, signatureImage, sealImage, addressProof). Booking
+// only ever needs scalar fields below, so exclude it (and other large/sensitive columns)
+// rather than fetching + row-locking megabytes of data on every single booking attempt.
+const DOCTOR_BOOKING_EXCLUDE_FIELDS = ['documents', 'password', 'passwordResetToken', 'passwordResetExpires', 'metadata', 'search_vector'];
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { createMeetingInfo } from '../utils/videoProvider.js';
 import {
@@ -257,7 +263,8 @@ export const createAppointment = async (req, res) => {
       // Fetch doctor details (supports both numeric ID and alphanumeric unique_id)
       doctor = await resolveDoctorId(doctorId, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+        lock: transaction.LOCK.UPDATE,
+        attributes: { exclude: DOCTOR_BOOKING_EXCLUDE_FIELDS }
       });
       if (!doctor) {
         fail(404, {

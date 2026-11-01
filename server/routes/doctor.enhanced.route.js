@@ -1680,9 +1680,9 @@ router.get('/:doctorId/public', [
 
     let doctor = null;
     if (/^\d+$/.test(doctorId)) {
-      doctor = await doctorModel.findByPk(doctorId);
+      doctor = await doctorModel.findByPk(doctorId, { attributes: { exclude: DOCTOR_SENSITIVE_FIELDS } });
     } else if (/^D[A-Z0-9]{5}$/i.test(doctorId)) {
-      doctor = await Doctor.findOne({ where: { unique_id: doctorId.toUpperCase() } });
+      doctor = await Doctor.findOne({ where: { unique_id: doctorId.toUpperCase() }, attributes: { exclude: DOCTOR_SENSITIVE_FIELDS } });
     }
     if (!doctor) {
       return res.status(404).json({
@@ -1700,14 +1700,9 @@ router.get('/:doctorId/public', [
       });
     }
 
-    // Remove sensitive information, then normalize to consistent schema
-    const {
-      password,
-      verificationDocuments,
-      digitalSignature,
-      medicalSeal,
-      ...publicProfile
-    } = typeof doctor.toJSON === 'function' ? doctor.toJSON() : doctor;
+    // Sensitive fields (documents, password, tokens, etc.) are already excluded at the
+    // query level above via DOCTOR_SENSITIVE_FIELDS — just normalize to the public schema.
+    const publicProfile = typeof doctor.toJSON === 'function' ? doctor.toJSON() : doctor;
 
     res.json({
       success: true,
