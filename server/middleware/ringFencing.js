@@ -991,7 +991,7 @@ const ringFencingMiddleware = (req, res, next) => {
   // Same reasoning for the biomedical department's gateway: the edge appliance authenticates
   // with a hashed provisioning key (x-gateway-key), verified in biomedical-device-gateway.service.js.
   // Scoped to exactly this one numeric-id sub-path; the admin edge-gateways endpoints stay gated.
-  if (requestMethod === 'POST' && /^\/api\/dept\/biomedical\/gateway\/edge-gateways\/\d+\/events$/.test(requestPath)) return next();
+  if (requestMethod === 'POST' && /^\/api\/biomedical\/gateway\/edge-gateways\/\d+\/events$/.test(requestPath)) return next();
 
   // Allow public endpoints
   if (PUBLIC_ENDPOINTS.some(endpoint => requestPath.startsWith(endpoint))) {
