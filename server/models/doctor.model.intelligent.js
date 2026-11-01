@@ -2,6 +2,7 @@ import { Op } from 'sequelize';
 import { Doctor } from './index.js'; // Now uses PostgreSQL via index.js
 import DoctorAvailability from './doctorAvailability.model.intelligent.js';
 import Appointment from './appointment.model.intelligent.js';
+import { DOCTOR_SENSITIVE_FIELDS } from '../utils/doctorSanitizer.js';
 
 const deriveVerificationStatus = (doctor) => {
   if (!doctor) return doctor;
@@ -503,6 +504,7 @@ const doctorModel = {
 
     const doctors = await Doctor.findAll({
       where,
+      attributes: { exclude: DOCTOR_SENSITIVE_FIELDS },
       order: [['createdAt', 'DESC']]
     });
 

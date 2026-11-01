@@ -6,13 +6,12 @@ import DoctorAvailability from '../models/doctorAvailability.model.intelligent.j
 import Doctor from '../models/doctor.model.intelligent.js';
 import User from '../models/user.model.intelligent.js';
 import { Op } from 'sequelize';
-
-// Some doctor rows carry multi-megabyte base64 KYC documents in `documents` (idProof,
-// medicalDegree, councilCertificate, signatureImage, sealImage, addressProof). Booking
-// only ever needs scalar fields below, so exclude it (and other large/sensitive columns)
-// rather than fetching + row-locking megabytes of data on every single booking attempt.
-const DOCTOR_BOOKING_EXCLUDE_FIELDS = ['documents', 'password', 'passwordResetToken', 'passwordResetExpires', 'metadata', 'search_vector'];
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { DOCTOR_SENSITIVE_FIELDS } from '../utils/doctorSanitizer.js';
+// Booking needs doctor.unique_id (used in error messages/payloads below), unlike an
+// external-facing response — keep everything else DOCTOR_SENSITIVE_FIELDS excludes,
+// above all `documents`, the multi-megabyte KYC blob this fix exists to stop locking.
+const DOCTOR_BOOKING_EXCLUDE_FIELDS = DOCTOR_SENSITIVE_FIELDS.filter((field) => field !== 'unique_id');
 import { createMeetingInfo } from '../utils/videoProvider.js';
 import {
   sendAppointmentConfirmation,

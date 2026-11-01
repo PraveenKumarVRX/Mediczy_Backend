@@ -30,6 +30,7 @@ import {
 } from '../services/s3-presign.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import { normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
+import { DOCTOR_SENSITIVE_FIELDS, sanitizeDoctorForResponse } from '../utils/doctorSanitizer.js';
 
 const router = express.Router();
 // Ensure request bodies are parsed even if app-level parser order changes.
@@ -48,13 +49,9 @@ const getCurrentAccessJti = (req) => {
 };
 
 // Sensitive fields that must NEVER be returned in public doctor listing APIs
-const DOCTOR_SENSITIVE_FIELDS = [
-  'password', 'passwordResetToken', 'passwordResetExpires',
-  'verificationDocuments', 'documents', 'metadata',
-  'search_vector', 'uid', 'unique_id', 'userId',
-  'lastLoginAt', 'lastActivityAt',
-  'passwordResetToken', 'passwordResetExpires'
-];
+// DOCTOR_SENSITIVE_FIELDS is imported from utils/doctorSanitizer.js — the one place that
+// list is defined, so every doctor-serializing route (this file and others) stays
+// consistent with the real schema instead of each hand-rolling its own stale copy.
 
 // Configure multer for file uploads — memory storage (file goes to MinIO)
 const upload = multer({
@@ -1641,10 +1638,7 @@ router.get('/search', [
     const paginatedDoctors = doctors.slice(startIndex, endIndex);
 
     // Remove sensitive data and normalize to consistent schema
-    const publicDoctors = paginatedDoctors.map(doctor => {
-      const { password, verificationDocuments, ...publicDoctor } = doctor;
-      return normalizeDoctorProfile(publicDoctor);
-    });
+    const publicDoctors = paginatedDoctors.map(doctor => normalizeDoctorProfile(sanitizeDoctorForResponse(doctor)));
 
     res.json({
       success: true,
@@ -1700,13 +1694,11 @@ router.get('/:doctorId/public', [
       });
     }
 
-    // Sensitive fields (documents, password, tokens, etc.) are already excluded at the
-    // query level above via DOCTOR_SENSITIVE_FIELDS — just normalize to the public schema.
-    const publicProfile = typeof doctor.toJSON === 'function' ? doctor.toJSON() : doctor;
-
+    // Query already excludes DOCTOR_SENSITIVE_FIELDS; sanitizeDoctorForResponse is a
+    // second, defense-in-depth strip applied to the output itself.
     res.json({
       success: true,
-      doctor: normalizeDoctorProfile(publicProfile)
+      doctor: normalizeDoctorProfile(sanitizeDoctorForResponse(doctor))
     });
   } catch (error) {
     console.error('Get public profile error:', error);
