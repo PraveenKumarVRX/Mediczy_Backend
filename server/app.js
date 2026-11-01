@@ -1181,7 +1181,6 @@ app.get('/health', async (req, res) => {
     const health = await orchestrator.healthCheck();
     const dbStates = health.databases || {
       postgres: health.postgres,
-      duckdb: health.duckdb,
       redis: health.redis
     };
     const normalizedDbStates = Object.fromEntries(
@@ -1206,7 +1205,6 @@ app.get('/api/health', async (req, res) => {
     const mem = process.memoryUsage();
     const dbStates = health.databases || {
       postgres: health.postgres,
-      duckdb: health.duckdb,
       redis: health.redis
     };
 

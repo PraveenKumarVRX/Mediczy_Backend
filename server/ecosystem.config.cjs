@@ -150,8 +150,6 @@ module.exports = {
         POSTGRES_USER: 'mediczy_helper',
         POSTGRES_PASSWORD: 'Mediczy2024Helper',
         POSTGRES_SSL: 'true',
-        DUCKDB_ENABLED: 'true',
-        DUCKDB_PATH: ':memory:',
         PGVECTOR_DIMENSION: process.env.PGVECTOR_DIMENSION || '1536',
         SIB_PORT: '8001',
         SIB_HOST: '0.0.0.0',

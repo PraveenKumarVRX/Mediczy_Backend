@@ -177,7 +177,6 @@ export async function startSmokeServer() {
     NODE_ENV: 'development',
     DOTENV_IN_PROD: 'true',
     DISABLE_KAFKA: 'true',
-    DUCKDB_ENABLED: 'false',
     PGVECTOR_ENABLED: 'false',
     PORT: String(new URL(baseUrl).port || process.env.PORT || 18998),
   };

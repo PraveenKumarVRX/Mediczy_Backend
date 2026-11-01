@@ -178,17 +178,6 @@ class DatabaseIntelligence {
       confidence: 0,
     };
 
-    // Rule 1: Analytical queries → DuckDB
-    if (analysis.queryType === 'analytics' || analysis.dataVolume > 10000) {
-      routing.targetDB = 'duckdb';
-      routing.fallbackDB = 'postgres';
-      routing.cacheable = true;
-      routing.cacheTTL = 600;
-      routing.reason = 'Large-scale analytics query';
-      routing.confidence = 0.9;
-      return routing;
-    }
-
     // Rule 2: Document/nested data → PostgreSQL (JSONB)
     if (analysis.queryType === 'document' || this.isFlexibleSchema(analysis)) {
       routing.targetDB = 'postgres';
@@ -247,8 +236,6 @@ class DatabaseIntelligence {
       
       // Execute based on database type
       switch (routing.targetDB) {
-        case 'duckdb':
-          return await this.executeDuckDBQuery(db, query);
         case 'postgres':
           return await this.executePostgresQuery(db, query, context);
         case 'cache':
@@ -367,12 +354,6 @@ class DatabaseIntelligence {
       strategy.requiresIndexing = true;
     }
 
-    // Strategy 2: Store analytics-heavy data in DuckDB
-    if (classification.size > 100000 || metadata.analyticsRequired) {
-      strategy.replicas.push('duckdb');
-      strategy.analytics = true;
-    }
-
     // Strategy 3: Store searchable text in Vector DB
     if (classification.searchability > 0.7) {
       strategy.vectorizable = true;
@@ -428,8 +409,6 @@ class DatabaseIntelligence {
     switch (dbName) {
       case 'postgres':
         return await this.storeInPostgres(dbConnection, data, metadata);
-      case 'duckdb':
-        return await this.storeInDuckDB(dbConnection, data, metadata);
       case 'vector':
         return await this.storeVectorEmbeddings(data, metadata);
       default:
@@ -438,36 +417,11 @@ class DatabaseIntelligence {
   }
 
   /**
-   * Store analytics in DuckDB for OLAP queries
+   * Record query analytics in-memory for the metrics/insights endpoints below.
    */
   async storeQueryAnalytics(analytics) {
-    try {
-      if (!this.learningEnabled) return;
-
-      const duckDB = await orchestrator.route('analytics', {});
-      
-      // Store in analytics table
-      const query = `
-        INSERT INTO query_analytics 
-        (query_text, query_type, target_db, processing_time, cache_hit, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `;
-      
-      await duckDB.runAsync(query, [
-        analytics.query,
-        analytics.analysis?.queryType || 'unknown',
-        analytics.routing?.targetDB || 'unknown',
-        analytics.processingTime,
-        analytics.routing?.source === 'cache' ? 1 : 0,
-        analytics.timestamp.toISOString(),
-      ]);
-      
-      // Update metrics
-      this.metrics.queries.push(analytics);
-      
-    } catch (error) {
-      console.warn('⚠️  Analytics storage failed:', error.message);
-    }
+    if (!this.learningEnabled) return;
+    this.metrics.queries.push(analytics);
   }
 
   /**
@@ -613,25 +567,6 @@ class DatabaseIntelligence {
    */
   async storeBayesianResults(data, inference) {
     try {
-      // Store in DuckDB analytics
-      const duckDB = await orchestrator.route('analytics', {});
-      
-      const query = `
-        INSERT INTO bayesian_inferences 
-        (patient_id, risk_score, recommendations, confidence, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-      `;
-      
-      await duckDB.runAsync(query, [
-        data.patientId || 'unknown',
-        inference.risk_score || 0,
-        JSON.stringify(inference.recommendations || []),
-        inference.confidence || 0,
-        new Date().toISOString(),
-      ]).catch(() => {
-        // Table might not exist yet, ignore error
-      });
-      
       // Queue notification if high risk
       if (inference.risk_score > 0.7) {
         const queueName = 'notifications';
@@ -741,7 +676,6 @@ class DatabaseIntelligence {
   mapDBToOperation(dbName) {
     const mapping = {
       maria: 'transactional',
-      duckdb: 'analytics',
       cache: 'cache',
       redis: 'cache',
       vector: 'search',
@@ -796,10 +730,6 @@ class DatabaseIntelligence {
     return 'low';
   }
 
-  async executeDuckDBQuery(db, query) {
-    return await db.allAsync(query);
-  }
-
   async executePostgresQuery(db, query, context) {
     // Simplified - implement actual PostgreSQL query logic
     return { success: true, message: 'PostgreSQL query executed' };
@@ -811,10 +741,6 @@ class DatabaseIntelligence {
 
   async storeInPostgres(db, data, metadata) {
     return { success: true, database: 'postgres', id: Date.now() };
-  }
-
-  async storeInDuckDB(db, data, metadata) {
-    return { success: true, database: 'duckdb', id: Date.now() };
   }
 
   async storeVectorEmbeddings(data, metadata) {

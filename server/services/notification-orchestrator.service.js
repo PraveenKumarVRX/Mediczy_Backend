@@ -1,6 +1,6 @@
 /**
  * Notification Automation Orchestrator
- * Integrates n8n, Firebase, Kafka, PostgreSQL, DuckDB, and VectorDB
+ * Integrates n8n, Firebase, Kafka, PostgreSQL and VectorDB
  * Provides unified API for automated notification workflows
  */
 
@@ -9,7 +9,6 @@ const { sequelize } = require('../config/database');
 const { sendPushNotification } = require('../utils/firebase-admin');
 const { kafkaProducer } = require('../config/kafka');
 const { vectorDBService } = require('./vectordb.service');
-const { analyticsService } = require('./duckdb-analytics.service');
 const logger = require('../config/logger');
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook';
@@ -24,9 +23,6 @@ class NotificationOrchestrator {
         try {
             // Initialize VectorDB
             await vectorDBService.initialize();
-            
-            // Initialize DuckDB Analytics
-            await analyticsService.initialize();
 
             // Check n8n availability
             await this.checkN8NHealth();
@@ -350,17 +346,6 @@ class NotificationOrchestrator {
                 }
             });
 
-            // Log to DuckDB for analytics
-            await analyticsService.logNotificationEvent({
-                id: notificationId,
-                eventType: event.notificationType,
-                userId: event.userId,
-                userType: event.userType,
-                channel: event.channels[0],
-                status: event.status,
-                processingTimeMs: event.processingTimeMs
-            });
-
             // Publish to Kafka for real-time streaming
             if (kafkaProducer) {
                 await kafkaProducer.send({
@@ -517,11 +502,8 @@ class NotificationOrchestrator {
             ORDER BY date DESC
         `);
 
-        const duckdbAnalytics = await analyticsService.getNotificationAnalytics(options);
-
         return {
             postgres: notificationStats,
-            duckdb: duckdbAnalytics,
             vectordb: vectorDBService.getStatus()
         };
     }
@@ -530,8 +512,7 @@ class NotificationOrchestrator {
         return {
             initialized: this.initialized,
             n8nAvailable: this.n8nAvailable,
-            vectordb: vectorDBService.getStatus(),
-            analytics: analyticsService.getStatus()
+            vectordb: vectorDBService.getStatus()
         };
     }
 }

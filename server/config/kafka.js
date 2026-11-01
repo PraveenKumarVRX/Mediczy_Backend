@@ -56,7 +56,7 @@ export const KAFKA_TOPICS = {
   CLAIM_SUBMITTED:          'claim.submitted',
   CLAIM_STATUS_UPDATED:     'claim.status.updated',
 
-  // AI / Analytics (feeds DuckDB ETL)
+  // AI / Analytics
   AI_RUN_COMPLETED:         'ai.run.completed',
   ANALYTICS_EVENT:          'analytics.event',
 

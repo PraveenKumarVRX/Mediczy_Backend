@@ -116,7 +116,6 @@ console.log('💾 DATABASE STATUS\n');
 console.log('  PostgreSQL 16:       🟢 PRIMARY (99 records)');
 console.log('  MariaDB 10.5.29:     🟡 LEGACY backup');
 console.log('  MongoDB:             🟢 Audit logs');
-console.log('  DuckDB:              🟢 Analytics');
 console.log('  Redis 7.x:           🟢 Cache');
 
 // Feature Summary

@@ -1,15 +1,14 @@
 /**
  * Notification Automation Service
- * Integrates: n8n, Firebase, Kafka, PostgreSQL, DuckDB, VectorDB
- * 
+ * Integrates: n8n, Firebase, Kafka, PostgreSQL, VectorDB
+ *
  * Flow:
  * 1. Event triggers (appointment, payment, etc.)
  * 2. Kafka publishes event
  * 3. n8n orchestrates workflow
  * 4. Firebase sends push notifications
  * 5. PostgreSQL stores notification record
- * 6. DuckDB logs analytics
- * 7. VectorDB enables intelligent routing
+ * 6. VectorDB enables intelligent routing
  *
  * DANGER — DB-RDS-PLAN-2026-09-01 Workstream A-07: this file calls
  * .sync({ alter: true }) on two models, mutating production schema
@@ -28,7 +27,7 @@ import notificationService from './notification.service.js';
 import { DataTypes, Op } from 'sequelize';
 
 // ============================================
-// NOTIFICATION ANALYTICS MODEL (DuckDB-ready)
+// NOTIFICATION ANALYTICS MODEL
 // ============================================
 const NotificationAnalytics = postgresSequelize.define('NotificationAnalytics', {
   id: {
@@ -323,7 +322,7 @@ class NotificationAutomationService {
         });
       }
 
-      // 7. Log analytics (DuckDB-ready)
+      // 7. Log analytics
       await this.logAnalytics({
         notificationId: notification?.id,
         userId,
@@ -430,11 +429,11 @@ class NotificationAutomationService {
   }
 
   /**
-   * Log notification analytics (DuckDB-ready format)
+   * Log notification analytics
    */
   async logAnalytics(data) {
     try {
-      // Store in PostgreSQL (can be synced to DuckDB)
+      // Store in PostgreSQL
       await NotificationAnalytics.create({
         notificationId: data.notificationId,
         userId: data.userId,
@@ -447,7 +446,7 @@ class NotificationAutomationService {
         metadata: data.metadata
       });
 
-      // Publish to Kafka for DuckDB ingestion
+      // Publish to Kafka for downstream analytics
       if (this.kafkaEnabled) {
         await publishEvent(KAFKA_TOPICS.ANALYTICS_EVENTS, {
           type: 'NOTIFICATION_ANALYTICS',

@@ -120,8 +120,6 @@ module.exports = {
         POSTGRES_USER: process.env.POSTGRES_USER || 'mediczy_helper',
         POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
         POSTGRES_SSL: process.env.POSTGRES_SSL || 'true',
-        DUCKDB_ENABLED: 'true',
-        DUCKDB_PATH: ':memory:',
         PGVECTOR_DIMENSION: process.env.PGVECTOR_DIMENSION || '1536',
         LOG_LEVEL: 'INFO',
         LOGURU_LEVEL: 'WARNING',

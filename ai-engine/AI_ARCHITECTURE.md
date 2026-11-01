@@ -521,9 +521,10 @@ Nightly automated workflow:
 |---|---|---|
 | PostgreSQL (primary) | Transactional data — patients, appointments, prescriptions | asyncpg pool (async), psycopg2 pool (sync EHR) |
 | pgvector extension | Vector embeddings in PostgreSQL | Same connections, `<=>` cosine operator |
-| DuckDB | Analytics queries — aggregations, reporting | In-process, `:memory:` or file |
 | Citus extension | Distributed PostgreSQL for high-scale tenants | Transparent via asyncpg |
 | JSONB | Flexible schema for metadata, config, EHR sections | Native PostgreSQL |
+
+Analytics queries (aggregations, reporting) run directly against PostgreSQL via `DatabaseManager.execute_analytics_query()` — there is no separate analytics engine.
 
 ### Key tables
 
@@ -604,7 +605,6 @@ await asyncio.gather(
 | `POSTGRES_DATABASE` | `mediczy_ai` | All DB connections |
 | `POSTGRES_USER` | `mediczy_helper` | All DB connections |
 | `POSTGRES_PASSWORD` | — | All DB connections |
-| `DUCKDB_ENABLED` | `true` | Analytics engine |
 | `SIB_PORT` | `8001` | FastAPI server port |
 | `LOG_LEVEL` | `INFO` | Python logging |
 
@@ -712,7 +712,7 @@ ai-engine/doctor_bot/
 │   ├── qwen_planner.py           # QwenPlanner — plan + execute + synthesize
 │   ├── tinyllama_router.py       # Fast intent classifier (shared Qwen model)
 │   ├── task_router.py            # Automation task dispatcher
-│   ├── database.py               # DB connection manager (asyncpg + DuckDB + Citus)
+│   ├── database.py               # DB connection manager (asyncpg + Citus)
 │   ├── memory.py                 # SharedMemory — cross-botlet context
 │   ├── memory_persistent.py      # Persistent memory (DB-backed)
 │   ├── learning_pipeline.py      # Feedback-driven self-improvement

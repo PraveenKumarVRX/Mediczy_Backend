@@ -39,14 +39,12 @@ const OPTIONAL_ENV_VARS = {
   
   // Feature Flags
   DISABLE_KAFKA: { default: 'false', description: 'Disable Kafka integration' },
-  DUCKDB_ENABLED: { default: 'false', description: 'Enable DuckDB analytics engine' },
-  
+
   // Integrations
   GROQ_API_KEY: { default: '', description: 'Groq AI API key' },
   ADMIN_EMAIL: { default: 'admin@mediczy.com', description: 'Admin email' },
-  
+
   // Database URLs
-  DUCKDB_PATH: { default: './data/mediczy.duckdb', description: 'DuckDB file path' },
   VECTOR_DB_URL: { default: 'http://localhost:8001', description: 'Vector DB URL' },
   INTELLIGENT_DB_URL: { default: 'http://localhost:5005', description: 'Intelligent DB service URL' },
 };

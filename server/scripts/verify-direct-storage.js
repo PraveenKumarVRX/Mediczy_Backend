@@ -2,7 +2,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { connectPostgres, closePostgres } from '../db/postgres.js';
-import { connectDuckDB, executeDuckDB, closeDuckDB } from '../db/duckdb.js';
 
 const VERIFICATION_USER = process.env.MEDICAL_AI_VERIFICATION_USER || 'analytics.patient@mediczy.com';
 
@@ -49,34 +48,8 @@ async function verifyPostgres() {
   }
 }
 
-async function verifyDuckDB() {
-  try {
-    const connection = await connectDuckDB();
-    if (!connection) {
-      console.log('⚠️ DuckDB unavailable, skipping verification');
-      return;
-    }
-
-    const tables = await executeDuckDB("SELECT table_name FROM information_schema.tables WHERE table_schema='main'");
-    const tableNames = (tables || []).map(t => t.table_name);
-    console.log('🗃️  DuckDB tables:', tableNames);
-
-    if (tableNames.includes('medical_analytics')) {
-      const rows = await executeDuckDB('SELECT COUNT(*) AS cnt FROM medical_analytics');
-      console.log('📊 DuckDB medical_analytics count:', rows?.[0]?.cnt ?? 0);
-    } else {
-      console.log('📊 DuckDB medical_analytics:', 'not present');
-    }
-  } catch (err) {
-    console.error('❌ DuckDB verification error:', err.message);
-  } finally {
-    await closeDuckDB().catch(() => {});
-  }
-}
-
 async function main() {
   await verifyPostgres();
-  await verifyDuckDB();
   console.log('\n✅ Direct storage verification complete.');
   process.exit(0);
 }

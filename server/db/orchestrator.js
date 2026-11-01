@@ -5,7 +5,6 @@
 
 import { postgresSequelize, connectToPostgresDB } from './postgres-sequelize.js';
 import { connectPostgres, closePostgres, testPostgres, getPostgresStatus } from './postgres.js';
-import { connectDuckDB, closeDuckDB, getDuckDBStatus, testDuckDB } from './duckdb.js';
 import { connectRedis, closeRedis, getRedisStatus, testRedis } from './redis.js';
 
 class DatabaseOrchestrator {
@@ -13,7 +12,6 @@ class DatabaseOrchestrator {
     this.connections = {
       postgresSequelize: null,  // PostgreSQL with Sequelize (PRIMARY)
       postgres: null,            // PostgreSQL raw connection (HELPER)
-      duckdb: null,
       redis: null
     };
 
@@ -21,7 +19,6 @@ class DatabaseOrchestrator {
     this.roles = {
       postgresSequelize: 'PRIMARY',  // Main transactional database (JSONB, TimescaleDB ready)
       postgres: 'HELPER',            // Document storage, pgvector, Citus distribution
-      duckdb: 'OPTIONAL',            // Optional: Analytics compute engine for heavy OLAP
       redis: 'CACHE'                 // Session and cache storage
     };
 
@@ -33,7 +30,6 @@ class DatabaseOrchestrator {
       timescale: false,
       columnar: false,
       jsonb: true, // Native to PostgreSQL
-      duckdb: false,
       redis: false,
       lastCheck: null
     };
@@ -54,7 +50,6 @@ class DatabaseOrchestrator {
       postgres: false,
       pgvector: false,
       citus: false,
-      duckdb: false,
       redis: false,
       lastCheck: Date.now()
     };
@@ -98,27 +93,6 @@ class DatabaseOrchestrator {
       this.healthStatus.postgres = false;
       this.healthStatus.pgvector = false;
       this.healthStatus.citus = false;
-    }
-
-    // Connect to DuckDB (OPTIONAL - Only if explicitly enabled)
-    if (process.env.DUCKDB_ENABLED === 'true') {
-      try {
-        console.log('🔌 Connecting to DuckDB (Analytics Database)...');
-        this.connections.duckdb = await connectDuckDB();
-        if (this.connections.duckdb) {
-          this.healthStatus.duckdb = true;
-          console.log('✅ DuckDB connected successfully');
-        } else {
-          console.warn('⚠️  DuckDB connection failed (continuing without analytics)');
-          this.healthStatus.duckdb = false;
-        }
-      } catch (error) {
-        console.warn('⚠️  DuckDB initialization failed (continuing without analytics):', error.message);
-        this.healthStatus.duckdb = false;
-      }
-    } else {
-      console.log('ℹ️  DuckDB disabled (set DUCKDB_ENABLED=true to enable optional analytics engine)');
-      this.healthStatus.duckdb = false;
     }
 
     // Connect to Redis (CACHE - Critical for production)
@@ -168,11 +142,6 @@ class DatabaseOrchestrator {
 
     // Intelligent routing based on operation type
     switch (operation) {
-      case 'analytics':
-      case 'olap':
-      case 'reporting':
-        return this.connections.duckdb || this.connections[fallback];
-      
       case 'document':
       case 'json':
       case 'unstructured':
@@ -217,10 +186,9 @@ class DatabaseOrchestrator {
     }
 
     // Test all connections
-    const [postgresSequelize, postgres, duck, redis] = await Promise.allSettled([
+    const [postgresSequelize, postgres, redis] = await Promise.allSettled([
       this.testPostgresSequelizeDB(),
       this.testPostgresDB(),
-      this.testDuckDB(),
       this.testRedis()
     ]);
 
@@ -231,7 +199,6 @@ class DatabaseOrchestrator {
       postgres: postgresHealthy,
       pgvector: !!postgresMetadata.pgvector,
       citus: !!postgresMetadata.citus,
-      duckdb: duck.status === 'fulfilled' && duck.value.success,
       redis: redis.status === 'fulfilled' && redis.value.success,
       lastCheck: Date.now()
     };
@@ -262,14 +229,6 @@ class DatabaseOrchestrator {
     }
   }
 
-  async testDuckDB() {
-    try {
-      return await testDuckDB();
-    } catch (error) {
-      return { success: false, message: error.message };
-    }
-  }
-
   async testRedis() {
     try {
       return await testRedis();
@@ -285,12 +244,6 @@ class DatabaseOrchestrator {
     console.log('🔌 Closing all database connections...');
 
     const closePromises = [];
-
-    if (this.connections.duckdb) {
-      closePromises.push(closeDuckDB().catch(err => 
-        console.warn('⚠️  DuckDB close warning:', err.message)
-      ));
-    }
 
     if (this.connections.postgres) {
       closePromises.push(closePostgres().catch(err => 
