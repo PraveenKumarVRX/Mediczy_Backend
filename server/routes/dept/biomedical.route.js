@@ -462,6 +462,17 @@ router.get('/gateway/bindings', authBiomedical, gatewayRoute(tenantId => biomedi
 router.post('/gateway/bindings', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.createBinding(tenantId, req.body || {}, req.biomedUser?.id), 201));
 router.post('/gateway/bindings/:id/end', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.endBinding(tenantId, req.params.id, req.body?.reason, req.biomedUser?.id)));
 router.get('/gateway/events', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.events(tenantId, req.query.limit)));
+// Gateway-credential authenticated (x-gateway-key), not a user JWT: this is the edge
+// appliance submitting telemetry/alarm/lifecycle events, not a logged-in staff member.
+router.post('/gateway/edge-gateways/:id/events', async (req, res) => {
+  try {
+    const event = await biomedicalGateway.ingestEvent(req.params.id, req.get('x-gateway-key'), req.body || {});
+    res.status(202).json({ success: true, data: event });
+  } catch (error) {
+    console.error('[Biomedical gateway ingest]', error.message);
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Event ingestion failed' });
+  }
+});
 router.get('/gateway/quarantine', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.quarantine(tenantId)));
 router.post('/gateway/events/:id/review', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.reviewEvent(tenantId, req.params.id, req.body?.decision, req.body?.note, req.biomedUser?.id)));
 router.get('/gateway/outbox', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.outbox(tenantId)));

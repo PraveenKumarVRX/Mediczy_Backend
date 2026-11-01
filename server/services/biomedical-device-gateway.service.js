@@ -1,9 +1,15 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import pool from '../db/pgPool.js';
 
 const asId = (value) => Number.isInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 const fail = (message, status = 422) => Object.assign(new Error(message), { status });
 const hashKey = (value) => createHash('sha256').update(value).digest('hex');
+const keyMatches = (storedHash, suppliedKey) => {
+  if (!storedHash || typeof suppliedKey !== 'string' || !suppliedKey) return false;
+  const candidate = hashKey(suppliedKey);
+  if (storedHash.length !== candidate.length) return false;
+  return timingSafeEqual(Buffer.from(storedHash, 'utf8'), Buffer.from(candidate, 'utf8'));
+};
 
 class BiomedicalDeviceGatewayService {
   async overview(tenantId) {
@@ -76,6 +82,66 @@ class BiomedicalDeviceGatewayService {
     if (!reason?.trim()) throw fail('End reason is required');
     const { rows } = await pool.query(`UPDATE biomedical_device_bindings SET status='ended',ended_at=NOW(),ended_by=$3,end_reason=$4 WHERE id=$1 AND tenant_id=$2 AND status IN ('pending','confirmed') RETURNING *`, [asId(id), tenantId, userId, reason.trim()]);
     if (!rows[0]) throw fail('Active binding not found', 404); return rows[0];
+  }
+
+  /**
+   * Ingest a telemetry/alarm/lifecycle event from an enrolled edge gateway. Gateway-credential
+   * authenticated (x-gateway-key against the hashed provisioning key) — there is no user JWT on
+   * this path, since the caller is an on-premise gateway appliance, not a logged-in person.
+   * An event lands as 'pending' review only when the device has an active patient binding;
+   * otherwise it is quarantined rather than silently discarded, so nothing attributable gets lost.
+   */
+  async ingestEvent(gatewayId, gatewayKey, body = {}) {
+    const gwId = asId(gatewayId);
+    if (!gwId) throw fail('Gateway not found', 404);
+    const { rows: gateways } = await pool.query(`SELECT id,tenant_id,gateway_key_hash FROM biomedical_edge_gateways WHERE id=$1 AND status='active'`, [gwId]);
+    const gateway = gateways[0];
+    if (!gateway || !keyMatches(gateway.gateway_key_hash, gatewayKey)) throw fail('Invalid gateway credentials', 401);
+
+    const deviceId = asId(body.deviceId);
+    const eventType = typeof body.eventType === 'string' ? body.eventType.trim() : '';
+    const observedAt = body.observedAt ? new Date(body.observedAt) : new Date();
+    if (!deviceId || !eventType || Number.isNaN(observedAt.getTime())) throw fail('deviceId, eventType, and a valid observedAt are required');
+    const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload) ? body.payload : {};
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: devices } = await client.query(
+        `SELECT id FROM biomedical_gateway_devices WHERE id=$1 AND tenant_id=$2 AND edge_gateway_id=$3 AND status='active' FOR UPDATE`,
+        [deviceId, gateway.tenant_id, gateway.id]
+      );
+      if (!devices[0]) throw fail('Device is not an active device enrolled on this gateway', 409);
+
+      const { rows: bindings } = await client.query(
+        `SELECT id FROM biomedical_device_bindings WHERE device_id=$1 AND tenant_id=$2 AND status IN ('pending','confirmed') ORDER BY created_at DESC LIMIT 1`,
+        [deviceId, gateway.tenant_id]
+      );
+      const bindingId = bindings[0]?.id || null;
+      const reviewStatus = bindingId ? 'pending' : 'quarantined';
+
+      const { rows: inserted } = await client.query(
+        `INSERT INTO biomedical_gateway_events (tenant_id,device_id,binding_id,event_type,observed_at,payload,review_status)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7) RETURNING *`,
+        [gateway.tenant_id, deviceId, bindingId, eventType, observedAt.toISOString(), JSON.stringify(payload), reviewStatus]
+      );
+      const event = inserted[0];
+
+      if (reviewStatus === 'quarantined') {
+        await client.query(
+          `INSERT INTO biomedical_gateway_quarantine (tenant_id,event_id,reason) VALUES ($1,$2,$3)`,
+          [gateway.tenant_id, event.id, 'No active patient binding for this device']
+        );
+      }
+      await client.query(`UPDATE biomedical_edge_gateways SET last_seen_at=NOW(), updated_at=NOW() WHERE id=$1`, [gateway.id]);
+      await client.query('COMMIT');
+      return event;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async events(tenantId, limit = 50) { return (await pool.query(`SELECT e.*,d.name device_name FROM biomedical_gateway_events e JOIN biomedical_gateway_devices d ON d.id=e.device_id WHERE e.tenant_id=$1 ORDER BY e.received_at DESC LIMIT $2`, [tenantId, Math.min(Math.max(Number(limit) || 50, 1), 200)])).rows; }
