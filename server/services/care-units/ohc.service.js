@@ -806,5 +806,5 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     };
   }
 
-  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, appointments, createAppointment, updateAppointment, remindAppointment, encounters, createEncounter, finalizeEncounter, addScreeningResult, staffMessages, createStaffMessage, occupationalSummary, responders, responderAvailability, emergencies, emergencyAnalytics, emergencyDetail, addEmergencyNote, saveEmergencyReportDraft, finalizeEmergencyReport, amendEmergencyReport, createEmergency, updateEmergency, assignEmergency, respondToAssignment, issueCertificate, certificates, certificateById, certificateLetterhead, resolveCmoForCorporate };
+  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, appointments, createAppointment, updateAppointment, remindAppointment, encounters, createEncounter, finalizeEncounter, addScreeningResult, staff, staffMessages, createStaffMessage, occupationalSummary, responders, responderAvailability, emergencies, emergencyAnalytics, emergencyDetail, addEmergencyNote, saveEmergencyReportDraft, finalizeEmergencyReport, amendEmergencyReport, createEmergency, updateEmergency, assignEmergency, respondToAssignment, issueCertificate, certificates, certificateById, certificateLetterhead, resolveCmoForCorporate };
 }
