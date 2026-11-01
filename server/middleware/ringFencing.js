@@ -983,6 +983,16 @@ const ringFencingMiddleware = (req, res, next) => {
   // rate-limited by the reports route. Keep every other admin path JWT-gated.
   if (requestMethod === 'POST' && requestPath === '/api/admin/dedicated-installations/reports') return next();
 
+  // Medical-device edge gateways submit events over an Ed25519 signature verified inside
+  // the route (medical-device-gateway.service.js ingestSignedEvent); an on-premise gateway
+  // appliance has no JWT to present. Every other path on this router stays JWT-gated.
+  if (requestMethod === 'POST' && requestPath === '/api/medical-device-gateway/events') return next();
+
+  // Same reasoning for the biomedical department's gateway: the edge appliance authenticates
+  // with a hashed provisioning key (x-gateway-key), verified in biomedical-device-gateway.service.js.
+  // Scoped to exactly this one numeric-id sub-path; the admin edge-gateways endpoints stay gated.
+  if (requestMethod === 'POST' && /^\/api\/dept\/biomedical\/gateway\/edge-gateways\/\d+\/events$/.test(requestPath)) return next();
+
   // Allow public endpoints
   if (PUBLIC_ENDPOINTS.some(endpoint => requestPath.startsWith(endpoint))) {
     return next();
