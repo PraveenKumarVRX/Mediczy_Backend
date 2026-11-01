@@ -23,7 +23,7 @@ import {
   CreditCard, TrendingDown, DollarSign, Eye, AlertTriangle, Beaker,
   Users, Timer, MonitorCheck, Clock, CheckCircle2, Truck, ShoppingCart,
   UserCheck, Hash, ArrowRightLeft, History, Layers, Flame,
-  CalendarDays, ListChecks, FilePlus, FileBarChart2, Monitor,
+  CalendarDays, ListChecks, FilePlus, FileBarChart2, Monitor, Radio,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -256,7 +256,10 @@ const biomedNav: DeptNavSection[] = [
   },
   {
     title: "Monitoring",
-    items: [{ icon: Monitor, label: "Device Monitoring", href: "/biomedical/monitoring" }],
+    items: [
+      { icon: Monitor, label: "Device Monitoring", href: "/biomedical/monitoring" },
+      { icon: Radio, label: "Device Integration", href: "/biomedical/device-gateway" },
+    ],
   },
   {
     title: "Equipment",

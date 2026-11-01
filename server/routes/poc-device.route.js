@@ -57,7 +57,7 @@ router.get('/', authUser, async (req, res) => {
   }
 });
 
-router.put('/:id/sync', async (req, res) => {
+router.put('/:id/sync', authUser, async (req, res) => {
   try {
     const { battery_level, location, test_result } = req.body;
     

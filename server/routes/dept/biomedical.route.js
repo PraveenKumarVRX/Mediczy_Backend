@@ -5,6 +5,7 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
 import { connectPostgres } from '../../db/postgres.js';
 import biomedicalEquipment from '../../services/biomedical-equipment.service.js';
+import biomedicalGateway from '../../services/biomedical-device-gateway.service.js';
 
 const router = express.Router();
 
@@ -432,5 +433,42 @@ router.get('/calibration-due', authBiomedical, async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to fetch calibration due list' });
   }
 });
+
+// ─── Clinical device integration control plane ──────────────────────────────
+// Configuration and review data is tenant-scoped. Transport credentials and
+// raw clinical payloads are never returned to the browser.
+const gatewayRoute = (handler, status = 200) => async (req, res) => {
+  try {
+    const tenantId = registryTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, error: 'Tenant could not be determined from token' });
+    return res.status(status).json({ success: true, data: await handler(tenantId, req) });
+  } catch (error) {
+    console.error('[Biomedical gateway]', error.message);
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Gateway request failed' });
+  }
+};
+
+router.get('/gateway/overview', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.overview(tenantId)));
+router.get('/gateway/adapters', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.adapters(tenantId)));
+router.post('/gateway/adapters', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.createAdapter(tenantId, req.body || {}, req.biomedUser?.id), 201));
+router.patch('/gateway/adapters/:id/status', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.updateAdapterStatus(tenantId, req.params.id, req.body?.status)));
+router.get('/gateway/edge-gateways', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.gateways(tenantId)));
+router.post('/gateway/edge-gateways', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.createGateway(tenantId, req.body || {}, req.biomedUser?.id), 201));
+router.patch('/gateway/edge-gateways/:id/status', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.updateGatewayStatus(tenantId, req.params.id, req.body?.status)));
+router.get('/gateway/devices', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.devices(tenantId)));
+router.post('/gateway/devices', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.createDevice(tenantId, req.body || {}), 201));
+router.patch('/gateway/devices/:id/status', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.updateDeviceStatus(tenantId, req.params.id, req.body?.status)));
+router.get('/gateway/bindings', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.bindings(tenantId)));
+router.post('/gateway/bindings', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.createBinding(tenantId, req.body || {}, req.biomedUser?.id), 201));
+router.post('/gateway/bindings/:id/end', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.endBinding(tenantId, req.params.id, req.body?.reason, req.biomedUser?.id)));
+router.get('/gateway/events', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.events(tenantId, req.query.limit)));
+router.get('/gateway/quarantine', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.quarantine(tenantId)));
+router.post('/gateway/events/:id/review', authBiomedical, gatewayRoute((tenantId, req) => biomedicalGateway.reviewEvent(tenantId, req.params.id, req.body?.decision, req.body?.note, req.biomedUser?.id)));
+router.get('/gateway/outbox', authBiomedical, gatewayRoute(tenantId => biomedicalGateway.outbox(tenantId)));
+router.get('/gateway/diagnostics', authBiomedical, gatewayRoute(async (tenantId) => ({
+  mqtt: { configured: Boolean(process.env.MEDICAL_DEVICE_MQTT_URL), ingestEnabled: process.env.ENABLE_MEDICAL_DEVICE_MQTT_INGEST === 'true', transport: process.env.MEDICAL_DEVICE_MQTT_URL?.startsWith('mqtts://') ? 'mTLS/TLS endpoint configured' : 'not configured for TLS' },
+  legacyEmbeddedBrokerEnabled: process.env.ENABLE_LEGACY_EMBEDDED_MQTT === 'true',
+  overview: await biomedicalGateway.overview(tenantId),
+})));
 
 export default router;

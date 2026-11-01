@@ -273,15 +273,18 @@ function DeviceDrawer({ device, onClose }: { device: Device; onClose: () => void
               ))}
             </div>
 
-            {/* 24h trend — no telemetry source yet */}
+            {/* Historical telemetry is reviewed in the integration control plane. */}
             <div>
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
                 <Activity className="w-4 h-4 text-blue-500" /> 24h Parameter Trend
               </p>
               <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-4">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Not available yet — device telemetry isn’t streamed (dataAvailable: false).
+                  Historical trend data is available after this device is registered through the integration gateway and its events are clinically reviewed.
                 </p>
+                <a href="/biomedical/device-gateway" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-cyan-700 hover:underline dark:text-cyan-300">
+                  Open telemetry review <ChevronRight className="h-3.5 w-3.5" />
+                </a>
               </div>
             </div>
 

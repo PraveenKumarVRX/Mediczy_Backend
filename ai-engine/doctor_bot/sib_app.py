@@ -7,7 +7,6 @@ Synthetic Intelligence Brain (SIB) orchestrated medical AI system.
 Connected to Mediczy Intelligent DB Infrastructure:
 - PostgreSQL (primary transactional database)
 - pgvector (vector embeddings for RAG)
-- DuckDB (analytics engine)
 - Citus (distributed PostgreSQL)
 - JSONB (flexible schema support)
 
@@ -310,8 +309,6 @@ class AppState:
                 logger.info(f"   ↳ pgvector: Enabled (dimension {self.db.vector_dimension})")
             if self.db.citus_enabled:
                 logger.info(f"   ↳ Citus: Distributed mode active")
-            if self.db.duckdb_conn:
-                logger.info(f"   ↳ DuckDB: Analytics engine ready")
             logger.info(f"   ↳ JSONB: Native support active")
         except Exception as e:
             logger.error(f"❌ Database connection failed: {e}")
@@ -476,17 +473,15 @@ async def health():
         "postgres": False,
         "pgvector": False,
         "citus": False,
-        "duckdb": False,
         "jsonb": False
     }
-    
+
     if app_state.db:
         db_status = {
             "connected": app_state.db.connected,
             "postgres": app_state.db.connected,
             "pgvector": app_state.db.pgvector_enabled,
             "citus": app_state.db.citus_enabled,
-            "duckdb": app_state.db.duckdb_conn is not None,
             "jsonb": True,  # Native to PostgreSQL
             "vector_dimension": app_state.db.vector_dimension if app_state.db.pgvector_enabled else None
         }
@@ -497,7 +492,7 @@ async def health():
         "sib": sib_status,
         "database": db_status,
         "intelligent_db": {
-            "architecture": "PostgreSQL + pgvector + DuckDB + Citus",
+            "architecture": "PostgreSQL + pgvector + Citus",
             "features": ["JSONB", "Vector Search", "Analytics", "Distributed Queries"]
         }
     }

@@ -330,10 +330,12 @@ import hypergridTwinsRouter        from './routes/hypergrid-twins.route.js';
 import hypergridConnectorRouter    from './routes/hypergrid-connector.route.js';
 import hypergridEdgeRouter         from './routes/hypergrid-edge.route.js';
 import hypergridMarketplaceRouter  from './routes/hypergrid-marketplace.route.js';
+import medicalDeviceGatewayRouter  from './routes/medical-device-gateway.route.js';
 import { startMqttBroker }         from './services/hypergrid-mqtt.service.js';
 import { startDisplayMqttBridge }  from './services/display-mqtt-bridge.service.js';
 import { initEventBus }            from './services/hypergrid-event-bus.service.js';
 import { startDeviceAlarmBridge }  from './services/device-alarm-bridge.service.js';
+import { startMedicalDeviceMqttIngest } from './services/medical-device-mqtt-ingest.service.js';
 import { initTerminologyService }  from './services/hypergrid-terminology.service.js';
 
 // Phase 5: Tenant infrastructure services (AWS-model)
@@ -546,9 +548,14 @@ fhirSubscriptionService.start().catch(err =>
 initEventBus().catch(err => console.warn('⚠️  HyperGrid event bus init failed:', err.message));
 initTerminologyService().catch(err => console.warn('⚠️  HyperGrid terminology init failed:', err.message));
 if (process.env.DISABLE_MQTT !== 'true') {
-  startMqttBroker().catch(err => console.warn('⚠️  HyperGrid MQTT broker init failed:', err.message));
+  if (process.env.ENABLE_LEGACY_EMBEDDED_MQTT === 'true') {
+    startMqttBroker().catch(err => console.warn('⚠️  Legacy HyperGrid MQTT broker init failed:', err.message));
+  }
   startDeviceAlarmBridge().catch(err => console.warn('⚠️  Device alarm bridge init failed:', err.message));
   startDisplayMqttBridge().catch(err => console.warn('⚠️  Display MQTT vitals bridge init failed:', err.message));
+}
+if (process.env.ENABLE_MEDICAL_DEVICE_MQTT_INGEST === 'true') {
+  startMedicalDeviceMqttIngest();
 }
 
 // Initialize compliance schedulers (GDPR/DPDP/HIPAA)
@@ -1752,6 +1759,7 @@ app.use('/api/hypergrid/twins',       hypergridTwinsRouter);
 app.use('/api/hypergrid/connectors',  hypergridConnectorRouter);
 app.use('/api/hypergrid/edge',        hypergridEdgeRouter);
 app.use('/api/hypergrid/marketplace', hypergridMarketplaceRouter);
+app.use('/api/medical-device-gateway', medicalDeviceGatewayRouter);
 
 // Ambulance Service Routes
 import ambulanceAuthRouter from './routes/ambulance/auth.routes.js';

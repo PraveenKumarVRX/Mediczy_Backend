@@ -702,6 +702,7 @@ const _DietaryMonitoring     = () => import("@/pages/dept/DietaryMonitoringPage"
 const _BiomedicalDashboard   = () => import("@/pages/dept/BiomedicalDashboardPage");
 const _BiomedicalModulePages = () => import("@/pages/dept/BiomedicalModulePages");
 const _BiomedicalMonitoring  = () => import("@/pages/dept/BiomedicalMonitoringPage");
+const _BiomedicalDeviceGateway = () => import("@/pages/dept/BiomedicalDeviceGatewayPage");
 const _ConsentDashboard      = () => import("@/pages/dept/ConsentDashboardPage");
 const _BloodBankDashboard    = () => import("@/pages/dept/BloodBankDashboardPage");
 
@@ -728,6 +729,7 @@ const BiomedicalWorkOrders   = lazyNamed(_BiomedicalModulePages, "BiomedicalWork
 const BiomedicalCalibration  = lazyNamed(_BiomedicalModulePages, "BiomedicalCalibration");
 const BiomedicalReports      = lazyNamed(_BiomedicalModulePages, "BiomedicalReports");
 const BiomedicalMonitoring   = lazyNamed(_BiomedicalMonitoring,  "BiomedicalMonitoring");
+const BiomedicalDeviceGateway = lazy(_BiomedicalDeviceGateway);
 // Blood Bank
 const BloodBankInventory    = lazyNamed(_DeptModulePages, "BloodBankInventory");
 const BloodBankRequisitions = lazyNamed(_DeptModulePages, "BloodBankRequisitions");
@@ -1792,6 +1794,7 @@ const AppRoutes = () => {
         <Route path="/asset/reports"     element={<AssetReports />} />
         {/* Biomedical */}
         <Route path="/biomedical/monitoring"  element={<BiomedicalMonitoring />} />
+        <Route path="/biomedical/device-gateway" element={<BiomedicalDeviceGateway />} />
         <Route path="/biomedical/equipment"   element={<BiomedicalEquipment />} />
         <Route path="/biomedical/work-orders" element={<BiomedicalWorkOrders />} />
         <Route path="/biomedical/calibration" element={<BiomedicalCalibration />} />

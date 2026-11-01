@@ -26,7 +26,7 @@ router.post('/devices', authUser, requireRole(['admin', 'hospital']), requireHgT
     const { name, deviceType, serialNumber, manufacturer, model, location, gatewayId } = req.body;
     if (!name || !deviceType) return res.status(400).json({ success: false, message: 'name and deviceType required' });
 
-    const deviceKey  = `dev_${crypto.randomBytes(12).toString('hex')}`;
+    const gatewayKey = `dev_${crypto.randomBytes(12).toString('hex')}`;
     const apiSecret  = crypto.randomBytes(24).toString('hex');
     const secretHash = crypto.createHash('sha256').update(apiSecret).digest('hex');
 
@@ -34,19 +34,19 @@ router.post('/devices', authUser, requireRole(['admin', 'hospital']), requireHgT
     const r = await pool.query(
       `INSERT INTO hg_devices
          (name, device_type, serial_number, manufacturer, model, location,
-          gateway_id, device_key, api_secret, tenant_id, active, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,NOW())
-       RETURNING id, name, device_type, device_key, active, created_at`,
+          gateway_id, gateway_key, secret_hash, tenant_id, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',NOW())
+       RETURNING id, name, device_type, gateway_key, status, created_at`,
       [name, deviceType, serialNumber || null, manufacturer || null,
        model || null, location || null, gatewayId || null,
-       deviceKey, apiSecret, req.hgTenantId]
+       gatewayKey, secretHash, req.hgTenantId]
     );
 
     res.status(201).json({
       success: true,
       device:  r.rows[0],
       mqttCredentials: {
-        username: deviceKey,
+        username: gatewayKey,
         password: apiSecret,
         note:     'Store these securely — the secret will not be shown again.',
       },
@@ -67,7 +67,7 @@ router.get('/devices', authUser, requireHgTenant, async (req, res) => {
     const r = await pool.query(
       `SELECT id, name, device_type, serial_number, manufacturer, model,
               location, gateway_id, gateway_key AS device_key,
-              (status = 'online') AS active, status, created_at, last_seen
+              (status = 'active') AS active, status, created_at, last_seen
        FROM hg_devices
        WHERE tenant_id = $1
          AND ($2::text IS NULL OR device_type = $2)
@@ -92,7 +92,7 @@ router.get('/devices/:id', authUser, requireHgTenant, async (req, res) => {
     const pool = await connectPostgres();
     const r = await pool.query(
       `SELECT id, name, device_type, serial_number, manufacturer, model,
-              location, gateway_id, device_key, active, created_at, last_seen
+              location, gateway_id, gateway_key, status, created_at, last_seen
        FROM hg_devices WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.hgTenantId]
     );
@@ -117,7 +117,7 @@ router.put('/devices/:id', authUser, requireRole(['admin', 'hospital']), require
            gateway_id = COALESCE($7, gateway_id),
            updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2
-       RETURNING id, name, device_type, location, model, gateway_id, active`,
+       RETURNING id, name, device_type, location, model, gateway_id, status`,
       [req.params.id, req.hgTenantId,
        name || null, location || null, model || null, manufacturer || null, gatewayId || null]
     );
@@ -133,7 +133,7 @@ router.delete('/devices/:id', authUser, requireRole(['admin', 'hospital']), requ
   try {
     const pool = await connectPostgres();
     await pool.query(
-      `UPDATE hg_devices SET active = FALSE, updated_at = NOW()
+      `UPDATE hg_devices SET status = 'inactive', updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.hgTenantId]
     );
@@ -149,9 +149,10 @@ router.post('/devices/:id/rotate-key', authUser, requireRole(['admin', 'hospital
     const newSecret = crypto.randomBytes(24).toString('hex');
     const pool = await connectPostgres();
     await pool.query(
-      `UPDATE hg_devices SET api_secret = $3, updated_at = NOW()
+      `UPDATE hg_devices
+       SET secret_hash = $3, updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.hgTenantId, newSecret]
+      [req.params.id, req.hgTenantId, crypto.createHash('sha256').update(newSecret).digest('hex')]
     );
     res.json({ success: true, newSecret, note: 'Update the device firmware with this new secret.' });
   } catch (err) {
@@ -173,11 +174,11 @@ router.get('/readings', authUser, requireHgTenant, async (req, res) => {
     const tenantId = req.hgTenantId;
     const r = await pool.query(
       `SELECT r.* FROM hg_device_readings r
-       JOIN hg_devices d ON d.device_key = r.gateway_id OR d.id::text = r.device_id
+       JOIN hg_devices d ON d.id = r.device_id
        WHERE d.tenant_id = $1
-         AND ($2::text IS NULL OR r.device_id = $2)
-         AND ($3::text IS NULL OR r.event_type = $3)
-       ORDER BY r.received_at DESC
+         AND ($2::bigint IS NULL OR r.device_id = $2::bigint)
+         AND ($3::text IS NULL OR r.reading_type = $3)
+       ORDER BY r.recorded_at DESC
        LIMIT $4`,
       [tenantId, deviceId || null, eventType || null, parseInt(limit)]
     );

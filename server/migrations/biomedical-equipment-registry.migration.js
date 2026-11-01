@@ -45,7 +45,7 @@ export async function up() {
         frequency_days      INT NOT NULL DEFAULT 365,
         status              TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'overdue', 'completed')),
         created_at          TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (equipment_id, calibration_type)
+        UNIQUE (tenant_id, equipment_id, calibration_type)
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_biomed_calib_tenant_due ON biomedical_calibration_schedule (tenant_id, next_due_at)`);

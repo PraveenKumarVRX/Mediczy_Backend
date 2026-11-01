@@ -16,6 +16,7 @@
 import Aedes from 'aedes';
 import * as AedesModule from 'aedes';
 import net from 'net';
+import { createHash } from 'node:crypto';
 import { createClient } from 'redis';
 import { connectPostgres } from '../db/postgres.js';
 
@@ -79,12 +80,19 @@ async function publishCanonicalEvent(event) {
 async function persistDeviceReading(event) {
   try {
     const client = await connectPostgres();
+    const toId = (value) => /^\d+$/.test(String(value || '')) ? Number(value) : null;
+    const numericValue = Number(event.payload?.value);
     await client.query(
       `INSERT INTO hg_device_readings
-         (gateway_id, device_id, event_type, payload, received_at)
-       VALUES ($1,$2,$3,$4,NOW())
+         (gateway_id, device_id, reading_type, value, unit, quality, raw_payload, patient_id, recorded_at, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
        ON CONFLICT DO NOTHING`,
-      [event.gatewayId, event.deviceId, event.type, JSON.stringify(event.payload)]
+      [
+        toId(event.gatewayId), toId(event.deviceId), event.type,
+        Number.isFinite(numericValue) ? numericValue : null,
+        event.payload?.unit || null, event.payload?.quality || null,
+        JSON.stringify(event.payload), toId(event.payload?.patientId), event.timestamp,
+      ]
     );
   } catch (err) {
     console.error('[MQTT] DB persist error:', err.message);
@@ -107,8 +115,11 @@ export async function startMqttBroker() {
       if (!username || !password) return cb(null, false);
       connectPostgres().then(pool => {
         pool.query(
-          `SELECT id FROM hg_devices WHERE device_key = $1 AND api_secret = $2 AND active = TRUE`,
-          [username, password.toString()]
+          `SELECT id FROM hg_devices
+           WHERE gateway_key = $1
+             AND secret_hash = $2
+             AND status = 'active'`,
+          [username, createHash('sha256').update(password.toString()).digest('hex')]
         ).then(r => cb(null, r.rowCount > 0))
           .catch(() => cb(null, false));
       }).catch(() => cb(null, false));

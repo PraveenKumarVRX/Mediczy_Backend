@@ -114,6 +114,8 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261016000000-crm-legacy-tenancy.migration.js',
   '20261016000100-feature-flags.migration.js',
   '20261019000100-nursing-workflow-integrity.migration.js',
+  '20261101000100-medical-device-gateway-foundation.migration.js',
+  '20261101000100-biomedical-device-gateway.migration.js',
 ];
 
 function runStep(step) {

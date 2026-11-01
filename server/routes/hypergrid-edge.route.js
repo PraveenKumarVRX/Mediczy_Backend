@@ -28,6 +28,13 @@ import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 const router          = express.Router();
 const HEARTBEAT_GRACE = parseInt(process.env.EDGE_HEARTBEAT_GRACE || '300', 10); // 5 min
 
+function gatewaySecretMatches(secretHash, suppliedSecret) {
+  if (!secretHash || !suppliedSecret || typeof suppliedSecret !== 'string') return false;
+  const candidate = crypto.createHash('sha256').update(suppliedSecret).digest('hex');
+  if (secretHash.length !== candidate.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(secretHash, 'utf8'), Buffer.from(candidate, 'utf8'));
+}
+
 // ── Register gateway ──────────────────────────────────────────────────────────
 router.post('/gateways', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
@@ -146,20 +153,21 @@ router.delete('/gateways/:id', authUser, requireRole(['admin']), requireHgTenant
 });
 
 // ── Heartbeat (gateway → cloud) ───────────────────────────────────────────────
-// No user auth — authenticated by gateway_key header
+// No user auth — authenticated by one-time-provisioned gateway key *and* secret.
 router.post('/gateways/:id/heartbeat', async (req, res) => {
   try {
     const { metrics, deviceCount, pendingSyncCount } = req.body;
     const gatewayKey = req.headers['x-gateway-key'];
-    if (!gatewayKey)
-      return res.status(401).json({ success: false, message: 'x-gateway-key header required' });
+    const gatewaySecret = req.headers['x-gateway-secret'];
+    if (!gatewayKey || !gatewaySecret)
+      return res.status(401).json({ success: false, message: 'x-gateway-key and x-gateway-secret headers are required' });
 
     const pool = await connectPostgres();
     const r    = await pool.query(
-      `SELECT id, status FROM hg_edge_gateways WHERE id = $1 AND gateway_key = $2`,
+      `SELECT id, status, secret_hash FROM hg_edge_gateways WHERE id = $1 AND gateway_key = $2`,
       [req.params.id, gatewayKey]
     );
-    if (!r.rows[0]) return res.status(403).json({ success: false, message: 'Unauthorized' });
+    if (!r.rows[0] || !gatewaySecretMatches(r.rows[0].secret_hash, gatewaySecret)) return res.status(403).json({ success: false, message: 'Unauthorized' });
 
     await pool.query(
       `UPDATE hg_edge_gateways
@@ -191,15 +199,16 @@ router.post('/gateways/:id/heartbeat', async (req, res) => {
 router.get('/gateways/:id/config', async (req, res) => {
   try {
     const gatewayKey = req.headers['x-gateway-key'];
-    if (!gatewayKey)
-      return res.status(401).json({ success: false, message: 'x-gateway-key header required' });
+    const gatewaySecret = req.headers['x-gateway-secret'];
+    if (!gatewayKey || !gatewaySecret)
+      return res.status(401).json({ success: false, message: 'x-gateway-key and x-gateway-secret headers are required' });
 
     const pool = await connectPostgres();
     const r    = await pool.query(
-      `SELECT config, firmware_version FROM hg_edge_gateways WHERE id = $1 AND gateway_key = $2`,
+      `SELECT config, firmware_version, secret_hash FROM hg_edge_gateways WHERE id = $1 AND gateway_key = $2`,
       [req.params.id, gatewayKey]
     );
-    if (!r.rows[0]) return res.status(403).json({ success: false, message: 'Unauthorized' });
+    if (!r.rows[0] || !gatewaySecretMatches(r.rows[0].secret_hash, gatewaySecret)) return res.status(403).json({ success: false, message: 'Unauthorized' });
 
     const config = r.rows[0].config || {};
     res.json({
@@ -240,15 +249,16 @@ router.put('/gateways/:id/config', authUser, requireRole(['admin', 'hospital']),
 router.post('/gateways/:id/sync', async (req, res) => {
   try {
     const gatewayKey = req.headers['x-gateway-key'];
-    if (!gatewayKey)
-      return res.status(401).json({ success: false, message: 'x-gateway-key header required' });
+    const gatewaySecret = req.headers['x-gateway-secret'];
+    if (!gatewayKey || !gatewaySecret)
+      return res.status(401).json({ success: false, message: 'x-gateway-key and x-gateway-secret headers are required' });
 
     const pool = await connectPostgres();
     const gwR  = await pool.query(
-      `SELECT id, tenant_id FROM hg_edge_gateways WHERE id = $1 AND gateway_key = $2`,
+      `SELECT id, tenant_id, secret_hash FROM hg_edge_gateways WHERE id = $1 AND gateway_key = $2`,
       [req.params.id, gatewayKey]
     );
-    if (!gwR.rows[0]) return res.status(403).json({ success: false, message: 'Unauthorized' });
+    if (!gwR.rows[0] || !gatewaySecretMatches(gwR.rows[0].secret_hash, gatewaySecret)) return res.status(403).json({ success: false, message: 'Unauthorized' });
 
     const { readings = [], events = [] } = req.body;
     let readingsStored = 0;

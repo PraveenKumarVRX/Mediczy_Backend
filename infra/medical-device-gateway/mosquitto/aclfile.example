@@ -1,0 +1,8 @@
+# Replace gateway-id/device-id with provisioned values. Do not grant wildcards
+# to edge devices in production.
+user edge-gateway-example
+topic write mediqzy/v1/1/+/events
+
+# Cloud ingestion identity has read-only access to clinical event topics.
+user mediqzy-clinical-ingest
+topic read mediqzy/v1/+/+/events
