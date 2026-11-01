@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InlineError } from "@/components/ui/inline-error";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -73,6 +74,9 @@ export default function OhcWorkspace() {
   const [referFor, setReferFor] = useState<Employee | null>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [activeUnitUid, setActiveUnitUid] = useState("");
+  const [historyFor, setHistoryFor] = useState<Employee | null>(null);
+  const [historyData, setHistoryData] = useState<{ appointments: OhcAppointment[]; encounters: OhcEncounter[]; certificates: WorkspaceCertificate[] } | null>(null);
+  const [historyError, setHistoryError] = useState(false);
 
   const unit = me?.units.find((u) => u.uid === activeUnitUid) || me?.units[0];
   const load = useCallback(async () => {
@@ -92,6 +96,17 @@ export default function OhcWorkspace() {
   }, [unit]);
   const loadPrescriptions = useCallback(async () => { try { setPrescriptions((await getMyPrescriptions()).prescriptions); setListError(false); } catch { setListError(true); } }, []);
   const loadStaff = useCallback(async () => { if (!unit) return; try { setStaff((await getStaff(unit.uid)).staff); setListError(false); } catch { setListError(true); } }, [unit]);
+  const loadHistory = useCallback(async (employee: Employee) => {
+    if (!unit) return;
+    setHistoryData(null); setHistoryError(false);
+    try {
+      const [a, e, c] = await Promise.all([
+        getAppointments(unit.uid, employee.id), getOccupationalEncounters(unit.uid, employee.id), getCertificates(unit.uid, employee.id),
+      ]);
+      setHistoryData({ appointments: a.appointments, encounters: e.encounters, certificates: c.certificates as unknown as WorkspaceCertificate[] });
+    } catch { setHistoryError(true); }
+  }, [unit]);
+  useEffect(() => { if (historyFor) void loadHistory(historyFor); }, [historyFor, loadHistory]);
   const loadEmergencies = useCallback(async () => { if (!unit) return; try { setEmergencies((await getEmergencies(unit.uid)).emergencies); setListError(false); } catch { setListError(true); } }, [unit]);
   const loadEmergencyMetrics = useCallback(async () => { if (!unit) return; try { setEmergencyMetrics((await getEmergencyMetrics(unit.uid)).metrics); } catch { setEmergencyMetrics(null); } }, [unit]);
   const loadResponders = useCallback(async () => { if (!unit) return; try { setResponders((await getResponders(unit.uid)).responders); } catch { setResponders([]); } }, [unit]);
@@ -153,6 +168,7 @@ export default function OhcWorkspace() {
                   <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                     <span><span className="font-medium">{e.name}</span><span className="block text-xs text-muted-foreground">{[e.employeeId, e.department, e.designation].filter(Boolean).join(" · ")}</span></span>
                     <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setHistoryFor(e)}>View history</Button>
                       <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setIssueFor(e)}>Issue certificate</Button>
                       <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setPrescribeFor(e)}>Prescribe</Button>
                       <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setReferFor(e)}>Refer</Button>
@@ -209,6 +225,57 @@ export default function OhcWorkspace() {
       <EmergencyReportDialog employees={employees || []} open={emergencyOpen} onOpenChange={setEmergencyOpen} onReport={(input) => reportEmergency({ ...input, unit: unit.uid })} onReported={loadEmergencies} />
       <PrescriptionDialog employee={prescribeFor} open={prescribeFor !== null} onOpenChange={(o) => !o && setPrescribeFor(null)} onIssue={createPrescription} onIssued={loadPrescriptions} />
       <ReferralDialog employee={referFor} open={referFor !== null} onOpenChange={(o) => !o && setReferFor(null)} onRefer={createReferral} onReferred={() => undefined} />
+      <Dialog open={historyFor !== null} onOpenChange={(o) => { if (!o) { setHistoryFor(null); setHistoryData(null); } }}>
+        <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+          <DialogHeader><DialogTitle>{historyFor?.name} — occupational history</DialogTitle></DialogHeader>
+          {historyError && <InlineError message="Could not load this employee's history." onRetry={() => historyFor && void loadHistory(historyFor)} />}
+          {!historyError && !historyData && <Skeleton className="h-40" />}
+          {historyData && (
+            <div className="space-y-4">
+              <section>
+                <h3 className="mb-1 text-sm font-semibold">Appointments</h3>
+                {historyData.appointments.length ? (
+                  <ul className="divide-y rounded-md border text-sm">
+                    {historyData.appointments.map((a) => (
+                      <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 p-2">
+                        <span>{a.appointment_type.replaceAll("_", " ")} · {new Date(a.scheduled_at).toLocaleString()}</span>
+                        <span className="text-xs text-muted-foreground">{a.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-sm text-muted-foreground">No occupational appointments on record.</p>}
+              </section>
+              <section>
+                <h3 className="mb-1 text-sm font-semibold">Occupational encounters</h3>
+                {historyData.encounters.length ? (
+                  <ul className="divide-y rounded-md border text-sm">
+                    {historyData.encounters.map((enc) => (
+                      <li key={enc.id} className="p-2">
+                        <span className="font-medium">{enc.encounter_type.replaceAll("_", " ")}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{enc.status} · {new Date(enc.created_at).toLocaleDateString()}</span>
+                        {enc.assessment ? <p className="mt-1 text-muted-foreground">{enc.assessment}</p> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-sm text-muted-foreground">No occupational encounters on record.</p>}
+              </section>
+              <section>
+                <h3 className="mb-1 text-sm font-semibold">Fitness certificates</h3>
+                {historyData.certificates.length ? (
+                  <ul className="divide-y rounded-md border text-sm">
+                    {historyData.certificates.map((cert) => (
+                      <li key={cert.id} className="flex flex-wrap items-center justify-between gap-2 p-2">
+                        <span>{cert.fitness_status.replaceAll("_", " ")}</span>
+                        <span className="text-xs text-muted-foreground">{cert.valid_until ? `valid until ${new Date(cert.valid_until).toLocaleDateString()}` : "no expiry"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-sm text-muted-foreground">No fitness certificates issued.</p>}
+              </section>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       </div>
     </div>
   );

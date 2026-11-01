@@ -84,7 +84,7 @@ export const getEmployees = (unit: string, search: string) =>
   request<{ employees: Employee[] }>("GET", `/employees?unit=${encodeURIComponent(unit)}&search=${encodeURIComponent(search)}`);
 export const getStaff = (unit: string) =>
   request<{ staff: OhcStaffMember[] }>("GET", `/staff?unit=${encodeURIComponent(unit)}`);
-export const getAppointments = (unit: string) => request<{ appointments: OhcAppointment[] }>("GET", `/appointments?unit=${encodeURIComponent(unit)}`);
+export const getAppointments = (unit: string, employeeUserId?: number) => request<{ appointments: OhcAppointment[] }>("GET", `/appointments?unit=${encodeURIComponent(unit)}${employeeUserId ? `&employeeUserId=${employeeUserId}` : ""}`);
 export const createAppointment = (input: Record<string, unknown>) => request<{ appointment: OhcAppointment }>("POST", "/appointments", input);
 export const updateAppointment = (id: number, input: Record<string, unknown>) => request<{ appointment: OhcAppointment }>("PATCH", `/appointments/${id}`, input);
 export const remindAppointment = (id: number, input: Record<string, unknown>) => request<{ appointmentId: number; notificationSent: boolean }>("POST", `/appointments/${id}/remind`, input);
@@ -98,7 +98,7 @@ export const getResponders = (unit: string) =>
   request<{ responders: OhcResponder[] }>("GET", `/responders?unit=${encodeURIComponent(unit)}`);
 export const setMyResponderAvailability = (input: Record<string, unknown>) =>
   request<{ availability: OhcResponder["availability"]; updatedAt: string }>("PUT", "/responders/me/availability", input);
-export const getCertificates = (unit: string) => request<{ certificates: Record<string, unknown>[] }>("GET", `/certificates?unit=${encodeURIComponent(unit)}`);
+export const getCertificates = (unit: string, employeeUserId?: number) => request<{ certificates: Record<string, unknown>[] }>("GET", `/certificates?unit=${encodeURIComponent(unit)}${employeeUserId ? `&employeeUserId=${employeeUserId}` : ""}`);
 export const issueCertificate = (input: Record<string, unknown>) => request<{ certificate: { id: number }; pdfUrl: string | null }>("POST", "/certificates", input);
 export const getEmergencies = (unit: string, status = "") =>
   request<{ emergencies: WorkplaceEmergency[] }>("GET", `/emergencies?unit=${encodeURIComponent(unit)}${status ? `&status=${encodeURIComponent(status)}` : ""}`);

@@ -164,13 +164,14 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     return result.rows[0];
   }
 
-  async function appointments(principal, { unit, from, to, limit = 200 } = {}) {
+  async function appointments(principal, { unit, from, to, employeeUserId, limit = 200 } = {}) {
     const u = unitOf(principal, unit);
     const lim = v.int(limit, 'limit', { min: 1, max: 500 });
     const params = [u.uid];
     const where = ['a.unit_uid = $1'];
     if (from) { params.push(v.date(from, 'from').toISOString()); where.push(`a.scheduled_at >= $${params.length}`); }
     if (to) { params.push(v.date(to, 'to').toISOString()); where.push(`a.scheduled_at <= $${params.length}`); }
+    if (employeeUserId) { params.push(v.int(employeeUserId, 'employeeUserId', { min: 1 })); where.push(`a.employee_user_id = $${params.length}`); }
     params.push(lim);
     const { rows } = await pool.query(
       `SELECT a.*, COALESCE(us."firstName" || ' ' || us."lastName", '') AS employee_name, e."employeeId" AS employee_id
@@ -227,13 +228,17 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     let notificationSent = false;
     try {
       const notificationService = (await import('../notification.service.js')).default;
-      await notificationService.sendNotification({
-        userId: appointment.employee_user_id, userType: 'patient', title: 'Occupational health appointment reminder',
-        body: `Reminder: your ${appointment.appointment_type.replaceAll('_', ' ')} is scheduled for ${new Date(appointment.scheduled_at).toLocaleString()}.`,
-        type: 'appointment_reminder', data: { ohcAppointmentId: appointment.id, unitUid: u.uid },
+      const result = await notificationService.sendNotification({
+        userId: appointment.employee_user_id, userType: 'patient', type: 'ohc_appointment_reminder',
+        variables: {
+          visitType: appointment.appointment_type.replaceAll('_', ' '),
+          scheduledAt: new Date(appointment.scheduled_at).toLocaleString(),
+          unitName: u.name || 'your OHC clinic',
+        },
+        data: { ohcAppointmentId: appointment.id, unitUid: u.uid },
       });
-      notificationSent = true;
-      await pool.query(`UPDATE ohc_appointments SET reminder_sent_at = now(), updated_at = now() WHERE id = $1`, [appointment.id]);
+      notificationSent = !!result?.success;
+      if (notificationSent) await pool.query(`UPDATE ohc_appointments SET reminder_sent_at = now(), updated_at = now() WHERE id = $1`, [appointment.id]);
     } catch (err) { console.error('[ohc] appointment reminder failed:', err.message); }
     return { appointmentId: appointment.id, notificationSent };
   }
@@ -384,9 +389,15 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     });
   }
 
-  async function certificates(principal, { unit, limit = 50 } = {}) {
+  async function certificates(principal, { unit, employeeUserId, limit = 50 } = {}) {
     const u = unitOf(principal, unit);
     const lim = v.int(limit, 'limit', { min: 1, max: 200 });
+    if (employeeUserId) {
+      const empId = v.int(employeeUserId, 'employeeUserId', { min: 1 });
+      const { rows } = await pool.query(
+        `SELECT * FROM fitness_certificates WHERE issued_by_unit_uid = $1 AND patient_id = $2 ORDER BY created_at DESC LIMIT $3`, [u.uid, empId, lim]);
+      return { unit: { uid: u.uid }, certificates: rows };
+    }
     const { rows } = await pool.query(`SELECT * FROM fitness_certificates WHERE issued_by_unit_uid = $1 ORDER BY created_at DESC LIMIT ${lim}`, [u.uid]);
     return { unit: { uid: u.uid }, certificates: rows };
   }
@@ -440,7 +451,7 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
 
   async function emergencyAt(c, u, id) {
     const { rows } = await c.query(
-      `SELECT id, status, severity, location FROM ohc_workplace_emergencies WHERE id = $1 AND unit_uid = $2`,
+      `SELECT id, status, severity, location, incident_type FROM ohc_workplace_emergencies WHERE id = $1 AND unit_uid = $2`,
       [v.int(id, 'id', { min: 1 }), u.uid]);
     if (!rows[0]) throw notFound('Emergency');
     return rows[0];
@@ -626,13 +637,29 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     });
   }
 
+  async function notifyResponderAssigned(u, emergency, assignment) {
+    try {
+      const notificationService = (await import('../notification.service.js')).default;
+      await notificationService.sendNotification({
+        userId: assignment.responder_user_id, userType: 'patient', type: 'ohc_emergency_assigned',
+        variables: {
+          severity: emergency.severity, incidentType: (emergency.incident_type || 'emergency').replaceAll('_', ' '),
+          location: emergency.location || u.name || 'the OHC site',
+        },
+        data: { emergencyId: emergency.id, assignmentId: assignment.id, unitUid: u.uid },
+      });
+    } catch (err) { console.error('[ohc] emergency assignment notification failed:', err.message); }
+  }
+
   function assignEmergency(principal, id, input) {
     const b = v.exactly(v.body(input), 'body', ['unit', 'responderUid', 'note']);
     const u = unitOf(principal, b.unit);
     const responderUid = v.str(b.responderUid, 'responderUid', { min: 6, max: 64 });
     const note = v.str(b.note, 'note', { max: 500, optional: true });
+    let emergencySnapshot;
     return tx(async (c) => {
       const emergency = await emergencyAt(c, u, id);
+      emergencySnapshot = emergency;
       if (['resolved', 'transferred', 'closed'].includes(emergency.status)) throw conflict('emergency_closed', 'Responders cannot be assigned after this emergency is closed or transferred');
       const { rows: candidates } = await c.query(
         `SELECT us.id, us.unique_id, COALESCE(rs.availability, 'available') AS availability
@@ -655,6 +682,9 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
       await event(c, emergency.id, principal.id, 'responder_assigned', { responderUid: responder.unique_id, note: note || undefined });
       await c.query(`INSERT INTO ohc_access_log (unit_uid, actor_kind, actor_ref, action, subject) VALUES ($1, $2, $3, 'emergency.assign', $4)`, [u.uid, principal.role === 'corporate_cmo' ? 'corporate_cmo' : 'ohc_staff', principal.ref, String(emergency.id)]);
       return result.rows[0];
+    }).then((assignment) => {
+      void notifyResponderAssigned(u, emergencySnapshot, assignment);
+      return assignment;
     });
   }
 

@@ -244,6 +244,22 @@ class NotificationService {
         priority: 'urgent'
       },
 
+      // OHC occupational visit reminder, sent manually by OHC staff (ohc.service.js remindAppointment)
+      ohc_appointment_reminder: {
+        title: 'Occupational Health Appointment Reminder 🗓️',
+        message: 'Reminder: your {{visitType}} is scheduled for {{scheduledAt}} at {{unitName}}.',
+        channels: ['push', 'email', 'whatsapp', 'in-app'],
+        priority: 'high'
+      },
+
+      // OHC emergency responder dispatch (ohc.service.js assignEmergency)
+      ohc_emergency_assigned: {
+        title: 'Workplace Emergency — Response Needed 🚨',
+        message: '{{severity}} {{incidentType}} reported at {{location}}. Acknowledge in the OHC app.',
+        channels: ['push', 'sms', 'whatsapp', 'in-app'],
+        priority: 'urgent'
+      },
+
       // Medication reminder (cron: medication-reminder-cron.service.js)
       medication_reminder: {
         title: 'Medication Reminder 💊',
