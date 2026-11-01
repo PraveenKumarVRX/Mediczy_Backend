@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, LogOut, ShieldCheck, Stethoscope } from "lucide-react";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -118,6 +119,8 @@ export default function OhcWorkspace() {
 
   return (
     <div className="min-h-screen bg-background">
+      <Sidebar />
+      <div className="md:ml-64">
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
@@ -206,6 +209,7 @@ export default function OhcWorkspace() {
       <EmergencyReportDialog employees={employees || []} open={emergencyOpen} onOpenChange={setEmergencyOpen} onReport={(input) => reportEmergency({ ...input, unit: unit.uid })} onReported={loadEmergencies} />
       <PrescriptionDialog employee={prescribeFor} open={prescribeFor !== null} onOpenChange={(o) => !o && setPrescribeFor(null)} onIssue={createPrescription} onIssued={loadPrescriptions} />
       <ReferralDialog employee={referFor} open={referFor !== null} onOpenChange={(o) => !o && setReferFor(null)} onRefer={createReferral} onReferred={() => undefined} />
+      </div>
     </div>
   );
 }

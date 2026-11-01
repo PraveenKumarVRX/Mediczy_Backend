@@ -265,6 +265,7 @@ const computeRoleFlags = (pathname: string) => {
   const teamToken       = localStorage.getItem('teamToken');
   const nurseToken      = localStorage.getItem('nurseToken');
   const assistantToken  = localStorage.getItem('assistantToken');
+  const ohcToken        = localStorage.getItem('ohcAccessToken');
   const userToken       = localStorage.getItem('token');
 
   let userIsAdmin = false;
@@ -282,6 +283,7 @@ const computeRoleFlags = (pathname: string) => {
     isTeamUser: !!teamToken && pathname.startsWith('/team'),
     isNurseUser: !!nurseToken && pathname.startsWith('/nurse'),
     isAssistantUser: !!assistantToken && pathname.startsWith('/assistant'),
+    isOhcUser: !!ohcToken && pathname.startsWith('/ohc'),
   };
 };
 
@@ -292,7 +294,7 @@ export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [roleFlags, setRoleFlags] = useState(() => computeRoleFlags(location.pathname));
-  const { isTeamUser, isNurseUser, isAssistantUser, isAdmin } = roleFlags;
+  const { isTeamUser, isNurseUser, isAssistantUser, isOhcUser, isAdmin } = roleFlags;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -349,6 +351,11 @@ export function Sidebar() {
     { icon: ClipboardList, label: 'Orders & Tasks',   path: '/assistant/orders' },
     { icon: BarChart3,     label: 'Reports',          path: '/assistant/reports' },
     { icon: UserCircle,    label: 'Profile',          path: '/assistant/profile' },
+  ];
+
+  /* ── OHC sidebar ── */
+  const ohcSidebarItems: SidebarItem[] = [
+    { icon: Home, label: 'OHC Dashboard', path: '/ohc' },
   ];
 
   /* ── Render team/nurse/assistant items (flat list, categorised) ── */
@@ -436,7 +443,7 @@ export function Sidebar() {
         </div>
 
         {/* ── Home link (always visible, not collapsible) ── */}
-        {!isTeamUser && !isNurseUser && !isAssistantUser && (
+        {!isTeamUser && !isNurseUser && !isAssistantUser && !isOhcUser && (
           <div className="px-3 pt-3 pb-1 shrink-0">
             <Link
               to="/"
@@ -472,16 +479,16 @@ export function Sidebar() {
           <div className="space-y-0.5">
 
             {/* Team portal header */}
-            {(isTeamUser || isNurseUser || isAssistantUser) && (
+            {(isTeamUser || isNurseUser || isAssistantUser || isOhcUser) && (
               <div className="px-3 py-2 mb-1">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  {isTeamUser ? 'Team Dashboard' : isNurseUser ? 'Nurse Portal' : 'Assistant Portal'}
+                  {isTeamUser ? 'Team Dashboard' : isNurseUser ? 'Nurse Portal' : isAssistantUser ? 'Assistant Portal' : 'OHC Portal'}
                 </p>
               </div>
             )}
 
             {/* Patient: 7 collapsible sections */}
-            {!isTeamUser && !isNurseUser && !isAssistantUser && (
+            {!isTeamUser && !isNurseUser && !isAssistantUser && !isOhcUser && (
               <>
                 {patientSections.map(section => (
                   <SidebarAccordion
@@ -506,6 +513,9 @@ export function Sidebar() {
             {/* Assistant */}
             {isAssistantUser && renderFlatItems(assistantSidebarItems)}
 
+            {/* OHC */}
+            {isOhcUser && renderFlatItems(ohcSidebarItems)}
+
             {/* Team */}
             {isTeamUser && renderFlatItems(
               teamSidebarItems.map(i => ({ ...i, ...(['/team/chat','/team/email-inbox','/team/whatsapp-inbox','/team/social-inbox','/team/rc-omnichannel'].includes(i.path)?{category:'Communication',label:i.path==='/team/chat'?'Chat':i.path==='/team/rc-omnichannel'?'Omnichannel workspace':i.label}:{}) })),
@@ -515,7 +525,7 @@ export function Sidebar() {
         </ScrollArea>
 
         {/* Chat CTA (patient only) */}
-        {!isTeamUser && !isNurseUser && !isAssistantUser && (
+        {!isTeamUser && !isNurseUser && !isAssistantUser && !isOhcUser && (
           <div className="border-t border-slate-700/50 p-4 shrink-0">
             <Button asChild className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/20 border-0">
               <Link to="/chat" className="flex items-center gap-2">
