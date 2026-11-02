@@ -271,8 +271,11 @@ class SignupVerificationService {
    */
   async sendOTPViaWhatsApp(account, otpCode) {
     if (whatsappProvider() === 'gupshup') {
-      try { return await gupshup.sendTemplate({ to: account.phoneNumber,
-        templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otpCode, 'Signup'] }); }
+      // Authentication (copy-code) template: the code fills both the body ({{1}}) and the
+      // copy-code button, so it must be passed twice. See twilio-otp.service.js for details.
+      try { const code = String(otpCode);
+        return await gupshup.sendTemplate({ to: account.phoneNumber,
+          templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [code, code] }); }
       catch { return await this.sendOTPViaEmail(account, otpCode); }
     }
     // If Twilio is not configured, fallback to email

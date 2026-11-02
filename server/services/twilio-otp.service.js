@@ -138,9 +138,13 @@ class TwilioOTPService {
     }
 
     if (whatsappProvider() === 'gupshup') {
-      const purposeLabel = { signup: 'Signup', login: 'Login', password_reset: 'Password Reset', verification: 'Verification' }[purpose] || 'Verification';
       try {
-        const sent = await gupshup.sendTemplate({ to: phone, templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otp, purposeLabel] });
+        // The approved OTP template is a WhatsApp authentication (copy-code) template: the code
+        // appears in BOTH the body ({{1}}) and the copy-code button, so Gupshup's positional
+        // params array must carry it twice. One param leaves the body placeholder blank; a
+        // non-code second param (e.g. a purpose label) fails Meta validation with error 132018.
+        const code = String(otp);
+        const sent = await gupshup.sendTemplate({ to: phone, templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [code, code] });
         return { success: true, message: 'WhatsApp OTP submitted', sid: sent.sid, status: sent.status,
           phone: sent.to.replace('whatsapp:', ''), attempts: 1, submittedAt: new Date().toISOString() };
       } catch (error) {

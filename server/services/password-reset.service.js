@@ -303,8 +303,11 @@ class PasswordResetService {
 
     try {
       if (whatsappProvider() === 'gupshup') {
+        // Authentication (copy-code) template: the code fills both the body ({{1}}) and the
+        // copy-code button, so it must be passed twice. See twilio-otp.service.js for details.
+        const code = String(otpCode);
         const sent = await gupshup.sendTemplate({ to: account.phone || account.phoneNumber,
-          templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otpCode, 'Password Reset'] });
+          templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [code, code] });
         return { messageSid: sent.sid, status: sent.status };
       }
       // Check if Twilio client is initialized and configured
