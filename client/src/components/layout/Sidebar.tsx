@@ -11,11 +11,12 @@ import {
   FileStack, BookHeart, Watch, Gift, CalendarDays, UserPlus,
   ClipboardList, Receipt, Brain, Ticket, Sparkles, Briefcase,
   HelpCircle, Phone, Mail, LayoutTemplate, ChevronDown, ChevronRight,
-  Zap, UsersRound, Target, Instagram,
+  Zap, UsersRound, Target, Instagram, ChevronsLeft, PanelLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useSidebarCollapsed } from "@/hooks/useSidebarCollapsed";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface SidebarItem {
@@ -293,6 +294,7 @@ export function Sidebar() {
   const programsAvailable = useProgramAvailability();
   const [isOpen, setIsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [collapsed, setCollapsed] = useSidebarCollapsed();
   const [roleFlags, setRoleFlags] = useState(() => computeRoleFlags(location.pathname));
   const { isTeamUser, isNurseUser, isAssistantUser, isOhcUser, isAdmin } = roleFlags;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -405,7 +407,7 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile toggle */}
+      {/* Mobile toggle — opens the drawer on phones */}
       <button
         id="sidebar-toggle"
         onClick={() => setIsOpen(o => !o)}
@@ -417,14 +419,28 @@ export function Sidebar() {
         <Menu className="h-5 w-5" />
       </button>
 
+      {/* Desktop expand toggle — only shown while collapsed, to bring the sidebar back */}
+      {collapsed && (
+        <button
+          onClick={() => setCollapsed(false)}
+          className="hidden md:flex fixed top-4 left-4 z-50 p-2 rounded-md bg-slate-900 text-white shadow-lg hover:bg-slate-800 items-center justify-center"
+          aria-label="Expand navigation menu"
+          title="Expand menu"
+        >
+          <PanelLeft className="h-5 w-5" />
+        </button>
+      )}
+
       {/* Sidebar */}
       <div
         id="sidebar"
         role="navigation"
         aria-label="Main navigation"
         className={cn(
-          "fixed inset-y-0 left-0 flex flex-col w-64 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 transform transition-transform duration-300 ease-in-out z-40 shadow-xl md:translate-x-0",
-          (isDesktop || isOpen) ? "translate-x-0" : "-translate-x-full"
+          "fixed inset-y-0 left-0 flex flex-col w-64 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 transform transition-transform duration-300 ease-in-out z-40 shadow-xl",
+          // Desktop: visible unless collapsed. Mobile: drawer controlled by isOpen.
+          collapsed ? "md:-translate-x-full" : "md:translate-x-0",
+          isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Close (mobile) */}
@@ -436,10 +452,18 @@ export function Sidebar() {
           <X className="h-5 w-5" />
         </button>
 
-        {/* Logo */}
+        {/* Logo + desktop collapse button */}
         <div className="flex items-center border-b border-slate-700/50 px-5 py-4 shrink-0">
           <img src={BRAND.logo} alt={`${BRAND.name} logo`} style={{ height: 38, width: 38, marginRight: 12, borderRadius: 8 }} />
           <span className="text-lg font-bold text-white tracking-tight">{BRAND.name}</span>
+          <button
+            onClick={() => setCollapsed(true)}
+            className="ml-auto hidden md:flex p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800"
+            aria-label="Collapse navigation menu"
+            title="Collapse menu"
+          >
+            <ChevronsLeft className="h-5 w-5" />
+          </button>
         </div>
 
         {/* ── Home link (always visible, not collapsible) ── */}

@@ -1,5 +1,6 @@
 import { useServerNotifications } from '@/hooks/useServerNotifications';
 import { Sidebar } from "./Sidebar";
+import { useSidebarCollapsed } from "@/hooks/useSidebarCollapsed";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Menu, Moon, Sun, X, LogOut, CalendarPlus, HeartPulse, Bell, FileText, Calendar, Pill, CheckCircle, AlertCircle, ChevronRight, Sparkles } from "lucide-react";
@@ -58,6 +59,7 @@ interface MainLayoutProps {
 const MainLayout = ({ children }: MainLayoutProps) => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [sidebarCollapsed] = useSidebarCollapsed();
   const videoCall = useVideoCall();
 
   // Socket is managed by SocketProvider (App.tsx) — do not create a second connection here
@@ -242,8 +244,8 @@ const MainLayout = ({ children }: MainLayoutProps) => {
 
       <Sidebar />
 
-      {/* Main Content */}
-      <main className="flex-1 min-w-0 w-full overflow-auto md:ml-64 bg-gradient-to-br from-slate-50 via-white to-slate-50/80 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
+      {/* Main Content — left margin follows the sidebar collapse state on desktop */}
+      <main className={`flex-1 min-w-0 w-full overflow-auto transition-[margin] duration-300 ${sidebarCollapsed ? 'md:ml-0' : 'md:ml-64'} bg-gradient-to-br from-slate-50 via-white to-slate-50/80 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800`}>
         <header className="sticky top-0 z-30 border-b border-slate-200/80 dark:border-slate-700/50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-sm">
           <div className="flex h-16 items-center px-4 lg:px-6 gap-3">
             <div className="flex items-center gap-2.5">

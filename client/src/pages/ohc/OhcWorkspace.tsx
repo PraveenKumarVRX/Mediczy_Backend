@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, LogOut, ShieldCheck, Stethoscope } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { useSidebarCollapsed } from "@/hooks/useSidebarCollapsed";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +49,7 @@ function ChangePassword({ onDone }: { onDone: () => void }) {
 export default function OhcWorkspace() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [sidebarCollapsed] = useSidebarCollapsed();
   const [me, setMe] = useState<OhcMe | null>(null);
   const [error, setError] = useState<OhcError | null>(null);
   const [tab, setTab] = useState<"employees" | "occupational" | "certificates" | "prescriptions" | "staff" | "emergencies">("employees");
@@ -135,7 +137,7 @@ export default function OhcWorkspace() {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <div className="md:ml-64">
+      <div className={`transition-[margin] duration-300 ${sidebarCollapsed ? 'md:ml-0' : 'md:ml-64'}`}>
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
