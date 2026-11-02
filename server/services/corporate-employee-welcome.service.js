@@ -170,12 +170,17 @@ export async function provisionAccountForRosterEmployee({ corporateEmployeeRowId
   if (!roster) return { success: false, reason: 'employee_not_found' };
   if (roster.userId) return { success: false, reason: 'already_has_account', userId: roster.userId };
 
-  const normalizedEmail = String(roster.email || '').trim().toLowerCase();
-  if (!normalizedEmail) return { success: false, reason: 'missing_email' };
-
   const meta = typeof roster.metadata === 'string' ? JSON.parse(roster.metadata || '{}') : (roster.metadata || {});
   const firstName = meta.firstName || '';
   const lastName = meta.lastName || '';
+
+  const normalizedEmail = String(roster.email || '').trim().toLowerCase();
+  // corporate_employees has no phone column of its own; some bulk-upload metadata carries
+  // one under these keys. Login ID is email, falling back to phone only when HR provided
+  // one and no email exists — per instruction, never the UID for the login ID itself.
+  const normalizedPhone = String(meta.phone || meta.phoneNumber || meta.mobile || '').trim();
+  if (!normalizedEmail && !normalizedPhone) return { success: false, reason: 'missing_contact' };
+  const loginIdentifier = normalizedEmail || normalizedPhone;
 
   const [corporateRecord] = await postgresSequelize.query(
     `SELECT id, "companyName", aggregator_id, aggregator_type, tenant_id FROM corporates WHERE id = :id AND status = 'Active' LIMIT 1`,
@@ -183,34 +188,26 @@ export async function provisionAccountForRosterEmployee({ corporateEmployeeRowId
   );
   if (!corporateRecord) return { success: false, reason: 'corporate_not_found_or_inactive' };
 
-  // Per product requirement: the mobile app expects a DDMMYYYY temporary password for
-  // bulk-provisioned employees. Date of birth isn't an option — confirmed live that 0 of
-  // 167 roster-only Ninjacart employees have one on file — so this uses joining date,
-  // which every roster row does carry. Note this means every employee uploaded in the
-  // same HR batch (same joiningDate) shares an identical temporary password; the account
-  // still forces a password change on first login (requirePasswordChange), same as every
-  // other admin-provisioned account, which is the control that makes a predictable
-  // starting password acceptable here.
-  const joiningDate = roster.joiningDate ? new Date(roster.joiningDate) : null;
-  const temporaryPassword = joiningDate && !Number.isNaN(joiningDate.getTime())
-    ? [
-        String(joiningDate.getUTCDate()).padStart(2, '0'),
-        String(joiningDate.getUTCMonth() + 1).padStart(2, '0'),
-        String(joiningDate.getUTCFullYear()),
-      ].join('')
-    : welcomeEmailService.generateSecurePassword();
+  // Per instruction: temporary password is the employee's own entity UID
+  // (corporate_employees.unique_id) - already guaranteed unique per employee by the
+  // entity-UID-rule triggers, so unlike a date-derived password no two employees (even
+  // from the same HR upload batch) ever share one. Login ID is email/phone (above), not
+  // this UID - the account still forces a password change on first login regardless.
+  const temporaryPassword = roster.unique_id;
   const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
   const [newUser] = await postgresSequelize.query(
     `INSERT INTO users (email, "phoneNumber", password, "firstName", "lastName", "emailVerified", "phoneVerified",
        status, "isVerified", "isCorporate", organization_id, organization_type, tenant_id,
        aggregator_id, aggregator_type, metadata, "createdAt", "updatedAt")
-     VALUES (:email, '', :password, :firstName, :lastName, true, false,
+     VALUES (:email, :phoneNumber, :password, :firstName, :lastName, :emailVerified, :phoneVerified,
        'active', true, true, :corporateId, 'corporate', :tenantId,
        :aggregatorId, :aggregatorType, '{"requirePasswordChange": true}'::jsonb, NOW(), NOW())
      RETURNING id`,
     {
       replacements: {
-        email: normalizedEmail, password: hashedPassword, firstName: firstName || roster.employeeId || 'Employee', lastName,
+        email: normalizedEmail || null, phoneNumber: normalizedPhone || '', password: hashedPassword,
+        firstName: firstName || roster.employeeId || 'Employee', lastName,
+        emailVerified: Boolean(normalizedEmail), phoneVerified: Boolean(normalizedPhone),
         corporateId, tenantId: corporateRecord.tenant_id || null,
         aggregatorId: corporateRecord.aggregator_id || null, aggregatorType: corporateRecord.aggregator_type || null,
       },
@@ -246,7 +243,10 @@ export async function provisionAccountForRosterEmployee({ corporateEmployeeRowId
         lastName,
         companyName: corporateRecord.companyName || '',
         employeeId: roster.employeeId,
-        loginUid: roster.unique_id,
+        // Login ID shown to the employee is their email/phone, never the UID (which is
+        // now the temporary password instead) - see dispatchCorporateEmployeeWelcomeEmail's
+        // loginIdentifier resolution (welcomeEmailData.loginUid || .email || .employeeId).
+        loginUid: loginIdentifier,
       },
       temporaryPassword,
       userId,
@@ -256,7 +256,7 @@ export async function provisionAccountForRosterEmployee({ corporateEmployeeRowId
     welcomeDispatch = { emailStatus: 'failed', emailError: dispatchError.message };
   }
 
-  return { success: true, userId, employeeUid: roster.unique_id, welcomeDispatch };
+  return { success: true, userId, employeeUid: roster.unique_id, loginIdentifier, welcomeDispatch };
 }
 
 export default { dispatchCorporateEmployeeWelcomeEmail };
