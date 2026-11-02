@@ -888,6 +888,7 @@ const TeamCorporateManagement = () => {
   const [savingWelcomeTemplate, setSavingWelcomeTemplate] = useState(false);
   const [approvingWelcomeTemplate, setApprovingWelcomeTemplate] = useState(false);
   const [preparingWelcomeEmployeeDrafts, setPreparingWelcomeEmployeeDrafts] = useState(false);
+  const [provisioningRosterAccounts, setProvisioningRosterAccounts] = useState(false);
   const [welcomeDeliveries, setWelcomeDeliveries] = useState<WelcomeDeliveryRecord[]>([]);
   const [welcomeDeliveriesLoading, setWelcomeDeliveriesLoading] = useState(false);
   const [welcomeDeliveryFilters, setWelcomeDeliveryFilters] = useState({
@@ -1767,10 +1768,16 @@ const TeamCorporateManagement = () => {
   const welcomePrepareStats = useMemo(() => {
     const eligible = employees.filter((employee) => isWelcomeEmailEligible(employee) && !hasActiveWelcomeEmailDelivery(employee)).length;
     const alreadyWelcomed = employees.filter((employee) => isWelcomeEmailEligible(employee) && hasActiveWelcomeEmailDelivery(employee)).length;
+    // Active, on the roster, but no login account at all yet - isWelcomeEmailEligible
+    // always excludes these (it requires a numeric user id), so they were invisible in
+    // "eligible" with no indication why. These need an account provisioned before a
+    // welcome email can reach them at all - see onProvisionRosterAccounts below.
+    const notYetProvisioned = employees.filter((employee) => employee.hasUserAccount === false).length;
     return {
       total: employees.length,
       eligible,
       alreadyWelcomed,
+      notYetProvisioned,
     };
   }, [employees]);
 
@@ -4647,6 +4654,43 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       });
     } finally {
       setPreparingWelcomeEmployeeDrafts(false);
+    }
+  };
+
+  // Creates a login account (+ dispatches the welcome notification) for every active
+  // roster employee who doesn't have one yet - the gap isWelcomeEmailEligible always
+  // silently excludes, with no UI path to close it until now.
+  const handleProvisionRosterAccounts = async () => {
+    if (!selectedCorporate) return;
+    const numericId = parseInt(String(selectedCorporate.id), 10);
+    if (Number.isNaN(numericId)) return;
+
+    setProvisioningRosterAccounts(true);
+    try {
+      const token = localStorage.getItem('teamToken');
+      const response = await api.post(
+        `/admin/corporate-employees/${numericId}/provision-accounts`,
+        { mode: 'all' },
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+      );
+      const provisioned = response.data?.provisioned ?? 0;
+      const failed = response.data?.failed ?? 0;
+      toast({
+        title: provisioned > 0 ? 'Accounts provisioned' : 'Nothing to provision',
+        description: provisioned > 0
+          ? `${provisioned} employee${provisioned === 1 ? '' : 's'} got a new login account and a welcome email.` + (failed ? ` ${failed} failed — check logs.` : '')
+          : 'No roster employees without a login account were found.',
+        variant: failed > 0 && provisioned === 0 ? 'destructive' : 'default',
+      });
+      await Promise.all([fetchEmployees(numericId), fetchActivationStats(numericId)]);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not provision accounts',
+        description: error?.response?.data?.message || 'Something went wrong — please retry.',
+      });
+    } finally {
+      setProvisioningRosterAccounts(false);
     }
   };
 
@@ -11258,6 +11302,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
           handlePrepareOrSendEmployeeWelcomeEmails(sendImmediately, mode, singleEmployeeId, singleEmployeeEmail);
         }}
         welcomePrepareStats={welcomePrepareStats}
+        onProvisionRosterAccounts={handleProvisionRosterAccounts}
+        provisioningRosterAccounts={provisioningRosterAccounts}
         onOpenChange={setShowWelcomeEmailBatchDialog}
         onDraftsChange={setWelcomeEmailDrafts}
         onSendSelected={handleSendWelcomeEmailBatch}

@@ -23,7 +23,7 @@ import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
-import { dispatchCorporateEmployeeWelcomeEmail } from '../services/corporate-employee-welcome.service.js';
+import { dispatchCorporateEmployeeWelcomeEmail, provisionAccountForRosterEmployee } from '../services/corporate-employee-welcome.service.js';
 import { normalizeFlexibleDate } from '../utils/flexibleDate.js';
 import { auditAction } from '../utils/action-audit.js';
 import {
@@ -4948,6 +4948,74 @@ router.get('/corporate-employees/:corporateId/activation-stats', authUser, requi
     });
   } catch (error) {
     console.error('Activation stats error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/corporate-employees/:corporateId/provision-accounts
+ *
+ * Closes the gap behind "notYetProvisioned" in the activation-stats endpoint above, and
+ * the reason the Prepare Welcome Email Batch dialog could never reach these employees:
+ * isWelcomeEmailEligible (client) requires a numeric user id, and until now nothing in
+ * the Team portal created one retroactively for a roster row added without an account
+ * (self-registration pending, legacy bulk upload, etc.) - "Add Employee"/"Bulk Upload"
+ * only ever created *new* rows. Creates a login account + dispatches the welcome
+ * notification for each targeted roster-only employee, reusing the exact account-creation
+ * logic corporate.route.js already uses for brand-new employees.
+ *
+ * Body: { corporateEmployeeRowIds: number[] } to target specific roster rows, or
+ *       { mode: 'all' } for every active, account-less employee on this corporate's roster.
+ */
+router.post('/corporate-employees/:corporateId/provision-accounts', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
+  try {
+    const corporateId = req.resolvedCorporate.id;
+    const { corporateEmployeeRowIds, mode } = req.body || {};
+
+    let targetRowIds;
+    if (mode === 'all') {
+      const rows = await postgresSequelize.query(
+        `SELECT id FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true AND "userId" IS NULL`,
+        { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      targetRowIds = rows.map((r) => r.id);
+    } else if (Array.isArray(corporateEmployeeRowIds) && corporateEmployeeRowIds.length > 0) {
+      targetRowIds = corporateEmployeeRowIds.map((id) => parseInt(id, 10)).filter((id) => Number.isInteger(id) && id > 0);
+    } else {
+      return res.status(400).json({ success: false, message: 'Provide corporateEmployeeRowIds or mode: "all"' });
+    }
+
+    if (targetRowIds.length === 0) {
+      return res.json({ success: true, provisioned: 0, results: [] });
+    }
+
+    // Bounded concurrency: bcrypt hashing + several DB round trips + an email send per
+    // employee is too heavy to run fully in parallel for a roster the size of Ninjacart's
+    // (167 at last count), but this is a rare, admin-triggered bulk action, not a hot path,
+    // so sequential batches of 10 are a reasonable, simple middle ground.
+    const CONCURRENCY = 10;
+    const results = [];
+    for (let i = 0; i < targetRowIds.length; i += CONCURRENCY) {
+      const batch = targetRowIds.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map((rowId) =>
+          provisionAccountForRosterEmployee({ corporateEmployeeRowId: rowId, corporateId })
+            .then((result) => ({ corporateEmployeeRowId: rowId, ...result }))
+            .catch((error) => ({ corporateEmployeeRowId: rowId, success: false, reason: error.message }))
+        )
+      );
+      results.push(...batchResults);
+    }
+
+    const provisioned = results.filter((r) => r.success).length;
+    return res.json({
+      success: true,
+      provisioned,
+      failed: results.length - provisioned,
+      results,
+    });
+  } catch (error) {
+    console.error('Provision roster accounts error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 });

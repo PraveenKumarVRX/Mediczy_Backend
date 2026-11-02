@@ -56,7 +56,10 @@ interface CorporateWelcomeEmailBatchDialogProps {
     total: number;
     eligible: number;
     alreadyWelcomed: number;
+    notYetProvisioned?: number;
   };
+  onProvisionRosterAccounts?: () => void;
+  provisioningRosterAccounts?: boolean;
   onOpenChange: (open: boolean) => void;
   onDraftsChange: (drafts: WelcomeEmailDraft[]) => void;
   onSendSelected: (drafts: WelcomeEmailDraft[], provider: 'auto' | 'ses' | 'brevo') => void;
@@ -89,6 +92,8 @@ export default function CorporateWelcomeEmailBatchDialog({
   onApproveTemplate,
   onPrepareFromEmployees,
   welcomePrepareStats,
+  onProvisionRosterAccounts,
+  provisioningRosterAccounts = false,
   onOpenChange,
   onDraftsChange,
   onSendSelected,
@@ -155,6 +160,18 @@ export default function CorporateWelcomeEmailBatchDialog({
     });
   }, [employees, selectedModeSearch]);
 
+  // A roster employee with no login account yet has no numeric id here - "matched"
+  // (the search filter below) doesn't know or care about that, so without this a user
+  // could "Select All Matched" on, say, 1458 employees and have almost none of them
+  // actually get a draft prepared, with no indication why. This is a looser check than
+  // the parent's isWelcomeEmailEligible (it doesn't know about already-sent welcomes),
+  // just "could this row even be selected for a NEW draft at all."
+  const isSelectableForWelcome = (employee: WelcomeEmailTargetEmployee) => Boolean(employee.id) && Boolean(employee.email?.trim());
+  const matchedSelectableCount = useMemo(
+    () => filteredSelectedEmployees.filter(isSelectableForWelcome).length,
+    [filteredSelectedEmployees]
+  );
+
   const selectedDrafts = useMemo(
     () => drafts.filter((draft) => selectedIds.includes(draft.id) && draft.status !== 'sent'),
     [drafts, selectedIds]
@@ -181,6 +198,7 @@ export default function CorporateWelcomeEmailBatchDialog({
   const totalEmployees = welcomePrepareStats?.total ?? employees.length;
   const eligibleEmployees = welcomePrepareStats?.eligible ?? employees.length;
   const alreadyWelcomedEmployees = welcomePrepareStats?.alreadyWelcomed ?? Math.max(totalEmployees - eligibleEmployees, 0);
+  const notYetProvisionedEmployees = welcomePrepareStats?.notYetProvisioned ?? 0;
 
   const canPrepare = prepareMode === 'all'
     ? eligibleEmployees > 0
@@ -220,7 +238,7 @@ export default function CorporateWelcomeEmailBatchDialog({
   };
 
   const handleSelectAllMatchedEmployees = () => {
-    const matchedIds = filteredSelectedEmployees.map((employee) => employee.id);
+    const matchedIds = filteredSelectedEmployees.filter(isSelectableForWelcome).map((employee) => employee.id);
     if (matchedIds.length === 0) return;
     onSelectedEmployeeIdsChange?.(Array.from(new Set([...selectedEmployeeIds, ...matchedIds])));
   };
@@ -267,6 +285,29 @@ export default function CorporateWelcomeEmailBatchDialog({
                       {alreadyWelcomedEmployees} already have welcome emails queued or sent and will be skipped.
                       Only {eligibleEmployees} new draft{eligibleEmployees === 1 ? '' : 's'} can be prepared.
                     </p>
+                  )}
+                  {prepareMode === 'all' && notYetProvisionedEmployees > 0 && (
+                    <div className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2 space-y-1.5">
+                      <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                        {notYetProvisionedEmployees} employee{notYetProvisionedEmployees === 1 ? '' : 's'} on the roster
+                        {notYetProvisionedEmployees === 1 ? ' has' : ' have'} no login account yet — they can't receive a
+                        welcome email until one is created.
+                      </p>
+                      {onProvisionRosterAccounts && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="w-full border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                          disabled={provisioningRosterAccounts}
+                          onClick={onProvisionRosterAccounts}
+                        >
+                          {provisioningRosterAccounts
+                            ? 'Provisioning…'
+                            : `Provision ${notYetProvisionedEmployees} Account${notYetProvisionedEmployees === 1 ? '' : 's'} & Send Welcome`}
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -320,7 +361,11 @@ export default function CorporateWelcomeEmailBatchDialog({
                       </Button>
                     </div>
                     <p className="text-[11px] text-muted-foreground">
-                      {filteredSelectedEmployees.length} matched • {selectedEmployeeIds.length} currently selected
+                      {filteredSelectedEmployees.length} match your search
+                      {matchedSelectableCount !== filteredSelectedEmployees.length
+                        ? ` (${matchedSelectableCount} have a login account and can be drafted)`
+                        : ''}
+                      {' • '}{selectedEmployeeIds.length} currently selected
                     </p>
                   </div>
                 )}

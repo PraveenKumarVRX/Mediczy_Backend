@@ -7,8 +7,11 @@
  * exact same, already-proven email logic instead of duplicating it, and so a
  * single SMS/WhatsApp addition benefits both callers at once.
  */
+import bcrypt from 'bcrypt';
 import welcomeEmailService from './welcome-email.service.js';
 import notificationService from './notification.service.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { reactivateCorporateEmployeeAccount } from './corporate-employee-activation.service.js';
 
 const WELCOME_DRAFT_PASSWORD_PLACEHOLDER = '[generated securely at send time]';
 
@@ -138,6 +141,107 @@ export async function dispatchCorporateEmployeeWelcomeEmail({
     smsStatus: 'not_applicable',
     whatsappStatus: 'not_applicable',
   };
+}
+
+/**
+ * Provision a login account for a roster employee who was added to corporate_employees
+ * (self-registration, bulk upload, or a legacy path) but never got a `users` row - the
+ * only reason "Prepare Welcome Email Batch" could never reach them: isWelcomeEmailEligible
+ * hard-requires a numeric user id, and no UI path in the Team portal ever created one
+ * retroactively. Mirrors the account-creation block in corporate.route.js POST /employees
+ * (new-employee path) exactly, just targeting an existing roster row instead of inserting
+ * a new one, so the two flows can never drift apart on fields/columns again.
+ *
+ * @param {Object} params
+ * @param {number} params.corporateEmployeeRowId - corporate_employees.id (NOT the public employee ID)
+ * @param {number} params.corporateId
+ * @returns {Promise<{success:boolean, reason?:string, userId?:number, employeeUid?:string, welcomeDispatch?:object}>}
+ */
+export async function provisionAccountForRosterEmployee({ corporateEmployeeRowId, corporateId }) {
+  if (!corporateEmployeeRowId || !corporateId) return { success: false, reason: 'missing_ids' };
+
+  const [roster] = await postgresSequelize.query(
+    `SELECT id, "userId", "employeeId", email, metadata, unique_id
+       FROM corporate_employees
+      WHERE id = :id AND corporate_id = :corporateId AND "isActive" = true
+      LIMIT 1`,
+    { replacements: { id: corporateEmployeeRowId, corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  if (!roster) return { success: false, reason: 'employee_not_found' };
+  if (roster.userId) return { success: false, reason: 'already_has_account', userId: roster.userId };
+
+  const normalizedEmail = String(roster.email || '').trim().toLowerCase();
+  if (!normalizedEmail) return { success: false, reason: 'missing_email' };
+
+  const meta = typeof roster.metadata === 'string' ? JSON.parse(roster.metadata || '{}') : (roster.metadata || {});
+  const firstName = meta.firstName || '';
+  const lastName = meta.lastName || '';
+
+  const [corporateRecord] = await postgresSequelize.query(
+    `SELECT id, "companyName", aggregator_id, aggregator_type, tenant_id FROM corporates WHERE id = :id AND status = 'Active' LIMIT 1`,
+    { replacements: { id: corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  if (!corporateRecord) return { success: false, reason: 'corporate_not_found_or_inactive' };
+
+  const temporaryPassword = welcomeEmailService.generateSecurePassword();
+  const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+  const [newUser] = await postgresSequelize.query(
+    `INSERT INTO users (email, "phoneNumber", password, "firstName", "lastName", "emailVerified", "phoneVerified",
+       status, "isVerified", "isCorporate", organization_id, organization_type, tenant_id,
+       aggregator_id, aggregator_type, metadata, "createdAt", "updatedAt")
+     VALUES (:email, '', :password, :firstName, :lastName, true, false,
+       'active', true, true, :corporateId, 'corporate', :tenantId,
+       :aggregatorId, :aggregatorType, '{"requirePasswordChange": true}'::jsonb, NOW(), NOW())
+     RETURNING id`,
+    {
+      replacements: {
+        email: normalizedEmail, password: hashedPassword, firstName: firstName || roster.employeeId || 'Employee', lastName,
+        corporateId, tenantId: corporateRecord.tenant_id || null,
+        aggregatorId: corporateRecord.aggregator_id || null, aggregatorType: corporateRecord.aggregator_type || null,
+      },
+      type: postgresSequelize.QueryTypes.SELECT,
+    }
+  );
+  const userId = newUser?.id;
+  if (!userId) return { success: false, reason: 'account_creation_failed' };
+
+  await postgresSequelize.query(
+    `UPDATE corporate_employees SET "userId" = :userId, "updatedAt" = NOW() WHERE id = :id`,
+    { replacements: { userId, id: roster.id } }
+  );
+  await postgresSequelize.query(
+    `INSERT INTO user_associations ("userId", "entityType", "entityId", role, status, metadata, corporate_unique_id, "createdAt", "updatedAt")
+     SELECT :userId, 'corporate', :corporateId, 'employee', 'active',
+            jsonb_build_object('employeeId', :employeeId::text, 'profileActivation', 'active'),
+            (SELECT unique_id FROM corporates WHERE id = :corporateId), NOW(), NOW()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM user_associations WHERE "userId" = :userId AND "entityType" = 'corporate' AND "entityId" = :corporateId AND role = 'employee'
+     )`,
+    { replacements: { userId, corporateId, employeeId: roster.employeeId } }
+  );
+  await reactivateCorporateEmployeeAccount(userId);
+
+  let welcomeDispatch = null;
+  try {
+    welcomeDispatch = await dispatchCorporateEmployeeWelcomeEmail({
+      welcomeEmailMode: 'send',
+      welcomeEmailData: {
+        email: normalizedEmail,
+        firstName,
+        lastName,
+        companyName: corporateRecord.companyName || '',
+        employeeId: roster.employeeId,
+        loginUid: roster.unique_id,
+      },
+      temporaryPassword,
+      userId,
+      corporateId,
+    });
+  } catch (dispatchError) {
+    welcomeDispatch = { emailStatus: 'failed', emailError: dispatchError.message };
+  }
+
+  return { success: true, userId, employeeUid: roster.unique_id, welcomeDispatch };
 }
 
 export default { dispatchCorporateEmployeeWelcomeEmail };
