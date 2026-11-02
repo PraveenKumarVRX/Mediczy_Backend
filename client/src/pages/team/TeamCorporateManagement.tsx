@@ -11286,10 +11286,20 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         preparing={preparingWelcomeEmployeeDrafts}
         employees={employees
           .filter((employee) => String(employee.status || 'active').toLowerCase() !== 'inactive')
-          .map((employee) => ({ id: employee.id, employeeId: employee.employeeId, name: employee.name, email: employee.email }))}
+          .map((employee) => ({
+            id: employee.id,
+            employeeId: employee.employeeId,
+            name: employee.name,
+            email: employee.email,
+            welcomeEmailStatus: employee.welcomeEmailStatus ?? null,
+            hasUserAccount: employee.hasUserAccount,
+            welcomeEligible: employee.welcomeEligible,
+          }))}
         selectedEmployeeIds={selectedEmployeeIdsForWelcome}
         onSelectedEmployeeIdsChange={setSelectedEmployeeIdsForWelcome}
         templateOptions={allWelcomeEmailTemplates.map((template) => ({ id: template.id, name: template.name }))}
+        selectedTemplateSubject={(allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0])?.subject}
+        selectedTemplateHtml={(allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0])?.html}
         selectedTemplateId={selectedWelcomeTemplateId}
         approvedTemplateId={approvedWelcomeTemplateId}
         approvingTemplate={approvingWelcomeTemplate}

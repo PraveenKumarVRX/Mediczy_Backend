@@ -29,6 +29,9 @@ export interface WelcomeEmailTargetEmployee {
   employeeId: string;
   name: string;
   email: string;
+  welcomeEmailStatus?: string | null;
+  hasUserAccount?: boolean;
+  welcomeEligible?: boolean;
 }
 
 export interface WelcomeEmailTemplateOption {
@@ -47,6 +50,8 @@ interface CorporateWelcomeEmailBatchDialogProps {
   onSelectedEmployeeIdsChange?: (ids: string[]) => void;
   templateOptions?: WelcomeEmailTemplateOption[];
   selectedTemplateId?: string;
+  selectedTemplateSubject?: string;
+  selectedTemplateHtml?: string;
   approvedTemplateId?: string | null;
   approvingTemplate?: boolean;
   onSelectedTemplateChange?: (templateId: string) => void;
@@ -86,6 +91,8 @@ export default function CorporateWelcomeEmailBatchDialog({
   onSelectedEmployeeIdsChange,
   templateOptions = [],
   selectedTemplateId,
+  selectedTemplateSubject,
+  selectedTemplateHtml,
   approvedTemplateId,
   approvingTemplate = false,
   onSelectedTemplateChange,
@@ -109,6 +116,7 @@ export default function CorporateWelcomeEmailBatchDialog({
   const [singleEmployeeSearch, setSingleEmployeeSearch] = useState<string>('');
   const [singleSearchIndex, setSingleSearchIndex] = useState(0);
   const [selectedModeSearch, setSelectedModeSearch] = useState('');
+  const [onlyNotWelcomed, setOnlyNotWelcomed] = useState(true);
   const [templateName, setTemplateName] = useState('Corporate employee welcome_sigin');
 
   useEffect(() => {
@@ -160,22 +168,69 @@ export default function CorporateWelcomeEmailBatchDialog({
     });
   }, [employees, selectedModeSearch]);
 
-  // A roster employee with no login account yet has no numeric id here - "matched"
-  // (the search filter below) doesn't know or care about that, so without this a user
-  // could "Select All Matched" on, say, 1458 employees and have almost none of them
-  // actually get a draft prepared, with no indication why. This is a looser check than
-  // the parent's isWelcomeEmailEligible (it doesn't know about already-sent welcomes),
-  // just "could this row even be selected for a NEW draft at all."
-  const isSelectableForWelcome = (employee: WelcomeEmailTargetEmployee) => Boolean(employee.id) && Boolean(employee.email?.trim());
-  const matchedSelectableCount = useMemo(
-    () => filteredSelectedEmployees.filter(isSelectableForWelcome).length,
-    [filteredSelectedEmployees]
-  );
+  // A row's welcome status, used both to badge it and to decide whether it can be ticked.
+  // "ready" = has a login account and hasn't been welcomed; the only state that can be
+  // selected for a NEW draft. "no-account" rows are shown greyed (provision them via the
+  // amber button above first); "welcomed" are hidden by default.
+  const welcomeStatusOf = (employee: WelcomeEmailTargetEmployee): 'welcomed' | 'ready' | 'no-account' | 'no-email' => {
+    const status = String(employee.welcomeEmailStatus || '').toLowerCase();
+    if (status === 'sent' || status === 'queued') return 'welcomed';
+    if (employee.hasUserAccount === false) return 'no-account';
+    if (!employee.email?.trim()) return 'no-email';
+    return 'ready';
+  };
+
+  // The list the user actually asked for: employees who have NOT received a welcome
+  // email yet, selectable right here. Default hides already-welcomed.
+  const visibleSelectedEmployees = useMemo(() => {
+    if (!onlyNotWelcomed) return filteredSelectedEmployees;
+    return filteredSelectedEmployees.filter((employee) => welcomeStatusOf(employee) !== 'welcomed');
+  }, [filteredSelectedEmployees, onlyNotWelcomed]);
+  const EMPLOYEE_LIST_CAP = 300;
+  const cappedSelectedEmployees = visibleSelectedEmployees.slice(0, EMPLOYEE_LIST_CAP);
+
+  const toggleEmployeeSelected = (id: string, checked: boolean) => {
+    if (!id) return;
+    const next = checked
+      ? Array.from(new Set([...selectedEmployeeIds, id]))
+      : selectedEmployeeIds.filter((item) => item !== id);
+    onSelectedEmployeeIdsChange?.(next);
+  };
 
   const selectedDrafts = useMemo(
     () => drafts.filter((draft) => selectedIds.includes(draft.id) && draft.status !== 'sent'),
     [drafts, selectedIds]
   );
+
+  // Render the selected template with representative sample values so the user can see
+  // exactly what an employee will receive before preparing or sending anything - the
+  // actual per-employee drafts substitute the real name/UID/login the same way server-side.
+  const fillSampleTokens = (raw: string) => {
+    const sample: Record<string, string> = {
+      employeeName: 'Priya Sharma', firstName: 'Priya', lastName: 'Sharma',
+      email: 'priya.sharma@company.com', companyName: 'Your Company',
+      employeeId: 'EMP1024', department: 'Operations',
+      temporaryPassword: 'E7K2PX', password: 'E7K2PX',
+      username: 'priya.sharma@company.com', userId: 'priya.sharma@company.com',
+      loginIdentifier: 'priya.sharma@company.com', loginUrl: 'https://app.mediqzy.com/login',
+    };
+    let out = String(raw || '');
+    out = out.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key) => (key in sample ? sample[key] : `{{${key}}}`));
+    const bracket: Record<string, string> = {
+      '[Employee Name]': sample.employeeName, '[First Name]': sample.firstName, '[Last Name]': sample.lastName,
+      '[Temporary Password]': sample.temporaryPassword, '[Password]': sample.password,
+      '[Username]': sample.username, '[User ID]': sample.userId, '[Employee ID]': sample.employeeId,
+      '[Employee Email ID / Mobile Number]': sample.loginIdentifier, '[Company Name]': sample.companyName,
+      '[Department]': sample.department, '[Login URL]': sample.loginUrl,
+      '[generated securely at send time]': sample.temporaryPassword,
+    };
+    for (const [token, value] of Object.entries(bracket)) out = out.split(token).join(value);
+    return out;
+  };
+  const templatePreview = useMemo(() => {
+    if (!selectedTemplateHtml) return null;
+    return { subject: fillSampleTokens(selectedTemplateSubject || ''), html: fillSampleTokens(selectedTemplateHtml) };
+  }, [selectedTemplateHtml, selectedTemplateSubject]);
 
   useEffect(() => {
     if (singleSearchIndex >= filteredSingleEmployees.length) {
@@ -238,13 +293,17 @@ export default function CorporateWelcomeEmailBatchDialog({
   };
 
   const handleSelectAllMatchedEmployees = () => {
-    const matchedIds = filteredSelectedEmployees.filter(isSelectableForWelcome).map((employee) => employee.id);
+    // Only employees actually shown in the list and emailable right now (have an account,
+    // not already welcomed) — never silently select rows the user can't see or can't send to.
+    const matchedIds = visibleSelectedEmployees
+      .filter((employee) => welcomeStatusOf(employee) === 'ready')
+      .map((employee) => employee.id);
     if (matchedIds.length === 0) return;
     onSelectedEmployeeIdsChange?.(Array.from(new Set([...selectedEmployeeIds, ...matchedIds])));
   };
 
   const handleClearMatchedEmployees = () => {
-    const matchedIds = new Set(filteredSelectedEmployees.map((employee) => employee.id));
+    const matchedIds = new Set(visibleSelectedEmployees.map((employee) => employee.id));
     onSelectedEmployeeIdsChange?.(selectedEmployeeIds.filter((id) => !matchedIds.has(id)));
   };
 
@@ -356,27 +415,70 @@ export default function CorporateWelcomeEmailBatchDialog({
 
                 {prepareMode === 'selected' && (
                   <div className="space-y-2">
-                    <Label className="text-xs">Filter selected targets</Label>
+                    <Label className="text-xs">Choose recipients</Label>
                     <Input
                       value={selectedModeSearch}
                       onChange={(event) => setSelectedModeSearch(event.target.value)}
                       placeholder="Filter by name, email, or employee ID"
                       className="h-9"
                     />
-                    <div className="flex gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={handleSelectAllMatchedEmployees}>
-                        Select All Matched
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={handleClearMatchedEmployees}>
-                        Clear Matched
-                      </Button>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
+                        <Checkbox
+                          checked={onlyNotWelcomed}
+                          onCheckedChange={(checked) => setOnlyNotWelcomed(checked === true)}
+                          className="h-3.5 w-3.5"
+                        />
+                        Only not-yet-welcomed
+                      </label>
+                      <div className="flex gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={handleSelectAllMatchedEmployees}>
+                          Select All
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" onClick={handleClearMatchedEmployees}>
+                          Clear
+                        </Button>
+                      </div>
                     </div>
+                    <ScrollArea className="h-56 rounded-md border">
+                      <div className="divide-y">
+                        {cappedSelectedEmployees.length === 0 && (
+                          <p className="p-3 text-[11px] text-muted-foreground">
+                            {onlyNotWelcomed ? 'Everyone matching your filter has already been welcomed.' : 'No employees match your filter.'}
+                          </p>
+                        )}
+                        {cappedSelectedEmployees.map((employee) => {
+                          const status = welcomeStatusOf(employee);
+                          const selectable = status === 'ready';
+                          const checked = Boolean(employee.id) && selectedEmployeeIds.includes(employee.id);
+                          return (
+                            <label
+                              key={employee.id || employee.employeeId || employee.email}
+                              className={`flex items-start gap-2 p-2 text-xs ${selectable ? 'cursor-pointer hover:bg-muted/50' : 'opacity-60'}`}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                disabled={!selectable}
+                                onCheckedChange={(value) => toggleEmployeeSelected(employee.id, value === true)}
+                                className="mt-0.5 h-3.5 w-3.5"
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-medium">{employee.name || employee.employeeId || employee.email}</span>
+                                <span className="block truncate text-[10px] text-muted-foreground">{employee.email || '—'}{employee.employeeId ? ` · ${employee.employeeId}` : ''}</span>
+                              </span>
+                              {status === 'welcomed' && <Badge className="bg-green-600 hover:bg-green-600 shrink-0 text-[9px] px-1.5 py-0">Welcomed</Badge>}
+                              {status === 'ready' && <Badge variant="outline" className="shrink-0 text-[9px] px-1.5 py-0">Not sent</Badge>}
+                              {status === 'no-account' && <Badge variant="outline" className="shrink-0 border-amber-400 text-amber-700 dark:text-amber-300 text-[9px] px-1.5 py-0">No account</Badge>}
+                              {status === 'no-email' && <Badge variant="outline" className="shrink-0 text-[9px] px-1.5 py-0">No email</Badge>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
                     <p className="text-[11px] text-muted-foreground">
-                      {filteredSelectedEmployees.length} match your search
-                      {matchedSelectableCount !== filteredSelectedEmployees.length
-                        ? ` (${matchedSelectableCount} have a login account and can be drafted)`
-                        : ''}
-                      {' • '}{selectedEmployeeIds.length} currently selected
+                      Showing {cappedSelectedEmployees.length} of {visibleSelectedEmployees.length}
+                      {visibleSelectedEmployees.length > EMPLOYEE_LIST_CAP ? ' — refine your filter to see more' : ''}
+                      {' • '}{selectedEmployeeIds.length} selected
                     </p>
                   </div>
                 )}
@@ -556,6 +658,43 @@ export default function CorporateWelcomeEmailBatchDialog({
                     className="w-full h-[32vh] rounded-md border bg-white"
                     srcDoc={activeDraft.html}
                   />
+                </div>
+              </div>
+            ) : templatePreview ? (
+              <div className="space-y-3 border rounded-lg p-3 bg-background">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Template preview</p>
+                  <Badge variant="outline" className="text-[10px]">Sample data</Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  This is how the selected template looks with example values. Each employee's real name, login ID and
+                  temporary password are filled in when you Prepare or Send.
+                </p>
+                <div className="space-y-1">
+                  <Label className="text-xs">Subject</Label>
+                  <Input value={templatePreview.subject} readOnly className="h-9 bg-muted/40" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Preview</Label>
+                  <iframe
+                    title="Welcome template preview"
+                    className="w-full h-[48vh] rounded-md border bg-white"
+                    srcDoc={templatePreview.html}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {onPrepareSingle && (
+                    <Button type="button" size="sm" onClick={() => startPreparation(onPrepareSingle)}>
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Add Employee
+                    </Button>
+                  )}
+                  {onPrepareBulk && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => startPreparation(onPrepareBulk)}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Bulk Upload
+                    </Button>
+                  )}
                 </div>
               </div>
             ) : (
