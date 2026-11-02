@@ -712,14 +712,25 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), attachTenant
     let employeeCountMap = {};
     if (corporateIds.length > 0) {
       try {
+        // Count every roster employee (corporate_employees), not only ones with a linked
+        // login account (user_associations) - deduplicated by user where a row has both,
+        // so a user counted via their association isn't double-counted via their roster
+        // row too. Counting user_associations alone silently excluded every employee who
+        // was added to the roster but never got a login account provisioned: confirmed
+        // live for Ninjacart, this list showed 1291 while the roster itself had 1458.
         const result = await postgresSequelize.query(`
-          SELECT "entityId" as corporate_id, COUNT(DISTINCT "userId") as employee_count
-          FROM user_associations
-          WHERE "entityType" = 'corporate'
-          AND "entityId" IN (:corporateIds)
-          AND role = 'employee'
-          AND status = 'active'
-          GROUP BY "entityId"
+          SELECT corporate_id, COUNT(DISTINCT identity_key) as employee_count
+          FROM (
+            SELECT "entityId" AS corporate_id, 'user:' || "userId" AS identity_key
+            FROM user_associations
+            WHERE "entityType" = 'corporate' AND role = 'employee' AND status = 'active'
+              AND "entityId" IN (:corporateIds)
+            UNION ALL
+            SELECT corporate_id, COALESCE('user:' || "userId", 'ce:' || id::text) AS identity_key
+            FROM corporate_employees
+            WHERE "isActive" = true AND corporate_id IN (:corporateIds)
+          ) combined
+          GROUP BY corporate_id
         `, {
           replacements: { corporateIds },
           type: postgresSequelize.QueryTypes.SELECT
@@ -6138,11 +6149,20 @@ router.post('/corporate-network-assignments', authUser, requireRole(['admin', 't
     }
     const normalizedPartners = Array.from(partnerMap.values());
 
-    // Resolve employee count for the response
+    // Resolve employee count for the response. Counts the full roster (corporate_employees),
+    // not only employees with a linked login account - same undercount this fixes everywhere
+    // else today: a roster employee without an account yet still gets partner access once
+    // they log in, so "all employees" should mean the whole roster, not just current app users.
     let assignedCount = 0;
     if (employeeIds === 'all' || !employeeIds) {
       const [countRow] = await postgresSequelize.query(
-        `SELECT COUNT(DISTINCT "userId") AS cnt FROM user_associations WHERE "entityType" = 'corporate' AND "entityId" = :corporateId AND role = 'employee' AND status = 'active'`,
+        `SELECT COUNT(DISTINCT identity_key) AS cnt FROM (
+           SELECT 'user:' || "userId" AS identity_key FROM user_associations
+            WHERE "entityType" = 'corporate' AND "entityId" = :corporateId AND role = 'employee' AND status = 'active'
+           UNION ALL
+           SELECT COALESCE('user:' || "userId", 'ce:' || id::text) AS identity_key FROM corporate_employees
+            WHERE "isActive" = true AND corporate_id = :corporateId
+         ) combined`,
         { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
       );
       assignedCount = parseInt(countRow?.cnt || 0, 10);
