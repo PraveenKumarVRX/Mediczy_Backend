@@ -4887,41 +4887,52 @@ router.get('/corporate-employee-welcome-emails/deliveries', authUser, requireRol
 router.get('/corporate-employees/:corporateId/activation-stats', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
     const corporateId = req.resolvedCorporate.id;
-    const [rows] = await postgresSequelize.query(`
-      SELECT
-        COUNT(*)                                                                         AS total,
-        COUNT(*) FILTER (WHERE wd.status = 'sent')                                      AS welcome_sent,
-        COUNT(*) FILTER (WHERE u."lastLoginAt" IS NOT NULL)                             AS logged_in,
-        COUNT(*) FILTER (WHERE u."lastLoginAt" IS NOT NULL
-                           AND (u.metadata->>'requirePasswordChange')::boolean IS DISTINCT FROM true) AS password_changed,
-        COUNT(*) FILTER (WHERE u."lastLoginAt" >= NOW() - INTERVAL '7 days')            AS active_7d,
-        COUNT(*) FILTER (WHERE u."lastLoginAt" >= NOW() - INTERVAL '30 days')           AS active_30d
-      FROM users u
-      JOIN user_associations ua ON ua."userId" = u.id
-        AND ua."entityType" = 'corporate' AND ua."entityId" = :corporateId
-        AND ua.role = 'employee' AND ua.status = 'active'
-      LEFT JOIN LATERAL (
-        SELECT status FROM corporate_welcome_email_deliveries
-        WHERE corporate_id = :corporateId
-          AND LOWER(recipient_email) = LOWER(u.email)
-          AND COALESCE(metadata->>'source', '') <> 'brevo_transactional_history'
-          AND status = 'sent'
-        LIMIT 1
-      ) wd ON true
-    `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
 
-    const stats = rows || {};
+    // Build the same merged roster+association employee list the employee table itself
+    // uses (GET /corporate-employees/:corporateId below), so this widget's "N active
+    // employees" can never drift from what the roster table on the same page shows.
+    // The previous version counted only user_associations rows directly, silently
+    // excluding every corporate_employees roster row with no linked login account yet
+    // (confirmed live for Ninjacart: 1457 active roster rows vs. 1291 linked accounts —
+    // 166 real employees missing from the denominator and from "never logged in").
+    const [associationRows, rosterRows] = await Promise.all([
+      postgresSequelize.query(CORPORATE_EMPLOYEE_ASSOCIATION_SQL, {
+        replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT,
+      }),
+      postgresSequelize.query(CORPORATE_EMPLOYEE_ROSTER_SQL, {
+        replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT,
+      }),
+    ]);
+    const merged = mergeCorporateEmployeeRows(associationRows, rosterRows);
+    const active = merged.filter((e) => String(e.status || 'active').toLowerCase() === 'active');
+
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const lastLoginMs = (e) => (e.lastLoginAt ? new Date(e.lastLoginAt).getTime() : null);
+
+    const total = active.length;
+    const welcomeSent = active.filter((e) => e.welcomeEmailStatus === 'sent').length;
+    const loggedIn = active.filter((e) => Boolean(e.lastLoginAt)).length;
+    const passwordChanged = active.filter((e) => Boolean(e.lastLoginAt) && e.requirePasswordChange !== true).length;
+    const active7d = active.filter((e) => { const ms = lastLoginMs(e); return ms !== null && ms >= sevenDaysAgo; }).length;
+    const active30d = active.filter((e) => { const ms = lastLoginMs(e); return ms !== null && ms >= thirtyDaysAgo; }).length;
+    const notYetProvisioned = active.filter((e) => !e.hasUserAccount).length;
+
     return res.json({
       success: true,
       stats: {
-        total:           parseInt(stats.total          || 0),
-        welcomeSent:     parseInt(stats.welcome_sent   || 0),
-        loggedIn:        parseInt(stats.logged_in      || 0),
-        passwordChanged: parseInt(stats.password_changed || 0),
-        active7d:        parseInt(stats.active_7d      || 0),
-        active30d:       parseInt(stats.active_30d     || 0),
-        neverLoggedIn:   parseInt(stats.total || 0) - parseInt(stats.logged_in || 0),
-        notYetOnboarded: parseInt(stats.total || 0) - parseInt(stats.welcome_sent || 0),
+        total,
+        welcomeSent,
+        loggedIn,
+        passwordChanged,
+        active7d,
+        active30d,
+        neverLoggedIn: total - loggedIn,
+        notYetOnboarded: total - welcomeSent,
+        // New: distinct from "welcome not sent" — these employees have no login account
+        // provisioned at all yet (on the roster, but never self-registered or
+        // admin-provisioned), so no welcome email could have been sent to them either.
+        notYetProvisioned,
       }
     });
   } catch (error) {

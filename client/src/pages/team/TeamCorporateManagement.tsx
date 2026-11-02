@@ -137,6 +137,7 @@ interface ActivationStats {
   active30d: number;
   neverLoggedIn: number;
   notYetOnboarded: number;
+  notYetProvisioned: number;
 }
 
 interface TaskCopilotMessage {
@@ -773,6 +774,7 @@ const emptyActivationStats: ActivationStats = {
   active30d: 0,
   neverLoggedIn: 0,
   notYetOnboarded: 0,
+  notYetProvisioned: 0,
 };
 
 const TeamCorporateManagement = () => {
@@ -1799,6 +1801,8 @@ const TeamCorporateManagement = () => {
     const active30d = activationStatsLastUpdatedAt ? activationStats.active30d : 0;
     const neverLoggedIn = activationStatsLastUpdatedAt ? activationStats.neverLoggedIn : Math.max(localTotal - localLoggedIn, 0);
     const notYetOnboarded = activationStatsLastUpdatedAt ? activationStats.notYetOnboarded : Math.max(localTotal - localWelcomeSent, 0);
+    const localNotYetProvisioned = employees.filter((employee) => employee.hasUserAccount === false).length;
+    const notYetProvisioned = activationStatsLastUpdatedAt ? activationStats.notYetProvisioned : localNotYetProvisioned;
 
     return {
       total,
@@ -1809,6 +1813,7 @@ const TeamCorporateManagement = () => {
       active30d,
       neverLoggedIn,
       notYetOnboarded,
+      notYetProvisioned,
       pctSent: total ? Math.round((welcomeSent / total) * 100) : 0,
       pctLoggedIn: total ? Math.round((loggedIn / total) * 100) : 0,
       pctPasswordChanged: total ? Math.round((passwordChanged / total) * 100) : 0,
@@ -1848,6 +1853,7 @@ Logged in to app: ${activationFunnel.loggedIn}
 Password changed: ${activationFunnel.passwordChanged}
 Never logged in: ${activationFunnel.neverLoggedIn}
 Not yet onboarded: ${activationFunnel.notYetOnboarded}
+No app account provisioned yet: ${activationFunnel.notYetProvisioned}
 Active in last 7 days: ${activationFunnel.active7d}
 Active in last 30 days: ${activationFunnel.active30d}
 
@@ -1879,6 +1885,7 @@ Logged in to app: ${activationFunnel.loggedIn}
 Password changed: ${activationFunnel.passwordChanged}
 Never logged in: ${activationFunnel.neverLoggedIn}
 Not yet onboarded: ${activationFunnel.notYetOnboarded}
+No app account provisioned yet: ${activationFunnel.notYetProvisioned}
 Active in last 7 days: ${activationFunnel.active7d}
 Active in last 30 days: ${activationFunnel.active30d}
 
@@ -2536,6 +2543,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
           active30d: Number(stats.active30d || 0),
           neverLoggedIn: Number(stats.neverLoggedIn || 0),
           notYetOnboarded: Number(stats.notYetOnboarded || 0),
+          notYetProvisioned: Number(stats.notYetProvisioned || 0),
         });
         setActivationStatsLastUpdatedAt(new Date().toISOString());
       }
@@ -6524,6 +6532,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-200 dark:bg-blue-900 inline-block"/>{activationFunnel.pctSent}% email sent</span>
                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>{activationFunnel.pctLoggedIn}% logged in</span>
                         <span>{activationFunnel.neverLoggedIn} never logged in</span>
+                        {activationFunnel.notYetProvisioned > 0 && (
+                          <span className="text-amber-600 dark:text-amber-400">{activationFunnel.notYetProvisioned} no app account yet</span>
+                        )}
                         <span>{activationFunnel.active7d} active in 7d</span>
                         <span>{activationFunnel.active30d} active in 30d</span>
                       </div>
