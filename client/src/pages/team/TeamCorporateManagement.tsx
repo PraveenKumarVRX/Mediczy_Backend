@@ -3920,13 +3920,13 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     setShowWelcomeEmailBatchDialog(true);
   };
 
-  const handleSendWelcomeEmailBatch = async (draftsToSend: WelcomeEmailDraft[], provider: 'auto' | 'ses' | 'brevo' = 'auto') => {
-    if (!selectedCorporate || draftsToSend.length === 0) return;
+  const handleSendWelcomeEmailBatch = async (allDraftsToSend: WelcomeEmailDraft[], provider: 'auto' | 'ses' | 'brevo' = 'auto') => {
+    if (!selectedCorporate || allDraftsToSend.length === 0) return;
 
     const SERVER_MAX_BATCH_SIZE = 500;
     const REQUEST_SAFE_BATCH_SIZE = 15;
     setSendingWelcomeEmailBatch(true);
-    const sendingIds = new Set(draftsToSend.map((draft) => draft.id));
+    const sendingIds = new Set(allDraftsToSend.map((draft) => draft.id));
     setWelcomeEmailDrafts((current) => current.map((draft) => sendingIds.has(draft.id) ? { ...draft, status: "sending", error: undefined } : draft));
 
     const allSent = new Set<string>();
@@ -3936,7 +3936,32 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     const deferredIds = new Set<string>();
     let quotaMessage = '';
 
+    // Split: no-account "provision" preview rows create the account + send the credential
+    // email via the provision endpoint; the rest are normal token-bound template sends.
+    const provisionDrafts = allDraftsToSend.filter((d) => d.provisionRowId);
+    const draftsToSend = allDraftsToSend.filter((d) => !d.provisionRowId);
+
     try {
+      if (provisionDrafts.length > 0) {
+        const rowToEmail = new Map(provisionDrafts.map((d) => [Number(d.provisionRowId), String(d.to).toLowerCase()]));
+        try {
+          const { results } = await provisionRosterAccountsByRowIds(provisionDrafts.map((d) => Number(d.provisionRowId)));
+          if (results.length > 0) {
+            for (const r of results) {
+              const email = rowToEmail.get(Number(r.corporateEmployeeRowId));
+              if (!email) continue;
+              if (r.success) allSent.add(email);
+              else allFailed.set(email, r.reason || 'Could not create account');
+            }
+          } else {
+            // Older server shape without per-row results: mark all attempted as sent.
+            provisionDrafts.forEach((d) => allSent.add(String(d.to).toLowerCase()));
+          }
+        } catch (provisionError: any) {
+          provisionDrafts.forEach((d) => allFailed.set(String(d.to).toLowerCase(), provisionError?.response?.data?.message || 'Provisioning failed'));
+        }
+      }
+
       const headers = teamAuthHeaders();
       let bulkQuota: EmailQuotaSnapshot | null = null;
 
@@ -4016,6 +4041,12 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
           : (allSent.size + ' sent' + (duplicateSkippedCount > 0 ? ', ' + duplicateSkippedCount + ' already sent skipped' : '') + (allFailed.size > 0 ? ', ' + allFailed.size + ' failed' : '') + '.'),
         variant: allFailed.size > 0 || quotaMessage ? "destructive" : "default",
       });
+
+      // Provisioning created accounts — refresh so the roster/funnel reflect the new state.
+      if (provisionDrafts.length > 0) {
+        const numericId = parseInt(String(selectedCorporate.id), 10);
+        if (!Number.isNaN(numericId)) await Promise.all([fetchEmployees(numericId), fetchActivationStats(numericId)]);
+      }
     } catch (error: any) {
       setWelcomeEmailDrafts((current) => current.map((draft) => sendingIds.has(draft.id) ? { ...draft, status: "failed", error: error.response?.data?.message || "Failed to send" } : draft));
       toast({ variant: "destructive", title: "Email Batch Failed", description: error.response?.data?.message || "Failed to send welcome emails" });
@@ -4439,9 +4470,11 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
   };
 
   // Provision + credential-welcome a specific set of roster rows (shared by the unified
-  // send below and any targeted provisioning). Returns how many succeeded.
-  const provisionRosterAccountsByRowIds = async (rowIds: number[]): Promise<{ provisioned: number; failed: number }> => {
-    if (!selectedCorporate || rowIds.length === 0) return { provisioned: 0, failed: 0 };
+  // send below and any targeted provisioning). Returns counts and the per-row results.
+  const provisionRosterAccountsByRowIds = async (
+    rowIds: number[]
+  ): Promise<{ provisioned: number; failed: number; results: Array<{ corporateEmployeeRowId: number; success: boolean; reason?: string }> }> => {
+    if (!selectedCorporate || rowIds.length === 0) return { provisioned: 0, failed: 0, results: [] };
     const numericId = parseInt(String(selectedCorporate.id), 10);
     const token = localStorage.getItem('teamToken');
     const response = await api.post(
@@ -4449,7 +4482,11 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       { corporateEmployeeRowIds: rowIds },
       { headers: token ? { Authorization: `Bearer ${token}` } : undefined, timeout: 300000 }
     );
-    return { provisioned: response.data?.provisioned ?? 0, failed: response.data?.failed ?? 0 };
+    return {
+      provisioned: response.data?.provisioned ?? 0,
+      failed: response.data?.failed ?? 0,
+      results: response.data?.results ?? [],
+    };
   };
 
   const handlePrepareOrSendEmployeeWelcomeEmails = async (
@@ -4517,12 +4554,41 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       ? [fallbackSingleEmployee]
       : targets;
 
+    // On Prepare, no-account employees still get preview rows below even when there are 0
+    // account-holders to draft — so the "no employees" error must not fire in that case.
+    const noAccountPreviewCount = (!sendImmediately && (mode === 'all' || mode === 'selected'))
+      ? getNoAccountTargets(mode).filter((e) => Number(e.corporateEmployeeRowId) > 0 && String(e.email || '').trim()).length
+      : 0;
+
     if (effectiveTargets.length === 0) {
       // If the whole in-scope set was no-account employees we just provisioned+welcomed,
       // there's nothing left for the template flow — that's success, not an error.
       if (provisionedViaSend > 0) {
         const numericId = parseInt(String(selectedCorporate.id), 10);
         if (!Number.isNaN(numericId)) await Promise.all([fetchEmployees(numericId), fetchActivationStats(numericId)]);
+        return;
+      }
+      // Prepare with only no-account employees: build their preview rows and stop.
+      if (noAccountPreviewCount > 0) {
+        const draftTimestamp = Date.now();
+        const selectedTemplate = allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
+        const provisionPreviewDrafts: WelcomeEmailDraft[] = getNoAccountTargets(mode)
+          .filter((emp) => Number(emp.corporateEmployeeRowId) > 0 && String(emp.email || '').trim())
+          .map((emp) => {
+            const pwNote = 'your employee UID (auto-generated — shown here when sent)';
+            return {
+              id: `provision-${emp.corporateEmployeeRowId}-${draftTimestamp}`,
+              to: emp.email,
+              employeeId: emp.employeeId,
+              employeeName: emp.name || emp.email,
+              provisionRowId: Number(emp.corporateEmployeeRowId),
+              subject: applyWelcomeTemplatePlaceholders(selectedTemplate.subject, emp, pwNote),
+              html: applyWelcomeTemplatePlaceholders(selectedTemplate.html, emp, pwNote),
+              status: 'draft' as const,
+            };
+          });
+        addPreparedWelcomeEmailDrafts(provisionPreviewDrafts);
+        toast({ title: 'Welcome drafts prepared', description: `${provisionPreviewDrafts.length} new employee${provisionPreviewDrafts.length === 1 ? '' : 's'} ready — an account is created and credentials emailed on send.` });
         return;
       }
       const singleEmployee = mode === 'single'
@@ -4719,11 +4785,33 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         return;
       }
 
-      addPreparedWelcomeEmailDrafts(drafts);
-      const targetCount = effectiveTargets.length;
+      // Also show the no-account employees as preview rows so the draft list reflects
+      // everyone who'll be welcomed, not just the account-holders. These are previews
+      // only — no account is created until the user actually sends, at which point
+      // handleSendWelcomeEmailBatch routes them to provisioning (which sets their UID
+      // password and emails the credentials).
+      const provisionPreviewDrafts: WelcomeEmailDraft[] = getNoAccountTargets(mode)
+        .filter((emp) => Number(emp.corporateEmployeeRowId) > 0 && String(emp.email || '').trim())
+        .map((emp) => {
+          const pwNote = 'your employee UID (auto-generated — shown here when sent)';
+          return {
+            id: `provision-${emp.corporateEmployeeRowId}-${draftTimestamp}`,
+            to: emp.email,
+            employeeId: emp.employeeId,
+            employeeName: emp.name || emp.email,
+            provisionRowId: Number(emp.corporateEmployeeRowId),
+            subject: applyWelcomeTemplatePlaceholders(selectedTemplate.subject, emp, pwNote),
+            html: applyWelcomeTemplatePlaceholders(selectedTemplate.html, emp, pwNote),
+            status: 'draft' as const,
+          };
+        });
+
+      addPreparedWelcomeEmailDrafts([...drafts, ...provisionPreviewDrafts]);
+      const targetCount = effectiveTargets.length + provisionPreviewDrafts.length;
       toast({
         title: 'Welcome drafts prepared',
-        description: `${drafts.length} draft${drafts.length === 1 ? '' : 's'} added for review (${targetCount} targeted`
+        description: `${drafts.length + provisionPreviewDrafts.length} row${(drafts.length + provisionPreviewDrafts.length) === 1 ? '' : 's'} ready for review (${targetCount} targeted`
+          + (provisionPreviewDrafts.length ? `; ${provisionPreviewDrafts.length} new account${provisionPreviewDrafts.length === 1 ? '' : 's'} created on send` : '')
           + (skippedTargets.length ? `; ${skippedTargets.length} already welcomed` : '')
           + (failedTargets.length ? `; ${failedTargets.length} failed` : '')
           + ').',

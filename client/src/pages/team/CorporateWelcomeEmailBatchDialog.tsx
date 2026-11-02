@@ -22,6 +22,10 @@ export interface WelcomeEmailDraft {
   html: string;
   status: 'draft' | 'sending' | 'sent' | 'failed';
   error?: string;
+  // Set for a roster employee with no login account yet: this row is a preview only; on
+  // send it provisions the account (creating a UID password) and emails the credentials,
+  // instead of sending a token-bound draft. No account is created until the user sends.
+  provisionRowId?: number;
 }
 
 export interface WelcomeEmailTargetEmployee {
@@ -261,7 +265,7 @@ export default function CorporateWelcomeEmailBatchDialog({
   // in one step). "Send" in All mode additionally provisions the no-account ones, so it's
   // enabled whenever anyone (ready or not-yet-provisioned) still needs a welcome.
   const canPrepareDrafts = prepareMode === 'all'
-    ? eligibleEmployees > 0
+    ? (eligibleEmployees + notYetProvisionedEmployees) > 0
     : prepareMode === 'selected'
       ? selectedEmployeeCount > 0
       : Boolean(singleEmployeeId);
@@ -413,9 +417,9 @@ export default function CorporateWelcomeEmailBatchDialog({
                   {prepareMode === 'all' && (
                     <p className="text-[11px] text-muted-foreground">
                       {alreadyWelcomedEmployees > 0 && <>{alreadyWelcomedEmployees} already welcomed will be skipped. </>}
-                      <strong>Send Now</strong> welcomes all {eligibleEmployees + notYetProvisionedEmployees}: emails the {eligibleEmployees} with an account
-                      {notYetProvisionedEmployees > 0 ? <> and creates accounts + credential emails for the {notYetProvisionedEmployees} new ones</> : null}.
-                      {' '}<strong>Prepare</strong> drafts only the {eligibleEmployees} with an account.
+                      <strong>Prepare all {eligibleEmployees + notYetProvisionedEmployees}</strong> builds a reviewable list — {eligibleEmployees} editable draft{eligibleEmployees === 1 ? '' : 's'}
+                      {notYetProvisionedEmployees > 0 ? <> plus {notYetProvisionedEmployees} new employee{notYetProvisionedEmployees === 1 ? '' : 's'} (account created + credentials emailed on send)</> : null}.
+                      {' '}<strong>Send</strong> processes the whole list.
                     </p>
                   )}
                 </div>
@@ -598,7 +602,7 @@ export default function CorporateWelcomeEmailBatchDialog({
                       {preparing
                         ? 'Preparing...'
                         : prepareMode === 'all'
-                          ? `Prepare ${eligibleEmployees} draft${eligibleEmployees === 1 ? '' : 's'}`
+                          ? `Prepare all ${eligibleEmployees + notYetProvisionedEmployees}`
                           : 'Prepare'}
                     </Button>
                     <Button
@@ -660,9 +664,17 @@ export default function CorporateWelcomeEmailBatchDialog({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-medium truncate">{draft.employeeName || draft.to}</p>
-                          {getStatusBadge(draft.status)}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {draft.provisionRowId && draft.status === 'draft' && (
+                              <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-300 text-[9px] px-1.5 py-0">New account</Badge>
+                            )}
+                            {getStatusBadge(draft.status)}
+                          </div>
                         </div>
                         <p className="text-xs text-muted-foreground truncate">{draft.to}</p>
+                        {draft.provisionRowId && draft.status === 'draft' && (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">Creates a login account + emails credentials on send</p>
+                        )}
                         {draft.error && <p className="text-xs text-red-600 mt-1">{draft.error}</p>}
                       </div>
                     </div>
