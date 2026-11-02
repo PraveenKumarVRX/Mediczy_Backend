@@ -5690,7 +5690,7 @@ router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), requir
       validFrom, validTo,
       totalEmployees, premiumPerEmployee, totalPremium,
       status = 'Active', currency = 'INR', billingCycle,
-      features, benefits, coverage,
+      features, benefits, coverage, healthPackageIds,
       // legacy simple-form fallback
       name, slug, price, annualPrice,
     } = req.body || {};
@@ -5735,6 +5735,7 @@ router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), requir
       status,
       benefits: benefits || [],
       coverage: coverage || {},
+      healthPackageIds: Array.isArray(healthPackageIds) ? healthPackageIds : [],
     };
 
     const [inserted] = await postgresSequelize.query(`

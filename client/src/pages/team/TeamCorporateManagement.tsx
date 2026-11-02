@@ -263,6 +263,15 @@ interface CorporatePlan {
   features?: Record<string, boolean>;
   coverage?: Record<string, any>;
   healthPackageIds?: string[];
+  benefits?: Array<{
+    id: string;
+    name: string;
+    category: string;
+    description: string;
+    isIncluded: boolean;
+    coverage?: string;
+    limit?: string;
+  }>;
 }
 
 interface WelcomeEmailTemplatePreset {
@@ -3103,6 +3112,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
             features: mergePlanFeatures(features),
             coverage: metadata.coverage || {},
             healthPackageIds: metadata.healthPackageIds || [],
+            benefits: metadata.benefits || [...defaultBenefits],
           };
         });
         setCorporatePlans(mappedPlans);
@@ -3146,12 +3156,46 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       premiumPerEmployee: String(plan.price || ''),
       status: plan.status || 'Active',
       currency: plan.currency || 'INR',
-      benefits: [...defaultBenefits],
+      benefits: plan.benefits?.map(benefit => ({ ...benefit })) || [...defaultBenefits],
       features: mergePlanFeatures(plan.features),
       coverage: plan.coverage || { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
       healthPackageIds: plan.healthPackageIds || [],
     });
     setShowEditPlanDialog(true);
+  };
+
+  const handleClonePlan = (plan: CorporatePlan) => {
+    const baseName = `${plan.name} (Copy)`;
+    const existingNames = new Set(corporatePlans.map(existingPlan => existingPlan.name.toLowerCase()));
+    let planName = baseName;
+    let copyNumber = 2;
+    while (existingNames.has(planName.toLowerCase())) {
+      planName = `${plan.name} (Copy ${copyNumber})`;
+      copyNumber += 1;
+    }
+
+    setNewPlan({
+      planName,
+      planType: plan.planType || 'Standard',
+      description: plan.description || '',
+      validFrom: plan.validFrom || todayISO(),
+      validTo: plan.validTo || oneYearISO(),
+      totalEmployees: String(plan.totalEmployees || ''),
+      premiumPerEmployee: String(plan.price || ''),
+      status: plan.status || 'Active',
+      currency: plan.currency || 'INR',
+      benefits: plan.benefits?.map(benefit => ({ ...benefit })) || [...defaultBenefits],
+      features: mergePlanFeatures(plan.features),
+      coverage: {
+        sumInsured: String(plan.coverage?.sumInsured ?? ''),
+        roomRent: String(plan.coverage?.roomRent ?? 'Single Room'),
+        icuRent: String(plan.coverage?.icuRent ?? '2% of Sum Insured'),
+        prePolicyMedical: String(plan.coverage?.prePolicyMedical ?? '30 days'),
+        postPolicyMedical: String(plan.coverage?.postPolicyMedical ?? '60 days'),
+      },
+      healthPackageIds: [...(plan.healthPackageIds || [])].map(String),
+    });
+    setShowCreatePlanDialog(true);
   };
 
   const handleUpdatePlan = async () => {
@@ -6920,12 +6964,15 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                 {plan.planType || plan.billingCycle}
                               </Badge>
                             </div>
-                            <div className="flex items-center gap-1 mt-1">
+                            <div className="flex flex-wrap items-center gap-1 mt-1">
                               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenViewPlan(plan)}>
                                 <Eye className="h-3 w-3 mr-1" />View
                               </Button>
                               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenEditPlan(plan)}>
                                 <Edit className="h-3 w-3 mr-1" />Edit
+                              </Button>
+                              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleClonePlan(plan)} title={`Clone ${plan.name}`}>
+                                <Copy className="h-3 w-3 mr-1" />Clone
                               </Button>
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 ml-auto" onClick={() => handleDeletePlan(plan.id, plan.name)} title="Delete plan">
                                 <Trash2 className="h-4 w-4" />
