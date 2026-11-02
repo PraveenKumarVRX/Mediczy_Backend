@@ -117,6 +117,7 @@ export default function CorporateWelcomeEmailBatchDialog({
   const [singleSearchIndex, setSingleSearchIndex] = useState(0);
   const [selectedModeSearch, setSelectedModeSearch] = useState('');
   const [onlyNotWelcomed, setOnlyNotWelcomed] = useState(true);
+  const [confirmSend, setConfirmSend] = useState<{ provision: number; emails: number } | null>(null);
   const [templateName, setTemplateName] = useState('Corporate employee welcome_sigin');
 
   useEffect(() => {
@@ -279,6 +280,33 @@ export default function CorporateWelcomeEmailBatchDialog({
     handler?.();
   };
 
+  const fireSend = () => {
+    onPrepareFromEmployees?.({
+      mode: prepareMode,
+      singleEmployeeId,
+      singleEmployeeEmail: selectedSingleEmployee?.email,
+      sendImmediately: true,
+    });
+  };
+
+  // How many accounts will be created and how many real emails sent if the user sends now.
+  const sendProvisionCount = prepareMode === 'all' ? notYetProvisionedEmployees : 0;
+  const sendEmailCount = prepareMode === 'all'
+    ? eligibleEmployees + notYetProvisionedEmployees
+    : prepareMode === 'selected'
+      ? selectedEmployeeCount
+      : 1;
+
+  // Confirm before a consequential bulk send — creating accounts, or emailing many people,
+  // can't be undone. A single employee or a tiny selection sends straight through.
+  const requestSend = () => {
+    if (sendProvisionCount > 0 || sendEmailCount >= 10) {
+      setConfirmSend({ provision: sendProvisionCount, emails: sendEmailCount });
+      return;
+    }
+    fireSend();
+  };
+
   const handleSingleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (filteredSingleEmployees.length === 0) return;
 
@@ -374,7 +402,7 @@ export default function CorporateWelcomeEmailBatchDialog({
                   <select
                     className="w-full h-9 rounded-md border bg-background px-2 text-sm"
                     value={prepareMode}
-                    onChange={(event) => setPrepareMode(event.target.value as 'single' | 'selected' | 'all')}
+                    onChange={(event) => { setConfirmSend(null); setPrepareMode(event.target.value as 'single' | 'selected' | 'all'); }}
                   >
                     <option value="single">Single employee</option>
                     <option value="selected">Selected employees ({selectedEmployeeCount})</option>
@@ -531,35 +559,54 @@ export default function CorporateWelcomeEmailBatchDialog({
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canPrepareDrafts || preparing || sending}
-                    onClick={() => onPrepareFromEmployees({
-                      mode: prepareMode,
-                      singleEmployeeId,
-                      singleEmployeeEmail: selectedSingleEmployee?.email,
-                      sendImmediately: false,
-                    })}
-                  >
-                    {preparing ? 'Preparing...' : 'Prepare'}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={!canSend || preparing || sending}
-                    onClick={() => onPrepareFromEmployees({
-                      mode: prepareMode,
-                      singleEmployeeId,
-                      singleEmployeeEmail: selectedSingleEmployee?.email,
-                      sendImmediately: true,
-                    })}
-                  >
-                    Send Now
-                  </Button>
-                </div>
+                {confirmSend ? (
+                  <div className="rounded-md border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">Confirm — this can't be undone</p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                      {confirmSend.provision > 0 && <>This will create <strong>{confirmSend.provision}</strong> new login account{confirmSend.provision === 1 ? '' : 's'} and </>}
+                      {confirmSend.provision > 0 ? 'email' : 'This will email'} <strong>{confirmSend.emails}</strong> employee{confirmSend.emails === 1 ? '' : 's'} right now.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button type="button" variant="outline" size="sm" disabled={preparing || sending} onClick={() => setConfirmSend(null)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                        disabled={preparing || sending}
+                        onClick={() => { setConfirmSend(null); fireSend(); }}
+                      >
+                        {preparing || sending ? 'Sending…' : `Yes, send ${confirmSend.emails}`}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!canPrepareDrafts || preparing || sending}
+                      onClick={() => onPrepareFromEmployees({
+                        mode: prepareMode,
+                        singleEmployeeId,
+                        singleEmployeeEmail: selectedSingleEmployee?.email,
+                        sendImmediately: false,
+                      })}
+                    >
+                      {preparing ? 'Preparing...' : 'Prepare'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!canSend || preparing || sending}
+                      onClick={requestSend}
+                    >
+                      Send Now
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex items-center justify-between gap-2 border-b p-3">
