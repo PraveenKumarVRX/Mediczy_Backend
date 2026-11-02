@@ -595,7 +595,11 @@ export default function CorporateWelcomeEmailBatchDialog({
                         sendImmediately: false,
                       })}
                     >
-                      {preparing ? 'Preparing...' : 'Prepare'}
+                      {preparing
+                        ? 'Preparing...'
+                        : prepareMode === 'all'
+                          ? `Prepare ${eligibleEmployees} draft${eligibleEmployees === 1 ? '' : 's'}`
+                          : 'Prepare'}
                     </Button>
                     <Button
                       type="button"
@@ -603,7 +607,11 @@ export default function CorporateWelcomeEmailBatchDialog({
                       disabled={!canSend || preparing || sending}
                       onClick={requestSend}
                     >
-                      Send Now
+                      {prepareMode === 'all'
+                        ? `Welcome all ${eligibleEmployees + notYetProvisionedEmployees}`
+                        : prepareMode === 'selected'
+                          ? `Send ${selectedEmployeeCount}`
+                          : 'Send Now'}
                     </Button>
                   </div>
                 )}

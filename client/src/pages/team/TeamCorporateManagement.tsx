@@ -4460,6 +4460,16 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
   ) => {
     if (!selectedCorporate) return;
 
+    // Make the template the user actually picked the one that gets sent. Welcome emails are
+    // rendered server-side from this corporate's *assigned* template, so a dropdown selection
+    // alone is ignored — it falls back to whatever was last approved (e.g. "App Download &
+    // Login Reminder"). Assigning the selected template here, before anything is prepared or
+    // sent, makes "what you selected = what goes out" for both the provisioned credential
+    // emails and the template drafts.
+    if (selectedWelcomeTemplateId && selectedWelcomeTemplateId !== approvedWelcomeTemplateId) {
+      await handleApproveWelcomeTemplate(selectedWelcomeTemplateId);
+    }
+
     // Unified flow: a "Send" over All/Selected also provisions any in-scope roster
     // employees without a login account (the newly-added ones), so one action welcomes
     // everyone who hasn't received an email — not just the ones who already had accounts.
