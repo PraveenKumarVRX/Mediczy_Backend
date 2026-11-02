@@ -255,8 +255,17 @@ export default function CorporateWelcomeEmailBatchDialog({
   const alreadyWelcomedEmployees = welcomePrepareStats?.alreadyWelcomed ?? Math.max(totalEmployees - eligibleEmployees, 0);
   const notYetProvisionedEmployees = welcomePrepareStats?.notYetProvisioned ?? 0;
 
-  const canPrepare = prepareMode === 'all'
+  // "Prepare" produces editable drafts, which only exist for employees that already have
+  // an account — a no-account employee can't be drafted (sending provisions + emails them
+  // in one step). "Send" in All mode additionally provisions the no-account ones, so it's
+  // enabled whenever anyone (ready or not-yet-provisioned) still needs a welcome.
+  const canPrepareDrafts = prepareMode === 'all'
     ? eligibleEmployees > 0
+    : prepareMode === 'selected'
+      ? selectedEmployeeCount > 0
+      : Boolean(singleEmployeeId);
+  const canSend = prepareMode === 'all'
+    ? (eligibleEmployees + notYetProvisionedEmployees) > 0
     : prepareMode === 'selected'
       ? selectedEmployeeCount > 0
       : Boolean(singleEmployeeId);
@@ -370,13 +379,15 @@ export default function CorporateWelcomeEmailBatchDialog({
                     <option value="single">Single employee</option>
                     <option value="selected">Selected employees ({selectedEmployeeCount})</option>
                     <option value="all">
-                      All employees ({totalEmployees} total{eligibleEmployees !== totalEmployees ? `, ${eligibleEmployees} eligible` : ''})
+                      All not-yet-welcomed ({eligibleEmployees + notYetProvisionedEmployees})
                     </option>
                   </select>
-                  {prepareMode === 'all' && alreadyWelcomedEmployees > 0 && (
+                  {prepareMode === 'all' && (
                     <p className="text-[11px] text-muted-foreground">
-                      {alreadyWelcomedEmployees} already have welcome emails queued or sent and will be skipped.
-                      Only {eligibleEmployees} new draft{eligibleEmployees === 1 ? '' : 's'} can be prepared.
+                      {alreadyWelcomedEmployees > 0 && <>{alreadyWelcomedEmployees} already welcomed will be skipped. </>}
+                      <strong>Send Now</strong> welcomes all {eligibleEmployees + notYetProvisionedEmployees}: emails the {eligibleEmployees} with an account
+                      {notYetProvisionedEmployees > 0 ? <> and creates accounts + credential emails for the {notYetProvisionedEmployees} new ones</> : null}.
+                      {' '}<strong>Prepare</strong> drafts only the {eligibleEmployees} with an account.
                     </p>
                   )}
                 </div>
@@ -525,7 +536,7 @@ export default function CorporateWelcomeEmailBatchDialog({
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!canPrepare || preparing || sending}
+                    disabled={!canPrepareDrafts || preparing || sending}
                     onClick={() => onPrepareFromEmployees({
                       mode: prepareMode,
                       singleEmployeeId,
@@ -538,7 +549,7 @@ export default function CorporateWelcomeEmailBatchDialog({
                   <Button
                     type="button"
                     size="sm"
-                    disabled={!canPrepare || preparing || sending}
+                    disabled={!canSend || preparing || sending}
                     onClick={() => onPrepareFromEmployees({
                       mode: prepareMode,
                       singleEmployeeId,

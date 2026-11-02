@@ -4421,6 +4421,37 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     return employees.filter((employee) => selected.has(employee.id) && isWelcomeEmailEligible(employee) && employee.email && !hasActiveWelcomeEmailDelivery(employee));
   };
 
+  // Employees in scope who have no login account yet (roster-only), so they can't be
+  // emailed through the template flow — they must be provisioned first (which creates the
+  // account with a UID temp password and sends the credential welcome email in one step).
+  const getNoAccountTargets = (mode: 'selected' | 'all' | 'single') => {
+    const notWelcomed = (employee: Employee) =>
+      employee.hasUserAccount === false
+      && Boolean(employee.corporateEmployeeRowId)
+      && String(employee.status || 'active').toLowerCase() !== 'inactive'
+      && !hasActiveWelcomeEmailDelivery(employee);
+    if (mode === 'all') return employees.filter(notWelcomed);
+    if (mode === 'selected') {
+      const selected = new Set(selectedEmployeeIdsForWelcome);
+      return employees.filter((employee) => selected.has(employee.id) && notWelcomed(employee));
+    }
+    return [];
+  };
+
+  // Provision + credential-welcome a specific set of roster rows (shared by the unified
+  // send below and any targeted provisioning). Returns how many succeeded.
+  const provisionRosterAccountsByRowIds = async (rowIds: number[]): Promise<{ provisioned: number; failed: number }> => {
+    if (!selectedCorporate || rowIds.length === 0) return { provisioned: 0, failed: 0 };
+    const numericId = parseInt(String(selectedCorporate.id), 10);
+    const token = localStorage.getItem('teamToken');
+    const response = await api.post(
+      `/admin/corporate-employees/${numericId}/provision-accounts`,
+      { corporateEmployeeRowIds: rowIds },
+      { headers: token ? { Authorization: `Bearer ${token}` } : undefined, timeout: 300000 }
+    );
+    return { provisioned: response.data?.provisioned ?? 0, failed: response.data?.failed ?? 0 };
+  };
+
   const handlePrepareOrSendEmployeeWelcomeEmails = async (
     sendImmediately: boolean,
     mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode,
@@ -4428,6 +4459,34 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     singleEmployeeEmail?: string,
   ) => {
     if (!selectedCorporate) return;
+
+    // Unified flow: a "Send" over All/Selected also provisions any in-scope roster
+    // employees without a login account (the newly-added ones), so one action welcomes
+    // everyone who hasn't received an email — not just the ones who already had accounts.
+    // Drafting ("Prepare") can't provision (that creates accounts + sends immediately), so
+    // this only runs on a real send.
+    let provisionedViaSend = 0;
+    if (sendImmediately && (mode === 'all' || mode === 'selected')) {
+      const noAccountTargets = getNoAccountTargets(mode);
+      const rowIds = noAccountTargets.map((e) => Number(e.corporateEmployeeRowId)).filter((id) => Number.isInteger(id) && id > 0);
+      if (rowIds.length > 0) {
+        setPreparingWelcomeEmployeeDrafts(true);
+        try {
+          const result = await provisionRosterAccountsByRowIds(rowIds);
+          provisionedViaSend = result.provisioned;
+          if (result.provisioned > 0) {
+            toast({
+              title: 'Accounts created & welcomed',
+              description: `${result.provisioned} new employee${result.provisioned === 1 ? '' : 's'} got a login account and a credential email.` + (result.failed ? ` ${result.failed} failed — check logs.` : ''),
+            });
+          }
+        } catch (error: any) {
+          toast({ variant: 'destructive', title: 'Provisioning failed', description: error?.response?.data?.message || 'Could not create accounts for new employees.' });
+        } finally {
+          setPreparingWelcomeEmployeeDrafts(false);
+        }
+      }
+    }
 
     const targets = getWelcomeEmployeeTargets(mode, singleEmployeeId, singleEmployeeEmail);
     const explicitSingleUserId = parseInt(String(singleEmployeeId || '').trim(), 10);
@@ -4449,6 +4508,13 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       : targets;
 
     if (effectiveTargets.length === 0) {
+      // If the whole in-scope set was no-account employees we just provisioned+welcomed,
+      // there's nothing left for the template flow — that's success, not an error.
+      if (provisionedViaSend > 0) {
+        const numericId = parseInt(String(selectedCorporate.id), 10);
+        if (!Number.isNaN(numericId)) await Promise.all([fetchEmployees(numericId), fetchActivationStats(numericId)]);
+        return;
+      }
       const singleEmployee = mode === 'single'
         ? employees.find((employee) => {
           const byId = String(employee.id) === String(singleEmployeeId || '').trim();
@@ -4671,7 +4737,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       const response = await api.post(
         `/admin/corporate-employees/${numericId}/provision-accounts`,
         { mode: 'all' },
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined, timeout: 300000 }
       );
       const provisioned = response.data?.provisioned ?? 0;
       const failed = response.data?.failed ?? 0;
