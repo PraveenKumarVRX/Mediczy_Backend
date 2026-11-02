@@ -274,8 +274,31 @@ export default function CorporateWelcomeEmailBatchDialog({
                     </p>
                     <p className="text-[11px] text-muted-foreground">
                       {eligibleEmployees} ready to welcome now
-                      {notYetProvisionedEmployees > 0 ? ` • ${notYetProvisionedEmployees} need an account provisioned first (see "All employees" below)` : ''}
+                      {notYetProvisionedEmployees > 0 ? ` • ${notYetProvisionedEmployees} need an account provisioned first` : ''}
                     </p>
+                  </div>
+                )}
+                {notYetProvisionedEmployees > 0 && (
+                  <div className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2 space-y-1.5">
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                      {notYetProvisionedEmployees} employee{notYetProvisionedEmployees === 1 ? '' : 's'} on the roster
+                      {notYetProvisionedEmployees === 1 ? ' has' : ' have'} no login account yet, so they don't appear as
+                      selectable targets below — they can't receive a welcome email until one is created.
+                    </p>
+                    {onProvisionRosterAccounts && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="w-full border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                        disabled={provisioningRosterAccounts}
+                        onClick={onProvisionRosterAccounts}
+                      >
+                        {provisioningRosterAccounts
+                          ? 'Provisioning…'
+                          : `Provision ${notYetProvisionedEmployees} Account${notYetProvisionedEmployees === 1 ? '' : 's'} & Send Welcome`}
+                      </Button>
+                    )}
                   </div>
                 )}
                 <div className="space-y-1">
@@ -296,29 +319,6 @@ export default function CorporateWelcomeEmailBatchDialog({
                       {alreadyWelcomedEmployees} already have welcome emails queued or sent and will be skipped.
                       Only {eligibleEmployees} new draft{eligibleEmployees === 1 ? '' : 's'} can be prepared.
                     </p>
-                  )}
-                  {prepareMode === 'all' && notYetProvisionedEmployees > 0 && (
-                    <div className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2 space-y-1.5">
-                      <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                        {notYetProvisionedEmployees} employee{notYetProvisionedEmployees === 1 ? '' : 's'} on the roster
-                        {notYetProvisionedEmployees === 1 ? ' has' : ' have'} no login account yet — they can't receive a
-                        welcome email until one is created.
-                      </p>
-                      {onProvisionRosterAccounts && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="w-full border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
-                          disabled={provisioningRosterAccounts}
-                          onClick={onProvisionRosterAccounts}
-                        >
-                          {provisioningRosterAccounts
-                            ? 'Provisioning…'
-                            : `Provision ${notYetProvisionedEmployees} Account${notYetProvisionedEmployees === 1 ? '' : 's'} & Send Welcome`}
-                        </Button>
-                      )}
-                    </div>
                   )}
                 </div>
 
