@@ -267,6 +267,17 @@ export default function CorporateWelcomeEmailBatchDialog({
             {!!onPrepareFromEmployees && (
               <div className="border-b p-3 space-y-2 bg-muted/20">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Prepare New Drafts</p>
+                {(eligibleEmployees + notYetProvisionedEmployees) > 0 && (
+                  <div className="rounded-md border bg-background p-2">
+                    <p className="text-sm font-semibold">
+                      {eligibleEmployees + notYetProvisionedEmployees} of {totalEmployees} employees have not received a welcome email
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {eligibleEmployees} ready to welcome now
+                      {notYetProvisionedEmployees > 0 ? ` • ${notYetProvisionedEmployees} need an account provisioned first (see "All employees" below)` : ''}
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label className="text-xs">Target</Label>
                   <select

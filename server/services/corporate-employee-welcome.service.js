@@ -161,7 +161,7 @@ export async function provisionAccountForRosterEmployee({ corporateEmployeeRowId
   if (!corporateEmployeeRowId || !corporateId) return { success: false, reason: 'missing_ids' };
 
   const [roster] = await postgresSequelize.query(
-    `SELECT id, "userId", "employeeId", email, metadata, unique_id
+    `SELECT id, "userId", "employeeId", email, metadata, unique_id, "joiningDate"
        FROM corporate_employees
       WHERE id = :id AND corporate_id = :corporateId AND "isActive" = true
       LIMIT 1`,
@@ -183,7 +183,22 @@ export async function provisionAccountForRosterEmployee({ corporateEmployeeRowId
   );
   if (!corporateRecord) return { success: false, reason: 'corporate_not_found_or_inactive' };
 
-  const temporaryPassword = welcomeEmailService.generateSecurePassword();
+  // Per product requirement: the mobile app expects a DDMMYYYY temporary password for
+  // bulk-provisioned employees. Date of birth isn't an option — confirmed live that 0 of
+  // 167 roster-only Ninjacart employees have one on file — so this uses joining date,
+  // which every roster row does carry. Note this means every employee uploaded in the
+  // same HR batch (same joiningDate) shares an identical temporary password; the account
+  // still forces a password change on first login (requirePasswordChange), same as every
+  // other admin-provisioned account, which is the control that makes a predictable
+  // starting password acceptable here.
+  const joiningDate = roster.joiningDate ? new Date(roster.joiningDate) : null;
+  const temporaryPassword = joiningDate && !Number.isNaN(joiningDate.getTime())
+    ? [
+        String(joiningDate.getUTCDate()).padStart(2, '0'),
+        String(joiningDate.getUTCMonth() + 1).padStart(2, '0'),
+        String(joiningDate.getUTCFullYear()),
+      ].join('')
+    : welcomeEmailService.generateSecurePassword();
   const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
   const [newUser] = await postgresSequelize.query(
     `INSERT INTO users (email, "phoneNumber", password, "firstName", "lastName", "emailVerified", "phoneVerified",
