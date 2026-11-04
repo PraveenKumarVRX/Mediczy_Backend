@@ -44,22 +44,32 @@ app upload ───────────────────────
 
 ## Work packages
 
-### WP0 — Canonical data model + convergence  _(low risk, no behaviour change)_
-**Goal:** one table, both paths write it, existing consumers keep working.
+### WP0 — Canonical data model (additive prep)  _(done — dry-run clean; awaiting apply)_
+**Status:** migration written + dry-run verified against prod (rolled back).
+**Goal:** prepare `lab_results` as the single canonical store — **purely additive, zero behaviour change.**
 
-- **Migration** `server/migrations/report-observations-canonical.migration.js`:
-  - Adopt **`lab_results`** as canonical (richest schema). Add columns:
-    `canonical_name`, `loinc_code`, `confidence NUMERIC`, `page INT`, `source_text TEXT`,
-    `ocr_method`, `extraction_method`, `verification_status` (`pending|verified|rejected` default `pending`),
-    `verified_by`, `verified_at`, `report_date` (already present), `patient_id` (add alongside `userId`).
-  - Create **compatibility view** `ai_report_lab_values` → `SELECT` over `lab_results`, so
-    `ai-health-risk-cron` and `ai-his-score` keep working unchanged. Migrate the 17 real rows in,
-    then drop the old base table.
-  - New table `lab_parameter_catalog` (alias → `canonical_name`, `loinc_code`, `unit`,
-    reference range by sex/age-band). Seed with the common panel (CBC, lipids, LFT, KFT, TSH,
-    glucose, HbA1c, urine, etc. — the Equitas FY25-26 panel is a good seed set).
-- **Tests:** migration dry-run; view returns the same shape consumers expect.
-- **Effort:** ~2 days.
+- **Migration** `server/migrations/report-observations-canonical.migration.js` (idempotent; `--dry-run`/`--down`):
+  - Adopt **`lab_results`** as canonical (richest schema). Added columns:
+    `patient_id`, `canonical_name`, `loinc_code`, `confidence`, `page`, `source_text`,
+    `ocr_method`, `extraction_method`, `verification_status` (`pending|verified|rejected`),
+    `verified_by`, `verified_at`. (+ indexes on `(patient_id,createdAt)`, `loinc_code`, `verification_status`.)
+  - Backfill `patient_id` from `patients` via `userId` (idempotent).
+  - New table `lab_parameter_catalog` (alias → `canonical_name`, `loinc_code`, `unit`, ref range),
+    seeded with 24 common parameters (CBC, lipids, LFT, KFT, TSH, glucose, HbA1c — covers the
+    Equitas FY25-26 panel).
+- **Deferred to WP3** (because `report-analysis.service.js` still INSERTs the `ai_report_lab_values`
+  base table — converting it to a view now would break that write): migrate the 17 legacy rows,
+  create the `ai_report_lab_values` **compatibility view** over `lab_results`, drop the old table.
+  This lands in the same change that repoints the writer.
+- **Dry-run result (prod, 2026-11-04):** 11/11 columns add, 24 catalog rows seed, rollback clean.
+- **Effort:** ~2 days (migration done; WP3 carries the view/migrate/drop).
+
+> **Data-model finding (feeds WP3).** The two paths key differently *and* cover different people:
+> `lab_results.userId` points at `users` rows that have **no `patients` row** (corporate-checkup
+> employees); `ai_report_lab_values.patient_id` points at real `patients`. So corporate-employee
+> lab data currently **cannot reach** the patient-keyed HRA/HIS scorers. WP3 must reconcile this —
+> either auto-provision a `patients` row on first corporate lab result, or make the canonical
+> model + consumers key on `userId` with `patient_id` optional. Decision needed in WP3.
 
 ### WP1 — Ingest from the CRM mailbox (inline, no queue)  _(closes G6)_
 **Goal:** reports auto-processed the moment they land, without a UI. Low volume → no queue.
