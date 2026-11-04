@@ -10,8 +10,10 @@ namespace JSX {
 }
 // App-specific globals attached at runtime (service-worker / health-sync scheduler).
 interface Window {
-  clients?: unknown;
-  healthSyncScheduler?: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  clients?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  healthSyncScheduler?: any;
   skipWaiting?: () => void;
 }
 }
