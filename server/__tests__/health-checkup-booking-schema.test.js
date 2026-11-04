@@ -15,6 +15,16 @@ describe('patient health-checkup booking contract', () => {
     expect(read('scripts/migrate-all.mjs')).toContain('health-checkup-bookings');
   });
 
+  test('database duplicate protection is beneficiary-aware for family AHC packages', () => {
+    const migration = read('migrations/20261104000300-health-checkup-beneficiary-uniqueness.migration.js');
+    expect(migration).toContain("COALESCE(beneficiary_relation, 'self')");
+    expect(migration).toContain("status NOT IN ('cancelled', 'completed')");
+    expect(read('scripts/migrate-all.mjs')).toContain('health-checkup-beneficiary-uniqueness');
+
+    const route = read('routes/health-checkup.route.js');
+    expect(route).toContain("COALESCE(beneficiary_relation,'self')=:relation");
+  });
+
   test('patient API exposes eligibility, availability, booking and payment operations', () => {
     const route = read('routes/health-checkup.route.js');
     for (const endpoint of ["'/me'", "'/packages'", "'/packages/:packageId'", "'/labs'", "'/slots'", "'/bookings'", "'/bookings/:bookingId/cancel'", "'/bookings/:bookingId/reschedule'", "'/bookings/:bookingId/payment'", "'/bookings/:bookingId/payment/verify'"]) {
