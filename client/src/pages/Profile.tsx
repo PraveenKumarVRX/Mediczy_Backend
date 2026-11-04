@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -416,9 +417,9 @@ const Profile = () => {
   ];
 
   return (
-      <motion.div variants={container} initial="hidden" animate="show" className="max-w-5xl mx-auto space-y-6 px-4 md:px-6 py-6">
+      <motion.div variants={container as unknown as Variants} initial="hidden" animate="show" className="max-w-5xl mx-auto space-y-6 px-4 md:px-6 py-6">
         {/* Hero Header */}
-        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+        <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
           <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
           <div className="relative flex flex-col md:flex-row md:items-center gap-6">
@@ -454,7 +455,7 @@ const Profile = () => {
         </motion.div>
 
         {/* Tabbed Content */}
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-5 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 h-auto">
               {[
@@ -801,7 +802,7 @@ const Profile = () => {
         </motion.div>
 
         {/* Emergency Contacts */}
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
         <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
           <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
             <CardTitle className="text-slate-800 dark:text-white flex items-center gap-2">
@@ -841,7 +842,7 @@ const Profile = () => {
         </motion.div>
 
         {/* Availability & Location */}
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
         <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <CardTitle className="text-slate-800 dark:text-white flex items-center gap-2">

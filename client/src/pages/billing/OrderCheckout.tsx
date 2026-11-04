@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -109,10 +110,10 @@ const OrderCheckout = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      <motion.div variants={container} initial="hidden" animate="show" className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <motion.div variants={container as unknown as Variants} initial="hidden" animate="show" className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
         {/* Back + Title */}
-        <motion.div variants={item} className="flex items-center gap-3">
+        <motion.div variants={item as unknown as Variants} className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate('/billing/orders')} className="rounded-full h-10 w-10 dark:text-slate-300 dark:hover:bg-slate-800"><ArrowLeft className="w-5 h-5" /></Button>
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">Secure Checkout</h1>
@@ -121,7 +122,7 @@ const OrderCheckout = () => {
         </motion.div>
 
         {/* Checkout Progress */}
-        <motion.div variants={item} className="flex items-center justify-center gap-3 py-2">
+        <motion.div variants={item as unknown as Variants} className="flex items-center justify-center gap-3 py-2">
           {['Cart', 'Checkout', 'Payment', 'Confirmation'].map((step, i) => (
             <div key={step} className="flex items-center gap-3">
               <div className={`flex items-center gap-2 ${i <= 1 ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-300 dark:text-slate-600'}`}>
@@ -137,7 +138,7 @@ const OrderCheckout = () => {
           {/* Left: Order + Address */}
           <div className="md:col-span-3 space-y-6">
             {/* Order Summary */}
-            <motion.div variants={item}>
+            <motion.div variants={item as unknown as Variants}>
               <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50 overflow-hidden">
                 <div className="h-1 bg-gradient-to-r from-indigo-500 to-blue-500" />
                 <CardHeader className="pb-3">
@@ -174,7 +175,7 @@ const OrderCheckout = () => {
             </motion.div>
 
             {/* Billing Address */}
-            <motion.div variants={item}>
+            <motion.div variants={item as unknown as Variants}>
               <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50 overflow-hidden">
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-base"><MapPin className="w-4 h-4 text-blue-600" /> Billing Address</CardTitle>
@@ -211,7 +212,7 @@ const OrderCheckout = () => {
 
           {/* Right: Payment */}
           <div className="md:col-span-2 space-y-6">
-            <motion.div variants={item}>
+            <motion.div variants={item as unknown as Variants}>
               <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50 overflow-hidden">
                 <div className="h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
                 <CardHeader className="pb-3">
@@ -264,7 +265,7 @@ const OrderCheckout = () => {
             </motion.div>
 
             {/* Security badges */}
-            <motion.div variants={item}>
+            <motion.div variants={item as unknown as Variants}>
               <Card className="border-0 shadow-sm dark:bg-slate-800/40 dark:border-slate-700/50 overflow-hidden">
                 <CardContent className="p-4 space-y-3">
                   {[

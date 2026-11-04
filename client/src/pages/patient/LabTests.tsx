@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 import { useLabCart } from '@/hooks/patient/useLabCart';
 import { useLabBookings } from '@/hooks/patient/useLabBookings';
@@ -347,9 +348,9 @@ const LabTests = () => {
   };
 
   return (
-      <motion.div variants={container} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+      <motion.div variants={container as unknown as Variants} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
         {/* Header */}
-        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+        <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
           <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
           <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -958,7 +959,7 @@ const LabTests = () => {
         </motion.div>
 
         {/* Stats */}
-        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        <motion.div variants={item as unknown as Variants} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <motion.div whileHover={{ y: -4, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
           <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('all')}>
             <CardContent className="pt-6">
@@ -1012,7 +1013,7 @@ const LabTests = () => {
         </motion.div>
 
         {/* Controls */}
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
         <Card className="mb-6 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardContent className="pt-6">
             <div className="flex flex-col gap-4">
@@ -1084,7 +1085,7 @@ const LabTests = () => {
 
         {/* Available Tests to Book */}
         {searchTerm && (
-          <motion.div variants={item} className="mb-6">
+          <motion.div variants={item as unknown as Variants} className="mb-6">
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Available Tests ({filteredAvailableTests.length})</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredAvailableTests.slice(0, 12).map((test) => (
@@ -1132,7 +1133,7 @@ const LabTests = () => {
         )}
 
         {/* My Booked Tests */}
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
         <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">My Lab Tests ({filteredTests.length})</h2>
         {labFetchError && (
           <InlineError message="Couldn't load lab tests." onRetry={refetchLabTests} className="mb-4" />

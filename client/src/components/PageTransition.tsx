@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { motion } from "framer-motion";
 import { ReactNode } from "react";
 
@@ -36,7 +37,7 @@ const pageVariants = {
 export function PageTransition({ children, className }: PageTransitionProps) {
   return (
     <motion.div
-      variants={pageVariants}
+      variants={pageVariants as unknown as Variants}
       initial="initial"
       animate="animate"
       exit="exit"
@@ -59,7 +60,7 @@ const staggerChildVariants = {
 
 export function StaggerChild({ children, className }: PageTransitionProps) {
   return (
-    <motion.div variants={staggerChildVariants} className={className}>
+    <motion.div variants={staggerChildVariants as unknown as Variants} className={className}>
       {children}
     </motion.div>
   );

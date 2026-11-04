@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -150,9 +151,9 @@ const UploadedDocuments: React.FC = () => {
 
   return (
     <MainLayout>
-      <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+      <motion.div initial="hidden" animate="show" variants={container as unknown as Variants} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
         {/* Header */}
-        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-700 via-cyan-700 to-teal-800 p-6 md:p-8 text-white shadow-2xl">
+        <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-700 via-cyan-700 to-teal-800 p-6 md:p-8 text-white shadow-2xl">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
           <div className="relative flex items-center justify-between flex-wrap gap-4">
             <div>
@@ -228,7 +229,7 @@ const UploadedDocuments: React.FC = () => {
         </motion.div>
 
         {/* Stats */}
-        <motion.div variants={item} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <motion.div variants={item as unknown as Variants} className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {statCards.map(s => (
             <motion.div key={s.label} whileHover={{ scale: 1.03, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
               <Card className="relative overflow-hidden border-0 shadow-lg dark:bg-slate-800/60">
@@ -246,13 +247,13 @@ const UploadedDocuments: React.FC = () => {
         </motion.div>
 
         {/* Search */}
-        <motion.div variants={item} className="relative">
+        <motion.div variants={item as unknown as Variants} className="relative">
           <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
           <Input placeholder="Search documents…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 h-11 rounded-xl dark:bg-slate-800 dark:border-slate-700" />
         </motion.div>
 
         {/* Type Filter */}
-        <motion.div variants={item} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        <motion.div variants={item as unknown as Variants} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           {documentTypeOptions.map(type => (
             <Button key={type.value} variant={selectedType === type.value ? 'default' : 'outline'} onClick={() => setSelectedType(type.value)} size="sm" className="rounded-full whitespace-nowrap">
               {type.label}

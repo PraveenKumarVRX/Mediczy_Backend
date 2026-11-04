@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -179,9 +180,9 @@ const NetworkHospitals: React.FC = () => {
 
   return (
     <>
-    <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+    <motion.div initial="hidden" animate="show" variants={container as unknown as Variants} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
       {/* Premium Header */}
-      <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 p-6 md:p-8 text-white shadow-2xl">
+      <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 p-6 md:p-8 text-white shadow-2xl">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
         <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
         <div className="relative flex items-center justify-between flex-wrap gap-4">
@@ -201,7 +202,7 @@ const NetworkHospitals: React.FC = () => {
       </motion.div>
 
       {/* Search and Filters */}
-      <motion.div variants={item} className="space-y-4">
+      <motion.div variants={item as unknown as Variants} className="space-y-4">
         <div className="flex gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
@@ -257,7 +258,7 @@ const NetworkHospitals: React.FC = () => {
       </motion.div>
 
       {(selectedType !== 'all' || selectedCity !== 'all' || searchTerm.trim() || sortBy !== 'distance') && (
-        <motion.div variants={item} className="flex flex-wrap gap-2">
+        <motion.div variants={item as unknown as Variants} className="flex flex-wrap gap-2">
           {selectedType !== 'all' && <Badge variant="secondary">Type: {selectedType.replace('_', ' ')}</Badge>}
           {selectedCity !== 'all' && <Badge variant="secondary">City: {selectedCity}</Badge>}
           {searchTerm.trim() && <Badge variant="secondary">Search: {searchTerm}</Badge>}
@@ -269,7 +270,7 @@ const NetworkHospitals: React.FC = () => {
       )}
 
       {/* Stats */}
-      <motion.div variants={item} className="grid md:grid-cols-4 gap-4">
+      <motion.div variants={item as unknown as Variants} className="grid md:grid-cols-4 gap-4">
         {[
           { label: 'Total Network', value: hospitals.length, sub: 'healthcare providers', gradient: 'from-blue-500 to-indigo-500' },
           { label: 'Cashless Enabled', value: hospitals.filter(h => h.cashless).length, sub: 'facilities', gradient: 'from-emerald-500 to-teal-500' },
@@ -291,7 +292,7 @@ const NetworkHospitals: React.FC = () => {
       </motion.div>
 
       {/* Hospitals List */}
-      <motion.div variants={item} className="space-y-4">
+      <motion.div variants={item as unknown as Variants} className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {isLoading ? 'Loading hospitals...' : `${filteredHospitals.length} providers found`}

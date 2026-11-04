@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -225,9 +226,9 @@ const AIHealthAnalysis: React.FC = () => {
 
   return (
     <MainLayout>
-    <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+    <motion.div initial="hidden" animate="show" variants={container as unknown as Variants} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
       {/* Premium Header */}
-      <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-700 via-violet-700 to-purple-800 p-6 md:p-8 text-white shadow-2xl">
+      <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-700 via-violet-700 to-purple-800 p-6 md:p-8 text-white shadow-2xl">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
         <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
         <div className="relative flex items-center justify-between flex-wrap gap-4">
@@ -255,7 +256,7 @@ const AIHealthAnalysis: React.FC = () => {
       </motion.div>
 
       {/* Overall Health Score */}
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
       <Card className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 dark:border-slate-700/60">
         <CardHeader>
           <CardTitle className="dark:text-white">Overall Health Score</CardTitle>
@@ -286,7 +287,7 @@ const AIHealthAnalysis: React.FC = () => {
       </motion.div>
 
       {/* Health Metrics */}
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
       <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
         <CardHeader>
           <CardTitle className="dark:text-white">Current Health Metrics</CardTitle>
@@ -320,7 +321,7 @@ const AIHealthAnalysis: React.FC = () => {
       </motion.div>
 
       {/* AI Insights */}
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
       <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 dark:text-white">
@@ -365,7 +366,7 @@ const AIHealthAnalysis: React.FC = () => {
       </motion.div>
 
       {/* Health Trends */}
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
       <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
         <CardHeader>
           <CardTitle className="dark:text-white">Health Trends</CardTitle>

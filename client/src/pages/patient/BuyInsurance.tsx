@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -165,9 +166,9 @@ const BuyInsurance: React.FC = () => {
 
   return (
     <MainLayout>
-      <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+      <motion.div initial="hidden" animate="show" variants={container as unknown as Variants} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
         {/* Premium Header */}
-        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-800 p-6 md:p-8 text-white shadow-2xl">
+        <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-800 p-6 md:p-8 text-white shadow-2xl">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
           <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
           <div className="relative">
@@ -181,7 +182,7 @@ const BuyInsurance: React.FC = () => {
         </motion.div>
 
         {/* Benefits Banner */}
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
         <Card className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800/60 dark:to-indigo-900/20 border-slate-200/80 dark:border-slate-700/50">
         <CardContent className="pt-6">
           <div className="grid md:grid-cols-4 gap-4">
@@ -227,7 +228,7 @@ const BuyInsurance: React.FC = () => {
       </motion.div>
 
       {/* Search and Filter */}
-      <motion.div variants={item} className="space-y-4">
+      <motion.div variants={item as unknown as Variants} className="space-y-4">
         <div className="flex gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
@@ -262,7 +263,7 @@ const BuyInsurance: React.FC = () => {
       </motion.div>
 
       {/* Insurance Plans */}
-      <motion.div variants={item} className="grid md:grid-cols-2 gap-6">
+      <motion.div variants={item as unknown as Variants} className="grid md:grid-cols-2 gap-6">
         {filteredPlans.map((plan, idx) => (
           <motion.div key={plan.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.08, duration: 0.4 }} whileHover={{ y: -4 }}>
           <Card className={`hover:shadow-xl transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60 ${plan.recommended ? 'border-2 border-blue-500 dark:border-blue-400' : 'border-slate-200/80'}`}>
@@ -413,7 +414,7 @@ const BuyInsurance: React.FC = () => {
       </Dialog>
 
       {/* Why Choose Us */}
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
       <Card className="bg-gradient-to-br from-slate-50 to-blue-50/50 dark:from-slate-800/60 dark:to-indigo-900/20 border-slate-200/80 dark:border-slate-700/50">
         <CardHeader>
           <CardTitle>Why Buy Insurance Through Mediczy?</CardTitle>

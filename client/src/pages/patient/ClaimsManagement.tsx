@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -115,9 +116,9 @@ const ClaimsManagement: React.FC = () => {
 
   return (
     <MainLayout>
-      <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+      <motion.div initial="hidden" animate="show" variants={container as unknown as Variants} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
         {/* Premium Header */}
-        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 p-6 md:p-8 text-white shadow-2xl">
+        <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 p-6 md:p-8 text-white shadow-2xl">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
           <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
           <div className="relative flex items-center justify-between flex-wrap gap-4">
@@ -173,7 +174,7 @@ const ClaimsManagement: React.FC = () => {
         </motion.div>
 
         {/* Stats Cards */}
-        <motion.div variants={item} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <motion.div variants={item as unknown as Variants} className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {statCards.map((s, i) => (
             <motion.div key={s.label} whileHover={{ scale: 1.03, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
               <Card className="relative overflow-hidden border-0 shadow-lg dark:bg-slate-800/60">
@@ -191,7 +192,7 @@ const ClaimsManagement: React.FC = () => {
         </motion.div>
 
         {/* Status Filter Tabs */}
-        <motion.div variants={item} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        <motion.div variants={item as unknown as Variants} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           <Button variant={activeTab === 'all' ? 'default' : 'outline'} onClick={() => setActiveTab('all')} size="sm" className="rounded-full whitespace-nowrap transition-all duration-200">
             All Claims
           </Button>
@@ -319,7 +320,7 @@ const ClaimsManagement: React.FC = () => {
         </AnimatePresence>
 
         {/* Help Section */}
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
           <Card className="bg-gradient-to-br from-slate-50 to-blue-50/50 dark:from-slate-800/60 dark:to-indigo-900/20 border-slate-200/80 dark:border-slate-700/50">
             <CardHeader>
               <CardTitle className="text-slate-900 dark:text-white">Need Help with Claims?</CardTitle>

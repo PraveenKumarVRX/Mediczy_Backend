@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -310,7 +311,7 @@ const ComprehensiveAdminDashboard = () => {
               initial="hidden"
               animate="visible"
               exit="hidden"
-              variants={containerVariants}
+              variants={containerVariants as Variants}
             >
               {/* Dashboard Tab */}
               <TabsContent value="dashboard" className="space-y-8 mt-0">
@@ -334,7 +335,7 @@ const ComprehensiveAdminDashboard = () => {
                         { title: 'Appointments', value: stats?.totalAppointments || 0, change: '+23%', icon: FileText, color: 'violet', bg: 'bg-violet-50', text: 'text-violet-600' },
                         { title: 'Revenue', value: `₹${stats?.totalRevenue?.toLocaleString() || 0}`, change: '+15%', icon: DollarSign, color: 'amber', bg: 'bg-amber-50', text: 'text-amber-600' },
                       ].map((stat, index) => (
-                        <motion.div key={index} variants={cardVariants} custom={index}>
+                        <motion.div key={index} variants={cardVariants as Variants} custom={index}>
                           <Card className="border-none shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer bg-white">
                             <CardContent className="p-6">
                               <div className="flex items-center justify-between mb-4">

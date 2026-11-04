@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -197,9 +198,9 @@ export default function Wallet() {
   }
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+    <motion.div variants={container as unknown as Variants} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
       {/* Premium Hero Header */}
-      <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+      <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
         <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-500/20 to-transparent rounded-full blur-3xl" />
         <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -221,7 +222,7 @@ export default function Wallet() {
       </motion.div>
 
       {/* Balance Card */}
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
       <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20 dark:from-emerald-900/20 dark:to-emerald-900/10 dark:border-emerald-500/20">
         <CardHeader>
           <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
@@ -303,7 +304,7 @@ export default function Wallet() {
 
       {/* Today's Activity */}
       {wallet?.todayActivity && (
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
         <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -360,7 +361,7 @@ export default function Wallet() {
       )}
 
       {/* Offers Section */}
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
       <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200/70 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-900/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -437,7 +438,7 @@ export default function Wallet() {
       </motion.div>
 
       {/* Transaction History */}
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
       <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { coveragePeriod } from '@/utils/plan-entitlements';
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -547,10 +548,10 @@ const MyPlans = () => {
         )}
       </AnimatePresence>
 
-      <motion.div variants={stagger} initial="hidden" animate="show" className="max-w-5xl mx-auto space-y-6 px-4 md:px-6 py-6">
+      <motion.div variants={stagger as unknown as Variants} initial="hidden" animate="show" className="max-w-5xl mx-auto space-y-6 px-4 md:px-6 py-6">
 
         {/* ── Page header ── */}
-        <motion.div variants={fadeUp} className="flex items-center gap-3 mb-2">
+        <motion.div variants={fadeUp as unknown as Variants} className="flex items-center gap-3 mb-2">
           <div className={`p-2.5 rounded-xl bg-gradient-to-br ${tierCfg.gradient} shadow-lg`}>
             <Crown className="w-5 h-5 text-white" />
           </div>
@@ -566,7 +567,7 @@ const MyPlans = () => {
           </div>
         ) : !userPlan ? (
           /* ── No plan state ─────────────────────────────────────────────── */
-          <motion.div variants={fadeUp}>
+          <motion.div variants={fadeUp as unknown as Variants}>
             <Card className="p-8 text-center space-y-4 border-dashed border-2 border-gray-200 dark:border-gray-700">
               <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900/30 dark:to-amber-800/20 flex items-center justify-center">
                 <Crown className="w-8 h-8 text-amber-500" />
@@ -607,7 +608,7 @@ const MyPlans = () => {
         ) : (
           <>
             {/* ── Active plan hero card ──────────────────────────────────── */}
-            <motion.div variants={fadeUp}>
+            <motion.div variants={fadeUp as unknown as Variants}>
               <Card className={`overflow-hidden border-2 ${tierCfg.badge.split(" ").find(c => c.startsWith("border-")) ?? "border-gray-200"}`}>
                 {/* Top gradient header */}
                 <div className={`p-6 bg-gradient-to-br ${tierCfg.gradient} text-white relative overflow-hidden`}>
@@ -675,7 +676,7 @@ const MyPlans = () => {
             </motion.div>
 
             {/* ── Tier progress roadmap ──────────────────────────────────── */}
-            <motion.div variants={fadeUp}>
+            <motion.div variants={fadeUp as unknown as Variants}>
               <Card className="p-5">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Your Plan Journey</p>
                 <TierRoadmap currentTier={currentTier} />
@@ -684,7 +685,7 @@ const MyPlans = () => {
 
             {/* ── Upgrade options ────────────────────────────────────────── */}
             {(loadingUpgrade || upgradeOptions.length > 0) && (
-              <motion.div variants={fadeUp} className="space-y-4">
+              <motion.div variants={fadeUp as unknown as Variants} className="space-y-4">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30"><Zap className="w-4 h-4 text-amber-600" /></div>
                   <div>
@@ -697,7 +698,7 @@ const MyPlans = () => {
                 ) : (
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     {upgradeOptions.map((opt, i) => (
-                      <motion.div key={opt.id} custom={i} variants={fadeUp}>
+                      <motion.div key={opt.id} custom={i} variants={fadeUp as unknown as Variants}>
                         <UpgradeCard plan={opt} onRequest={() => setUpgradePending(opt)} isPopular={opt.metadata?.badge === 'Most Popular'} />
                       </motion.div>
                     ))}

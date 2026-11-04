@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -129,9 +130,9 @@ const NetworkClinics: React.FC = () => {
 
   return (
     <>
-    <motion.div initial="hidden" animate="show" variants={container} className="max-w-4xl mx-auto space-y-6 px-4 py-6">
+    <motion.div initial="hidden" animate="show" variants={container as unknown as Variants} className="max-w-4xl mx-auto space-y-6 px-4 py-6">
       {/* Premium Header */}
-      <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-700 via-emerald-700 to-teal-800 p-6 md:p-8 text-white shadow-2xl">
+      <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-700 via-emerald-700 to-teal-800 p-6 md:p-8 text-white shadow-2xl">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
         <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
         <div className="relative">
@@ -147,7 +148,7 @@ const NetworkClinics: React.FC = () => {
       </motion.div>
 
       {/* Search Bar */}
-      <motion.div variants={item} className="flex gap-2">
+      <motion.div variants={item as unknown as Variants} className="flex gap-2">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
           <Input
@@ -165,7 +166,7 @@ const NetworkClinics: React.FC = () => {
       </motion.div>
 
       {/* Type Filter */}
-      <motion.div variants={item} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+      <motion.div variants={item as unknown as Variants} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
         {CLINIC_TYPES.map((t) => (
           <Button
             key={t.value}
@@ -181,7 +182,7 @@ const NetworkClinics: React.FC = () => {
 
       {/* Results count */}
       {!loading && (
-        <motion.p variants={item} className="text-sm text-slate-500 dark:text-slate-400">
+        <motion.p variants={item as unknown as Variants} className="text-sm text-slate-500 dark:text-slate-400">
           Showing {clinics.length} of {total} clinics
           {search && ` matching "${search}"`}
         </motion.p>
@@ -205,7 +206,7 @@ const NetworkClinics: React.FC = () => {
           description="No in-network clinics match your search. Try a different area."
         />
       ) : (
-        <motion.div variants={item} className="space-y-4">
+        <motion.div variants={item as unknown as Variants} className="space-y-4">
           {clinics.map((clinic, idx) => (
             <motion.div key={clinic.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.04, duration: 0.3 }}>
             <Card className="hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60 border-slate-200/80">

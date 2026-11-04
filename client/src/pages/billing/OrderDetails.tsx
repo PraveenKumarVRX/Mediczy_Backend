@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -106,10 +107,10 @@ const OrderDetails = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      <motion.div variants={container} initial="hidden" animate="show" className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <motion.div variants={container as unknown as Variants} initial="hidden" animate="show" className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
         {/* Back nav */}
-        <motion.div variants={item} className="flex items-center gap-3">
+        <motion.div variants={item as unknown as Variants} className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate('/billing/orders')} className="rounded-full h-10 w-10 dark:text-slate-300 dark:hover:bg-slate-800">
             <ArrowLeft className="w-5 h-5" />
           </Button>
@@ -120,7 +121,7 @@ const OrderDetails = () => {
         </motion.div>
 
         {/* Status Banner */}
-        <motion.div variants={item} className={`relative overflow-hidden rounded-2xl border p-6 ${st.bg} ${st.dark}`}>
+        <motion.div variants={item as unknown as Variants} className={`relative overflow-hidden rounded-2xl border p-6 ${st.bg} ${st.dark}`}>
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.3),transparent_60%)]" />
           <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -153,7 +154,7 @@ const OrderDetails = () => {
           {/* Left: Main info */}
           <div className="md:col-span-2 space-y-6">
             {/* Pricing */}
-            <motion.div variants={item}>
+            <motion.div variants={item as unknown as Variants}>
               <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50 overflow-hidden">
                 <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 dark:from-slate-800 dark:to-slate-800/80 border-b dark:border-slate-700/50 pb-4">
                   <CardTitle className="flex items-center gap-2 text-base"><IndianRupee className="w-4 h-4 text-emerald-600" /> Pricing Breakdown</CardTitle>
@@ -173,7 +174,7 @@ const OrderDetails = () => {
 
             {/* Address */}
             {order.billingAddress && (
-              <motion.div variants={item}>
+              <motion.div variants={item as unknown as Variants}>
                 <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50">
                   <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 dark:from-slate-800 dark:to-slate-800/80 border-b dark:border-slate-700/50 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base"><MapPin className="w-4 h-4 text-blue-600" /> Billing Address</CardTitle>
@@ -190,7 +191,7 @@ const OrderDetails = () => {
 
             {/* Notes */}
             {order.notes && (
-              <motion.div variants={item}>
+              <motion.div variants={item as unknown as Variants}>
                 <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50">
                   <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 dark:from-slate-800 dark:to-slate-800/80 border-b dark:border-slate-700/50 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base"><StickyNote className="w-4 h-4 text-amber-600" /> Notes</CardTitle>
@@ -206,7 +207,7 @@ const OrderDetails = () => {
           {/* Right sidebar */}
           <div className="space-y-6">
             {/* Actions */}
-            <motion.div variants={item}>
+            <motion.div variants={item as unknown as Variants}>
               <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50">
                 <CardContent className="p-5 space-y-3">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Quick Actions</p>
@@ -228,7 +229,7 @@ const OrderDetails = () => {
 
             {/* Invoice Card */}
             {order.invoice && (
-              <motion.div variants={item}>
+              <motion.div variants={item as unknown as Variants}>
                 <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50 overflow-hidden">
                   <div className="h-1.5 bg-gradient-to-r from-indigo-500 to-blue-500" />
                   <CardContent className="p-5 space-y-3">
@@ -251,7 +252,7 @@ const OrderDetails = () => {
 
             {/* Payment info */}
             {order.payments && order.payments.length > 0 && (
-              <motion.div variants={item}>
+              <motion.div variants={item as unknown as Variants}>
                 <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50 overflow-hidden">
                   <div className="h-1.5 bg-gradient-to-r from-emerald-500 to-teal-500" />
                   <CardContent className="p-5 space-y-4">

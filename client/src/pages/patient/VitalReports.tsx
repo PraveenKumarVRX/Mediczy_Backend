@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import api from '@/utils/api';
 import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
@@ -108,8 +109,8 @@ const VitalReports: React.FC = () => {
   };
 
   return (
-    <motion.div initial="hidden" animate="show" variants={container} className="mx-auto max-w-7xl space-y-5">
-      <motion.div variants={item} className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 md:px-6">
+    <motion.div initial="hidden" animate="show" variants={container as unknown as Variants} className="mx-auto max-w-7xl space-y-5">
+      <motion.div variants={item as unknown as Variants} className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 md:px-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
@@ -184,7 +185,7 @@ const VitalReports: React.FC = () => {
 
       {loadError && <p role="alert">Could not load your readings. Please refresh to try again.</p>}
       <p className="text-sm text-muted-foreground">Screening flags are not a diagnosis. Review abnormal readings with your doctor.</p>
-      <motion.div variants={item} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <motion.div variants={item as unknown as Variants} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {vitalTypes.map(vitalType => {
           const latest = getLatestReading(vitalType.value);
           const Icon = vitalType.icon;
@@ -217,7 +218,7 @@ const VitalReports: React.FC = () => {
         })}
       </motion.div>
 
-      <motion.div variants={item} className="flex gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white p-2 shadow-sm scrollbar-hide dark:border-slate-800 dark:bg-slate-900/70">
+      <motion.div variants={item as unknown as Variants} className="flex gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white p-2 shadow-sm scrollbar-hide dark:border-slate-800 dark:bg-slate-900/70">
         <Button
           variant={selectedType === 'all' ? 'default' : 'outline'}
           onClick={() => setSelectedType('all')}
@@ -237,7 +238,7 @@ const VitalReports: React.FC = () => {
         ))}
       </motion.div>
 
-      <motion.div variants={item}>
+      <motion.div variants={item as unknown as Variants}>
         <Card className="border-slate-200/90 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
           <CardHeader className="border-b border-slate-100 pb-4 dark:border-slate-800">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">

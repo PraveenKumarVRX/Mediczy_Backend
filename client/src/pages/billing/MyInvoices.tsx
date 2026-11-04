@@ -1,3 +1,4 @@
+import type { Variants } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -91,10 +92,10 @@ const MyInvoices = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-violet-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      <motion.div variants={container} initial="hidden" animate="show" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <motion.div variants={container as unknown as Variants} initial="hidden" animate="show" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
         {/* Hero Header */}
-        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-700 via-purple-700 to-fuchsia-700 p-8 text-white shadow-2xl">
+        <motion.div variants={item as unknown as Variants} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-700 via-purple-700 to-fuchsia-700 p-8 text-white shadow-2xl">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
           <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-white/5 blur-3xl" />
           <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -117,7 +118,7 @@ const MyInvoices = () => {
         </motion.div>
 
         {/* Filters */}
-        <motion.div variants={item}>
+        <motion.div variants={item as unknown as Variants}>
           <Card className="border-0 shadow-md dark:bg-slate-800/60 dark:border-slate-700/50">
             <CardContent className="p-4">
               <div className="flex flex-col md:flex-row gap-3">
@@ -136,7 +137,7 @@ const MyInvoices = () => {
         </motion.div>
 
         {/* Invoice List */}
-        <motion.div variants={item} className="space-y-3">
+        <motion.div variants={item as unknown as Variants} className="space-y-3">
           {loading ? (
             <div className="space-y-3">{[...Array(4)].map((_, i) => (
               <Card key={i} className="border-0 shadow-sm dark:bg-slate-800/40"><CardContent className="p-5"><div className="flex items-center gap-4"><Skeleton className="w-12 h-12 rounded-xl" /><div className="flex-1 space-y-2"><Skeleton className="h-4 w-40" /><Skeleton className="h-3 w-28" /></div><Skeleton className="h-6 w-20 rounded-full" /><Skeleton className="h-5 w-24" /></div></CardContent></Card>
@@ -204,7 +205,7 @@ const MyInvoices = () => {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <motion.div variants={item} className="flex items-center justify-between">
+          <motion.div variants={item as unknown as Variants} className="flex items-center justify-between">
             <p className="text-sm text-gray-500 dark:text-slate-400">Showing {page * rowsPerPage + 1}–{Math.min((page + 1) * rowsPerPage, total)} of {total}</p>
             <div className="flex items-center gap-1">
               <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} className="dark:border-slate-700 dark:text-slate-300">Previous</Button>
