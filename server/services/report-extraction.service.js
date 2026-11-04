@@ -28,7 +28,8 @@ import pool from '../db/pgPool.js';
 const execFileP = promisify(execFile);
 export const EXTRACTION_VERSION = 'rx-extract@1';
 const MIN_TEXT_CHARS = 200;      // below this a PDF is treated as scanned → OCR
-const LLM_CHUNK_CHARS = 11000;   // chunk size; chunks are processed, never dropped
+const LLM_CHUNK_CHARS = 4500;    // chunk size; kept modest so weaker models stay reliable. Chunks are
+                                 // processed concurrently and never dropped. Tune up with a stronger model.
 
 // ── Text extraction ─────────────────────────────────────────────────────────
 
