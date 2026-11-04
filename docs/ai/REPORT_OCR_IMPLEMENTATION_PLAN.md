@@ -181,3 +181,109 @@ per decision D.
 ## Non-goals (unchanged)
 - No new patient-facing EHR UI (headless).
 - Self-registration, appointments, OHC, etc. untouched.
+
+---
+
+# Appendix A — WP1 & WP3 detailed design (2026-11-04)
+
+## A.0 Decision: `userId` vs `patient_id` → **auto-provision a patient (Option A)**
+
+Lab data arrives keyed on `userId` (email path) or `patient_id` (app path); every consumer
+(HRA `ai-health-risk-cron`, HIS `ai-his-score`, trends) iterates **`FROM patients`** and reads by
+`patient_id`. For report data to be usable, the person must have a `patients` row.
+
+**Chosen:** during ingestion, **find-or-create** the `patients` row for the `userId`, then store
+**both** `userId` and the resolved `patient_id` on `lab_results`. All consumers stay `patient_id`-keyed
+and unchanged.
+
+Why (not Option B — re-key everything on `userId`):
+1. `patients` is the clinical anchor the whole platform keys on; re-keying HRA/HIS/trends/appointments
+   is a large blast radius for no benefit.
+2. The pattern already exists and is proven safe: `api/mobile/index.js:905` does
+   `INSERT INTO patients ("userId", status, ...) ON CONFLICT ("userId") DO NOTHING`; `patients` has a
+   `UNIQUE(userId)` and `unique_id` is trigger-generated (entity-UID rule), so a minimal upsert is valid.
+3. Someone with a health report *is* a patient — provisioning the row is semantically correct.
+
+**Helper** (new, shared) `ensurePatientId(userId, { tenant_id, corporate_id }) → patient_id`:
+```sql
+INSERT INTO patients ("userId", status, "createdAt", "updatedAt")
+VALUES ($1, 'active', NOW(), NOW())
+ON CONFLICT ("userId") DO UPDATE SET "updatedAt" = NOW()   -- no-op upsert to RETURNING
+RETURNING id;
+```
+Inherit `tenant_id`/corporate linkage from the matched user where the column exists. Do **not** supply
+`unique_id` (trigger issues it). Idempotent.
+
+## A.1 WP1 — Ingest from the CRM mailbox (inline)
+
+- **Trigger:** `reportIngestCron` in `server/utils/cronRegistry.js`, every ~10 min, guarded by
+  `REPORTS_INGEST_ENABLED`. Uses `tick/tickStart/tickError`.
+- **Source:** reuse `inboundEmailService.connectAndFetchEmails` with the CRM mailbox creds already
+  configured for `/api/crm/emails`; `REPORTS_INGEST_FOLDER` (default INBOX), `daysBack` small.
+- **Report filter** (skip general CRM mail): keep a message only if it has an attachment with mime in
+  `{application/pdf, image/jpeg, image/png}` **and** a report-likelihood signal — subject/filename
+  matches `/report|result|lab|test|cbc|lipid|scan|x-?ray|mri|ct|ecg|ultrasound|diagnos/i` — then the
+  existing content gate in `emailAutoProcessService` confirms. Non-matching mail is ignored (no ticket).
+- **Dedupe:** by `messageId` + `sha256(attachment)`; persist processed markers so re-polling is safe.
+- **Per-message flow (inline, <100/day):**
+  1. identity match + cross-validation — **reuse** `emailAutoProcessService` gates (don't rebuild);
+  2. `ensurePatientId(userId)` (A.0);
+  3. upsert the `reports` row (reuse existing insert);
+  4. call `reportExtraction.extractReportObservations()` (A.2) **inline**;
+  5. `persistObservations()` → `lab_results`.
+- **Isolation:** per-attachment `try/catch` → log + continue; one bad PDF never stalls the batch.
+- **Scale note:** if volume ever exceeds ~100/day, lift steps 4–5 into a Redis-Streams worker modelled
+  on `gupshup-inbound-queue.service.js`. Not built now.
+- **Tests:** filter unit tests (report vs non-report); mixed-fixture run processes only reports; dedupe;
+  `ensurePatientId` idempotency.
+
+## A.2 WP3 — Unified extractor + convergence
+
+### A.2.1 New service `server/services/report-extraction.service.js`
+`extractReportObservations(buffer, mime, ctx) → { observations[], reportDate, labName, method }`
+- Pipeline: `pdf-parse` text → if `< 200` chars, **OCR** (WP2) → **LLM** structuring (reuse the
+  `report-analysis.service` prompt) → **canonicalise** each `rawName` via `lab_parameter_catalog`
+  (alias match) + `hypergrid-terminology.service` → set `canonical_name` + `loinc_code` → **status**
+  recomputed against the catalog ref range when numeric → **confidence** per value (LLM-emitted).
+- Observation shape:
+  `{ rawName, canonicalName, loincCode, value, numericValue, unit, referenceRange, status, confidence, page, sourceText }`.
+
+### A.2.2 Single writer `persistObservations(reportId, userId, observations, meta)`
+Writes **`lab_results`** only, with: `userId`, `patient_id` (via `ensurePatientId`), `testName`
+(= rawName, kept for display), `canonical_name`, `loinc_code`, `value`, `numericValue`, `unit`,
+`referenceRange`, `flag`/`status`, `isAbnormal`, `confidence`, `page`, `source_text`,
+`ocr_method`, `extraction_method='llm'`, `verification_status` (auto-rule below), `reportDate`.
+
+### A.2.3 Convergence (the deferred WP0 items — a *separate* migration, run with this code)
+`server/migrations/report-observations-converge.migration.js`:
+1. **Repoint writers:** replace the `ai_report_lab_values` INSERT in `report-analysis.service.js:401`
+   and **delete** `emailAutoProcessService.extractLabResults` (regex) — both now call
+   `persistObservations`.
+2. **Migrate** the 17 legacy `ai_report_lab_values` rows into `lab_results` (map `patient_id → userId`
+   via `patients`; `extraction_method='llm-legacy'`, `verification_status='verified'`; guard with
+   `NOT EXISTS` for re-runs).
+3. **Drop** base table `ai_report_lab_values`; **create compat view** of the same name so
+   `ai-health-risk-cron` / `ai-his-score` keep working **unchanged**:
+   ```sql
+   CREATE VIEW ai_report_lab_values AS
+   SELECT lr.id, lr.patient_id, lr."reportId" AS report_id,
+          COALESCE(lr.canonical_name, lr."testName") AS parameter_name,
+          lr.value, lr.unit,
+          COALESCE(NULLIF(lr.flag,''), CASE WHEN lr."isAbnormal" THEN 'abnormal' ELSE 'normal' END) AS status,
+          lr."referenceRange" AS reference_range,
+          lr."reportDate"::date AS report_date,
+          lr."createdAt" AS extracted_at
+   FROM lab_results lr;
+   ```
+   The view is **unfiltered** by `verification_status` so HRA sees exactly what it sees today (no
+   regression). WP4's verify gate governs the **CRM push + "trusted" trend queries**, not this view.
+- **Must deploy atomically:** the writer repoint and the view swap ship together; shadow-run the new
+  extractor against the 51 already-analysed reports and diff vs regex before cutover.
+
+### A.2.4 Auto-verify rule (set here, enforced in WP4)
+`verification_status='verified'` when `confidence ≥ 0.90` AND canonical match AND `numericValue IS NOT NULL`;
+else `'pending'` (→ WP4 review queue).
+
+## A.3 Revised sequence
+WP0 (apply) → **WP3 code + converge migration (atomic)** → WP1 ingestion → WP2 OCR (can land with/before
+WP3) → WP4 verify gate → WP5 CRM webhook → WP6 trends.
