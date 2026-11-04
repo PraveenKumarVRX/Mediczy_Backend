@@ -2182,7 +2182,11 @@ router.post('/change-password', authUser, [
     // Update password and metadata.
     // NOTE: Do NOT pre-hash here — the User model's beforeUpdate hook (user.model.intelligent.js)
     // hashes the password automatically. Pre-hashing causes double-hashing and breaks login.
-    const safeMetadata = metadata || {};
+    // Do not mutate the JSON object returned by Sequelize in place. Sequelize
+    // compares JSON attributes by reference, so an in-place mutation can leave
+    // requirePasswordChange=true in the database even after a successful first
+    // password update, permanently blocking a newly provisioned employee.
+    const safeMetadata = { ...(metadata || {}) };
     safeMetadata.passwordChangedAt = new Date().toISOString();
     if (safeMetadata.requirePasswordChange) {
       safeMetadata.requirePasswordChange = false;
