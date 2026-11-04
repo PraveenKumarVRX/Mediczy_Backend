@@ -749,6 +749,10 @@ const PUBLIC_ENDPOINTS = [
   '/api/users/forgot-password/verify',
   '/api/users/reset-password',
   '/api/users/forgot-password/reset',
+  // Candidate invitation tokens are the authentication mechanism for the
+  // PEME consent journey. The route itself hashes, expires and rate-limits
+  // those tokens; do not require a patient/employee JWT before it can run.
+  '/api/pre-employment/invitations',
   '/api/doctors/login',
   '/api/doctors/register',
   '/api/doctors/forgot-password',
