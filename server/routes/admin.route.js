@@ -6388,8 +6388,11 @@ router.post('/corporate-package-assignments', authUser, requireRole(['admin', 't
             packageId,
             packageName: packageName || `Health Package ${packageId}`,
             packageDetails: JSON.stringify(packageDetails || {}),
-            validFrom: validFrom.toISOString(),
-            validTo: validTo.toISOString()
+            // These columns are date-based entitlements. Sending a timestamp
+            // later on the current day made the member appear ineligible until
+            // midnight when consumers compare against CURRENT_DATE.
+            validFrom: validFrom.toISOString().slice(0, 10),
+            validTo: validTo.toISOString().slice(0, 10)
           },
           type: postgresSequelize.QueryTypes.INSERT
         });
