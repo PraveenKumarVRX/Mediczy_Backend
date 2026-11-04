@@ -120,10 +120,13 @@ Rules:
 - confidence 0..1 is YOUR certainty you read it correctly.
 - Include every analyte, including repeats. If none, return [].`;
 
-// Extraction uses a capable model pinned to Groq (Llama 3.3 70B) — the weaker default fallback
-// returned empty content on medical chunks. Overridable via env.
-const EXTRACTION_PROVIDER = process.env.REPORT_EXTRACTION_PROVIDER || 'groq';
-const EXTRACTION_MODEL = process.env.REPORT_EXTRACTION_MODEL || 'llama-3.3-70b-versatile';
+// Extraction provider. NB (2026-11-04 soak): Groq's `llama-3.3-70b-versatile` 404s on this account
+// and Groq's default (gpt-oss-20b) returns empty content; the cascade reaches Sarvam, which works.
+// So we PREFER a working provider but keep the cascade fallback (preferProvider, not forceProvider),
+// and do NOT force a model id (let each provider use its valid default). Override via env when a
+// capable primary (e.g. restored iSHA, or a Groq model this account can access) is available.
+const EXTRACTION_PROVIDER = process.env.REPORT_EXTRACTION_PROVIDER || 'sarvam';
+const EXTRACTION_MODEL = process.env.REPORT_EXTRACTION_MODEL || null;
 
 async function structureChunk(text, pageHint) {
   const { default: llm } = await import('./ai-brain/llm-provider.js');
@@ -134,8 +137,8 @@ async function structureChunk(text, pageHint) {
     ],
     temperature: 0,
     maxTokens: 4000,
-    forceProvider: EXTRACTION_PROVIDER,
-    model: EXTRACTION_MODEL,
+    preferProvider: EXTRACTION_PROVIDER,
+    ...(EXTRACTION_MODEL ? { model: EXTRACTION_MODEL } : {}),
     skipCache: true,
   });
   const raw = typeof resp === 'string' ? resp : (resp?.content || resp?.text || '');
