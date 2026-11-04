@@ -16,6 +16,7 @@ const MAX_RECENT = 30; // keep last 30 executions per task
 export const TASK_DEFINITIONS = [
   { key: 'medical_chat_maintenance', name: 'Medical chat retention and delivery', schedule: 'Every minute', category: 'ai', scheduleDesc: '* * * * *' },
   { key: 'report_delivery_outbox', name: 'Report observation CRM delivery (outbox)', schedule: 'Every 2 min', category: 'ai', scheduleDesc: '*/2 * * * *' },
+  { key: 'health_checkup_reminders', name: 'Health Checkup Appointment Reminders (T-24h)', schedule: 'Daily 6 PM IST', category: 'corporate', scheduleDesc: '30 12 * * *' },
   // Device
   { key: 'device_heartbeat',      name: 'Device Heartbeat Check',               schedule: 'Every 5 min',      category: 'device',     scheduleDesc: '*/5 * * * *' },
   { key: 'device_amc',            name: 'Device AMC/Subscription Check',         schedule: 'Every hour',       category: 'device',     scheduleDesc: '0 * * * *' },
