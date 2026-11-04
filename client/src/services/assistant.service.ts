@@ -8,6 +8,7 @@ import api from '@/lib/api';
 const BASE_URL = '/api';
 
 export interface AssistantHeaders {
+  [key: string]: string;
   Authorization: string;
 }
 

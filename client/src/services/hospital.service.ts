@@ -14,6 +14,7 @@ import {
 const BASE_URL = '/api/hospital/practice';
 
 export interface HospitalHeaders {
+  [key: string]: string;
   Authorization: string;
 }
 

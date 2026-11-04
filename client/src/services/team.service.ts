@@ -8,6 +8,7 @@ import api from '@/utils/api';
 const BASE_URL = '/api/team';
 
 export interface TeamHeaders {
+  [key: string]: string;
   Authorization: string;
 }
 
