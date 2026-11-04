@@ -119,6 +119,11 @@ Rules:
 - confidence 0..1 is YOUR certainty you read it correctly.
 - Include every analyte, including repeats. If none, return [].`;
 
+// Extraction uses a capable model pinned to Groq (Llama 3.3 70B) — the weaker default fallback
+// returned empty content on medical chunks. Overridable via env.
+const EXTRACTION_PROVIDER = process.env.REPORT_EXTRACTION_PROVIDER || 'groq';
+const EXTRACTION_MODEL = process.env.REPORT_EXTRACTION_MODEL || 'llama-3.3-70b-versatile';
+
 async function structureChunk(text, pageHint) {
   const { default: llm } = await import('./ai-brain/llm-provider.js');
   const resp = await llm.chat({
@@ -128,6 +133,9 @@ async function structureChunk(text, pageHint) {
     ],
     temperature: 0,
     maxTokens: 4000,
+    forceProvider: EXTRACTION_PROVIDER,
+    model: EXTRACTION_MODEL,
+    skipCache: true,
   });
   const raw = typeof resp === 'string' ? resp : (resp?.content || resp?.text || '');
   const m = raw.match(/\[[\s\S]*\]/);
@@ -138,20 +146,15 @@ async function structureChunk(text, pageHint) {
 
 // ── Canonicalisation (subordinate to HyperGrid; catalog is reviewable seed) ────
 
-async function canonicalise(items, db) {
-  const names = [...new Set(items.map((i) => String(i.raw_name || '').trim().toLowerCase()).filter(Boolean))];
-  const map = new Map();
-  if (names.length) {
-    const { rows } = await db.query(
-      `SELECT canonical_name, loinc_code, lower(alias) AS alias
-         FROM lab_parameter_catalog, unnest(aliases) AS alias
-        WHERE lower(alias) = ANY($1)`,
-      [names]
-    );
-    for (const r of rows) map.set(r.alias, { canonical_name: r.canonical_name, loinc_code: r.loinc_code || null });
-  }
+async function canonicalise(items, db, ctx = {}) {
+  // Resolve through the HyperGrid-backed authority (seeded from lab_parameter_catalog).
+  // Threshold-gated: an unconfident name returns null and is routed to review, never guessed.
+  const { resolveLabConcepts } = await import('./lab-terminology.service.js');
+  const rawNames = items.map((i) => (i.raw_name ? String(i.raw_name) : null)).filter(Boolean);
+  const resolved = await resolveLabConcepts(rawNames, { tenantId: ctx.tenantId || null }, db);
   return items.map((i) => {
-    const hit = map.get(String(i.raw_name || '').trim().toLowerCase());
+    const concept = i.raw_name ? resolved.get(String(i.raw_name)) : null;
+    const hit = concept ? { canonical_name: concept.canonical, loinc_code: concept.loinc } : null;
     const rawVal = i.raw_value;
     const num = rawVal !== null && rawVal !== undefined && String(rawVal).trim() !== '' && !isNaN(Number(rawVal))
       ? Number(rawVal) : null;   // preserves 0; null for non-numeric/qualitative
@@ -227,7 +230,7 @@ export async function extractReportObservations(buffer, mime, ctx = {}, db = poo
       });
     }
 
-    const observations = await canonicalise(items.filter((x) => x && (x.raw_name || x.raw_value != null)), db);
+    const observations = await canonicalise(items.filter((x) => x && (x.raw_name || x.raw_value != null)), db, ctx);
     meta.latency_ms = Date.now() - started;
 
     // Completeness: parse failures or zero observations from non-empty text ⇒ partial, not success.
