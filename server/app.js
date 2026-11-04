@@ -90,6 +90,7 @@ import scribeRouter from "./routes/scribe.js";
 import offlineScribeRouter from "./routes/offline-scribe.route.js";
 import voiceAssistantRouter from "./routes/voice-assistant.route.js";
 import doctorCopilotRouter from "./routes/doctor-copilot.route.js";
+import reportReviewRouter from "./routes/report-review.route.js";
 import doctorChatRouter from "./routes/doctor-chat.route.js";
 import doctorImagingRouter from "./routes/doctor-imaging.route.js";
 import localAiNodeRouter from "./routes/local-ai-node.route.js";
@@ -1464,6 +1465,7 @@ app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
 app.use("/api/ai/gpu", authUser, aiGpuMetricsRouter); // GPU scheduler metrics (superadmin)
 app.use("/api/ai-governance", authUser, aiGovernanceRouter); // SaMD governance: model cards, PCCP, drift, quality gates
+app.use("/api/report-review", authUser, reportReviewRouter); // WP3 Stage C: report observation verify gate (clinician review)
 app.use("/api/clinical-knowledge-fabric", clinicalKnowledgeFabricRouter); // Per-specialty CDSS/copilot knowledge base; draft rules gated behind medical-director approval
 // Care units (outreach clinics, medical centres, OHCs) and the OHC workspace. The corporate mount must precede the generic /api/corporate routers below.
 app.use("/api/care-units", careUnitsRouter);
