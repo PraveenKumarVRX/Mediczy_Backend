@@ -90,7 +90,7 @@ const navSections = accountsNavSections;
 
 // ── Shared UI helpers ───────────────────────────────────────────────────────
 const Wrap = ({ title, subtitle, children, copilotModule = 'accounts' as const }: {
-  title: string; subtitle: string; children: React.ReactNode;
+  title: string; subtitle: string; children?: React.ReactNode;
   copilotModule?: import('@/config/moduleCopilot.registry').ModuleCopilotId;
 }) => (
   <HospDeptLayout deptKey="accounts" deptName="Accounts" badgeLabel="Accounts"
@@ -209,10 +209,10 @@ const Bdg = ({ s }: { s: string }) => (
   <Badge className={`${SC[s] ?? 'bg-slate-100 text-slate-600'} border-0 text-xs`}>{s}</Badge>
 );
 
-const TH = ({ children }: { children: React.ReactNode }) => (
+const TH = ({ children }: { children?: React.ReactNode }) => (
   <th className="pb-2 text-left font-medium text-xs text-muted-foreground whitespace-nowrap">{children}</th>
 );
-const TD = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+const TD = ({ children, className }: { children?: React.ReactNode; className?: string }) => (
   <td className={`py-2.5 text-sm ${className ?? ''}`}>{children}</td>
 );
 

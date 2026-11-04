@@ -72,7 +72,7 @@ export const hrNavSections: DeptNavSection[] = [
 ];
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
-const Wrap = ({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) => (
+const Wrap = ({ title, subtitle, children }: { title: string; subtitle: string; children?: React.ReactNode }) => (
   <HospDeptLayout deptKey="hr" deptName="Human Resources" badgeLabel="HR"
     loginPath="/hr/login" DeptIcon={Users} navSections={hrNavSections}
     title={title} subtitle={subtitle} copilotModule="hr">
@@ -125,8 +125,8 @@ const sc: Record<string, string> = {
   Overdue:   'bg-red-100 text-red-700',
 };
 const Bdg = ({ s }: { s: string }) => <Badge className={`${sc[s] ?? 'bg-slate-100 text-slate-600'} border-0 text-xs`}>{s}</Badge>;
-const TH = ({ children }: { children: React.ReactNode }) => <th className="pb-2 text-left font-medium text-muted-foreground text-xs tracking-wide">{children}</th>;
-const TD = ({ children, center }: { children: React.ReactNode; center?: boolean }) => (
+const TH = ({ children }: { children?: React.ReactNode }) => <th className="pb-2 text-left font-medium text-muted-foreground text-xs tracking-wide">{children}</th>;
+const TD = ({ children, center }: { children?: React.ReactNode; center?: boolean }) => (
   <td className={`py-2.5 text-sm ${center ? 'text-center' : ''}`}>{children}</td>
 );
 
