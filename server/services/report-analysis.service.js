@@ -223,6 +223,25 @@ export async function analyzeReport(reportId, userId, options = {}) {
       console.error('[ReportAnalysis] HRA update error (non-blocking):', err.message)
     );
 
+    // WP3 Stage B: shadow dual-write through the canonical extractor + writer. Flag-gated (default
+    // OFF) and fire-and-forget, so it never affects the existing path. Rows land in lab_results as
+    // verification_status='pending' and are read by no consumer until Stage C flips reads.
+    if (String(process.env.REPORT_EXTRACTION_DUAL_WRITE).toLowerCase() === 'true') {
+      (async () => {
+        const { extractReportObservations } = await import('./report-extraction.service.js');
+        const { persistObservations } = await import('./report-persistence.service.js');
+        const ex = await extractReportObservations(buffer, report.mimeType, { reportId: report.id });
+        if (ex.observations?.length) {
+          await persistObservations({
+            reportId: report.id, userId,
+            corporateId: report.metadata?.corporateId || null, tenantId: report.tenant_id || report.tenantId || null,
+            documentHash: ex.meta.document_hash, observations: ex.observations, meta: ex.meta,
+            reportDate: analysis.reportDate || null,
+          });
+        }
+      })().catch(err => console.error('[ReportAnalysis] dual-write (Stage B) error:', err.message));
+    }
+
     return { cached: false, analysis };
 
   } catch (error) {

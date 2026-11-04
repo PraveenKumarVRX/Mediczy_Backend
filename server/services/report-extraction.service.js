@@ -19,6 +19,7 @@
  */
 
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { writeFile, readFile, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -187,7 +188,8 @@ async function canonicalise(items, db, ctx = {}) {
  */
 export async function extractReportObservations(buffer, mime, ctx = {}, db = pool) {
   const started = Date.now();
-  const meta = { ocr_method: null, pages: 0, textLength: 0, truncated: false, chunks: 0, parseFailures: 0, errors: [] };
+  const document_hash = createHash('sha256').update(buffer).digest('hex');
+  const meta = { ocr_method: null, pages: 0, textLength: 0, truncated: false, chunks: 0, parseFailures: 0, errors: [], document_hash };
   try {
     const ex = await extractText(buffer, mime);
     meta.ocr_method = ex.method;

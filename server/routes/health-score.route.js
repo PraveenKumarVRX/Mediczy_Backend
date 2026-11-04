@@ -128,7 +128,7 @@ router.post('/log', authUser, async (req, res) => {
     const [profile] = await postgresSequelize.query(`
       SELECT
         u."dateOfBirth" AS "dateOfBirth",
-        COALESCE(ha.gender, u.gender, 'other') AS gender,
+        COALESCE(ha.gender::text, u.gender::text, 'other') AS gender,
         ha.height,
         COALESCE(
           (SELECT weight FROM daily_activity

@@ -37,7 +37,7 @@ export async function currentDailyScore(userId) {
   const [enriched, logs, profiles] = await Promise.all([
     enrichLogDataFromDiary(userId, date),
     postgresSequelize.query('SELECT * FROM daily_activity WHERE user_id = :userId AND date = :date LIMIT 1', { replacements: { userId, date }, type: QueryTypes.SELECT }),
-    postgresSequelize.query(`SELECT u."dateOfBirth", COALESCE(ha.gender, u.gender, 'other') AS gender, ha.height,
+    postgresSequelize.query(`SELECT u."dateOfBirth", COALESCE(ha.gender::text, u.gender::text, 'other') AS gender, ha.height,
       COALESCE((SELECT weight FROM daily_activity WHERE user_id = u.id AND weight IS NOT NULL ORDER BY date DESC LIMIT 1), ha.weight) AS weight
       FROM users u LEFT JOIN user_health_assessments ha ON ha.user_id = u.id
       AND ha.id = (SELECT id FROM user_health_assessments WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1)
@@ -868,7 +868,7 @@ async function computeAndStoreAllUsers(targetDate) {
       SELECT DISTINCT
         u.id                                             AS user_id,
         u."dateOfBirth"                                  AS "dateOfBirth",
-        COALESCE(ha.gender, u.gender, 'other')            AS gender,
+        COALESCE(ha.gender::text, u.gender::text, 'other')            AS gender,
         ha.height,
         -- Use the most recently logged weight, fall back to HRA baseline
         COALESCE(
