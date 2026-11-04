@@ -63,7 +63,9 @@ const ChangePassword = () => {
             data.message ||
             "Your password has been changed. Welcome aboard!",
         });
-        navigate("/", { replace: true });
+        const destination = sessionStorage.getItem("mediczy:post-password-route") || "/";
+        sessionStorage.removeItem("mediczy:post-password-route");
+        navigate(destination, { replace: true });
       } else {
         throw new Error(data?.message || "Failed to change password");
       }

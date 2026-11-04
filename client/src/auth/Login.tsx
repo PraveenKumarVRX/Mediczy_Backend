@@ -70,6 +70,9 @@ type LoginMode = "password" | "otp";
 type OtpStep = "input" | "verify";
 type LoginAudience = "individual" | "corporate_employee";
 
+const CORPORATE_EMPLOYEE_HOME = "/corporate/benefits";
+const POST_PASSWORD_ROUTE_KEY = "mediczy:post-password-route";
+
 const WELLNESS_BENEFITS = [
   { icon: Video,       label: "Free Video Consult",    desc: "First consultation free",         color: "#f0fdf4", iconColor: "#16a34a", accent: "#bbf7d0" },
   { icon: Pill,        label: "Medicine Delivery",     desc: "Doorstep in under 2 hours",       color: "#fef3c7", iconColor: "#d97706", accent: "#fde68a" },
@@ -234,6 +237,8 @@ const Login = () => {
       // never fall back silently to individual benefits.
     }
     clearAuthTokens();
+    sessionStorage.removeItem(POST_PASSWORD_ROUTE_KEY);
+    sessionStorage.removeItem("mediczy:experience");
     toast({
       variant: "destructive",
       title: "Corporate employee access not available",
@@ -291,10 +296,19 @@ const Login = () => {
         localStorage.setItem("userId", String(data.user.id));
         localStorage.setItem("userData", JSON.stringify(data.user));
       }
+      if (!(await confirmSelectedAudience())) return;
+      if (loginAudience === "corporate_employee") {
+        sessionStorage.setItem("mediczy:experience", "corporate_employee");
+      } else {
+        sessionStorage.removeItem("mediczy:experience");
+      }
       window.dispatchEvent(new Event("authChange"));
       initializeFirebaseMessaging().catch(() => {});
-      if (!(await confirmSelectedAudience())) return;
       setLoginSuccess(true);
+      if (loginAudience === "corporate_employee") {
+        setTimeout(() => navigate(CORPORATE_EMPLOYEE_HOME, { replace: true }), 800);
+        return;
+      }
       try {
         const planRes = await api.get('/membership/my/current');
         const hasNoPlan = planRes?.status === 200 && planRes?.data?.userPlan === null;
@@ -345,11 +359,23 @@ const Login = () => {
       {
         onSuccess: async (data) => {
           if (data.requirePasswordChange) {
+            if (loginAudience === "corporate_employee") {
+              sessionStorage.setItem(POST_PASSWORD_ROUTE_KEY, CORPORATE_EMPLOYEE_HOME);
+              sessionStorage.setItem("mediczy:experience", "corporate_employee");
+            } else {
+              sessionStorage.removeItem(POST_PASSWORD_ROUTE_KEY);
+              sessionStorage.removeItem("mediczy:experience");
+            }
             toast({ title: "Password change required", description: "Please set a new password before continuing." });
             navigate("/change-password", { replace: true });
             return;
           }
           if (!(await confirmSelectedAudience())) return;
+          if (loginAudience === "corporate_employee") {
+            sessionStorage.setItem("mediczy:experience", "corporate_employee");
+          } else {
+            sessionStorage.removeItem("mediczy:experience");
+          }
           try {
             const res = await api.post('/wallet/earn/daily-login');
             if (res?.data?.coinsEarned) {
@@ -364,6 +390,10 @@ const Login = () => {
           initializeFirebaseMessaging().catch(() => {});
           window.dispatchEvent(new Event('authChange'));
           setLoginSuccess(true);
+          if (loginAudience === "corporate_employee") {
+            setTimeout(() => navigate(CORPORATE_EMPLOYEE_HOME, { replace: true }), 800);
+            return;
+          }
           try {
             const planRes = await api.get('/membership/my/current');
             const hasNoPlan = planRes?.status === 200 && planRes?.data?.userPlan === null;

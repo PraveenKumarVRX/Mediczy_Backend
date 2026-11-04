@@ -545,7 +545,9 @@ export const AuthProvider = ({ children }) => {
       } else if (authState.userType === "corporate") {
         redirectPath = "/corporate/dashboard";
       } else if (authState.userType === "user") {
-        redirectPath = "/";
+        redirectPath = sessionStorage.getItem("mediczy:experience") === "corporate_employee"
+          ? "/corporate/benefits"
+          : "/";
       }
       navigate(redirectPath, { replace: true });
     } else {
@@ -578,7 +580,9 @@ export const AuthProvider = ({ children }) => {
       const msUntilWarn   = msUntilExpiry - 5 * 60 * 1000; // warn 5 min before
       if (msUntilWarn <= 0) return;
       expiryTimerRef.current = setTimeout(() => setSessionWarning("warn"), msUntilWarn);
-    } catch {}
+    } catch {
+      setSessionWarning(null);
+    }
 
     return () => { if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current); };
   }, [authState.token, authState.userType]);
