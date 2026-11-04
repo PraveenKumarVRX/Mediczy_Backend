@@ -38,6 +38,14 @@ interface Hospital {
   isActive: boolean;
   accreditation?: string;
   website?: string;
+  // Fields returned by the search/listing API (optional — not all endpoints populate them).
+  beds?: number;
+  classification?: string;
+  contact?: string;
+  coordinates?: { lat: number; lng: number } | [number, number];
+  phone?: string;
+  quality_score?: number;
+  services?: string[];
 }
 
 const hospitalTypes = [
