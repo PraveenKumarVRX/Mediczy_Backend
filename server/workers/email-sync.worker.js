@@ -141,7 +141,11 @@ class EmailInboxSyncWorker {
       for (const setting of allSettings) {
         const username = setting.imapUsername || setting.email;
         const password = setting.imapPassword;
-        if (!username || !password) continue;
+        // Record a visible reason instead of silently skipping unconfigured mailboxes.
+        if (!username || !password) {
+          try { await setting.update({ lastSyncAt: new Date(), lastSyncStatus: 'skipped: IMAP username/password not set' }); } catch { /* status is best-effort */ }
+          continue;
+        }
 
         // Resolve teamMemberId from userId
         let tmbId = null;
@@ -167,9 +171,13 @@ class EmailInboxSyncWorker {
           totalNew += result?.newEmails || 0;
           synced++;
           console.log(`✅ Periodic sync OK for team ${tmbId}: ${result?.newEmails || 0} new emails`);
+          try { await setting.update({ lastSyncAt: new Date(), lastSyncStatus: `ok: ${result?.newEmails || 0} new` }); } catch { /* status is best-effort */ }
         } catch (err) {
           failed++;
           console.error(`❌ Periodic sync failed for team ${tmbId}:`, err.message);
+          // Persist the failure reason (e.g. "IMAP not enabled") so it is visible, not silent.
+          // last_sync_status is VARCHAR(50), so cap the whole string at 50 chars.
+          try { await setting.update({ lastSyncAt: new Date(), lastSyncStatus: `error: ${String(err.message || 'unknown')}`.slice(0, 50) }); } catch { /* status is best-effort */ }
         }
       }
     } catch (err) {
