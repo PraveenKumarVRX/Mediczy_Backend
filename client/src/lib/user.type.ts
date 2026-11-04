@@ -91,14 +91,14 @@ interface doctorProfileProps {
   clinicName?: string;
   qualifications?: string;
   registrationNumber?: string;
-  address?: unknown;
+  address?: Record<string, unknown>;
   height?: number;
   weight?: number;
   bloodType?: string;
   allergies?: string[];
   medications?: string[];
   chronicConditions?: string[];
-  familyHistory?: unknown;
-  personalHistory?: unknown;
+  familyHistory?: Record<string, boolean | string | undefined>;
+  personalHistory?: Record<string, string | undefined>;
 }
 export type { UserProps, cardsProps, profileProps, doctorProfileProps };

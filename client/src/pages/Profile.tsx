@@ -145,7 +145,7 @@ const Profile = () => {
           ? currentUser?.phoneNumber
           : currentDoctor?.phoneNumber,
       dateOfBirth: userType === "user" ? (currentUser?.dateOfBirth ? new Date(currentUser.dateOfBirth).toISOString().split('T')[0] : "") : "",
-      gender: userType === "user" ? currentUser?.gender : undefined,
+      gender: userType === "user" ? (currentUser?.gender as "Male" | "Female" | "Other" | undefined) : undefined,
       height: userData?.height ? String(userData.height) : "",
       weight: userData?.weight ? String(userData.weight) : "",
       bloodType: userData?.bloodType || "",
