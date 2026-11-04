@@ -79,6 +79,16 @@ export function createDoctorCopilotClient(config) {
       };
     },
 
+    async proposeAppointmentChange(change) {
+      return request('/medical-ai/actions/propose',{method:'POST',body:JSON.stringify(change)});
+    },
+    async confirmAppointmentChange({actionId,confirmationToken,confirmed}) {
+      if(confirmed!==true) throw new Error('Explicit appointment confirmation required');
+      return request('/medical-ai/actions/confirm',{method:'POST',body:JSON.stringify({actionId,confirmationToken,confirmed:true})});
+    },
+    async getHandoff(appointmentId) {return request(`/medical-ai/handoffs/${encodeURIComponent(appointmentId)}`);},
+    async decideHandoff(appointmentId,status) {return request(`/medical-ai/handoffs/${encodeURIComponent(appointmentId)}/decision`,{method:'POST',body:JSON.stringify({status})});},
+
     async getBriefing() {
       return request('/voice-assistant/briefing', { method: 'GET' });
     },

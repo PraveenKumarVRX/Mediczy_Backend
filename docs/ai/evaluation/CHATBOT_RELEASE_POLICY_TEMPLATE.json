@@ -1,0 +1,7 @@
+{
+  "approvalChangeId": null,
+  "datasetVersion": null,
+  "languages": ["en"],
+  "thresholds": {"minimumQuality": null, "minimumCasesPerLanguage": null},
+  "notes": "Medical Director must approve thresholds, labelled cases and outcomes. Nulls deliberately block release. This file is not approval evidence."
+}

@@ -51,6 +51,11 @@ const resolveMeetBaseUrl = (settings = {}) => {
 const getProviderSettings = () =>
   videoService?.config?.providers?.livekit?.settings || {};
 
+export function resolveLiveKitCredentials() {
+  const settings=getProviderSettings();
+  return {apiKey:settings.apiKey||process.env.LIVEKIT_API_KEY,apiSecret:settings.apiSecret||process.env.LIVEKIT_API_SECRET};
+}
+
 // PHASE 3.1: Canonical Meeting ID Generation
 // Generate deterministic, non-sequential meeting IDs from appointment IDs
 export const generateCanonicalMeetingId = (appointmentId) => {

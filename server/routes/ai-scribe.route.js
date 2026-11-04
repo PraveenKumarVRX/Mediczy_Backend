@@ -1,3 +1,4 @@
+import { sibFetch as fetch } from '../services/sib-client.js';
 import express from 'express';
 import { authDoctor } from '../middleware/auth.middleware.js';
 import medicalAIService from '../services/medicalAI.service.js';

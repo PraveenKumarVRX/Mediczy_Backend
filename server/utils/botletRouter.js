@@ -1,3 +1,4 @@
+import { sibFetch as fetch } from '../services/sib-client.js';
 /**
  * Botlet Router - Dynamic routing engine for autonomous botlets
  * 

@@ -414,6 +414,9 @@ app = FastAPI(
     version="3.1.0",
     lifespan=lifespan
 )
+from utils.service_auth import ServiceAuth
+app.add_middleware(ServiceAuth)
+
 
 # CORS
 app.add_middleware(

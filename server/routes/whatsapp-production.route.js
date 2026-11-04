@@ -1,3 +1,5 @@
+import { channelChat } from '../services/medical-channel-chat.service.js';
+import { sibPost } from '../services/sib-client.js';
 import express from 'express';
 import { createGupshupWebhook } from '../services/gupshup-webhook.service.js';
 import { enqueueGupshupInbound, recordGupshupStatus, startGupshupInboundWorker } from '../services/gupshup-inbound-queue.service.js';
@@ -1653,18 +1655,11 @@ bookingType === 'health_checkup'
           : {};
         
         // Call SIB FastAPI directly with 15-second timeout (medical LLM queries via Groq typically take 6-12s)
-        const aiResponse = await axios.post(`${SIB_URL}/chat`, {
-            message: Body,
-            phone_number: phoneNumber,
-            session_id: `whatsapp:${phoneNumber}`,
-            patient_id: patientSpecific ? String(userContext.user?.id) : undefined,
-            user_id: patientSpecific ? String(userContext.user?.id) : undefined,
-            is_patient_specific: patientSpecific,
-            patient_context: consentScopedContext,
-            retrieval_mode: 'knowledge_fabric_plus_consent_scoped_ehr'
-          }, {
-            timeout: 15000,
-            headers: { 'Content-Type': 'application/json' }
+        const aiResponse = await channelChat({
+            channel: 'whatsapp', binding: phoneNumber,
+            owner: JSON.stringify([whatsappIdentityVerified ? `user:${userContext.user?.id}` : `anonymous:${phoneNumber}`, 'whatsapp', userContext.user?.organization_uid || userContext.user?.organization_id || null]),
+            message: Body, userId: patientSpecific ? userContext.user?.id : undefined,
+            personal: patientSpecific, context: consentScopedContext,
           }).then(response => {
             const duration = Date.now() - startTime;
             logger.info(`✅ SIB response received in ${duration}ms`);

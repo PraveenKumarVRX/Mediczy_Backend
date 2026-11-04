@@ -29,6 +29,7 @@ const DOCTOR_INCLUDE = { model: Doctor, as: 'doctor', attributes: ['id', 'firstN
  * prefer adding a named method below over calling this from route code.
  */
 export async function withTransaction(req, work) {
+  if (req.chatTransaction) return work(req.chatTransaction);
   const transaction = await postgresSequelize.transaction();
   try {
     await req.setSequelizeRlsContext?.(transaction);
@@ -106,11 +107,12 @@ export async function findByIdForActorInTransaction(actor, id, transaction, { in
       allowMeetingFallback,
     });
   }
-  return Appointment.findByPk(id, { include, transaction });
+  return Appointment.findByPk(id, { include, transaction, lock: transaction.LOCK.UPDATE });
 }
 
 /** Other non-cancelled/no-show appointments for a doctor on a given date — for slot-conflict checks. */
 export async function findActiveAppointmentsForDoctorOnDate(doctorId, date, transaction, { excludeStatuses = ['cancelled', 'no-show'] } = {}) {
+  await postgresSequelize.query('SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))', { replacements: { key: `doctor:${doctorId}:${date}` }, transaction });
   return Appointment.findAll({
     where: { doctorId, appointmentDate: date, status: { [Op.notIn]: excludeStatuses } },
     transaction,
@@ -173,3 +175,12 @@ export async function update(req, appointment, updates) {
   return withTransaction(req, (transaction) => appointment.update(updates, { transaction }));
 }
 export const updateStatus = update;
+
+export function queryInTransaction(sql, replacements, transaction) {
+  return postgresSequelize.query(sql, { replacements, transaction });
+}
+
+export const withSystemTransaction = withPublicTransaction;
+export function findByMeetingForUpdate(meetingId, transaction) {
+  return Appointment.findOne({ where: { meetingId }, transaction, lock: transaction.LOCK.UPDATE });
+}

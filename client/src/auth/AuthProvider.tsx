@@ -41,7 +41,7 @@ interface AuthContextType {
   currentUser: profileProps | null;
   currentDoctor: doctorProfileProps | null;
   currentCorporate: any | null;
-  userType: "user" | "doctor" | "corporate" | null;
+  userType: ReturnType<typeof getUserType>;
   isLoading: boolean;
   refreshAuth: () => void;
 }

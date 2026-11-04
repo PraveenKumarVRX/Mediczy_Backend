@@ -425,3 +425,14 @@ export async function getTelemetryStats(days = 7) {
 }
 
 export default { evaluate, recordTelemetry, triggerOptimization, getTelemetryStats };
+
+export { evaluateChatRelease } from './chat-release-evaluation.js';
+
+// Separate from adaptive scoring: recording a clinical trace never updates weights.
+export async function recordChatTelemetry({ traceId, sessionId, channel, latencyMs, provider, model, evidenceStatus, success, errorType }) {
+  await ensureDb();
+  await pool.query(`INSERT INTO ai_execution_telemetry(session_id,task_type,domain,route_used,provider_used,latency_ms,success,error_type,metadata)
+    VALUES($1,'chat','healthcare','governed-chat',$2,$3,$4,$5,$6::jsonb)`,
+  [sessionId || null,provider || null,latencyMs,success,errorType || null,JSON.stringify({traceId,channel,model,evidenceStatus,
+    versions:{contract:'1',prompt:process.env.CHATBOT_PROMPT_VERSION || 'unapproved',retrieval:'approved-extractive-v1',safety:'medical-chat-v1'}})]);
+}

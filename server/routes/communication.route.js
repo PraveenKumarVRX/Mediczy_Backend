@@ -139,7 +139,7 @@ router.post('/email/send', authUser, async (req, res) => {
         body: req.body.body,
         status: 'failed',
         createdBy: req.user.id,
-        organizationId: req.user.organizationId,
+        organizationId: req.user.organization_id || req.user.organizationId,
         metadata: { error: error.message }
       });
     } catch (logError) {
@@ -458,15 +458,10 @@ router.post('/chat', authUser, async (req, res) => {
 
     // Enhance userContext with authenticated user info
     const enhancedContext = {
-      ...userContext,
-      userId: userContext.userId || req.user.id,
-      organizationId: userContext.organizationId || req.user.organizationId,
-      user: userContext.user || {
-        id: req.user.id,
-        name: req.user.name,
-        email: req.user.email,
-        phone: req.user.phone
-      }
+      userId:req.user.id,
+      organizationId:req.user.organization_uid || req.user.organization_id || null,
+      callerRole:req.userRole || req.user.role,
+      // Personal records require the canonical consent-scoped medical endpoint.
     };
 
     // Process message through unified conversation service
@@ -482,9 +477,9 @@ router.post('/chat', authUser, async (req, res) => {
       message,
       channel,
       userContext: enhancedContext,
-      sessionId: sessionId || conversationId,
+      sessionId: `communication:${req.userRole||req.user.role}:${req.user.id}:${String(sessionId||conversationId||'default').slice(0,100)}`,
       language,
-      identifier: identifier || req.user.email || req.user.phone || req.user.id
+      identifier: req.user.unique_id || `user:${req.user.id}`
     });
 
     // Log the conversation for analytics
@@ -492,7 +487,7 @@ router.post('/chat', authUser, async (req, res) => {
       await CommunicationLog.create({
         type: 'chat',
         recipient: identifier || req.user.email || req.user.phone,
-        body: message,
+        body: '[Transcript retained only in authorized chat history]',
         status: result.success ? 'delivered' : 'failed',
         createdBy: req.user.id,
         organizationId: req.user.organizationId,

@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { channelChat } from './medical-channel-chat.service.js';
+import { sibPost } from './sib-client.js';
 /**
  * WhatsApp SIB Brain Service
  * 
@@ -40,7 +43,7 @@ class WhatsAppSIBBrainService {
     try {
       console.log('🧠 SIB Brain processing WhatsApp message:', {
         phone: phoneNumber.substring(0, 8) + '***',
-        message: messageBody.substring(0, 50) + '...',
+        messageLength: messageBody.length,
         profile: profileName
       });
 
@@ -79,6 +82,7 @@ class WhatsAppSIBBrainService {
                                messageBody.toLowerCase().includes('checkup');
 
       if (isActiveBookingSession || isBookingIntent || isCheckupRequest) {
+        if (!userContext.identityVerified) return { success: false, shouldReply: true, response: "Please verify your account before booking." };
         console.log('📅 Booking intent detected, using agentic booking service');
         const agenticResponse = await agenticBookingService.processBookingIntent(
           phoneNumber, 
@@ -147,19 +151,17 @@ class WhatsAppSIBBrainService {
     try {
       // Build comprehensive context for SIB
       console.log('🔧 Building SIB payload...');
-      const sibPayload = this.buildSIBPayload(message, userContext, profileName);
+
       
       console.log('🧠 Consulting SIB Brain at', SIB_URL);
-      console.log('📦 SIB Payload patient_id:', sibPayload.patient_id);
-      console.log('📦 SIB Payload message length:', sibPayload.message?.length || 0);
+
+
 
       // Call SIB Chat endpoint
-      const response = await axios.post(`${SIB_URL}/chat`, sibPayload, {
-        timeout: this.sibTimeout,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await channelChat({ channel: 'whatsapp-legacy',
+        binding: userContext.identityVerified ? userContext.phoneNumber : randomUUID(),
+        owner: JSON.stringify(['whatsapp-legacy', userContext.phoneNumber || profileName || 'anonymous']),
+        message, personal: false });
 
       const result = response.data;
       
@@ -205,7 +207,7 @@ class WhatsAppSIBBrainService {
       if (error.response) {
         console.error('❌ SIB Response Error:', {
           status: error.response.status,
-          data: JSON.stringify(error.response.data).substring(0, 500)
+          category: 'upstream_error'
         });
       } else if (error.code) {
         console.error('❌ SIB Connection Error:', error.code);
@@ -425,55 +427,13 @@ ${message}
   /**
    * Fallback reasoning when SIB is unavailable
    */
-  async fallbackReasoning(message, userContext, profileName) {
-    console.log('⚠️ Using fallback reasoning (SIB unavailable)');
-    
-    const userName = userContext.isKnownUser ? userContext.user?.firstName : profileName || 'there';
-    
-    // Build a helpful response based on message type
-    let response = `Hi ${userName}! `;
-    
-    const lowerMessage = message.toLowerCase();
-    
-    // Health query
-    if (lowerMessage.includes('symptom') || lowerMessage.includes('pain') || 
-        lowerMessage.includes('feel') || lowerMessage.includes('sick')) {
-      response += `I understand you're not feeling well. While I'm having some technical difficulties right now, please share your symptoms and I'll do my best to help.\n\n`;
-      response += `For any serious symptoms, please consult a doctor immediately. You can book an appointment at: https://app.mediqzy.com/book-appointment`;
-    }
-    // General greeting
-    else if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || 
-             lowerMessage.includes('hey')) {
-      response += `Welcome to Mediqzy! I'm ${this.doctorName}, your AI health assistant. How can I help you today?\n\n`;
-      response += `You can:\n`;
-      response += `• Ask health questions\n`;
-      response += `• Book appointments\n`;
-      response += `• Check your prescriptions\n`;
-      response += `• Get health tips`;
-    }
-    // Default
-    else {
-      response += `Thank you for your message. I'm here to help with your health queries.\n\n`;
-      response += `You can ask me about:\n`;
-      response += `• Symptoms and health concerns\n`;
-      response += `• Booking appointments\n`;
-      response += `• Your medical records\n`;
-      response += `• Health tips and advice`;
-    }
-    
-    response += `\n\n- ${this.doctorName} 🩺`;
-    
-    return {
-      response,
-      provider: 'fallback-local',
-      reasoning: 'SIB unavailable, using local fallback',
-      confidence: 0.5
-    };
+  async fallbackReasoning() {
+    return { success: false, shouldReply: true, provider: 'unavailable',
+      response: 'Medical guidance is temporarily unavailable. If this is urgent, seek immediate medical care.' };
   }
 
-  /**
-   * Save response to conversation history
-   */
+  /** Save non-clinical delivery state. */
+
   async saveResponse(phoneNumber, response) {
     try {
       await whatsAppUserContextService.addToConversationHistory(phoneNumber, {

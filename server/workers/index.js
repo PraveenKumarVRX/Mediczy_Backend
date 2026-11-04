@@ -1,3 +1,4 @@
+import { startMedicalChatMaintenance } from '../services/medical-chat-maintenance.js';
 import { Worker } from 'bullmq';
 import { createRedisConnection } from '../config/redis-connection.js';
 import { QUEUE_NAMES } from '../config/queues.js';
@@ -284,7 +285,10 @@ console.log('✅ All workers initialized');
 // `Object.values(workers).map(w => w.close())` (it also stops the Kafka/email-sync sub-workers and
 // closes the shared Redis connection those BullMQ workers use), so shutdown.controller.js calls this
 // function directly rather than closing `workers` itself.
+const medicalChatMaintenance = process.env.NODE_ENV === 'test' ? null : startMedicalChatMaintenance();
+
 export const shutdownWorkers = async () => {
+  medicalChatMaintenance?.stop();
   console.log('Closing workers...');
   await Promise.all(Object.values(workers).filter(w => w && typeof w.close === 'function').map(w => w.close()));
   if (kafkaN8NWorker) {

@@ -91,3 +91,8 @@ export async function fetchMorningBriefing() {
   const copilot = getIshaCopilot();
   return copilot.getBriefing();
 }
+
+export const proposeAppointmentChange = change => getIshaCopilot().proposeAppointmentChange(change);
+export const confirmAppointmentChange = confirmation => getIshaCopilot().confirmAppointmentChange(confirmation);
+export const getClinicalHandoff = appointmentId => getIshaCopilot().getHandoff(appointmentId);
+export const decideClinicalHandoff = (appointmentId,status) => getIshaCopilot().decideHandoff(appointmentId,status);

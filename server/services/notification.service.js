@@ -106,6 +106,7 @@ class NotificationService {
   // Initialize notification templates
   initTemplates() {
     return {
+      appointment_change: { title: 'Appointment updated', message: 'Your appointment {{appointmentId}} was {{change}}.', channels: ['in-app'], priority: 'normal' },
       // Doctor receives new appointment request
       appointment_request: {
         title: 'New Appointment Request',
@@ -350,6 +351,11 @@ class NotificationService {
       // Create in-app notification record
       const isCall = /calling|call_incoming|call_started|consultation_started|video_call/i.test(type);
       const outcome = await postgresSequelize.transaction(async transaction => {
+        if (data.eventId) {
+          await postgresSequelize.query('SELECT pg_advisory_xact_lock(hashtextextended(:key,0))', { transaction, replacements: { key: `notification:${userType}:${userId}:${data.eventId}` } });
+          const existing = await Notification.findOne({ where: { userId, userType, data: { [Op.contains]: { eventId: data.eventId } } }, transaction });
+          if (existing) return { notification: existing, duplicate: true };
+        }
         if (isCall) {
           await postgresSequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { transaction, replacements: { key: `call:${userType}:${userId}:${data.appointmentId || variables?.appointmentId || title}` } });
           const existing = await Notification.findOne({ where: { userId, userType, title, message, createdAt: { [Op.gte]: new Date(Date.now() - 2 * 60000) } }, transaction });

@@ -1,3 +1,8 @@
+import { resolveChatSubject } from '../services/chat-subject-access.js';
+import { channelChat } from '../services/medical-channel-chat.service.js';
+import { chatOwner, verifiedChatObservations } from '../services/medical-chat-contract.js';
+import { canAccessPatient } from '../services/patient-access.service.js';
+import { requireAIConsent } from '../services/medical-chat-contract.js';
 /**
  * Doctor Voice Assistant Route
  * ==============================
@@ -1356,7 +1361,28 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
     return res.status(400).json({ error: 'text is required' });
   }
 
+  const selectedId = context.currentPatient?.id || context.currentPatient?.userId;
+  if (selectedId) {
+    if (!['doctor','nurse','assistant'].includes(req.userRole||req.user.role)) return res.status(403).json({error:'Clinical chart role required'});
+    try {
+      if (!(await canAccessPatient(req, selectedId))) return res.status(403).json({ error: 'Patient access denied' });
+      await requireAIConsent(pool, selectedId);
+      const { rows } = await pool.query('SELECT id, unique_id, "firstName", "lastName" FROM users WHERE id=$1', [selectedId]);
+      if (!rows.length) return res.status(404).json({ error: 'Patient not found' });
+      await resolveChatSubject(pool,req,rows[0].unique_id,canAccessPatient);
+      context.currentPatient = { id: rows[0].id, name: `${rows[0].firstName || ''} ${rows[0].lastName || ''}`.trim() };
+    } catch (error) { return res.status(error.statusCode || 503).json({ error: 'Patient context unavailable or consent required' }); }
+  }
   const doctorId = req.user?.id || req.user?.doctorId;
+  const clinicalReply = async (action='medical_query') => {
+    const personal=Boolean(selectedId);
+    const patientContext=personal ? {verifiedObservations:await verifiedChatObservations(pool,{userId:selectedId,organizationId:req.user.organization_id,organizationUid:req.user.organization_uid,requireOrganizationUid:true})} : undefined;
+    const result=await channelChat({channel:'doctor-copilot',binding:`${selectedId||'general'}:${req.body.sessionId||'default'}`,
+      owner:chatOwner(req),message:text.trim(),language,userId:selectedId,context:patientContext,personal});
+    const answer=result.data.response||result.data.chat_answer;
+    return res.json({intent:'medical_query',action,response:answer,speak:answer,requiresConfirmation:false,
+      traceId:result.data.traceId,retrieval:result.data.retrieval,sessionId:result.data.sessionId});
+  };
   const enrichedContext = { ...context, doctorName: req.user?.firstName || req.user?.name };
   const responseLanguage = String(language || 'en').trim().toLowerCase().slice(0, 12) || 'en';
   const systemPrompt = buildSystemPrompt(enrichedContext);
@@ -1502,7 +1528,7 @@ Rules:
         maxTokens: 600,
         temperature: 0.1,
         skipCache: true,
-        forceProvider: 'sib',
+        forceProvider: process.env.VOICE_INTENT_PROVIDER || 'groq',
       });
 
       const raw = (ishaResp.content || '').trim();
@@ -1572,49 +1598,13 @@ Rules:
       }
     }
 
+    if (['medical_query','get_drug_info','check_drug_interactions','get_clinical_decision_support'].includes(toolName)) return await clinicalReply(toolName);
     // ── Step 2: Parse response ─────────────────────────────────────────────
 
     // No action / general — check if iSHA answered a medical question via 'general'
     if (!toolName || toolName === 'general') {
-      const SCOPE_REJECT   = "I'm iSHA, your clinical assistant. I can only help";
-      const GREETING_RESP  = "I'm iSHA, your AI clinical assistant. I can manage";
-      const OFF_TOPIC_MSG  = "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks.";
-
-      // Detect if iSHA slipped and answered a non-clinical question anyway
-      const NON_CLINICAL_RE = /\b(python|javascript|typescript|java\b|golang|rust|c\+\+|programming|for\s+loop|while\s+loop|\bvariable\b|\barray\b|\bfunction\s*\(|console\.|print\(|def\s+\w|capital\s+of|president\s+of|ipl\b|cricket\s+world|football\s+match|photosynthesis|geography)\b/i;
-      const hasNonClinicalContent = NON_CLINICAL_RE.test(directContent || '');
-
-      // Re-route: BiMediX2 used 'general' but wrote a substantive clinical answer
-      const isClinicalFallthrough = directContent &&
-        directContent.length > 80 &&
-        !directContent.startsWith(SCOPE_REJECT) &&
-        !directContent.startsWith(GREETING_RESP) &&
-        !hasNonClinicalContent;
-
-      if (isClinicalFallthrough) {
-        return res.json({
-          intent: 'medical_query',
-          action: 'medical_query',
-          parameters: null,
-          response: directContent,
-          speak: directContent,
-          requiresConfirmation: false,
-        });
-      }
-
-      // Non-clinical content answered by model — substitute rejection phrase
-      const responseText = hasNonClinicalContent
-        ? OFF_TOPIC_MSG
-        : (directContent || "I'm your SmartHealth assistant. How can I help?");
-
-      return res.json({
-        intent: 'general',
-        action: null,
-        parameters: null,
-        response: responseText,
-        speak: responseText,
-        requiresConfirmation: false,
-      });
+      if (/^(hi|hello|hey|good morning|good evening)[!. ]*$/i.test(text.trim())) return res.json({intent:'general',response:'Hello. I can help with approved medical sources and your authorized patient workflows.',requiresConfirmation:false});
+      return await clinicalReply();
     }
 
     // ── Step 3: Execute or relay ───────────────────────────────────────────
@@ -2001,8 +1991,8 @@ Rules:
       intent: 'action',
       action: toolName,
       parameters: args,
-      response: directContent || `Executing ${toolName}`,
-      speak: directContent || `Executing ${toolName}`,
+      response: 'I could not match that request to an available action. Please choose a specific task.',
+      speak: 'I could not match that request to an available action. Please choose a specific task.',
       requiresConfirmation: false,
     });
 

@@ -113,3 +113,5 @@ export default {
   fetchSessionInfo,
   countSessions
 };
+
+export { createDurableChatSessions } from './owned-chat-sessions.js';

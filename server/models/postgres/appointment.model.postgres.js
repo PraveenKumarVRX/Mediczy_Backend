@@ -8,6 +8,7 @@ import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 
 const Appointment = sequelize.define('Appointment', {
+  chat_request_key: { type: DataTypes.TEXT, allowNull: true },
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,

@@ -15,7 +15,7 @@ const sendMessage = jest.fn();
 
 jest.unstable_mockModule('ioredis', () => ({ default: jest.fn(() => redisClient) }));
 jest.unstable_mockModule('../models/appointment.model.intelligent.js', () => ({
-  Appointment: { create: appointmentCreate, findAll: appointmentFindAll }
+  Appointment: { create: appointmentCreate, findAll: appointmentFindAll, findOne: async () => null }
 }));
 jest.unstable_mockModule('../models/doctor.model.intelligent.js', () => ({
   default: { findAll: doctorFindAll }
@@ -32,6 +32,9 @@ jest.unstable_mockModule('../services/whatsapp-production.service.js', () => ({
 }));
 jest.unstable_mockModule('../services/medicalAI.service.js', () => ({ default: {} }));
 
+jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({ postgresSequelize: { transaction: async work => work({ LOCK: { UPDATE: 'UPDATE' } }), query: async () => [] } }));
+jest.unstable_mockModule('../middleware/rls-context.middleware.js', () => ({ setRlsContext: async () => {} }));
+jest.unstable_mockModule('../services/appointmentEligibility.service.js', () => ({ checkDoctorConflict: async () => ({ conflict: false }), checkPatientConflict: async () => ({ conflict: false }) }));
 const bookingService = (await import('../services/whatsapp-agentic-booking.service.js')).default;
 
 const userContext = {
@@ -86,6 +89,24 @@ describe('WhatsApp mental-health booking flow', () => {
       specialization: 'Clinical Psychology',
       consultationType: 'online',
       reason: 'Mental health counselling consultation'
-    }));
+    }), expect.objectContaining({ transaction: expect.any(Object) }));
   });
+  it('does not invent general consultation slots when availability fails', async () => {
+    const lookup = jest.spyOn(bookingService, 'findDoctorSlots').mockRejectedValueOnce(new Error('database unavailable'));
+    expect(await bookingService.findAvailableSlots({ preferredDate: new Date(Date.now() + 86400000), specialization: 'General Medicine' })).toEqual([]);
+    lookup.mockRestore();
+  });
+
+  it('returns no fallback lab or doctor slots without authoritative availability', () => {
+    expect(bookingService.getDefaultLabSlots(new Date(), {}, {})).toEqual([]);
+    expect(bookingService.getDefaultDoctorSlots({}, 'General Medicine')).toEqual([]);
+  });
+
+  it('does not create a placeholder patient for an unlinked number', async () => {
+    const result = await bookingService.executeBooking({}, { isKnownUser: false }, '+919000000099');
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/link your existing patient account/i);
+    expect(appointmentCreate).not.toHaveBeenCalled();
+  });
+
 });

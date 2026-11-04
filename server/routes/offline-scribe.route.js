@@ -1,3 +1,4 @@
+import { sibFetch as fetch } from '../services/sib-client.js';
 /**
  * AI Scribe Route
  *
@@ -7,7 +8,7 @@
  */
 
 import express from 'express';
-import fetch from 'node-fetch';
+
 import FormData from 'form-data';
 import multer from 'multer';
 import fs from 'fs';

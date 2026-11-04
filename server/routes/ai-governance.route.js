@@ -133,7 +133,12 @@ router.get('/changes/history', requireSuperAdminOrMedDir, async (req, res) => {
 router.post('/changes/:id/approve', requireSuperAdminOrMedDir, async (req, res) => {
   try {
     const changeId = parseInt(req.params.id);
-    const approvedBy = req.user?.email || req.user?.name || 'admin';
+    let approvedBy = req.user?.email || req.user?.name || 'admin';
+    const {rows:chatChanges}=await pool.query('SELECT model_component FROM ai_model_change_log WHERE id=$1',[changeId]);
+    if(chatChanges[0]?.model_component==='medical-chat-approved-extractive-v1') {
+      if(req.user.role!=='medical_director' || !/^[A-Z0-9]{6}$/.test(req.user.unique_id||'')) return res.status(403).json({error:'Medical Director with registered UID must approve clinical chat evaluation'});
+      approvedBy=req.user.unique_id;
+    }
     const { notes = '' } = req.body;
 
     const change = await governanceService.approveChange(changeId, approvedBy, notes);

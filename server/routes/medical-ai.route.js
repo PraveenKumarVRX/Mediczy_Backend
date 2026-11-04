@@ -1,3 +1,20 @@
+import { patientVideoAccess } from '../utils/patient-video-access.js';
+import DoctorAvailability from '../models/doctorAvailability.model.intelligent.js';
+import { hasAvailableChatSlot } from '../services/chat-appointment-transaction.js';
+import { getChatMedicationReference } from '../services/chat-medication-context.js';
+import { recordChatTrace } from '../services/chat-trace.service.js';
+import { createChatHandoff } from '../services/chat-handoff.js';
+import { WebhookReceiver } from 'livekit-server-sdk';
+import { createChatAppointmentActions } from '../services/chat-appointment-actions.js';
+import * as appointmentRepository from '../repositories/appointment.repository.js';
+import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
+import { cancelAppointment, rescheduleAppointment } from '../controller/appointment.controller.js';
+import { resolveChatSubject } from '../services/chat-subject-access.js';
+import { canAccessPatient } from '../services/patient-access.service.js';
+import { getNotificationPreferences } from '../services/notification-preferences.service.js';
+import { reviewMedicalKnowledge, previewMedicalKnowledge } from '../services/medical-knowledge-review.js';
+import { createDurableChatSessions } from '../repositories/owned-chat-sessions.js';
+import { sibFetch as fetch } from '../services/sib-client.js';
 import express from 'express';
 import crypto from 'crypto';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
@@ -7,7 +24,7 @@ import handleIntentEscalation, { getDoctorSuggestions } from '../services/intent
 import { Appointment } from '../models/appointment.model.intelligent.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
-import { buildLiveKitJoinData } from '../utils/videoProvider.js';
+import { buildLiveKitJoinData, resolveLiveKitCredentials } from '../utils/videoProvider.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { mlog, mwarn, merr } from '../utils/medical-ai-logger.js';
 import emergencyTriageService from '../services/ai-emergency-triage.service.js';
@@ -19,11 +36,54 @@ import redisClient from '../config/redis.js';
 import { Op } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import qualityGates from '../services/ai-quality-gates.service.js';
+import pool from '../db/pgPool.js';
+import { chatOwner, createChatSessions, buildChatRequest, chatResponseMetadata, requireAIConsent, requireSibSuccess, verifiedChatObservations } from '../services/medical-chat-contract.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 const router = express.Router();
+router.use((req,res,next) => {
+  if (!['/consult','/analyze-symptoms'].includes(req.path)) return next();
+  const started=Date.now();
+  const traceId=req.chatTraceId || crypto.randomUUID();
+  res.setHeader('X-Trace-Id',traceId);res.locals.chatTrace={traceId};
+  res.once('finish',()=>{ void recordChatTrace({traceId,channel:'web',latencyMs:Date.now()-started,
+    ...res.locals.chatTrace,success:res.statusCode<400,errorType:res.statusCode>=400?`http-${res.statusCode}`:null}); });
+  next();
+});
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 const SIB_DOCTOR_NAME = 'Dr. iSHA';
+const chatSessions = createDurableChatSessions(pool);
+const chatActions = createChatAppointmentActions({ database: pool, repository: appointmentRepository,
+  resolveActor, owns: isOwnedByActor, cancel: cancelAppointment, reschedule: rescheduleAppointment,
+  validateTarget:async (appointment,action,transaction)=>{
+    if (new Date(`${action.appointmentDate}T${action.appointmentTime}:00+05:30`)<=new Date()) throw Object.assign(new Error('Future slot required'),{statusCode:400});
+    const slots=await DoctorAvailability.findAll({where:{doctorId:appointment.doctorId,dayOfWeek:new Date(`${action.appointmentDate}T12:00:00Z`).getUTCDay(),isAvailable:true},transaction,lock:transaction.LOCK.UPDATE});
+    if (!hasAvailableChatSlot(slots,action.appointmentTime)) throw Object.assign(new Error('Slot no longer available'),{statusCode:409});
+  },
+});
+
+const chatHandoff = createChatHandoff({ repository: appointmentRepository, resolveActor, owns: isOwnedByActor,
+  verifyEvent: async (raw, authorization) => {
+    const {apiKey,apiSecret}=resolveLiveKitCredentials();
+    if (!apiKey || !apiSecret) throw Object.assign(new Error('Video provider unavailable'), { statusCode: 503 });
+    try { return await new WebhookReceiver(apiKey,apiSecret).receive(raw, authorization); }
+    catch { throw Object.assign(new Error('Invalid provider signature'), { statusCode: 401 }); }
+  },
+});
+router.get('/handoffs/:id', authUser, async (req,res) => {
+  try { res.json({ success:true, ...await chatHandoff.read(req,req.params.id) }); }
+  catch(error) { res.status(error.statusCode || 503).json({ success:false,error:error.statusCode ? error.message : 'Handoff unavailable' }); }
+});
+router.post('/handoffs/:id/decision', authUser, async (req,res) => {
+  try { res.json({ success:true, ...await chatHandoff.decide(req,req.params.id,req.body.status) }); }
+  catch(error) { res.status(error.statusCode || 503).json({ success:false,error:error.statusCode ? error.message : 'Handoff unavailable' }); }
+});
+router.post('/handoffs/provider/events', async (req,res) => {
+  try {
+    if (!req.rawBody || req.rawBody.length>1000000) return res.status(400).json({error:'Signed raw body required'});
+    res.json(await chatHandoff.provider(req.rawBody,req.get('Authorization')));
+  } catch(error) { res.status(error.statusCode || 503).json({error:error.statusCode ? error.message : 'Provider event unavailable'}); }
+});
 
 // HMAC-based session ID — prevents user ID enumeration via session token
 const SESSION_SECRET = process.env.SESSION_HMAC_SECRET || process.env.JWT_SECRET || 'mediczy-session-hmac';
@@ -31,58 +91,6 @@ function buildSessionId(userId, prefix = 'mediczy') {
   const hmac = crypto.createHmac('sha256', SESSION_SECRET).update(String(userId)).digest('hex').slice(0, 16);
   return `${prefix}_${hmac}`;
 }
-function ownsSession(sessionId, userId) {
-  if (!sessionId || !userId) return false;
-  // Accept both HMAC-based IDs and legacy mediczy_<userId> IDs for backwards compat
-  const hmacId = buildSessionId(userId);
-  const legacyId = `mediczy_${userId}`;
-  return sessionId.startsWith(hmacId) || sessionId.startsWith(legacyId) || sessionId.startsWith(`test_${userId}`);
-}
-
-// ── Conversational short-term memory ────────────────────────────────────────
-// Lets Dr. iSHA hold a natural, multi-turn conversation (like a voice assistant)
-// even when the client sends only the latest message, and — critically — keeps
-// context when the request falls back from SIB to the LLM cascade. Memory is
-// best-effort: any Redis hiccup degrades gracefully to a stateless reply.
-const CONVO_TTL_SECONDS = Number(process.env.DR_ISHA_MEMORY_TTL || 3600); // 1h rolling window
-const CONVO_MAX_MESSAGES = 30;                  // ~15 user/assistant turns sent to SIB
-const CONVO_FALLBACK_MESSAGES = 6;              // tighter window for the LLM cascade
-const CONVO_MAX_CONTENT = 4000;                 // per-message clamp
-const convoKey = (sessionId) => `medical-ai:convo:${sessionId}`;
-
-function normalizeHistory(history, limit = CONVO_MAX_MESSAGES) {
-  if (!Array.isArray(history)) return [];
-  return history
-    .filter((m) => m && typeof m.content === 'string' && m.content.trim())
-    .map((m) => ({
-      role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: String(m.content).slice(0, CONVO_MAX_CONTENT),
-    }))
-    .slice(-limit);
-}
-
-async function loadConversation(sessionId) {
-  if (!sessionId) return [];
-  try {
-    const raw = await redisClient.get(convoKey(sessionId));
-    return raw ? normalizeHistory(JSON.parse(raw)) : [];
-  } catch (e) {
-    mwarn('Conversation memory load failed', { error: e?.message });
-    return [];
-  }
-}
-
-async function appendConversation(sessionId, turns) {
-  if (!sessionId || !Array.isArray(turns) || turns.length === 0) return;
-  try {
-    const existing = await loadConversation(sessionId);
-    const merged = normalizeHistory([...existing, ...turns]);
-    await redisClient.setex(convoKey(sessionId), CONVO_TTL_SECONDS, JSON.stringify(merged));
-  } catch (e) {
-    mwarn('Conversation memory append failed', { error: e?.message });
-  }
-}
-
 // Rate limiter for feedback (20 per hour per user — prevent spam)
 const feedbackLimiter = createRateLimiter('api', {
   windowMs: 60 * 60 * 1000,
@@ -194,15 +202,18 @@ const buildSibConsultation = (sibData, { sessionId, language }) => {
     timestamp: new Date().toISOString(),
     language,
     provider: 'sib-fastapi',
-    model: sibData?.model || 'SIB-Llama-3.1'
+    model: sibData?.model || 'unknown'
   };
+
+  Object.assign(payload, chatResponseMetadata(sibData));
+  if (sibData?.retrieval?.evidence_status === 'extractive' && payload.evidenceStatus !== 'extractive') throw new Error('Source evidence validation failed');
 
   const confidence = sibData?.confidence ?? sibData?.ai_assessment?.confidence;
   if (typeof confidence === 'number') payload.confidence = confidence;
 
   // Forward intent-related fields from SIB — validate redirectUrl to prevent phishing
-  if (sibData?.intentType) payload.intentType = String(sibData.intentType);
-  if (sibData?.redirectUrl) {
+  if (!payload.emergency && sibData?.intentType) payload.intentType = String(sibData.intentType);
+  if (!payload.emergency && sibData?.redirectUrl) {
     const safe = validateRedirectUrl(sibData.redirectUrl);
     if (safe) payload.redirectUrl = safe;
     // silently drop unsafe redirectUrls — do NOT forward them to client
@@ -300,198 +311,104 @@ router.post('/test', authUser, async (req, res) => {
  * @desc    Medical consultation with Dr. Isha
  * @access  Private
  */
+router.get('/knowledge/:id/preview', authUser, async (req,res) => {
+  try { res.json({success:true,source:await previewMedicalKnowledge(pool,{id:req.params.id,role:req.userRole||req.user.role})}); }
+  catch(error) {res.status(error.statusCode||503).json({error:error.statusCode?error.message:'Source preview unavailable'});}
+});
+router.post('/knowledge/:id/review', authUser, async (req, res) => {
+  try {
+    const review = await reviewMedicalKnowledge(pool, { ...req.body, id: req.params.id,
+      reviewerUid: req.user.unique_id, role: req.userRole || req.user.role });
+    res.json({ success: true, review });
+  } catch (error) { res.status(error.statusCode || 503).json({ success: false, error: error.statusCode ? error.message : 'Review store unavailable' }); }
+});
+
+router.post('/actions/propose', authUser, async (req, res) => {
+  if (process.env.CHATBOT_TASK_MUTATIONS_ENABLED === 'false') return res.status(503).json({error:'Chat task mutations are disabled'});
+  try { res.json({ success: true, ...await chatActions.propose(req, chatOwner(req), req.body) }); }
+  catch (error) { res.status(error.statusCode || 503).json({ success: false, error: error.statusCode ? error.message : 'Appointment actions unavailable' }); }
+});
+router.post('/actions/confirm', authUser, async (req, res) => {
+  if (process.env.CHATBOT_TASK_MUTATIONS_ENABLED === 'false') return res.status(503).json({error:'Chat task mutations are disabled'});
+  try { res.json({ success: true, ...await chatActions.confirm(req, chatOwner(req), req.body) }); }
+  catch (error) { res.status(error.statusCode || 503).json({ success: false, error: error.statusCode ? error.message : 'Appointment action unavailable' }); }
+});
+
 router.post('/consult', authUser, consultLimiter, async (req, res) => {
   try {
-    const { query, language = 'en', userContext = {}, sessionId: requestedSessionId } = req.body;
-    const isEmergencyMode = Boolean(userContext?.emergencyMode);
-
+    const { query, language = 'en', userContext = {}, sessionId: requested } = req.body;
     const queryError = validateMedicalQuery(query);
     if (queryError) return res.status(400).json({ success: false, error: queryError });
-
-    // Use provided session ID if present to preserve memory
-    const sessionId = requestedSessionId || userContext.sessionId || buildSessionId(req.user.id);
-
-    // Resolve conversation history: trust the client's turns when supplied,
-    // otherwise rehydrate from server-side memory so context survives even on
-    // minimal clients. This is what makes follow-up questions feel natural.
-    const clientHistory = normalizeHistory(userContext?.conversationHistory);
-    const conversationHistory = clientHistory.length
-      ? clientHistory
-      : await loadConversation(sessionId);
-
-    // Role-aware context resolution — clinicians must not inherit another user's patient record.
-    const callerRole = String(req.userRole || req.user?.role || 'user').toLowerCase();
-    const isClinician = ['doctor', 'nurse', 'assistant', 'admin', 'team'].includes(callerRole);
-    // Narrower than isClinician: only roles with actual clinical authority get the
-    // unrestricted clinical-decision-support system prompt below. nurse/assistant/team
-    // still get isClinician's UX conveniences (no patient-record auto-context, "Doctor"
-    // greeting, doctor_app channel tag) but not unrestricted clinical guidance.
-    const isClinicalAuthority = ['doctor', 'admin', 'medical_director', 'super_admin'].includes(callerRole);
-    if (isClinicalAuthority) {
-      qualityGates.logCopilotConversation({
-        patientId: userContext?.patientId || null,
-        userId: req.user.id,
-        role: callerRole,
-        source: 'medical-ai/consult',
-        traceId: sessionId,
-      }).catch(() => {}); // audit logging must never block the clinical workflow
+    const subject = userContext.patientUid ? await resolveChatSubject(pool, req, userContext.patientUid, canAccessPatient) : null;
+    const subjectId = subject?.id || req.user.id;
+    const personal = userContext.useHealthHistory === true || Boolean(subject);
+    const owner = `${personal ? 'personal:' : ''}${chatOwner(req)}${subject ? `:subject:${subject.unique_id}` : ''}`;
+    const sessionId = await chatSessions.resolve(requested, owner);
+    // Client transcripts and role/patient flags never supply authoritative context.
+    const history = await chatSessions.load(sessionId, owner);
+    const role = String(req.userRole || req.user?.role || 'user').toLowerCase();
+    const staff = ['doctor', 'nurse', 'assistant', 'admin', 'team', 'medical_director', 'super_admin'].includes(role);
+    if (userContext.patientId || userContext.patientData) {
+      return res.status(403).json({ success: false, error: 'Use the authorized clinical chart workflow for another patient' });
     }
-
-    let dbContext = null;
-    let wearableContext = null;
-    if (!isEmergencyMode && !isClinician) {
-      try {
-        dbContext = await whatsAppUserContextService.getFullUserContextByUserId(req.user.id);
-      } catch (contextError) {
-        mwarn("User context load failed", { error: contextError.message });
-      }
-      try {
-        wearableContext = await getWearableContextForUser(req.user.id);
-      } catch (wearableError) {
-        mwarn('Wearable context load failed', { error: wearableError?.message });
-      }
+    if (personal && process.env.CHATBOT_PERSONAL_CONTEXT_ENABLED === 'false') return res.status(503).json({error:'Personal clinical context is disabled'});
+    if (personal && staff && !subject) return res.status(403).json({ success: false, error: 'Use the authorized clinical chart workflow for patient history' });
+    let context;
+    if (personal) {
+      await requireAIConsent(pool, subjectId);
+      const full = await whatsAppUserContextService.getFullUserContextByUserId(subjectId);
+      const user = full?.user || {};
+      context = {
+        user: { age: user.age, gender: user.gender, bloodGroup: user.bloodGroup },
+        prescriptions: { recent: (subject ? [] : full?.prescriptions?.recent || []).slice(0, 5).map(rx => ({
+          medications: rx.medications, diagnosis: rx.diagnosis, createdAt: rx.createdAt,
+        })) },
+        medicationReference: await getChatMedicationReference({patientId:subjectId,organizationId:subject?.organization_id ?? req.tenant?.id ?? req.user.organization_id}),
+        wearables: await getWearableContextForUser(subjectId),
+        reminderPreferences: await getNotificationPreferences(subjectId).then(p => ({ appointmentReminders:p.appointmentReminders,medicationReminders:p.medicationReminders,followUpReminders:p.followUpReminders })).catch(() => ({status:'unavailable'})),
+        verifiedObservations: await verifiedChatObservations(pool, {
+          userId: subjectId, organizationId: subject?.organization_id ?? req.tenant?.id ?? req.user.organization_id,
+          organizationUid: req.tenant?.unique_id || req.user.organization_uid, requireOrganizationUid: Boolean(subject),
+        }),
+      };
     }
-
-    const callerName = req.user?.firstName || req.user?.name || (isClinician ? 'Doctor' : 'Patient');
-
-    // Add user info to context
-    const enhancedContext = {
-      ...userContext,
-      ...(dbContext || {}),
-      ...(wearableContext || {}),
-      userId: req.user.id,
-      userRole: callerRole,
-      isClinician,
-      callerRole,
-      userName: isClinician
-        ? `Dr. ${req.user.firstName || req.user.name || 'Doctor'}`
-        : (req.user.firstName || callerName || 'Patient'),
-    };
-
-    const timeoutMs = isEmergencyMode ? 15000 : 30000;
+    const cancellation = /^cancel (?:my )?appointment\s*#?(\d+)\s*$/i.exec(query.trim());
+    const rescheduling = /^reschedule (?:my )?appointment\s*#?(\d+) to (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\s*$/i.exec(query.trim());
+    if (cancellation || rescheduling) {
+      if(process.env.CHATBOT_TASK_MUTATIONS_ENABLED === 'false') return res.status(503).json({error:'Chat task mutations are disabled'});
+      const proposal = await chatActions.propose(req, chatOwner(req), cancellation
+        ? { kind:'cancel',appointmentId:Number(cancellation[1]) }
+        : { kind:'reschedule',appointmentId:Number(rescheduling[1]),appointmentDate:rescheduling[2],appointmentTime:rescheduling[3] });
+      const text = cancellation ? `Please confirm cancellation of appointment #${cancellation[1]}.`
+        : `Please confirm moving appointment #${rescheduling[1]} to ${rescheduling[2]} at ${rescheduling[3]} (Asia/Kolkata).`;
+      await chatSessions.append(sessionId,owner,[{role:'user',content:query},{role:'assistant',content:text}]);
+      return res.json({success:true,response:text,sessionId,provider:'appointment-workflow',action:proposal});
+    }
     const controller = new AbortController();
-    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
-
-    let sibResponse;
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    let upstream;
     try {
-      sibResponse = await fetch(`${SIB_URL}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          patient_id: sessionId,
-          message: query,
-          language,
-          // Forward recent conversation turns for context continuity
-          history: conversationHistory.slice(-CONVO_MAX_MESSAGES),
-          patient_data: {
-            ...enhancedContext,
-            // Tell SIB who is asking so it can respond in the right register
-            channel: isClinician ? 'doctor_app' : (userContext?.channel || 'web'),
-            role: callerRole,
-            patientData: dbContext || undefined
-          }
-        })
+      upstream = await fetch(`${SIB_URL}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify({...buildChatRequest({ sessionId, query, language, history,
+          userId: subjectId, context, personal }),trace_id:res.locals.chatTrace.traceId}),
       });
-    } catch (fetchError) {
-      if (fetchError.name === 'AbortError') {
-        return res.status(504).json({
-          success: false,
-          error: 'Consultation timed out. Please try a shorter message.',
-          provider: 'sib-fastapi',
-          timeoutMs
-        });
-      }
-      throw fetchError;
-    } finally {
-      clearTimeout(timeoutHandle);
-    }
-
-    let consultation;
-    if (sibResponse.ok) {
-      const sibData = await sibResponse.json();
-      try {
-        consultation = buildSibConsultation(sibData, { sessionId, language });
-      } catch (emptyErr) {
-        // SIB returned empty — fall through to LLM fallback
-        mwarn('SIB empty response, trying LLM fallback', { userId: req.user.id });
-        consultation = null;
-      }
-    } else {
-      const errText = await sibResponse.text().catch(() => '');
-      mwarn('SIB non-OK, trying LLM fallback', { status: sibResponse.status, userId: req.user.id });
-      consultation = null;
-    }
-
-    // LLM fallback when SIB is unavailable or returned empty
-    if (!consultation) {
-      try {
-        const fallbackSystemPrompt = isClinicalAuthority
-          ? 'You are Dr. iSHA, a clinical decision-support AI for medical professionals. Provide concise, evidence-based clinical guidance. Include a reminder: "For reference only — apply your clinical judgment." Do not refuse clinical queries that would be appropriate for a licensed clinician.'
-          : 'You are Dr. iSHA, a helpful medical AI assistant. Answer concisely and clearly. Never provide specific drug doses. Always recommend consulting a doctor for diagnosis.';
-        const historyMessages = conversationHistory
-          .slice(-CONVO_FALLBACK_MESSAGES)
-          .map((turn) => ({
-            role: turn?.role === 'assistant' || turn?.role === 'doctor' ? 'assistant' : 'user',
-            content: String(turn?.content || '').trim(),
-          }))
-          .filter((turn) => turn.content);
-
-        const llmResult = await llmProvider.chat({
-          messages: [
-            { role: 'system', content: fallbackSystemPrompt },
-            ...historyMessages,
-            { role: 'user', content: query }
-          ],
-          maxTokens: 512,
-          temperature: 0.3,
-          skipCache: true, // medical consult may include patient context — do not share across users
-        });
-        const fallbackText = llmResult?.content || llmResult?.text || llmResult?.response;
-        if (!fallbackText || String(fallbackText).trim() === 'Based on the information I gathered, here is my response.') {
-          throw new Error('LLM fallback also returned an empty answer');
-        }
-        consultation = {
-          success: true,
-          response: String(fallbackText).trim(),
-          primary_response: String(fallbackText).trim(),
-          doctor: SIB_DOCTOR_NAME,
-          sessionId,
-          timestamp: new Date().toISOString(),
-          language,
-          provider: `llm-fallback:${llmResult?.provider || 'groq'}`,
-          model: llmResult?.model || 'fallback',
-          fallbackUsed: true,
-        };
-      } catch (llmErr) {
-        merr('Both SIB and LLM fallback failed', { error: llmErr?.message, userId: req.user.id });
-        return res.status(503).json({
-          success: false,
-          error: 'Medical AI service temporarily unavailable. Please try again shortly.',
-          retryAfterSeconds: 30,
-        });
-      }
-    }
-
-    // Persist this turn so the next message continues the conversation
-    // naturally. Best-effort: never block or fail the reply on memory writes.
-    if (consultation?.response) {
-      await appendConversation(sessionId, [
-        { role: 'user', content: query },
-        { role: 'assistant', content: consultation.response },
+      requireSibSuccess(upstream);
+      const data = await upstream.json();
+      const consultation = buildSibConsultation(data, { sessionId, language });
+      await chatSessions.append(sessionId, owner, [
+        { role: 'user', content: query }, { role: 'assistant', content: consultation.response },
       ]);
-      consultation.conversationLength = Math.floor(
-        (conversationHistory.length + 2) / 2
-      );
-    }
-
-    res.json(consultation);
+      Object.assign(res.locals.chatTrace,{sessionId,provider:consultation.provider,model:consultation.model,evidenceStatus:consultation.evidenceStatus});
+      return res.json({ ...consultation, traceId:res.locals.chatTrace.traceId, conversationLength: Math.floor(history.length / 2) + 1 });
+    } finally { clearTimeout(timeout); }
   } catch (error) {
-    merr("Medical consultation error", { error: error?.message });
-    res.status(500).json({
-      success: false,
-      error: 'Medical consultation service temporarily unavailable'
-    });
+    // An ungoverned generation fallback must not bypass SIB's consent/safety filters.
+    const status = error.statusCode || (error.name === 'AbortError' ? 504 : 503);
+    merr('Medical consultation failed', { status });
+    return res.status(status).json({ success: false,
+      error: error.statusCode ? error.message : 'Medical AI service temporarily unavailable. For urgent symptoms, seek immediate medical care.',
+      retryAfterSeconds: status >= 500 ? 30 : undefined });
   }
 });
 
@@ -522,7 +439,8 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
       if (descError) return res.status(400).json({ success: false, error: descError });
     }
 
-    const sessionId = req.body.sessionId || buildSessionId(req.user.id, "mediczy_symptoms");
+    const owner = chatOwner(req);
+    const sessionId = await chatSessions.resolve(req.body.sessionId, owner);
     const symptomsText = Array.isArray(symptoms) ? symptoms.join(', ') : symptoms;
     const analysisPrompt = `I am experiencing the following symptoms: ${symptomsText}. ${description || ''}. Duration: ${duration || 'not specified'}. Severity: ${severity || 'moderate'}.`;
 
@@ -534,14 +452,10 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: asController.signal,
-        body: JSON.stringify({
-          patient_id: sessionId,
-          message: analysisPrompt,
-          language,
-          patient_data: { userId: req.user.id, symptoms, description, severity, duration }
-        })
+        body: JSON.stringify(buildChatRequest({ sessionId, query: analysisPrompt, language, history: [] }))
       });
-      if (sibResponse.ok) sibData = await sibResponse.json();
+      requireSibSuccess(sibResponse);
+      sibData = await sibResponse.json();
     } catch (fe) {
       if (fe.name !== 'AbortError') throw fe;
     } finally { clearTimeout(asTimeout); }
@@ -550,16 +464,8 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
     if (sibData) {
       try { analysis = buildSibConsultation(sibData, { sessionId, language }); } catch { analysis = null; }
     }
-    if (!analysis) {
-      try {
-        const lr = await llmProvider.chat({ messages: [{ role: 'system', content: 'You are Dr. iSHA, a symptom analysis assistant.' }, { role: 'user', content: analysisPrompt }], maxTokens: 512, temperature: 0.3, skipCache: true });
-        const t = lr?.content || lr?.text || '';
-        if (!t) throw new Error('empty');
-        analysis = { success: true, response: t.trim(), primary_response: t.trim(), doctor: SIB_DOCTOR_NAME, sessionId, timestamp: new Date().toISOString(), language, provider: 'llm-fallback', model: lr?.model || 'fallback', fallbackUsed: true };
-      } catch {
-        return res.status(503).json({ success: false, error: 'Symptom analysis service temporarily unavailable', retryAfterSeconds: 30 });
-      }
-    }
+    if (!analysis) return res.status(503).json({ success: false, error: 'Symptom analysis service temporarily unavailable', retryAfterSeconds: 30 });
+
 
     res.json({
       ...analysis,
@@ -570,9 +476,9 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
     });
   } catch (error) {
     merr("Symptom analysis error", { error: error?.message });
-    res.status(500).json({
+    res.status(error.statusCode || 503).json({
       success: false,
-      error: 'Symptom analysis service temporarily unavailable'
+      error: error.statusCode ? error.message : 'Symptom analysis service temporarily unavailable'
     });
   }
 });
@@ -973,6 +879,8 @@ router.get('/triage-doctors', authUser, async (req, res) => {
  */
 router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, async (req, res) => {
   try {
+    const videoCredentials=resolveLiveKitCredentials();
+    if (!videoCredentials.apiKey || !videoCredentials.apiSecret) return res.status(503).json({success:false,error:'Video consultation is unavailable; seek immediate medical care if urgent.'});
     const { doctorId, symptoms, urgencyLevel, triageId, paymentMethod, guestEmail, guestPhone, guestName } = req.body;
     const { Doctor, Appointment } = await import('../models/index.js');
     const { User } = await import('../models/user.model.intelligent.js');
@@ -1183,6 +1091,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
           symptoms,
           roomId,
           type: 'emergency_triage',
+          handoff: { status: 'offered', offeredAt: new Date().toISOString() },
           initiatedAt: new Date().toISOString(),
           guestAccess: !user,
           paymentType: isPayingWithHC ? 'health_coins' : (isUsingCredit ? 'credit' : 'pending'),
@@ -1302,7 +1211,8 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
       success: true,
       appointment: {
         id: appointment.id,
-        status: 'in_progress',
+        status: appointment.status,
+        handoffStatus: 'offered',
         type: 'emergency_triage'
       },
       doctor: {
@@ -1311,15 +1221,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         profileImage: doctor.profileImage,
         specialization: doctor.specialization
       },
-      videoCall: {
-        roomId,
-        appointmentId: appointment.id,
-        joinUrl: patientJoinUrl,
-        patientJoinUrl,
-        doctorJoinUrl,
-        platform: 'LiveKit',
-        livekit: livekitJoinData
-      },
+      videoCall: patientVideoAccess({roomId,appointmentId:appointment.id,patientJoinUrl,livekitJoinData}),
       billing: {
         paymentType: isPayingWithHC ? 'health_coins' : (isUsingCredit ? 'credit' : 'pending'),
         consultationFee: consultationFee,
@@ -1333,7 +1235,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
             ? `This consultation is on credit. Pay ₹${consultationFee} later.`
             : 'Payment pending for this consultation.')
       },
-      message: `Connecting you with ${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}. ${
+      message: `Consultation requested with ${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}. ${
         isPayingWithHC 
           ? 'Paid with Health Coins.' 
           : (isUsingCredit ? 'This emergency consultation is on credit - pay later.' : '')
@@ -1453,49 +1355,13 @@ router.get('/health', async (req, res) => {
  */
 router.delete('/session/:sessionId', authUser, async (req, res) => {
   try {
-    const { sessionId } = req.params;
-    
-    // Verify session belongs to user
-    if (!ownsSession(sessionId, req.user.id)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Unauthorized to clear this session'
-      });
-    }
-
-    // Clear server-side conversation memory first (best-effort) so the next
-    // message starts a fresh conversation even if SIB is unreachable.
-    try { await redisClient.del(convoKey(sessionId)); } catch (e) { mwarn('Conversation memory clear failed', { error: e?.message }); }
-
-    const sibResponse = await fetch(`${SIB_URL}/chat/history/${sessionId}`, {
-      method: 'DELETE'
-    });
-
-    if (!sibResponse.ok) {
-      const errorText = await sibResponse.text().catch(() => '');
-      return res.status(503).json({
-        success: false,
-        error: 'SIB request failed',
-        details: errorText || `HTTP ${sibResponse.status}`,
-        provider: 'sib-fastapi'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Session cleared',
-      sessionId,
-      provider: 'sib-fastapi'
-    });
+    // Server-managed conversations are stored only here, not in Python history.
+    await chatSessions.clear(req.params.sessionId, chatOwner(req));
+    res.json({ success: true });
   } catch (error) {
-    merr("Clear session error", { error: error?.message });
-    res.status(500).json({
-      success: false,
-      error: 'Failed to clear session'
-    });
+    res.status(error.statusCode || 503).json({ success: false, error: error.statusCode ? error.message : 'Conversation store unavailable' });
   }
 });
-
 /**
  * @route   GET /api/medical-ai/session/:sessionId
  * @desc    Get session information
@@ -1503,48 +1369,16 @@ router.delete('/session/:sessionId', authUser, async (req, res) => {
  */
 router.get('/session/:sessionId', authUser, async (req, res) => {
   try {
-    const { sessionId } = req.params;
-    
-    // Verify session belongs to user
-    if (!ownsSession(sessionId, req.user.id)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Unauthorized to access this session'
-      });
-    }
-
-    const sibResponse = await fetch(`${SIB_URL}/chat/history/${sessionId}`);
-    if (!sibResponse.ok) {
-      const errorText = await sibResponse.text().catch(() => '');
-      return res.status(503).json({
-        success: false,
-        error: 'SIB request failed',
-        details: errorText || `HTTP ${sibResponse.status}`,
-        provider: 'sib-fastapi'
-      });
-    }
-
-    const sibData = await sibResponse.json();
-    const history = sibData.history || [];
-    const lastEntry = history[history.length - 1] || null;
-
-    res.json({
-      sessionId,
-      conversationLength: Math.floor(history.length / 2),
-      isActive: history.length > 0,
-      provider: 'sib-fastapi',
-      lastIntent: null,
-      lastInteractionAt: lastEntry?.timestamp || null
-    });
+    const subject = req.query.patientUid ? await resolveChatSubject(pool, req, req.query.patientUid, canAccessPatient) : null;
+    const personal = req.query.useHealthHistory === 'true' || Boolean(subject);
+    if (personal) await requireAIConsent(pool, subject?.id || req.user.id);
+    const history = await chatSessions.load(req.params.sessionId, `${personal ? 'personal:' : ''}${chatOwner(req)}${subject ? `:subject:${subject.unique_id}` : ''}`);
+    res.json({ success: true, sessionId: req.params.sessionId, history, count: history.length,
+      conversationLength: Math.floor(history.length / 2), isActive: true });
   } catch (error) {
-    merr("Get session error", { error: error?.message });
-    res.status(500).json({
-      success: false,
-      error: 'Failed to retrieve session information'
-    });
+    res.status(error.statusCode || 503).json({ success: false, error: error.statusCode ? error.message : 'Conversation store unavailable' });
   }
 });
-
 /**
  * @route   POST /api/medical-ai/conversation-history
  * @desc    Get conversation history for user
@@ -1552,76 +1386,38 @@ router.get('/session/:sessionId', authUser, async (req, res) => {
  */
 router.post('/conversation-history', authUser, async (req, res) => {
   try {
-    const { sessionId, limit = 10 } = req.body;
-    const historyUrl = new URL(`${SIB_URL}/chat/history/${sessionId}`);
-    if (limit) {
-      historyUrl.searchParams.set('last_n', String(limit));
-    }
-
-    const sibResponse = await fetch(historyUrl.toString());
-    if (!sibResponse.ok) {
-      const errorText = await sibResponse.text().catch(() => '');
-      return res.status(503).json({
-        success: false,
-        error: 'SIB request failed',
-        details: errorText || `HTTP ${sibResponse.status}`,
-        provider: 'sib-fastapi'
-      });
-    }
-
-    const sibData = await sibResponse.json();
-    const history = sibData.history || [];
-    const lastEntry = history[history.length - 1] || null;
-
-    res.json({
-      success: true,
-      sessionInfo: {
-        sessionId,
-        conversationLength: Math.floor(history.length / 2),
-        isActive: history.length > 0,
-        provider: 'sib-fastapi',
-        lastIntent: null,
-        lastInteractionAt: lastEntry?.timestamp || null
-      },
-      history,
-      count: history.length,
-      message: 'Conversation history retrieved successfully'
-    });
+    const subject = req.body.patientUid ? await resolveChatSubject(pool, req, req.body.patientUid, canAccessPatient) : null;
+    const personal = req.body.useHealthHistory === true || Boolean(subject);
+    if (personal) await requireAIConsent(pool, subject?.id || req.user.id);
+    const history = await chatSessions.load(req.body.sessionId, `${personal ? 'personal:' : ''}${chatOwner(req)}${subject ? `:subject:${subject.unique_id}` : ''}`);
+    const limit = Number.isInteger(req.body.limit) ? Math.max(1, Math.min(30, req.body.limit)) : 10;
+    const selected = history.slice(-limit);
+    res.json({ success: true, sessionInfo: { sessionId: req.body.sessionId }, history: selected, count: selected.length });
   } catch (error) {
-    merr("Conversation history error", { error: error?.message });
-    res.status(500).json({
-      success: false,
-      error: 'Failed to retrieve conversation history'
-    });
+    res.status(error.statusCode || 503).json({ success: false, error: error.statusCode ? error.message : 'Conversation store unavailable' });
   }
 });
-
 /**
  * @route   POST /api/medical-ai/feedback
  * @desc    Submit feedback on AI response
  * @access  Private
  */
-router.post('/feedback', authUser, feedbackLimiter, async (req, res) => {
+router.post('/feedback', authUser, feedbackLimiter, async (req,res) => {
   try {
-    const { sessionId, rating, feedback, responseHelpful } = req.body;
-
-    // Log feedback for improvement
-    mlog("Feedback received", { userId: req.user.id });
-
-    // In production, store this in database for AI improvement
-    res.json({
-      success: true,
-      message: 'Feedback submitted successfully'
-    });
-  } catch (error) {
-    merr("Feedback API error", { error: error?.message });
-    res.status(500).json({
-      success: false,
-      error: 'Failed to submit feedback'
-    });
-  }
+    const {sessionId,rating,feedback='',useHealthHistory=false,patientUid}=req.body;
+    if (!sessionId || !Number.isInteger(rating) || rating<1 || rating>5 || typeof feedback!=='string' || feedback.length>1000) return res.status(400).json({error:'Session and rating from 1 to 5 required'});
+    const subject=patientUid ? await resolveChatSubject(pool,req,patientUid,canAccessPatient) : null;
+    const personal=useHealthHistory===true||Boolean(subject);
+    if(personal) await requireAIConsent(pool,subject?.id||req.user.id);
+    const owner=`${personal?'personal:':''}${chatOwner(req)}${subject?`:subject:${subject.unique_id}`:''}`;
+    await chatSessions.load(sessionId,owner);
+    const record={rating,comment:feedback,actorUid:req.user.unique_id||null,role:req.userRole||req.user.role,recordedAt:new Date().toISOString()};
+    const {rowCount}=await pool.query(`UPDATE chatbot_sessions SET metadata=jsonb_set(metadata,'{feedback}',COALESCE(metadata->'feedback','[]'::jsonb)||jsonb_build_array($3::jsonb)),updated_at=NOW()
+      WHERE session_id=$1 AND owner_scope=$2 AND active AND expires_at>NOW() AND jsonb_array_length(COALESCE(metadata->'feedback','[]'::jsonb))<50`,[sessionId,owner,JSON.stringify(record)]);
+    if(!rowCount) return res.status(409).json({error:'Feedback session expired or limit reached'});
+    res.json({success:true,message:'Feedback recorded for review'});
+  } catch(error) {res.status(error.statusCode||503).json({error:error.statusCode?error.message:'Feedback store unavailable'});}
 });
-
 /**
  * @route   GET /api/medical-ai/doctors
  * @desc    Get available doctors for booking (optionally filtered by specialization)

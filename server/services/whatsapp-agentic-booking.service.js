@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto';
+import { createTransactionalChatBooking } from './chat-appointment-transaction.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import { checkDoctorConflict, checkPatientConflict } from './appointmentEligibility.service.js';
 /**
  * WhatsApp Agentic Booking Service
  * 
@@ -637,6 +642,8 @@ class WhatsAppAgenticBookingService {
     }
     
     session.data.selectedSlot = selectedSlot;
+    session.data.bookingRequestId ||= randomUUID();
+    await this.saveSession(phoneNumber, session);
     
     // 🎯 EXECUTE THE BOOKING - This is the agentic action!
     try {
@@ -710,8 +717,7 @@ class WhatsAppAgenticBookingService {
         success: false,
         shouldReply: true,
         response: `😔 I'm sorry, I couldn't complete the booking due to a technical issue.\n\n` +
-          `Please try again or call our helpline: *1800-XXX-XXXX*\n\n` +
-          `Error: ${error.message}`,
+          `Please try again or contact support through the app.`,
         isAgenticAction: true,
         error: error.message
       };
@@ -723,48 +729,12 @@ class WhatsAppAgenticBookingService {
    */
   async executeBooking(bookingData, userContext, phoneNumber) {
     try {
-      // Get or create user
-      let userId = userContext.isKnownUser ? userContext.user.id : null;
+      if (process.env.CHATBOT_TASK_MUTATIONS_ENABLED === 'false') throw new Error('Chat booking mutations are disabled');
+      const user = userContext?.isKnownUser ? userContext.user : null;
+      const userId = user?.id;
+      if (!userId) throw new Error('Link your existing patient account before booking');
       const normalizedPhone = phoneNumber.replace(/[^\d+]/g, '');
-      
-      if (!userId) {
-        // Try to find existing user by phone number first
-        let existingUser = await User.findOne({ 
-          where: { phoneNumber: normalizedPhone } 
-        });
-        
-        if (existingUser) {
-          userId = existingUser.id;
-        } else {
-          // Create a new user record for this phone number
-          // Generate placeholder values for ALL required fields
-          const placeholderEmail = `whatsapp.${normalizedPhone.replace(/[+]/g, '')}@mediczy.whatsapp`;
-          const randomPassword = `WA${Date.now()}${Math.random().toString(36).substring(2, 10)}`;
-          // Use placeholder values (will be updated when user completes profile)
-          const placeholderDOB = new Date('1990-01-01');
-          
-          const newUser = await User.create({
-            phoneNumber: normalizedPhone,
-            email: placeholderEmail,
-            password: randomPassword, // Required - user can reset later
-            dateOfBirth: placeholderDOB, // Required - placeholder until profile completion
-            gender: 'Other', // Required - will be updated on profile completion
-            firstName: 'WhatsApp',
-            lastName: 'User',
-            registrationSource: 'whatsapp_booking',
-            isPhoneVerified: true, // WhatsApp numbers are inherently verified
-            isEmailVerified: false,
-            profileCompleted: false // Flag to indicate profile needs completion
-          });
-          userId = newUser.id;
-          console.log('📱 Created new user from WhatsApp booking:', newUser.id);
-        }
-      }
-      
-      // Get user details for the appointment
-      const user = userContext.isKnownUser ? userContext.user : 
-        await User.findByPk(userId);
-      
+
       const patientName = user?.firstName && user?.lastName 
         ? `${user.firstName} ${user.lastName}` 
         : user?.firstName || 'WhatsApp User';
@@ -802,7 +772,10 @@ class WhatsAppAgenticBookingService {
       }
       
       // Create the appointment with all required fields
-      const appointment = await Appointment.create({
+      const { appointment, replayed } = await createTransactionalChatBooking({
+        database: postgresSequelize, Appointment, Availability: DoctorAvailability,
+        setContext: setRlsContext, checkDoctor: checkDoctorConflict, checkPatient: checkPatientConflict,
+      }, {
         userId: userId,
         patientName: patientName,
         patientPhone: normalizedPhone,
@@ -825,10 +798,11 @@ class WhatsAppAgenticBookingService {
           profileName: userContext.profileName,
           bookingTimestamp: new Date().toISOString()
         }
-      });
+      }, { requestId: bookingData.bookingRequestId, organizationId: user.organization_id });
       
       // Send confirmation SMS via WhatsApp
       try {
+        if (replayed) return { success: true, replayed: true, bookingId: `MED${String(appointment.id).padStart(6, '0')}`, appointmentId: appointment.id, appointment, doctorName };
         const confirmDateStr = appointmentDate.toLocaleDateString('en-IN', { 
           weekday: 'short', day: 'numeric', month: 'short' 
         });
@@ -884,12 +858,8 @@ class WhatsAppAgenticBookingService {
       if (bookingData?.mentalHealth || bookingData?.virtualRequested || bookingData?.specialization === 'Psychology' || bookingData?.specialization === 'Psychiatry') {
         return [];
       }
-      // Return default slots on error
-      return [
-        { time: '10:00 AM', price: 500, note: 'Slot availability to be confirmed' },
-        { time: '02:00 PM', price: 500, note: 'Slot availability to be confirmed' },
-        { time: '05:00 PM', price: 500, note: 'Slot availability to be confirmed' }
-      ];
+      // Availability failures must never become bookable invented slots.
+      return [];
     }
   }
 
@@ -992,7 +962,7 @@ class WhatsAppAgenticBookingService {
       });
 
       if (!labs || labs.length === 0) {
-        console.log('No labs found in database, using default slots');
+        console.log('No labs found in database');
         return this.getDefaultLabSlots(preferredDate, timePreference, packageDetails);
       }
 
@@ -1229,52 +1199,16 @@ class WhatsAppAgenticBookingService {
    * Default lab slots when DB lookup fails
    */
   getDefaultLabSlots(preferredDate, timePreference, packageDetails) {
-    const baseSlots = [
-      { time: '09:00 AM', timeValue: '09:00' },
-      { time: '10:30 AM', timeValue: '10:30' },
-      { time: '02:00 PM', timeValue: '14:00' },
-      { time: '04:00 PM', timeValue: '16:00' }
-    ];
-    
-    const filtered = baseSlots.filter(slot => {
-      const hour = parseInt(slot.timeValue.split(':')[0]);
-      return this.matchesTimePreference(hour, timePreference);
-    });
-    
-    return filtered.slice(0, 3).map(slot => ({
-      ...slot,
-      location: 'Mediczy Health Center',
-      price: packageDetails?.price || 1499,
-      type: 'health_checkup',
-      note: 'Please call to confirm availability'
-    }));
+    // No authoritative availability: never fabricate a slot or price.
+    return [];
   }
 
   /**
    * Default doctor slots when DB lookup fails
    */
   getDefaultDoctorSlots(timePreference, specialization) {
-    const baseSlots = [
-      { time: '10:00 AM', timeValue: '10:00' },
-      { time: '11:30 AM', timeValue: '11:30' },
-      { time: '02:00 PM', timeValue: '14:00' },
-      { time: '04:00 PM', timeValue: '16:00' },
-      { time: '06:00 PM', timeValue: '18:00' }
-    ];
-    
-    const filtered = baseSlots.filter(slot => {
-      const hour = parseInt(slot.timeValue.split(':')[0]);
-      return this.matchesTimePreference(hour, timePreference);
-    });
-    
-    return filtered.slice(0, 3).map(slot => ({
-      ...slot,
-      doctorName: 'Available Doctor',
-      specialization: specialization || 'General Medicine',
-      price: 500,
-      type: 'consultation',
-      note: 'Doctor will be assigned based on availability'
-    }));
+    // No authoritative availability: never fabricate a slot or price.
+    return [];
   }
 
   /**

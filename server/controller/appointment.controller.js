@@ -1092,8 +1092,8 @@ export const cancelAppointment = async (req, res) => {
       cancelledAt: new Date()
     });
 
-    // Publish Kafka event
-    try {
+    // Chat actions commit their durable receipt with the mutation before dispatch.
+    if (!req.chatTransaction) try {
       const patient = await User.findByPk(appointment.userId);
       const doctor = await Doctor.findByPk(appointment.doctorId);
       if (patient && doctor) {
@@ -1171,8 +1171,8 @@ export const rescheduleAppointment = async (req, res) => {
 
     const { appointment, oldDate, oldTime } = result;
 
-    // Publish Kafka event
-    try {
+    // Chat actions commit their durable receipt with the mutation before dispatch.
+    if (!req.chatTransaction) try {
       const patient = await User.findByPk(appointment.userId);
       const doctor = await Doctor.findByPk(appointment.doctorId);
       if (patient && doctor) {

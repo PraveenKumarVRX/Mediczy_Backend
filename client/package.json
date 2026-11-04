@@ -21,7 +21,8 @@
     "test:portal-routes-sanity": "node scripts/portal-routes-sanity.mjs",
     "test:nursing:browser": "node scripts/nursing-workflow-browser.mjs",
     "test:nursing": "vitest run src/config/clinicalPortalPaths.test.ts src/utils/nursing-session.test.ts",
-    "typecheck:nursing": "tsc --noEmit -p tsconfig.nursing.json"
+    "typecheck:nursing": "tsc --noEmit -p tsconfig.nursing.json",
+    "typecheck:chatbot": "tsc --noEmit -p tsconfig.chatbot.json"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.9",

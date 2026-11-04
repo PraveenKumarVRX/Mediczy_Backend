@@ -1,10 +1,12 @@
+import { getToken } from '@/hooks/auth';
+import { useAuth } from '@/auth/AuthProvider';
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, Send, User, Mic, Volume2, VolumeX, AlertCircle, Clock, CheckCircle, XCircle, Trash2, Copy, Check, Video } from "lucide-react";
+import { Bot, Send, User, Mic, Volume2, VolumeX, Clock, Trash2, Copy, Check, Video } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,6 +22,8 @@ interface Message {
   content: string;
   timestamp: Date;
   isTyping?: boolean;
+  action?: {actionId:string;confirmationToken:string;requiresConfirmation:boolean;action:{kind:'cancel'|'reschedule';appointmentId:number;appointmentDate?:string;appointmentTime?:string}};
+  sources?: Array<{ documentId: string; chunkId: string; title: string; excerpt: string; version?: string; reviewDueAt?: string }>;
   confidence?: number;
   language?: string;
 }
@@ -36,7 +40,19 @@ interface DrISHAChatProps {
   maxHeight?: string;
 }
 
-export const DrISHAChat: React.FC<DrISHAChatProps> = ({
+export const DrISHAChat: React.FC<DrISHAChatProps> = (props) => {
+  const { currentUser, currentDoctor, currentCorporate, userType } = useAuth();
+  const actor = userType === 'doctor' ? currentDoctor : userType === 'corporate' ? currentCorporate : currentUser;
+  let tokenActor = '';
+  try {
+    const token=getToken();
+    const payload=token ? JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) : null;
+    tokenActor=String(payload?.sub || payload?.id || payload?.userId || payload?.doctorId || '');
+  } catch { /* UI isolation only; server authentication remains authoritative. */ }
+  return <DrISHAChatSession key={`${userType}:${actor?.id || tokenActor || 'anonymous'}`} {...props} />;
+};
+
+const DrISHAChatSession: React.FC<DrISHAChatProps> = ({
   className,
   placeholder = "Ask Dr. iSHA about your health...",
   welcomeMessage = "Hello! I'm Dr. iSHA, your AI medical assistant. How can I help you today?",
@@ -49,21 +65,8 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
 }) => {
   const navigate = useNavigate();
   const videoCall = useVideoCall();
-  const STORAGE_KEY = 'dr_isha_session';
-
-  // Restore persisted session from localStorage on mount
-  const [messages, setMessages] = useState<Message[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const { messages: savedMsgs } = JSON.parse(saved);
-        if (Array.isArray(savedMsgs) && savedMsgs.length > 0) {
-          return savedMsgs.map((m: Message) => ({ ...m, timestamp: new Date(m.timestamp) }));
-        }
-      }
-    } catch { /* a malformed saved chat starts a clean session */ }
-    return [];
-  });
+  // Transcripts stay in component memory; changing accounts remounts this component.
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -71,21 +74,23 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [sessionId, setSessionId] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const { sessionId: savedSid } = JSON.parse(saved);
-        if (savedSid) { drIshaAPI.currentSessionId = savedSid; return savedSid; }
-      }
-    } catch { /* a malformed saved session starts a fresh one */ }
-    return drIshaAPI.startNewSession();
-  });
+  const [sessionId, setSessionId] = useState('');
+  const [useHealthHistory, setUseHealthHistory] = useState(false);
   const [suggestedFollowUps, setSuggestedFollowUps] = useState<string[]>([
     "Tell me more", "What should I do?", "Is this serious?", "Home remedies?", "When to see a doctor?"
   ]);
   const [showVideoEscalation, setShowVideoEscalation] = useState(false);
   const [videoConnecting, setVideoConnecting] = useState(false);
+  const [handoffId,setHandoffId] = useState<number | null>(null);
+  const [handoffStatus,setHandoffStatus] = useState('');
+  const [confirmingAction,setConfirmingAction] = useState<string | null>(null);
+  useEffect(() => {
+    if (!handoffId) return;
+    let stopped = false;
+    const poll = async () => { try { const {data} = await api.get(`/medical-ai/handoffs/${handoffId}`); if (!stopped) setHandoffStatus(data.status); } catch { if (!stopped) setHandoffStatus('unavailable'); } };
+    poll(); const timer = setInterval(poll,4000);
+    return () => { stopped=true; clearInterval(timer); };
+  },[handoffId]);
 
   const startEmergencyVideo = async () => {
     setVideoConnecting(true);
@@ -95,7 +100,8 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
         symptoms: lastUserMessage || 'Emergency consultation requested from Dr. iSHA chat',
         urgencyLevel: 'HIGH',
       });
-      const livekit = data?.videoCall?.livekit;
+      if (data?.videoCall?.appointmentId) { setHandoffId(data.videoCall.appointmentId); setHandoffStatus('offered'); }
+      const livekit = data?.videoCall?.livekit?.patient || data?.videoCall?.livekit;
       if (livekit?.serverUrl && livekit?.token) {
         videoCall.startCall({
           serverUrl: livekit.serverUrl,
@@ -103,7 +109,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
           roomName: livekit.roomName || data.videoCall.roomId,
           iceServers: livekit.iceServers,
         }, 'Patient');
-        toast.success('Connecting you to an emergency doctor via video...');
+        toast.info('Joining the consultation room. Waiting for the doctor.');
         setShowVideoEscalation(false);
         return;
       }
@@ -114,7 +120,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
       }
       throw new Error('Video room unavailable');
     } catch (error) {
-      console.error('Emergency video escalation failed:', error);
+      console.error('Emergency video escalation failed');
       toast.error('Could not start video call. Opening emergency page...');
       navigate('/emergency');
     } finally {
@@ -122,12 +128,10 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
     }
   };
 
-  // Persist session to localStorage whenever messages/sessionId change
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ sessionId, messages: messages.slice(-30) }));
-    } catch { /* storage can be unavailable in privacy-restricted browsers */ }
-  }, [messages, sessionId]);
+    // Remove histories written by older account-independent clients.
+    try { localStorage.removeItem('dr_isha_session'); } catch { /* storage unavailable */ }
+  }, []);
 
   useEffect(() => {
     // Only initialize a new session if we didn't restore one
@@ -145,7 +149,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
         role: "assistant",
         content: welcomeMessage + disclaimer,
         timestamp: new Date(),
-        confidence: 1.0
+        confidence: undefined
       }]);
     }
   }, [welcomeMessage, showWelcomeCard]);
@@ -193,18 +197,12 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
       };
       setMessages(prev => [...prev, typingMessage]);
 
-      // Pass up to 15 turns for context continuity
-      const conversationHistory = messages.slice(-15).map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
-
       // Consult Dr. iSHA
       const response = await drIshaAPI.consult(
         userMessage.content,
         language,
         {
-          conversationHistory,
+          useHealthHistory,
           sessionId,
           userAgent: 'Mediczy Web App'
         }
@@ -214,6 +212,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
       setMessages(prev => prev.filter(msg => !msg.isTyping));
 
       if (response.success && response.data) {
+        setSessionId(response.data.sessionId);
         const reply = String(response.data.response || '').trim();
         if (!reply || reply === 'Based on the information I gathered, here is my response.') {
           throw new Error('Dr. iSHA returned an incomplete response');
@@ -223,7 +222,9 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
           role: "assistant",
           content: reply,
           timestamp: new Date(),
-          confidence: response.data.confidence || 0.9,
+          confidence: response.data.confidence,
+          action: response.data.action,
+          sources: response.data.retrieval?.supportingSources || [],
           language: response.data.language
         };
 
@@ -390,17 +391,6 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
     }
   };
 
-  const getConfidenceColor = (confidence?: number) => {
-    if (!confidence || confidence < 0.5) return "text-red-500";
-    if (confidence < 0.8) return "text-yellow-500";
-    return "text-green-500";
-  };
-
-  const getConfidenceIcon = (confidence?: number) => {
-    if (!confidence || confidence < 0.5) return <XCircle className="w-3 h-3" />;
-    if (confidence < 0.8) return <AlertCircle className="w-3 h-3" />;
-    return <CheckCircle className="w-3 h-3" />;
-  };
 
   return (
     <Card className={cn("flex flex-col min-h-0 bg-background/50 backdrop-blur-sm border-primary/20", className)}>
@@ -493,17 +483,43 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
                           hour: '2-digit', 
                           minute: '2-digit' 
                         })}
-                        {message.confidence !== undefined && (
-                          <div className={cn(
-                            "flex items-center gap-1",
-                            getConfidenceColor(message.confidence)
-                          )}>
-                            {getConfidenceIcon(message.confidence)}
-                            <span>{Math.round((message.confidence || 0) * 100)}%</span>
-                          </div>
-                        )}
+
                       </div>
                       
+                      {message.action?.requiresConfirmation && (
+                        <Button type="button" disabled={Boolean(confirmingAction)} onClick={async () => {
+                          setConfirmingAction(message.action!.actionId);
+                          try {
+                            const {data} = await api.post('/medical-ai/actions/confirm',{actionId:message.action!.actionId,confirmationToken:message.action!.confirmationToken,confirmed:true});
+                            if (!data.committed) throw new Error('Action not committed');
+                            setMessages(previous => previous.map(item => item.id === message.id ? {...item,action:undefined,content:`Appointment #${data.appointmentId}: ${data.status}.`} : item));
+                          } catch { toast.error('Appointment change could not be completed. Check its current status before trying again.'); }
+                          finally { setConfirmingAction(null); }
+                        }}>Confirm {message.action.action.kind === 'cancel' ? 'cancellation' : 'new appointment time'}</Button>
+                      )}
+                      {message.role === 'assistant' && !message.isTyping && sessionId && (
+                        <div className="flex gap-2 text-xs">
+                          {[{label:'Helpful',rating:5},{label:'Not helpful',rating:1}].map(option=>(
+                            <button type="button" key={option.label} onClick={async()=>{
+                              try { await api.post('/medical-ai/feedback',{sessionId,rating:option.rating,useHealthHistory});toast.success('Feedback recorded'); }
+                              catch {toast.error('Feedback could not be recorded');}
+                            }}>{option.label}</button>
+                          ))}
+                        </div>
+                      )}
+                      {!!message.sources?.length && (
+                        <details className="text-xs mt-2">
+                          <summary>Sources retrieved for this answer</summary>
+                          <ul className="space-y-2 mt-2">
+                            {message.sources.map(source => (
+                              <li key={`${source.documentId}:${source.chunkId}`}>
+                                <strong>{source.title}</strong>{source.version && <span> · version {source.version}</span>}
+                                <p>{source.excerpt}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                       {/* Action buttons for assistant messages */}
                       {message.role === "assistant" && !message.isTyping && (
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
@@ -625,6 +641,13 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
             {ttsEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           </Button>
 
+          <label className="flex items-center gap-1 text-xs">
+            <input type="checkbox" checked={useHealthHistory} disabled={isLoading}
+              onChange={event => { setUseHealthHistory(event.target.checked); setSessionId(''); setMessages([]); }} />
+            Use my health history (requires consent)
+          </label>
+          {handoffStatus && <span role="status" className="text-xs">Consultation: {handoffStatus}</span>}
+          <Button type="button" variant="ghost" onClick={() => navigate('/appointments')}>Manage reminders</Button>
           {/* Clear chat */}
           {messages.length > 1 && (
             <Button
@@ -632,11 +655,13 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
               variant="ghost"
               size="icon"
               title="Clear conversation"
-              onClick={() => {
+              onClick={async () => {
+                const cleared = await drIshaAPI.clearSession(sessionId);
+                if (!cleared.success) { toast.error("Could not clear server history. Please try again."); return; }
                 const newSid = drIshaAPI.startNewSession();
                 setSessionId(newSid);
                 setMessages([]);
-                try { localStorage.removeItem(STORAGE_KEY); } catch { /* clearing browser storage is best-effort */ }
+                try { localStorage.removeItem('dr_isha_session'); } catch { /* clearing browser storage is best-effort */ }
                 setSuggestedFollowUps(["Tell me more","What should I do?","Is this serious?","Home remedies?","When to see a doctor?"]);
               }}
               className="flex-shrink-0 text-muted-foreground hover:text-destructive"

@@ -1,3 +1,4 @@
+import { sibFetch as fetch } from '../services/sib-client.js';
 // import { validationResult } from "express-validator";
 import { JWT_CONFIG } from '../config/auth.config.js';
 // import doctorModel from "../models/doctor.model.js";

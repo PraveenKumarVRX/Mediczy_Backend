@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { requireAIConsent } from '../medical-chat-contract.js';
+import { sibFetch as fetch } from '../sib-client.js';
 /**
  * LLM Provider Service — Single Source of Truth for ALL AI
  * ========================================================
@@ -505,8 +508,9 @@ async function callSib(params) {
       body: JSON.stringify({
         message,
         history: history.slice(-15),
-        patient_id: params.patientId || params.userId || 'mediczy-backend',
-        user_id: params.userId || 'mediczy-backend',
+        patient_id: `call_${randomUUID()}`,
+        server_managed_history: true,
+        user_id: params.patientId ? (params.userId || params.patientId) : undefined,
         // Only genuine patient-facing clinical calls (a real patientId supplied
         // by the caller) are subject to the GDPR/DPDP AI-consent gate on the SIB
         // side — generic/non-clinical calls (admin & team copilot, HR text
@@ -527,8 +531,7 @@ async function callSib(params) {
     clearTimeout(timeoutId);
 
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`sib ${res.status}: ${body.substring(0, 200)}`);
+      throw Object.assign(new Error(`SIB request denied or unavailable (${res.status})`), { statusCode: res.status });
     }
 
     const data = await res.json();
@@ -555,6 +558,7 @@ async function callSib(params) {
     };
   } catch (err) {
     clearTimeout(timeoutId);
+    if ([401,403].includes(err.statusCode)) throw err;
     _sibFailures++;
     if (_sibFailures >= 3) {
       _sibOpenUntil = Date.now() + 5 * 60_000; // open for 5 min
@@ -884,6 +888,7 @@ async function chat({
                             // gate to actual clinical calls; never set this for generic/HR/admin use.
   userId = null,
 }) {
+  if (patientId) await requireAIConsent(pool, userId || patientId);
   messages = sanitizeMessagesForLlm(messages);
   const dbConfig = await getModelConfig();
 
@@ -902,7 +907,7 @@ async function chat({
   const userMessage = messages.filter(m => m.role === 'user').slice(-1)[0]?.content;
   const clinicalMessage = typeof userMessage === 'string' && looksClinicalForCache(userMessage);
   const scopedCacheText = typeof userMessage === 'string' ? buildScopedCacheText(userMessage, cacheScope) : null;
-  const isCacheable = !skipCache
+  const isCacheable = !patientId && !skipCache
     && !forceProvider
     && !tools
     && !responseFormat
@@ -985,6 +990,7 @@ async function chat({
     providersToTry = PROVIDERS.filter(p => !p.disabled).sort((a, b) => a.priority - b.priority); // All enabled in cascade order
   }
 
+  if (patientId) providersToTry = providersToTry.filter(provider=>provider.useSib);
   const cascade = [];       // Track which providers were attempted
   let response = null;
   let winningProvider = null;
@@ -1088,6 +1094,7 @@ async function chat({
       }).catch(() => {});
       break; // Success — stop cascade
     } catch (err) {
+      if ([401,403].includes(err.statusCode)) throw err;
       const msg = redactPhiText(err.message || String(err));
       console.warn(`[LLM] ${provider.label} failed: ${msg}`);
       cascade.push({ provider: provider.name, status: 'error', error: msg });

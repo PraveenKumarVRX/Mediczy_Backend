@@ -550,6 +550,19 @@ You: "A month of unexplained fatigue can sometimes point to things like anaemia,
                 date = rx.get('prescriptionDate') or rx.get('prescription_date') or 'Recent'
                 parts.append(f"- Prescribed by {doc} on {date}")
         
+        if patient_data.get('medicationReference'):
+            import json
+            parts.append("Signed medication reference (historical; not current prescribing instructions): " + json.dumps(patient_data['medicationReference'],default=str))
+        if patient_data.get('wearables'):
+            import json
+            parts.append("Timestamped wearable data (stale/unknown entries must not be treated as current): " + json.dumps(patient_data['wearables'], default=str))
+        if patient_data.get('reminderPreferences'):
+            import json
+            parts.append("Reminder preferences (not evidence that a reminder has been scheduled): " + json.dumps(patient_data['reminderPreferences']))
+        if "verifiedObservations" in patient_data:
+            from utils.chat_contract import observation_context
+            parts.append(observation_context(patient_data))
+
         # Summary if available
         if patient_data.get('summary'):
             parts.append(f"\n=== SUMMARY ===")

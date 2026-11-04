@@ -29,7 +29,7 @@ class UnifiedConversationService {
     conversationId,
     identifier
   }) {
-    console.log('[UnifiedConversation] processMessage called with:', { message: (message || '').substring(0, 30), channel });
+    console.log('[UnifiedConversation] processMessage called with:', { messageLength: String(message||'').length, channel });
     
     if (!message || typeof message !== 'string') {
       return {
@@ -117,7 +117,7 @@ class UnifiedConversationService {
             detectedLanguage: inputTranslation.detectedLanguage,
             provider: inputTranslation.provider
           };
-          console.log('[UnifiedConversation] Translated ' + detectedLanguage + ' to en:', processedMessage.substring(0, 50) + '...');
+          console.log('[UnifiedConversation] Input translated', {language:detectedLanguage});
         }
       } catch (translationError) {
         console.warn('[UnifiedConversation] Input translation failed:', translationError.message);
@@ -268,7 +268,7 @@ class UnifiedConversationService {
         /second opinion|legal|insurance claim|multiple conditions|complicated|not sure|confused/i.test(normalizedMessage);
 
       console.log('[UnifiedConversation] Handoff check:', { 
-        message: normalizedMessage.substring(0, 50), 
+        messageLength: normalizedMessage.length,
         explicitHandoffRequest,
         confidence: classification?.primary?.confidence,
         needsHumanHandoff

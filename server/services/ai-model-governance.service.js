@@ -25,6 +25,22 @@ import { getAiLayerMapSummary } from './ai-layer-map.service.js';
 // Static model cards for each AI decision component.
 // Keep synchronized with actual model behavior. Update version on every change.
 export const MODEL_CARDS = {
+  'medical-chat-approved-extractive-v1': {
+    componentName:'Medical chat approved-source assistant',version:'v1-extractive',
+    regulatoryClass:'Intended-use assessment pending; no exemption or clinical approval asserted',
+    intendedUse:'Health education and clinician-reviewed source lookup, verified report references, confirmed administrative tasks and clinician handoff.',
+    notIntendedFor:'Autonomous diagnosis, prescribing, replacement of emergency services or unsupported-language clinical advice.',
+    modelType:'Existing conversational providers with signed service boundary, deterministic source-span grounding and confirmed task adapters',
+    inputFeatures:['Authorized consent-scoped context','Approved current source chunks','Verified report observations'],
+    outputDescription:'Source-backed excerpts, citation spans, verified source records, explicit unavailable states and committed task receipts',
+    validationStatus:'Local engineering regression tests only. Clinician-labelled evaluation and production pilot pending.',
+    performanceMetrics:{clinicalAccuracy:null,underTriage:null,note:'No measured clinical performance claim'},
+    demographicPerformance:{note:'No population or supported-language clinical validation claimed'},
+    knownLimitations:['Extractive output can be incomplete or irrelevant; requires clinical interpretation','Sources need explicit Medical Director approval and review expiry','External service and callback configuration require rollout verification'],
+    trainingDataSource:'No new training; existing providers and approved source retrieval',
+    updateCadence:'Pinned release; evaluate provider, prompt, retrieval, source and safety changes before scope expansion',
+    changeControlPlan:'Existing governance approval plus complete clinician-labelled release evaluation; no automatic clinical deployment',
+  },
   'health-risk-scoring-v2-bayesian': {
     componentName:      'Health Risk Scoring',
     version:            'v2-bayesian',

@@ -12,6 +12,7 @@ const DEFAULT_PREFERENCES = {
   promotions: false,
   reminderChannels: ['push', 'email'],
   reminderMinutesBefore: 30,
+  timezone: 'Asia/Kolkata',
 };
 
 let tableReady = false;
@@ -41,6 +42,9 @@ export async function getNotificationPreferences(userId) {
 export async function saveNotificationPreferences(userId, preferences = {}) {
   await ensureTable();
   const merged = { ...(await getNotificationPreferences(userId)), ...preferences };
+  try { new Intl.DateTimeFormat('en',{timeZone:merged.timezone}); }
+  catch { throw Object.assign(new Error('Valid reminder timezone required'),{statusCode:400}); }
+  if (!Number.isInteger(merged.reminderMinutesBefore) || merged.reminderMinutesBefore<1 || merged.reminderMinutesBefore>10080) throw Object.assign(new Error('Reminder offset must be between 1 minute and 7 days'),{statusCode:400});
   await sharedPool.query(
     `INSERT INTO notification_preferences (user_id, preferences, updated_at)
      VALUES ($1, $2::jsonb, NOW())

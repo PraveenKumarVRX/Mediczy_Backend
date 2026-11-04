@@ -1,3 +1,4 @@
+import { sibPost } from '../sib-client.js';
 /**
  * RAG Pipeline Service
  * ====================
@@ -23,7 +24,7 @@ const MIN_RELEVANCE_SCORE = 0.3;
  */
 async function embed(texts) {
   const input = Array.isArray(texts) ? texts : [texts];
-  const { data } = await axios.post(`${SIB_URL}/embed`, { texts: input }, {
+  const { data } = await sibPost(`${SIB_URL}/embed`, { texts: input }, {
     timeout: 30000,
     headers: { 'Content-Type': 'application/json' }
   });
@@ -191,7 +192,7 @@ async function search(query, options = {}) {
            'knowledge_base' AS source
     FROM ai_document_chunks c
     JOIN ai_knowledge_documents d ON d.id = c.document_id
-    WHERE d.status = 'ready' ${docFilter}
+    WHERE d.status = 'ready' AND d.review_status='approved' AND d.review_due_at>NOW() AND d.source_version IS NOT NULL AND d.approved_content_hash=(SELECT encode(sha256(convert_to(COALESCE(string_agg(c2.content,chr(10) ORDER BY c2.chunk_index,c2.id),''),'UTF8')),'hex') FROM ai_document_chunks c2 WHERE c2.document_id=d.id) ${docFilter}
     ORDER BY c.embedding <=> $1::vector
     LIMIT $2
   `;

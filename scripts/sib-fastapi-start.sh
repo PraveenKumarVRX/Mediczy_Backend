@@ -30,6 +30,16 @@ if command -v aws >/dev/null 2>&1; then
     [ -n "$OPENAI_MODEL_SSM" ] && export OPENAI_MODEL="$OPENAI_MODEL_SSM"
     [ -n "$SIB_PRIMARY_PROVIDER_SSM" ] && export SIB_PRIMARY_PROVIDER="$SIB_PRIMARY_PROVIDER_SSM"
 
+    SIB_SERVICE_SECRET_SSM="$(load_ssm_value SIB_SERVICE_SECRET)"
+    if [ -n "$SIB_SERVICE_SECRET_SSM" ] && [ "$SIB_SERVICE_SECRET_SSM" != "None" ]; then
+        export SIB_SERVICE_SECRET="$SIB_SERVICE_SECRET_SSM"
+    else
+        JWT_SECRET_SSM="$(load_ssm_value JWT_SECRET)"
+        [ -n "$JWT_SECRET_SSM" ] && export JWT_SECRET="$JWT_SECRET_SSM"
+        unset JWT_SECRET_SSM
+    fi
+    unset SIB_SERVICE_SECRET_SSM
+
     # Fetch only runtime DB values; an inherited UAT .env must not select production's target.
     for DB_RUNTIME_KEY in POSTGRES_HOST POSTGRES_PORT POSTGRES_DATABASE POSTGRES_USER POSTGRES_PASSWORD POSTGRES_SSL; do
         DB_RUNTIME_VALUE="$(load_ssm_value "$DB_RUNTIME_KEY")"
@@ -43,6 +53,11 @@ if command -v aws >/dev/null 2>&1; then
     export PGSSLMODE=verify-full
     export PGSSLROOTCERT="${POSTGRES_SSL_CA_FILE:-/home/ubuntu/Mediczy/server/db/certs/aws-rds-ap-south-1.pem}"
     unset OPENAI_API_KEY_SSM OPENAI_MODEL_SSM SIB_PRIMARY_PROVIDER_SSM
+fi
+
+if [ ${#SIB_SERVICE_SECRET} -lt 32 ] && [ ${#JWT_SECRET} -lt 32 ]; then
+    echo "SIB service authentication secret is missing or too short" >&2
+    exit 1
 fi
 
 # Wait for port to be available (with timeout)
@@ -85,4 +100,4 @@ sleep 2
 
 echo "[$(date)] Starting SIB FastAPI server..."
 cd "$APP_DIR"
-exec $VENV_UVICORN app:app --host 0.0.0.0 --port $PORT
+exec $VENV_UVICORN app:app --host "${SIB_BIND_HOST:-127.0.0.1}" --port $PORT

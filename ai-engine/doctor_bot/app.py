@@ -289,6 +289,9 @@ async def _retrieve_unified_context(query: str, patient_id: Optional[str] = None
         return [], ""
 
 
+from utils.chat_contract import supporting_sources as _supporting_sources, normalize_chat_history, grounded_answer, verified_observation_chunks, signed_medication_chunks
+
+
 async def _has_authoritative_ai_consent(user_id: Optional[str]) -> bool:
     """Check the platform consent table; never trust a request flag for PHI."""
     if not user_id or not app_state.db or not getattr(app_state.db, "pg_pool", None):
@@ -368,6 +371,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 ) if FASTAPI_AVAILABLE else None
+from utils.service_auth import ServiceAuth
+if app:
+    app.add_middleware(ServiceAuth)
 
 # CORS — restrict to known origins; never wildcard in production
 _ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
@@ -681,8 +687,12 @@ async def chat(request: Dict[str, Any]):
     user_id = request.get("user_id")  # Mediczy user ID from auth
     include_risk = request.get("include_risk", False)
     declared_lang = request.get("language", "en")  # Language declared by frontend
+    supported_languages = {value.strip() for value in os.getenv("CHATBOT_SUPPORTED_LANGUAGES", "en").split(",") if value.strip()}
+    language_supported = declared_lang in supported_languages
+
     supplied_patient_context = request.get("patient_context") or request.get("user_context") or {}
     consent_verified = False
+    server_managed_history = request.get("server_managed_history") is True
 
     # ── GDPR/DPDP Consent Gate ──────────────────────────────────────────────
     # AI medical consultation requires explicit user consent — but only for
@@ -715,7 +725,7 @@ async def chat(request: Dict[str, Any]):
         from utils.indic_translation import process_for_llm, translate_response
         english_message, patient_lang = process_for_llm(message, declared_lang)
         if patient_lang != "en":
-            logger.info(f"🌐 Translating {patient_lang}→en: '{message[:40]}...'")
+            logger.info("Translating input language=%s", patient_lang)
             message = english_message  # Use translated message for all downstream processing
     except Exception as _te:
         logger.warning(f"⚠️ Translation init failed: {_te}")
@@ -730,7 +740,7 @@ async def chat(request: Dict[str, Any]):
     conversation_history = []
     db_start = time.time()
     
-    if app_state.db and user_id:
+    if app_state.db and user_id and is_patient_specific and consent_verified and not server_managed_history:
         user_id_str = str(user_id)
         
         # Check cache first
@@ -772,6 +782,8 @@ async def chat(request: Dict[str, Any]):
             except Exception as e:
                 logger.warning(f"⚠️ DB timeout or error: {e} - proceeding without context")
     
+    if server_managed_history:
+        conversation_history = normalize_chat_history(request.get("history"))
     db_latency = (time.time() - db_start) * 1000
     
     # Check for emergencies
@@ -786,14 +798,31 @@ async def chat(request: Dict[str, Any]):
             "conversation_id": patient_id
         }
 
+    if not language_supported:
+        return {"response": "Medical guidance in this language is not enabled. Please contact a clinician or use an enabled language.",
+                "provider": "language-scope", "retrieval": {"count":0,"sources":[],"patient_history_used":False}}
+
     patient_data = supplied_patient_context if (is_patient_specific and consent_verified) else None
-    ehr_patient_id = str(user_id or patient_id) if patient_data else None
+    # Chat uses explicit verified projections. Legacy embeddings lack reliable organization provenance.
+    ehr_patient_id = None
     rag_chunks, rag_context = await _retrieve_unified_context(
         message,
         patient_id=ehr_patient_id,
         k=int(request.get("rag_k", 6) or 6),
     )
-    unified_context = [rag_context] if rag_context else None
+    verified_chunks = verified_observation_chunks(patient_data) + signed_medication_chunks(patient_data)
+    if verified_chunks:
+        rag_chunks = verified_chunks + rag_chunks
+        rag_context = "\n\n".join(chunk.content for chunk in verified_chunks) + "\n\n" + (rag_context or "")
+    # Empty retrieval must not reopen an unscoped legacy EHR search.
+    unified_context = [rag_context] if rag_context else []
+    if not rag_chunks:
+        return {
+            "response": "I could not retrieve supporting medical information for this question. Please consult a qualified clinician for advice.",
+            "provider": "evidence-unavailable", "evidence_status": "unavailable",
+            "retrieval": {"count": 0, "sources": [], "patient_history_used": False},
+            "conversation_id": patient_id,
+        }
     
     # Try full medical pipeline first (MedSpaCy + NER)
     try:
@@ -825,8 +854,11 @@ async def chat(request: Dict[str, Any]):
                 logger.warning(f"⚠️ Response translation failed: {_te}")
         # ─────────────────────────────────────────────────────────────────────
         
+        grounding = grounded_answer(filtered_response, rag_chunks, filter_dosages)
+        filtered_response = grounding['answer']
+
         # Save conversation to PostgreSQL
-        if app_state.db:
+        if app_state.db and not server_managed_history:
             try:
                 # Save user message
                 await app_state.db.save_chat_message(
@@ -903,6 +935,9 @@ async def chat(request: Dict[str, Any]):
             "language": patient_lang,
             "retrieval": {
                 "count": len(rag_chunks),
+                "supportingSources": grounding["sources"],
+                "claims": grounding["claims"],
+                "evidence_status": grounding["status"],
                 "sources": sorted({chunk.source for chunk in rag_chunks}),
                 "patient_history_used": bool(patient_data and any(chunk.source == "ehr" for chunk in rag_chunks)),
             }
@@ -913,25 +948,13 @@ async def chat(request: Dict[str, Any]):
         # Fallback: Hybrid RAG (BM25 + dense + re-rank) → LLM
         # Uses the world-class retrieval pipeline instead of basic dense-only search
         try:
-            if ehr_patient_id:
-                from utils.pgvector_store import retrieve_and_rerank
-                retrieved = await retrieve_and_rerank(
-                    message, k=10, patient_filter=ehr_patient_id, rerank_top_k=5
-                )
-                rag_context = "\n\n".join(
-                    f"[{r.get('section','General')} | score={r.get('rerank_score', r.get('score',0)):.2f}] {r['text']}"
-                    for r in retrieved
-                )
-            # With no consented patient id, use only the already-filtered
-            # knowledge-fabric context. Never query sib_embeddings globally.
-            else:
-                rag_context = rag_context or ""
-            llm_result = generate_answer(message, use_biomedix=False, include_context=bool(rag_context),
-                                         context_override=rag_context if rag_context else None)
-        except Exception as _rag_err:
-            logger.warning(f"⚠️ Hybrid RAG fallback failed ({_rag_err}), using basic RAG")
-            llm_result = generate_answer(message, use_biomedix=False, include_context=True)
-        
+            # Reuse only the already-authorized context. Never reopen a global
+            # EHR search when retrieval or a provider fails.
+            llm_result = generate_answer(message, use_biomedix=False,
+                                         include_context=True, context_override=rag_context)
+        except Exception:
+            raise HTTPException(status_code=503, detail="Medical AI service temporarily unavailable")
+
         # Safety filter. The patient's message was already checked for
         # emergencies earlier in this handler (and short-circuits before any
         # answer is generated), so only re-check the generated response for
@@ -950,8 +973,11 @@ async def chat(request: Dict[str, Any]):
         
         total_latency = (time.time() - start_time) * 1000
         
+        grounding = grounded_answer(safe_answer, rag_chunks, filter_dosages)
+        safe_answer = grounding['answer']
+
         # Save fallback conversation to PostgreSQL
-        if app_state.db:
+        if app_state.db and not server_managed_history:
             try:
                 await app_state.db.save_chat_message(
                     conversation_id=patient_id,
@@ -984,6 +1010,9 @@ async def chat(request: Dict[str, Any]):
             "language": patient_lang,
             "retrieval": {
                 "count": len(rag_chunks),
+                "supportingSources": grounding["sources"],
+                "claims": grounding["claims"],
+                "evidence_status": grounding["status"],
                 "sources": sorted({chunk.source for chunk in rag_chunks}),
                 "patient_history_used": bool(patient_data and any(chunk.source == "ehr" for chunk in rag_chunks)),
             }

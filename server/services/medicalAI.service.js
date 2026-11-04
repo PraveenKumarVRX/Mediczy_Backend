@@ -1,9 +1,12 @@
+import { randomUUID } from 'node:crypto';
+import { channelChat } from './medical-channel-chat.service.js';
+import { sibFetch as fetch } from './sib-client.js';
 /**
  * Medical AI Service - SIMPLIFIED
  * ALL chat routes to SIB ChatBotlet. No canned responses.
  */
 
-import fetch from 'node-fetch';
+
 
 class MedicalAIService {
   constructor() {
@@ -62,24 +65,20 @@ class MedicalAIService {
    */
   async consultMedical(query, sessionId, language = 'en', userContext = {}) {
     try {
-      console.log(`🧠 [MedicalAI] Processing: "${query.substring(0, 50)}..."`);
+      console.log("[MedicalAI] Processing message", {length:query.length});
       
-      // Get or create conversation history
-      if (!this.conversationHistory.has(sessionId)) {
-        this.conversationHistory.set(sessionId, []);
-      }
-      const history = this.conversationHistory.get(sessionId);
+      const history=[]; // The canonical channel gateway owns durable history.
 
       // Extract user ID from context
       const userId = userContext?.userId || userContext?.id || null;
       
       // Build patient data for context
-      const patientData = {
+      const patientData = userId && userContext?.user ? {
         user: userContext?.user || null,
         profile: userContext?.profile || null,
         appointments: userContext?.appointments || null,
         prescriptions: userContext?.prescriptions || null
-      };
+      } : null;
 
       // ALL queries go to SIB
       let result;
@@ -96,19 +95,9 @@ class MedicalAIService {
         };
       }
 
-      // Store conversation
-      history.push(
-        { role: 'user', content: query },
-        { role: 'assistant', content: result.response }
-      );
-
-      // Keep only last 20 messages
-      if (history.length > 20) {
-        history.splice(0, history.length - 20);
-      }
 
       return {
-        success: true,
+        success: result.success !== false,
         response: result.response,
         doctor: this.doctorName,
         sessionId: sessionId,
@@ -116,7 +105,7 @@ class MedicalAIService {
         language: language,
         provider: result.provider,
         model: result.model,
-        conversationLength: Math.floor(history.length / 2),
+        conversationLength: result.conversationLength || 0,
         latency: result.latency || null
       };
 
@@ -153,22 +142,11 @@ class MedicalAIService {
 
       const patientId = sessionId || `mediczy_${Date.now()}`;
       
-      const response = await fetch(`${this.sibBaseUrl}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          message: query,
-          patient_id: patientId,
-          user_id: userId,
-          include_risk: true,
-          include_rag: true,
-          patient_data: patientData || undefined
-        }),
-        signal: controller.signal
-      });
-      
+      const channelResponse = await channelChat({ channel: 'facade', binding: userId ? sessionId || String(userId) : randomUUID(),
+        owner: JSON.stringify(['facade', String(userId || sessionId || 'generic')]), message: query, language,
+        userId, context: patientData, personal: Boolean(patientData) });
+      const response = { ok: true, json: async () => channelResponse.data };
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('SIB error response:', errorText);
@@ -191,6 +169,7 @@ class MedicalAIService {
       return {
         success: true,
         response: responseText,
+        conversationLength: data.conversationLength,
         provider: data.provider === 'groq' ? 'sib-groq' : 'sib-llama',
         model: data.provider === 'groq' ? 'groq-via-sib' : 'Llama-3.1-8B-Instruct',
         turnCount: data.turn_count,

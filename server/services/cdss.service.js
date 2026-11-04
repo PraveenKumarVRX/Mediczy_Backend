@@ -1,3 +1,4 @@
+import { sibFetch as fetch } from './sib-client.js';
 /**
  * Clinical Decision Support System (CDSS) Service
  * 

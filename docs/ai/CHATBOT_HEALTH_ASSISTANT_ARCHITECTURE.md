@@ -1,5 +1,7 @@
 # Health Assistant and Task Bot
 
+Local implementation update (2026-11-04): [chatbot changes, validation and remaining gaps](../testing/CHATBOT_GAPS_IMPLEMENTATION_VALIDATION_2026-11-04.md). Web consultations now use owned server sessions, explicit personal-history consent, bounded retrieved sources and an evidence-unavailable response. Runtime claims below still require deployment verification.
+
 ## Purpose
 
 Mediczy's assistant has two separate responsibilities:

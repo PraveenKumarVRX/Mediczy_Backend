@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.app.json","include":["src/components/DrISHAChat.tsx","src/services/drIsha.ts","src/types/global.d.ts","src/vite-env.d.ts"],"exclude":["node_modules"]}

@@ -1,3 +1,5 @@
+import pool from '../db/pgPool.js';
+import { canAccessPatient } from '../services/patient-access.service.js';
 /**
  * Unified Doctor Copilot Gateway (AI-PLATFORM-001)
  * POST /api/doctor-copilot/chat — single doctor AI entry with enriched context
@@ -19,13 +21,13 @@ import {
 import qualityGates from '../services/ai-quality-gates.service.js';
 
 const router = express.Router();
-const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team']);
+const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team','medical_director']);
 // Roles allowed to reach the clinical-decision-support path specifically.
 // requireDoctor above gates the gateway itself (administrative + clinical
 // callers both authenticate here); this second, narrower check decides
 // which of those callers may be routed to /medical-ai/consult's clinical
 // mode rather than the administrative /voice-assistant/agent path.
-const CLINICAL_ROLES = ['doctor', 'admin', 'medical_director', 'super_admin'];
+const CLINICAL_ROLES = ['doctor','medical_director'];
 
 router.get('/health', authUser, requireDoctor, (_req, res) => {
   res.json({
@@ -46,6 +48,7 @@ router.get('/layer-map', authUser, requireDoctor, async (_req, res) => {
 
 router.post('/chat', authUser, requireDoctor, async (req, res) => {
   const traceId = createTraceId();
+  req.chatTraceId=traceId;
   const text = String(req.body?.message || req.body?.text || '').trim();
   if (!text) {
     return res.status(400).json({ success: false, error: 'message or text is required', traceId });
@@ -71,8 +74,17 @@ router.post('/chat', authUser, requireDoctor, async (req, res) => {
 
   try {
     if (mode === 'clinical') {
+      const selected=context.currentPatient;
+      let patientUid=context.patientUid || selected?.unique_id || selected?.uniqueId || selected?.uid;
+      if (!patientUid && selected?.id) {
+        // Private compatibility adapter: this chart path historically uses users.id.
+        if (!(await canAccessPatient(req,selected.id))) return res.status(403).json({error:'Patient access denied',traceId});
+        const {rows}=await pool.query('SELECT unique_id FROM users WHERE id=$1',[selected.id]);
+        patientUid=rows[0]?.unique_id;
+        if(!patientUid) return res.status(503).json({error:'Registered chart identity unavailable',traceId});
+      }
       qualityGates.logCopilotConversation({
-        patientId: req.body?.context?.patientId || null,
+        patientId: patientUid || null,
         userId: req.user?.id,
         role: req.user?.role,
         source: 'doctor-copilot/chat',
@@ -80,12 +92,11 @@ router.post('/chat', authUser, requireDoctor, async (req, res) => {
       }).catch(() => {}); // audit logging must never block the clinical workflow
       await delegateToRouter(medicalAIRouter, '/consult', req, res, {
         query: text,
-        sessionId,
+        sessionId:/^chat_[a-f0-9]{32}$/.test(req.body?.sessionId||'') ? req.body.sessionId : undefined,
         language: req.body?.language || 'en',
         userContext: {
-          ...context,
-          conversationHistory: history,
-          sessionId,
+          ...(patientUid ? {patientUid} : {}),
+          channel:'doctor_copilot',
         },
       });
       return;

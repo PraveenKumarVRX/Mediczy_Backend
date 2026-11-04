@@ -123,10 +123,11 @@ class UnifiedRAGRetriever:
                 rows = await conn.fetch(
                     f"""SELECT c.content,
                                1 - (c.embedding <=> '{vec_str}'::vector) AS score,
-                               d.title, d.category
+                               d.title, d.category, d.id AS document_id, c.id AS chunk_id, d.source_version, d.review_due_at
                         FROM ai_document_chunks c
                         JOIN ai_knowledge_documents d ON d.id = c.document_id
-                        WHERE d.status = 'ready' {cat_clause}
+                        WHERE d.status = 'ready' AND d.scope = 'global' AND d.review_status = 'approved'
+                          AND d.review_due_at > NOW() AND d.source_version IS NOT NULL AND d.approved_content_hash=(SELECT encode(sha256(convert_to(COALESCE(string_agg(c2.content,chr(10) ORDER BY c2.chunk_index,c2.id),''),'UTF8')),'hex') FROM ai_document_chunks c2 WHERE c2.document_id=d.id) {cat_clause}
                         ORDER BY c.embedding <=> '{vec_str}'::vector
                         LIMIT {limit}""",
                     *params, timeout=10
@@ -138,6 +139,7 @@ class UnifiedRAGRetriever:
                     source="knowledge",
                     doc_title=r["title"],
                     category=r["category"],
+                    metadata={"document_id": str(r["document_id"]), "chunk_id": str(r["chunk_id"]), "version": r["source_version"], "review_due_at": r["review_due_at"].isoformat()},
                 )
                 for r in rows
                 if float(r["score"] or 0) >= MIN_SCORE

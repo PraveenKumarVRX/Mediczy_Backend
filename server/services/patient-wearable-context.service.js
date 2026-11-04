@@ -14,8 +14,7 @@ export async function getWearableContextForUser(userId) {
       const latest = await HealthReading.getLatestReading(userId, type);
       if (latest?.value != null) {
         summary[type] = {
-          value: latest.value,
-          recordedAt: latest.recorded_at || latest.recordedAt || null,
+          ...freshReading(latest, type),
         };
       }
     } catch {
@@ -41,3 +40,12 @@ export async function getWearableContextForUser(userId) {
 }
 
 export default { getWearableContextForUser };
+
+export function freshReading(reading, type, now = Date.now()) {
+  const recordedAt = reading.recorded_at || reading.recordedAt || null;
+  const timestamp = new Date(recordedAt || '').getTime();
+  const ttl = ['steps','sleep'].includes(type) ? 86400000 : 900000;
+  const fresh = Number.isFinite(timestamp) && timestamp <= now && now-timestamp<=ttl;
+  return fresh ? { status:'fresh',value:reading.value,unit:reading.unit || null,recordedAt }
+    : { status:Number.isFinite(timestamp) ? 'stale' : 'unknown',recordedAt };
+}

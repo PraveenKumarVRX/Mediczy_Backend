@@ -1,3 +1,4 @@
+import { getToken } from '@/hooks/auth';
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -12,6 +13,12 @@ interface DrIshaResponse {
   provider: string;
   conversationLength?: number;
   confidence?: number;
+  emergency?: boolean;
+  is_emergency?: boolean;
+  evidenceStatus?: 'extractive' | 'retrieved_unvalidated' | 'unavailable';
+  action?: { actionId:string; confirmationToken:string; requiresConfirmation:boolean; action:{kind:'cancel'|'reschedule';appointmentId:number;appointmentDate?:string;appointmentTime?:string} };
+  retrieval?: { count: number; sources: string[]; patient_history_used: boolean; supportingSources?: Array<{ documentId: string; chunkId: string; title: string; excerpt: string; version?: string; reviewDueAt?: string }> };
+  suggestedFollowUps?: string[];
   intentType?: 'emergency' | 'appointment' | 'doctor_search' | 'pregnancy' | 'mental_health' | 'pediatric' | string;
   redirectUrl?: string;
   suggestedSpecialist?: string;
@@ -66,7 +73,7 @@ class DrIshaAPI {
    */
   getAuthHeaders() {
     // Check both patient token ('token') and doctor token ('doctorToken')
-    const token = localStorage.getItem('token') || localStorage.getItem('doctorToken');
+    const token = getToken();
     return {
       'Content-Type': 'application/json',
       'Authorization': token ? `Bearer ${token}` : '',
@@ -96,8 +103,8 @@ class DrIshaAPI {
    * Start a new consultation session
    */
   startNewSession() {
-    this.currentSessionId = this.generateSessionId();
-    return this.currentSessionId;
+    this.currentSessionId = null;
+    return '';
   }
 
   /**
@@ -109,12 +116,12 @@ class DrIshaAPI {
    */
   async consult(query: string, language = 'en', userContext = {}): Promise<ConsultationResult> {
     try {
-      const sessionId = this.getSessionId();
+      const sessionId = (userContext as any)?.sessionId || undefined;
       const isEmergencyMode = Boolean((userContext as any)?.emergencyMode);
       const requestTimeout = isEmergencyMode ? 20000 : 45000;
       
       if (import.meta.env.DEV) console.log('🏥 Dr. iSHA Consult Request:', {
-        query: query.substring(0, 50) + '...',
+        queryLength: query.length,
         language,
         sessionId,
         baseURL: this.baseURL
@@ -143,17 +150,12 @@ class DrIshaAPI {
       return {
         success: true,
         data: response.data,
-        sessionId: sessionId,
+        sessionId: response.data.sessionId,
       };
 
     } catch (error) {
-      console.error('❌ Dr. iSHA consultation error:', error);
-      console.error('❌ Error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-        headers: this.getAuthHeaders()
-      });
+      console.error('❌ Dr. iSHA consultation error:', { status: error.response?.status });
+
       
       if (error.response) {
         // Server responded with error status
@@ -209,7 +211,7 @@ class DrIshaAPI {
         sessionId,
       };
     } catch (error) {
-      console.error('Emergency triage error:', error);
+      console.error('Emergency triage error:', { status: error.response?.status });
       return this.handleError(error);
     }
   }
@@ -236,7 +238,7 @@ class DrIshaAPI {
         specialization: response.data?.specialization,
       };
     } catch (error) {
-      console.error('Intent escalation error:', error);
+      console.error('Intent escalation error:', { status: error.response?.status });
       return {
         success: false,
         doctorSuggestions: [],
@@ -285,7 +287,7 @@ class DrIshaAPI {
       };
 
     } catch (error) {
-      console.error('Dr. Isha symptom analysis error:', error);
+      console.error('Dr. Isha symptom analysis error:', { status: error.response?.status });
       return this.handleError(error);
     }
   }
@@ -309,7 +311,7 @@ class DrIshaAPI {
       };
 
     } catch (error) {
-      console.error('Dr. Isha health check error:', error);
+      console.error('Dr. Isha health check error:', { status: error.response?.status });
       return {
         success: false,
         status: {
@@ -325,14 +327,14 @@ class DrIshaAPI {
    * Clear current conversation session
    * @returns {Promise<Object>} - Clear session result
    */
-  async clearSession() {
+  async clearSession(sessionId = this.currentSessionId) {
     try {
-      if (!this.currentSessionId) {
+      if (!sessionId) {
         return { success: true, message: 'No active session to clear' };
       }
 
       const response = await axios.delete(
-        `${this.baseURL}/session/${this.currentSessionId}`,
+        `${this.baseURL}/session/${encodeURIComponent(sessionId)}`,
         {
           headers: this.getAuthHeaders(),
           timeout: 10000,
@@ -348,7 +350,7 @@ class DrIshaAPI {
       };
 
     } catch (error) {
-      console.error('Dr. Isha clear session error:', error);
+      console.error('Dr. Isha clear session error:', { status: error.response?.status });
       return this.handleError(error);
     }
   }
@@ -357,9 +359,9 @@ class DrIshaAPI {
    * Get conversation history for current session
    * @returns {Promise<Object>} - Session history
    */
-  async getSessionHistory() {
+  async getSessionHistory(sessionId = this.currentSessionId) {
     try {
-      if (!this.currentSessionId) {
+      if (!sessionId) {
         return {
           success: true,
           data: {
@@ -371,7 +373,7 @@ class DrIshaAPI {
       }
 
       const response = await axios.get(
-        `${this.baseURL}/session/${this.currentSessionId}`,
+        `${this.baseURL}/session/${encodeURIComponent(sessionId)}`,
         {
           headers: this.getAuthHeaders(),
           timeout: 10000,
@@ -384,7 +386,7 @@ class DrIshaAPI {
       };
 
     } catch (error) {
-      console.error('Dr. Isha get session history error:', error);
+      console.error('Dr. Isha get session history error:', { status: error.response?.status });
       return this.handleError(error);
     }
   }

@@ -1,10 +1,18 @@
+import { sibFetch as fetch } from '../services/sib-client.js';
 import express from 'express';
-import fetch from 'node-fetch';
+
 import unifiedConversationService from '../services/unified-conversation.service.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import pool from '../db/pgPool.js';
 
 const router = express.Router();
+router.use(authUser, requireRole(['admin', 'team']));
+router.use((req, res, next) => {
+  if (req.body?.patientData || req.body?.patientInfo || req.body?.patientId || req.body?.userId) {
+    return res.status(403).json({ success: false, error: 'Use the authorized patient workflow for personal data and actions' });
+  }
+  next();
+});
 
 async function ensureTables() {
   await pool.query(`
@@ -222,15 +230,16 @@ router.post('/:botId/chat', async (req, res) => {
       });
     }
 
-    const sessionId = conversationId || `admin_${Date.now()}`;
+    const sessionId = `admin:${req.userRole}:${req.user.id}:${String(conversationId || 'default').slice(0, 100)}`;
     const t0 = Date.now();
     const unifiedResponse = await unifiedConversationService.processMessage({
       message,
       channel: 'admin-chat',
       sessionId,
-      identifier: userId || conversationId || botId,
+      identifier: `admin-chat:${req.user.id}`,
       userContext: {
-        userId,
+        userId:req.user.id,
+        callerRole:req.userRole,
         patientData,
         botId,
         botType: botConfig.botletType

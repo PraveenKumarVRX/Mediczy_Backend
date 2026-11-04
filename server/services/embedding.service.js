@@ -1,3 +1,4 @@
+import { sibFetch as fetch } from './sib-client.js';
 /**
  * Embedding Service
  * =================
