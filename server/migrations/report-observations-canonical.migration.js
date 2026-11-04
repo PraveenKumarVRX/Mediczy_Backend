@@ -19,7 +19,12 @@
 
 import pool from '../db/pgPool.js';
 
-// Seed catalog: canonical_name, loinc, default_unit, [aliases...]. Reference data — refine freely.
+// Seed catalog: canonical_name, loinc, default_unit, [aliases...].
+// These are REVIEWABLE seed mappings, not a terminology authority. Per the CTO review
+// (docs/ai/REPORT_OCR_CTO_REVIEW_2026-11-04.md): HyperGrid (`hg_code_map`/`hg_terminology`)
+// is the terminology authority; this table is a subordinate lab alias extension. Never
+// fuzzy-match a raw name straight into a trusted LOINC — validate via HyperGrid + specimen/
+// property/unit. Leave a LOINC empty when uncertain (explicit + reviewable) rather than guess.
 const CATALOG = [
   ['Haemoglobin', '718-7', 'g/dL', ['hemoglobin', 'haemoglobin', 'hb', 'hgb']],
   ['Glucose Fasting', '1558-6', 'mg/dL', ['glucose (fasting)', 'fasting glucose', 'fbs', 'glucose fasting']],
@@ -31,7 +36,8 @@ const CATALOG = [
   ['VLDL Cholesterol', '13458-5', 'mg/dL', ['vldl', 'vldl cholesterol']],
   ['Triglycerides', '2571-8', 'mg/dL', ['triglyceride', 'triglycerides', 'tg']],
   ['Creatinine', '2160-0', 'mg/dL', ['creatinine', 'serum creatinine']],
-  ['Urea', '22664-7', 'mg/dL', ['urea', 'blood urea', 'bun']],
+  ['Urea', '', 'mg/dL', ['urea', 'blood urea', 'serum urea']],                 // LOINC pending HyperGrid validation
+  ['Blood Urea Nitrogen', '3094-0', 'mg/dL', ['bun', 'urea nitrogen', 'blood urea nitrogen']],  // distinct from Urea
   ['Uric Acid', '3084-1', 'mg/dL', ['uric acid', 'serum uric acid']],
   ['TSH', '3016-3', 'uIU/mL', ['tsh', 'thyroid stimulating hormone']],
   ['SGPT (ALT)', '1742-6', 'U/L', ['sgpt', 'alt', 'alanine aminotransferase']],

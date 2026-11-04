@@ -18,6 +18,52 @@ and hands structured results back to the CRM — reusing the ~70% already built.
 > Because volume is low and the mailbox is shared, WP1 loses its queue and gains a
 > report-vs-other-mail filter; WP5 drops FHIR from the critical path. Net effort falls ~5 days.
 
+## Reconciliation with CTO review (2026-11-04) — AUTHORITATIVE on implementation details
+
+A CTO review ([REPORT_OCR_CTO_REVIEW_2026-11-04.md](REPORT_OCR_CTO_REVIEW_2026-11-04.md)) found real
+errors in this plan. Verified against code and **accepted**. Where this plan's *implementation
+details* conflict with the review, the review wins; this plan's *confirmed requirements* (the four
+decisions) stand. Corrections:
+
+- **WP1 — do NOT add a new poller.** `server/workers/email-sync.worker.js` (BullMQ) already runs
+  `periodic-sync-all` every 5 min → `inboundEmailService` → `processEmailFull` (files reports + regex
+  values). WP1 **extends this one worker** (verify its prod activation first); the `reportIngestCron`
+  design in §A.1 is **withdrawn**. One ingestion owner, one canonical writer.
+- **Identity first (supersedes §A.0 Option A).** Resolve a typed **subject + organization identity via
+  the entity-UID registry** before any canonical cutover; `patients.id`/`userId` bare integers violate
+  the UID rule. Do **not** invent patient registrations solely to satisfy a scorer — carry corporate
+  users on their subject UID and scope every match/read/review/dedupe/delivery by organization. The
+  §A.0 auto-provision is **reopened** pending this identity design.
+- **Verified-only reads (supersedes WP3 "unfiltered view" + WP4).** Initially require **explicit
+  review**; gate **every** consumer — the compat view, HRA, HIS, `getPatientLabValues`, hospital-dept
+  reads, trends and the webhook — on `verification_status='verified'`. A model confidence number is not
+  proven correctness; auto-verify is a later, benchmarked enhancement, not the first release.
+- **Preserve the source range/flag (supersedes WP3 recompute).** Keep the lab's own reference range and
+  flag as reported; store any normalized interpretation **separately** with its rule version/context.
+- **Terminology:** HyperGrid (`hg_code_map`/`hg_terminology`) is the authority; `lab_parameter_catalog`
+  is **subordinate, reviewable** seed. Never fuzzy-match a raw name into a trusted LOINC. BUN split from
+  Urea (BUN = LOINC 3094-0); uncertain LOINCs left empty. *(WP0 seed fixed accordingly — now 25 entries.)*
+- **Extraction correctness (WP2/WP3):** page-aware extraction into an **observation array** preserving
+  repeats/dates/specimens/qualifiers and **numeric zero** (fix `String(info.value||'')`); drop the
+  binary-as-UTF-8 PDF fallback; treat truncated/empty extraction as a **partial/failed** state, not
+  success; distinguish *extraction-complete / persisted / reviewed / delivered* (persist transactionally,
+  not fire-and-forget).
+- **Delivery (WP5):** durable **outbox**, at-least-once with stable event IDs + revision + HMAC +
+  receiver idempotency, plus **correction** events — not naive network retries.
+- **Scope & estimate:** first release = *supported lab reports*, not "all health-report values". The
+  ~15-day figure is **withdrawn**; re-estimate after identity, an OCR benchmark, and delivery semantics.
+- **FHIR/ABDM:** off the JSON-MVP critical path (unchanged); don't assume lab-FHIR conformance from
+  filenames.
+- **SaMD:** record intended use; do not treat a label or "mandatory review" as proof of regulatory
+  exclusion — get a jurisdiction-specific assessment separately.
+
+**Revised build order (replaces the sequence below):** (1) typed subject/org identity + canonical
+ownership + observation JSON contract; (2) verify/repair the existing email worker + org/subject/
+document-scoped dedupe; (3) shared extractor + **OCR benchmark in shadow mode**; (4) canonical
+persistence + review authz + verified-only reads together (audit every legacy consumer; don't delete
+the old writer until replay+rollback proven); (5) durable CRM delivery + corrections; (6) single-org
+pilot, then expand layouts; normalized trends only after units + dates are reliable.
+
 ## Current state (confirmed in code + prod)
 
 - **Two divergent extraction paths, two tables** — the central problem:
@@ -55,13 +101,15 @@ app upload ───────────────────────
     `verified_by`, `verified_at`. (+ indexes on `(patient_id,createdAt)`, `loinc_code`, `verification_status`.)
   - Backfill `patient_id` from `patients` via `userId` (idempotent).
   - New table `lab_parameter_catalog` (alias → `canonical_name`, `loinc_code`, `unit`, ref range),
-    seeded with 24 common parameters (CBC, lipids, LFT, KFT, TSH, glucose, HbA1c — covers the
-    Equitas FY25-26 panel).
+    seeded with 25 common parameters (CBC, lipids, LFT, KFT, TSH, glucose, HbA1c — covers the
+    Equitas FY25-26 panel; BUN split from Urea per the CTO review).
 - **Deferred to WP3** (because `report-analysis.service.js` still INSERTs the `ai_report_lab_values`
   base table — converting it to a view now would break that write): migrate the 17 legacy rows,
   create the `ai_report_lab_values` **compatibility view** over `lab_results`, drop the old table.
   This lands in the same change that repoints the writer.
-- **Dry-run result (prod, 2026-11-04):** 11/11 columns add, 24 catalog rows seed, rollback clean.
+- **Dry-run result (prod, 2026-11-04):** 11/11 columns add, 25 catalog rows seed, rollback clean.
+- **Before applying:** re-check the identity references per the Reconciliation section (UID-based
+  identity may change whether `patient_id` is the right key to backfill).
 - **Effort:** ~2 days (migration done; WP3 carries the view/migrate/drop).
 
 > **Data-model finding (feeds WP3).** The two paths key differently *and* cover different people:

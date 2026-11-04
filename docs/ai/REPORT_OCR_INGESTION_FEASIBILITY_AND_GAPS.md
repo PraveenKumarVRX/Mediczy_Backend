@@ -6,6 +6,21 @@
 **headless** service that hands results back to an external CRM, with no new patient-facing UI?
 
 **Implementation plan:** [REPORT_OCR_IMPLEMENTATION_PLAN.md](REPORT_OCR_IMPLEMENTATION_PLAN.md)
+**CTO review (authoritative on implementation details):** [REPORT_OCR_CTO_REVIEW_2026-11-04.md](REPORT_OCR_CTO_REVIEW_2026-11-04.md)
+
+> **Corrections (2026-11-04), after the CTO review — read these before this document's body:**
+> - **Canonical store is `lab_results`, not `ai_report_lab_values`.** This document described
+>   `ai_report_lab_values` as the normalized store; that is only the *app-upload* path's table.
+>   Convergence adopts **`lab_results`** (see the plan). Don't extend `ai_report_lab_values`.
+> - **Email path is NOT "email → LLM → normalized store".** Inbound email runs a **regex** parser
+>   (`emailAutoProcessService.extractLabResults`, via `inboundEmailService.processEmailFull`, driven
+>   by the **existing BullMQ `email-sync.worker`**) writing to `lab_results`. The LLM path is
+>   app-upload only. They are two divergent paths — that is the core problem to fix, not an existing
+>   unified flow.
+> - **More consumers than named here:** besides HRA + HIS, `getPatientLabValues` and hospital-dept
+>   agent reads also consume this data; all must be gated verified-only on cutover.
+> - **"~70% built" / "items 1,2,6 deliver the goal" understates** identity, persistence and review
+>   dependencies. Treat those as first-class, per the plan's Reconciliation section.
 
 **Verdict:** **Feasible, and largely already built.** ~70% of the pipeline the request
 describes exists and runs in production today (email report detection → LLM extraction →
