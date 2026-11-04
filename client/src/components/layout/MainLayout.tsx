@@ -34,8 +34,6 @@ import VideoCallNotification from "@/components/notifications/VideoCallNotificat
 import { PageTransition } from "@/components/PageTransition";
 import ChatApplet from "@/components/chat/ChatApplet";
 import GlobalSearch from "@/components/GlobalSearch";
-import SupportChatWidget from "@/components/SupportChatWidget";
-import { FloatingDrISHA } from "@/components/FloatingDrISHA";
 import { lazy, Suspense } from "react";
 import { useVideoCall } from "@/context/VideoCallContext";
 import { getUserDashboardUxMeta } from "@/config/userDashboardUxMeta";
@@ -449,14 +447,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       
       {/* Team Chat Communication Module */}
       {isTeamUser && <ChatApplet />}
-
-      {/* Patient omnichannel + AI assistant */}
-      {isPatientUser && (
-        <>
-          <SupportChatWidget />
-          <FloatingDrISHA />
-        </>
-      )}
 
       {/* Persistent video call overlay — survives page navigation */}
       {videoCall.liveKitConnection && (
