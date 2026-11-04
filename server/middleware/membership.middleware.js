@@ -1,6 +1,7 @@
 import { UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { Op } from 'sequelize';
 import { auditAccountStatusTransition } from './audit.middleware.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
   String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
@@ -12,6 +13,28 @@ const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
 const isMembershipRenewalExemptUser = (user) => {
   const email = String(user?.email || '').trim().toLowerCase();
   return MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(email);
+};
+
+// A corporate employee's care is funded by the employer's active corporate
+// relationship, not by an individual Mediczy membership. Require both the
+// authoritative employee association and an active roster record so a stale
+// association can never be used to bypass the individual membership policy.
+const activeCorporateEmployee = async (userId) => {
+  if (!userId) return false;
+  const [row] = await postgresSequelize.query(
+    `SELECT 1
+       FROM user_associations ua
+       JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
+       JOIN corporate_employees ce ON ce."userId" = ua."userId"
+          AND ce.corporate_id = ua."entityId" AND ce."isActive" = true
+      WHERE ua."userId" = :userId
+        AND ua."entityType" = 'corporate'
+        AND ua.role = 'employee'
+        AND ua.status = 'active'
+      LIMIT 1`,
+    { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  return Boolean(row);
 };
 
 /**
@@ -28,6 +51,15 @@ export const validateMembership = async (req, res, next) => {
 
   // Skip for dev tokens
   if (req.guardrail === 'DEV_TOKEN') {
+    return next();
+  }
+
+  // Do this before any individual-plan lookup or status mutation. Corporate
+  // employees may use their sponsored AHC benefits without purchasing a
+  // personal membership, while non-employees remain subject to the normal
+  // membership policy below.
+  if (req.userRole === 'user' && await activeCorporateEmployee(req.user?.id)) {
+    req.userCorporateSponsored = true;
     return next();
   }
 
