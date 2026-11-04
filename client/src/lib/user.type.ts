@@ -60,6 +60,11 @@ interface profileProps {
     occupation?: string;
     stressLevel?: string;
   };
+  // Doctor fields accessed via the profileProps | doctorProfileProps union (optional here).
+  clinicName?: string;
+  qualifications?: string;
+  registrationNumber?: string;
+  organizationId?: number;
 }
 
 interface doctorProfileProps {
@@ -81,5 +86,19 @@ interface doctorProfileProps {
   organizationType?: string;
   hospitalId?: number;
   hospital_id?: number;
+  // Fields accessed via the profileProps | doctorProfileProps union (optional on this member).
+  name?: string;
+  clinicName?: string;
+  qualifications?: string;
+  registrationNumber?: string;
+  address?: unknown;
+  height?: number;
+  weight?: number;
+  bloodType?: string;
+  allergies?: string[];
+  medications?: string[];
+  chronicConditions?: string[];
+  familyHistory?: unknown;
+  personalHistory?: unknown;
 }
 export type { UserProps, cardsProps, profileProps, doctorProfileProps };
