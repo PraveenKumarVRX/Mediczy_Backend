@@ -273,6 +273,19 @@ router.get('/home', authUser, async (req, res) => {
       eligibleRelations: item.metadata?.eligibleRelations || ['self'],
       description: item.features?.description || item.metadata?.description || 'Sponsored by your employer.',
     }));
+    // An assigned annual package is itself the employee's corporate-sponsored
+    // plan.  Expose it explicitly so a zero-value OPD wallet never makes an
+    // employee believe that they have no employer coverage.
+    const sponsoredPlans = annualHealthCheckups.map((item) => ({
+      id: item.id,
+      name: item.name,
+      kind: 'annual_health_checkup',
+      validFrom: item.validFrom,
+      validTo: item.validTo,
+      usedAt: item.usedAt,
+      description: item.description,
+      coverage: 'One employer-sponsored annual health checkup',
+    }));
 
     return res.json({
       success: true,
@@ -288,6 +301,7 @@ router.get('/home', authUser, async (req, res) => {
       benefits: {
         wallets: wallet.wallets || [],
         annualHealthCheckups,
+        sponsoredPlans,
         networkProviders: networkProviders.slice(0, 12),
       },
       upcomingAppointment: upcomingBooking[0] || null,
