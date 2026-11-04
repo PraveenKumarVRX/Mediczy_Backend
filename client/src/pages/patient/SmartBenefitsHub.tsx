@@ -136,23 +136,15 @@ export default function SmartBenefitsHub() {
   };
 
   const openHealthCheckupBooking = (plan: BenefitPlan, forFamily = false) => {
-    const params = new URLSearchParams({
-      serviceType: 'checkup',
-      source: forFamily ? 'corporate-family-benefit' : 'corporate-benefit',
-      packageName: plan.name,
-    });
+    // Corporate health-checkup benefits are booked through the dedicated sponsored-AHC flow
+    // (/health-checkups), not the generic lab-booking page — that flow resolves the corporate
+    // entitlement, the approved network, the ₹0 sponsored price, and family beneficiaries.
+    const params = new URLSearchParams();
     if (plan.packageId) params.set('packageId', String(plan.packageId));
-    if (forFamily) {
-      params.set('bookingFor', 'family');
-      if (typeof plan.familyDiscountPercent === 'number') {
-        params.set('familyDiscount', String(plan.familyDiscountPercent));
-      }
-      if (typeof plan.familyPrice === 'number') {
-        params.set('familyPrice', String(plan.familyPrice));
-      }
-      if (plan.sumInsured > 0) params.set('packagePrice', String(plan.sumInsured));
-    }
-    navigate(`/lab-booking?${params.toString()}`);
+    // Family bookings default the beneficiary selector to a non-self relation; the flow still
+    // lets the member change it to the exact spouse/parent/child.
+    if (forFamily) params.set('relation', 'spouse');
+    navigate(`/health-checkups${params.toString() ? `?${params.toString()}` : ''}`);
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────

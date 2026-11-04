@@ -247,6 +247,27 @@ const Login = () => {
     return false;
   };
 
+  // A corporate employee who signs in through the Individual door still belongs in their
+  // employer-benefits home (/employee/home), where the sponsored AHC, coverage and network live —
+  // otherwise they land on the generic patient shell and can't find their benefit. HR/admin
+  // accounts use the dedicated corporate portal, so only roster employees are redirected here.
+  // Gated on the cheap isCorporate flag so ordinary individual logins skip the extra round-trip.
+  const maybeRouteCorporateEmployee = async (user: any): Promise<boolean> => {
+    if (!user?.isCorporate) return false;
+    try {
+      const { data } = await api.get('/employee/context');
+      if (data?.success && data?.isCorporateEmployee) {
+        sessionStorage.setItem("mediczy:experience", "corporate_employee");
+        window.dispatchEvent(new Event("authChange"));
+        setTimeout(() => navigate(CORPORATE_EMPLOYEE_HOME, { replace: true }), 800);
+        return true;
+      }
+    } catch {
+      // Context unavailable — fall through to the normal individual home.
+    }
+    return false;
+  };
+
   const handleOtpSend = async () => {
     if (!otpIdentifier.trim()) return;
     setOtpLoading(true);
@@ -309,6 +330,7 @@ const Login = () => {
         setTimeout(() => navigate(CORPORATE_EMPLOYEE_HOME, { replace: true }), 800);
         return;
       }
+      if (await maybeRouteCorporateEmployee(data?.user)) return;
       try {
         const planRes = await api.get('/membership/my/current');
         const hasNoPlan = planRes?.status === 200 && planRes?.data?.userPlan === null;
@@ -394,6 +416,7 @@ const Login = () => {
             setTimeout(() => navigate(CORPORATE_EMPLOYEE_HOME, { replace: true }), 800);
             return;
           }
+          if (await maybeRouteCorporateEmployee(data?.user)) return;
           try {
             const planRes = await api.get('/membership/my/current');
             const hasNoPlan = planRes?.status === 200 && planRes?.data?.userPlan === null;

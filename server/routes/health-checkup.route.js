@@ -37,7 +37,36 @@ async function corporateAnnualPackageFor(userId, packageId) {
 }
 const day = (v) => { const s = String(v || ''); return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s ? s : null; };
 const past = (d) => d < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-const packageView = (r) => { const d = obj(r.packageDetails || r.package_details || r.features); const tests = arr(d.tests || d.includedTests || d.features).map((x) => typeof x === 'string' ? { name: x } : x); return { id: String(r.packageId ?? r.package_id ?? r.id), name: r.packageName || r.package_name || r.name || 'Health Checkup Package', description: d.description || r.description || '', tests, benefits: arr(d.benefits), price: Number(d.price ?? d.cost ?? r.price ?? 0) || 0, currency: d.currency || r.currency || 'INR', validFrom: r.validFrom || r.valid_from || null, validTo: r.validTo || r.valid_to || null, usedAt: r.usedAt || r.used_at || null, eligibleRelations: eligibleRelations(obj(r.metadata)), source: r.source || 'catalog', metadata: d.metadata || {} }; };
+// Catalog test lists arrive in inconsistent shapes: a clean array of names/objects, a tab- or
+// number-delimited occupational list ("SL No\tTests 1\tPhysical Examination 2\t..."), or a single
+// long lab-export string ("Uric Acid, Serum Electrolytes, Serum ..."). Normalise to individual
+// {name} items; when there is no reliable delimiter the string is kept whole rather than mangled.
+const TEST_SAMPLE_TYPES = 'sodium fluoride plasma|sodium citrate whole blood|edta whole blood|whole blood|serum|plasma|edta|urine|stool';
+const parseTestList = (raw) => {
+  const out = [];
+  const push = (name) => { const n = String(name || '').replace(/\s+/g, ' ').trim(); if (n && !/^(sl\.?\s*no|tests?)$/i.test(n)) out.push({ name: n }); };
+  for (const item of arr(raw)) {
+    if (item && typeof item === 'object') { out.push(item); continue; }
+    const s = String(item || '').trim();
+    if (!s) continue;
+    if (/[\n\r\t;|••]/.test(s)) {
+      // Delimited: split, then drop the running index that belongs to the next row and any header.
+      s.split(/[\n\r;|••]+|\t+/).forEach((part) => push(part.replace(/\s*\d{1,3}\s*$/, '').replace(/^\s*\d{1,3}[.)]?\s*/, '')));
+      continue;
+    }
+    const sampleHits = (s.match(new RegExp(`\\b(?:${TEST_SAMPLE_TYPES})\\b`, 'gi')) || []).length;
+    if (s.length > 100 && sampleHits >= 2) {
+      // Long "Test, SampleType Test, SampleType ..." export — break after each sample-type token.
+      const splitter = new RegExp(`(.*?\\b(?:${TEST_SAMPLE_TYPES})\\b),?\\s*`, 'i');
+      let rest = s, guard = 0;
+      while (rest.trim() && guard++ < 80) { const m = rest.match(splitter); if (!m || !m[1]) { push(rest); break; } push(m[1]); rest = rest.slice(m[0].length); }
+      continue;
+    }
+    push(s);
+  }
+  return out;
+};
+const packageView = (r) => { const d = obj(r.packageDetails || r.package_details || r.features); const tests = parseTestList(d.tests || d.includedTests || d.features); const preparationInstructions = arr(d.preparationInstructions || d.preparation_instructions || d.instructions).filter(Boolean).map(String); return { id: String(r.packageId ?? r.package_id ?? r.id), name: r.packageName || r.package_name || r.name || 'Health Checkup Package', description: d.description || r.description || '', tests, benefits: arr(d.benefits), preparationInstructions, price: Number(d.price ?? d.cost ?? r.price ?? 0) || 0, currency: d.currency || r.currency || 'INR', validFrom: r.validFrom || r.valid_from || null, validTo: r.validTo || r.valid_to || null, usedAt: r.usedAt || r.used_at || null, eligibleRelations: eligibleRelations(obj(r.metadata)), source: r.source || 'catalog', metadata: d.metadata || {} }; };
 
 async function corporateFor(userId) {
   const [r] = await postgresSequelize.query(`SELECT ua."entityId" AS "corporateId", c."companyName" FROM user_associations ua JOIN corporates c ON c.id=ua."entityId" AND LOWER(c.status)='active' WHERE ua."userId"=:userId AND ua."entityType"='corporate' AND ua.role='employee' AND ua.status='active' ORDER BY ua."createdAt" DESC LIMIT 1`, { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT });
