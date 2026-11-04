@@ -120,6 +120,7 @@ function PlanCard({
   const hasPlus = !!plan.plusSlug;
   const hasPro  = !!plan.proSlug;
   const [variant, setVariant] = useState<PlanVariant>('base');
+  const withInsurance = variant === 'plus' || variant === 'pro';
 
   const displayPrice =
     variant === 'pro'  && plan.proPrice  ? plan.proPrice  :
