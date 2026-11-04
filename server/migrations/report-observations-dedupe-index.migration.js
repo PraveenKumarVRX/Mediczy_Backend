@@ -17,9 +17,13 @@ export async function up(options = {}) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // NULLS NOT DISTINCT (PG15+) so a null organization_uid (individual/app-upload reports) still
+    // dedupes on subject+document — otherwise re-analysis of the same report would duplicate rows.
+    await client.query(`DROP INDEX IF EXISTS uq_lab_results_scoped`);
     await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_lab_results_scoped
+      CREATE UNIQUE INDEX uq_lab_results_scoped
         ON lab_results (organization_uid, subject_uid, document_hash, document_version, COALESCE(canonical_name, "testName"))
+        NULLS NOT DISTINCT
     `);
     const { rows } = await client.query(`SELECT 1 FROM pg_indexes WHERE indexname='uq_lab_results_scoped'`);
     console.log(`✅ uq_lab_results_scoped present: ${rows.length === 1}`);

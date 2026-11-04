@@ -392,49 +392,25 @@ async function updateHRAFromReport(userId, analysis) {
   if (patients.length === 0) return;
   const patientId = patients[0].id;
 
-  // Ensure the lab values table exists
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS ai_report_lab_values (
-      id SERIAL PRIMARY KEY,
-      patient_id INTEGER NOT NULL REFERENCES patients(id),
-      report_id INTEGER REFERENCES reports(id),
-      parameter_name VARCHAR(255) NOT NULL,
-      value VARCHAR(100),
-      unit VARCHAR(50),
-      status VARCHAR(20),
-      reference_range VARCHAR(100),
-      report_date DATE,
-      extracted_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(patient_id, report_id, parameter_name)
-    )
-  `);
-
-  // Insert extracted lab values
-  const keyValues = analysis.keyValues;
+  // Persist extracted lab values to the canonical lab_results store via the single writer.
+  // (WP3 Stage D: ai_report_lab_values is a compatibility VIEW post-converge — NEVER write it
+  // directly. persistObservations resolves subject/org uids, canonicalises, and dedupes.)
   const reportId = analysis.sourceReportId;
-  const reportDate = analysis.reportDate || null;
-
-  for (const [param, info] of Object.entries(keyValues)) {
-    if (!info || typeof info !== 'object') continue;
-    await db.query(`
-      INSERT INTO ai_report_lab_values (patient_id, report_id, parameter_name, value, unit, status, reference_range, report_date)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (patient_id, report_id, parameter_name) DO UPDATE SET
-        value = EXCLUDED.value,
-        unit = EXCLUDED.unit,
-        status = EXCLUDED.status,
-        reference_range = EXCLUDED.reference_range,
-        extracted_at = NOW()
-    `, [
-      patientId,
-      reportId,
-      param.substring(0, 255),
-      String(info.value || '').substring(0, 100),
-      (info.unit || '').substring(0, 50),
-      (info.status || 'normal').substring(0, 20),
-      (info.referenceRange || '').substring(0, 100),
-      reportDate
-    ]);
+  const observations = Object.entries(analysis.keyValues)
+    .filter(([, info]) => info && typeof info === 'object')
+    .map(([param, info]) => ({
+      raw_name: param, canonical_name: null, loinc_code: null,
+      raw_value: (info.value == null ? '' : String(info.value)),
+      typed_value: (info.value != null && String(info.value).trim() !== '' && !isNaN(Number(info.value)) ? Number(info.value) : null),
+      unit_original: info.unit || null, reference_range_source: info.referenceRange || null,
+      flag_source: info.status || null, confidence: null, page: null, source_text: null,
+    }));
+  if (observations.length && reportId) {
+    try {
+      const { persistObservations } = await import('./report-persistence.service.js');
+      await persistObservations({ reportId, userId, documentHash: `report-${reportId}`,
+        observations, reportDate: analysis.reportDate || null });
+    } catch (e) { console.error('[ReportAnalysis] persistObservations error:', e.message); }
   }
 
   // Store risk indicators in health_risk_scores data_sources
