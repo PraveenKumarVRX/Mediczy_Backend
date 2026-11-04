@@ -25,10 +25,13 @@ errors in this plan. Verified against code and **accepted**. Where this plan's *
 details* conflict with the review, the review wins; this plan's *confirmed requirements* (the four
 decisions) stand. Corrections:
 
-- **WP1 — do NOT add a new poller.** `server/workers/email-sync.worker.js` (BullMQ) already runs
-  `periodic-sync-all` every 5 min → `inboundEmailService` → `processEmailFull` (files reports + regex
-  values). WP1 **extends this one worker** (verify its prod activation first); the `reportIngestCron`
-  design in §A.1 is **withdrawn**. One ingestion owner, one canonical writer.
+- **WP1 — do NOT add a new poller; REPAIR the existing one.** `server/workers/email-sync.worker.js`
+  (BullMQ) already runs `periodic-sync-all` every 5 min → `inboundEmailService` → `processEmailFull`
+  (files reports + regex values). The `reportIngestCron` design in §A.1 is **withdrawn**.
+  **Verified in prod (2026-11-04): the worker is scheduled but FAILING every cycle** — `0 synced,
+  1 failed, team member undefined`, `last_sync_at` NULL on all 3 active mailboxes, `parinitha@` has no
+  IMAP password, and `user_id=110` doesn't resolve to a `TeamMember`. **Ingestion is effectively dead**;
+  WP1 = repair first. Details + fix list: [REPORT_OCR_STEP1_IDENTITY_AND_CONTRACT.md](REPORT_OCR_STEP1_IDENTITY_AND_CONTRACT.md) §0.
 - **Identity first (supersedes §A.0 Option A).** Resolve a typed **subject + organization identity via
   the entity-UID registry** before any canonical cutover; `patients.id`/`userId` bare integers violate
   the UID rule. Do **not** invent patient registrations solely to satisfy a scorer — carry corporate
