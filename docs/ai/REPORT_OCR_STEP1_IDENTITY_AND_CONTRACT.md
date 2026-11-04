@@ -139,10 +139,18 @@ Scoped key = `(organization_uid, subject_uid, document_hash, document_version, a
 
 ## 6. What Step-1 delivers (before any extractor/OCR work)
 1. This frozen contract + state machine.
-2. A migration adding `subject_uid`, `subject_kind`, `organization_uid`, `patient_uid`, `document_version`,
-   `document_hash` to `lab_results` via `attach_uid_reference`, with the scoped unique constraint.
-3. An `identity.resolveReportSubject(match) → {subject_uid, subject_kind, organization_uid, patient_uid?}`
-   helper over `entity_registry` + the existing match gates.
+2. A migration (`server/migrations/report-observations-identity.migration.js`, additive, dry-run clean)
+   adding `subject_uid`, `subject_kind`, `organization_uid`, `patient_uid`, `document_hash`,
+   `document_version` to `lab_results`. The three uids are **direct FKs to `entity_registry(uid)`**
+   (polymorphic — the `api_activity_logs.tenant_uid` pattern — not `attach_uid_reference`, which is for
+   single-target int→uid twins). Backfill verified: all 80 legacy rows resolve to a `user` subject_uid,
+   0 to patients. The **scoped UNIQUE dedupe index** is created in the **WP3 converge migration**, not
+   here, because it spans both `document_hash` (this migration) and `canonical_name` (WP0) — so Step-1
+   stays self-contained and order-independent of WP0.
+3. A `resolveReportSubject(match) → {subject_uid, subject_kind, organization_uid, patient_uid}` helper
+   (`server/services/report-identity.service.js`) over `entity_registry` + the existing match gates:
+   subject = the `users` row (kind `user`); `patient_uid` only when a patients row already exists;
+   `organization_uid` from the corporate, else the tenant.
 4. The WP1 worker-repair task list (§0).
 
 Only after this land the shared extractor + OCR benchmark (Step 3).
