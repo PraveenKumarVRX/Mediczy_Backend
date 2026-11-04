@@ -31,7 +31,7 @@ import { useNavigate } from "react-router-dom";
 import { clearClinicSession, getClinicLoginPath } from "@/utils/clinicPortal";
 
 interface SidebarItem {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   href: string;
   badge?: string | number;

@@ -69,7 +69,7 @@ const APPOINTMENT_TYPES: { value: string; label: string; apiType: ProviderApiTyp
   { value: 'Blood Test',                   label: 'Blood Test / Lab Work',        apiType: 'lab' },
 ];
 
-const PROVIDER_META: Record<ProviderApiType, { label: string; color: string; Icon: React.ElementType }> = {
+const PROVIDER_META: Record<ProviderApiType, { label: string; color: string; Icon: React.ComponentType<any> }> = {
   doctor:   { label: 'Doctor',   color: 'text-blue-400 bg-blue-500/15',       Icon: Stethoscope },
   hospital: { label: 'Hospital', color: 'text-emerald-400 bg-emerald-500/15', Icon: Building2 },
   lab:      { label: 'Lab',      color: 'text-amber-400 bg-amber-500/15',     Icon: FlaskConical },

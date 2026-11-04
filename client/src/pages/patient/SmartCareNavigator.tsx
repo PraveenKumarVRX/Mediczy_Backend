@@ -24,7 +24,7 @@ interface JourneyStep {
   description: string;
   status: 'completed' | 'current' | 'upcoming';
   time?: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
 }
 
 interface RecoveryEntry {

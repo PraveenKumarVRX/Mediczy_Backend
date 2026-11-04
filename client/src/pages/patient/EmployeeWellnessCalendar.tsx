@@ -61,7 +61,7 @@ interface WellnessEvent {
   capacity: number;
   registered: number;
   theme: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   color: string;
   // Employee specific data
   myRsvp: RSVPStatus;
@@ -73,11 +73,11 @@ interface WellnessEvent {
 interface MonthTheme {
   name: string;
   description: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   color: string;
 }
 
-const ACTIVITY_TYPES: { value: ActivityType; label: string; icon: React.ElementType; color: string }[] = [
+const ACTIVITY_TYPES: { value: ActivityType; label: string; icon: React.ComponentType<any>; color: string }[] = [
   { value: 'Wellness Session', label: 'Wellness Session', icon: Sparkles, color: 'bg-teal-100 text-teal-700' },
   { value: 'Health Checkup', label: 'Health Checkup', icon: Stethoscope, color: 'bg-blue-100 text-blue-700' },
   { value: 'Fitness Activity', label: 'Fitness Activity', icon: Dumbbell, color: 'bg-orange-100 text-orange-700' },

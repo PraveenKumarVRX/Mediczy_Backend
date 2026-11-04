@@ -66,7 +66,7 @@ const seedPayerMix: PayerMixRow[] = [
 ];
 
 function KPI({ label, value, sub, icon: Icon, color, up }: {
-  label: string; value: string; sub: string; icon: React.ElementType; color: string; up?: boolean;
+  label: string; value: string; sub: string; icon: React.ComponentType<any>; color: string; up?: boolean;
 }) {
   return (
     <Card className="hover:shadow-lg transition-all duration-200 border-0 shadow-sm">

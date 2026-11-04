@@ -22,7 +22,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 interface SidebarItem {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   href: string;
   badge?: string | number;

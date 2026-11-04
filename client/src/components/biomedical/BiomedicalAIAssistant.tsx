@@ -435,7 +435,7 @@ export const BiomedicalAIAssistant = ({ defaultOpen = false, initialTool }: Biom
     } finally { setChatLoading(false); }
   }, [input, chatLoading, messages, open]);
 
-  const tools: Array<{ id: ActiveTool; label: string; icon: React.ElementType; color: string }> = [
+  const tools: Array<{ id: ActiveTool; label: string; icon: React.ComponentType<any>; color: string }> = [
     { id: "chat",        label: "Ask ARIA",     icon: MessageSquare, color: "text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-700" },
     { id: "diagnostic",  label: "Diagnostic",   icon: Zap,           color: "text-red-600 bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-700" },
     { id: "maintenance", label: "PPM Planner",  icon: Wrench,        color: "text-purple-600 bg-purple-50 border-purple-200 dark:bg-purple-950 dark:border-purple-700" },

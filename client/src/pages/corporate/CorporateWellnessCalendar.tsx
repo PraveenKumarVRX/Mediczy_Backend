@@ -78,7 +78,7 @@ interface WellnessTheme {
   name: string;
   description: string;
   color: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
 }
 
 interface Participant {

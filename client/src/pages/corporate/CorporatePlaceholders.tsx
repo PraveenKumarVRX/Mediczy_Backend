@@ -17,7 +17,7 @@ import {
   Sparkles
 } from "lucide-react";
 
-const pageMeta: Record<string, { title: string; icon: React.ElementType; description: string; gradient: string }> = {
+const pageMeta: Record<string, { title: string; icon: React.ComponentType<any>; description: string; gradient: string }> = {
   "/corporate/employees": {
     title: "Employee Management",
     icon: Users,

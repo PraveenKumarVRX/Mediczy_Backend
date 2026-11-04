@@ -20,7 +20,7 @@ type Module = {
   title: string;
   description: string;
   path: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   gradient: string;
   badge?: string;
   external?: boolean;

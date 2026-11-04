@@ -39,7 +39,7 @@ interface PayerRcm {
   collectionRate: number;
 }
 
-function StatTile({ icon: Icon, label, value, tone }: { icon: React.ElementType; label: string; value: string; tone: string }) {
+function StatTile({ icon: Icon, label, value, tone }: { icon: React.ComponentType<any>; label: string; value: string; tone: string }) {
   return (
     <Card>
       <CardContent className="pt-6 flex items-center gap-4">

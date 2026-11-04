@@ -29,7 +29,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface StatCard {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   value: string;
   gradient: string;
@@ -37,7 +37,7 @@ interface StatCard {
 }
 
 interface QuickAction {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   path: string;
 }
@@ -46,7 +46,7 @@ interface DeptDashboardConfig {
   deptKey: string;
   deptName: string;
   badgeLabel: string;
-  DeptIcon: React.ElementType;
+  DeptIcon: React.ComponentType<any>;
   loginPath: string;
   navSections: DeptNavSection[];
   heroGradient: string;

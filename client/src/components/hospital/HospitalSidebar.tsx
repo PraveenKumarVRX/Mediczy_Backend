@@ -42,7 +42,7 @@ import { useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface SidebarItem {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   href: string;
   badge?: string | number;

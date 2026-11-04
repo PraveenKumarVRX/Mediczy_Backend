@@ -35,11 +35,11 @@ interface DeptModulePageProps {
   deptName: string;
   badgeLabel: string;
   loginPath: string;
-  DeptIcon: React.ElementType;
+  DeptIcon: React.ComponentType<any>;
   navSections: DeptNavSection[];
   title: string;
   description: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   emptyStateAction?: EmptyStateAction;
 }
 
@@ -53,7 +53,7 @@ const EmptyStateCard = ({
 }: {
   title: string;
   description: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   emptyStateAction?: EmptyStateAction;
 }) => {
   const navigate = useNavigate();
@@ -152,7 +152,7 @@ const DeptModulePage = ({
 const assetPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -166,7 +166,7 @@ const assetPage = (
 const biomedPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -180,7 +180,7 @@ const biomedPage = (
 const bloodBankPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -194,7 +194,7 @@ const bloodBankPage = (
 const consentPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -208,7 +208,7 @@ const consentPage = (
 const cssdPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -222,7 +222,7 @@ const cssdPage = (
 const dietaryPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -236,7 +236,7 @@ const dietaryPage = (
 const financePage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -250,7 +250,7 @@ const financePage = (
 const infectionPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -264,7 +264,7 @@ const infectionPage = (
 const mortuaryPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -278,7 +278,7 @@ const mortuaryPage = (
 const procurementPage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (
@@ -292,7 +292,7 @@ const procurementPage = (
 const queuePage = (
   title: string,
   desc: string,
-  icon: React.ElementType,
+  icon: React.ComponentType<any>,
   action?: EmptyStateAction
 ) =>
   () => (

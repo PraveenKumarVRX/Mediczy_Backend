@@ -102,7 +102,7 @@ const parsePackSize = (packSize?: string): { qty: number; unit: string } => {
 
 // ──────────────────── Helpers ────────────────────
 
-const statusConfig: Record<string, { bg: string; text: string; icon: React.ElementType; dot: string }> = {
+const statusConfig: Record<string, { bg: string; text: string; icon: React.ComponentType<any>; dot: string }> = {
   pending:          { bg: 'bg-amber-50 dark:bg-amber-950/40',   text: 'text-amber-700 dark:text-amber-300',   icon: Clock,        dot: 'bg-amber-500' },
   confirmed:        { bg: 'bg-blue-50 dark:bg-blue-950/40',     text: 'text-blue-700 dark:text-blue-300',     icon: CheckCircle,  dot: 'bg-blue-500' },
   processing:       { bg: 'bg-indigo-50 dark:bg-indigo-950/40', text: 'text-indigo-700 dark:text-indigo-300', icon: Activity,      dot: 'bg-indigo-500' },

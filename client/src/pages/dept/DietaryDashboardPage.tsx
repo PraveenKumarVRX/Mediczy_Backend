@@ -99,7 +99,7 @@ const priorityConfig: Record<string, string> = {
 // ─── Stat cards ────────────────────────────────────────────────────────────────
 
 interface StatCardProps {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   value: string | number;
   sub?: string;

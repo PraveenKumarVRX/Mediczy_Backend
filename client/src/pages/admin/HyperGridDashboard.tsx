@@ -30,7 +30,7 @@ const STATUS_COLOR: Record<string, string> = {
 // ── Stat card ───────────────────────────────────────────────────────────────
 function KPI({ label, value, sub, icon: Icon, color = "text-indigo-500", trend }: {
   label: string; value: string | number; sub?: string;
-  icon: React.ElementType; color?: string; trend?: number;
+  icon: React.ComponentType<any>; color?: string; trend?: number;
 }) {
   return (
     <Card>
@@ -52,7 +52,7 @@ function KPI({ label, value, sub, icon: Icon, color = "text-indigo-500", trend }
 }
 
 // ── Section header ──────────────────────────────────────────────────────────
-function SectionTitle({ icon: Icon, children }: { icon: React.ElementType; children: React.ReactNode }) {
+function SectionTitle({ icon: Icon, children }: { icon: React.ComponentType<any>; children: React.ReactNode }) {
   return (
     <h2 className="flex items-center gap-2 text-base font-semibold mb-3 mt-6">
       <Icon className="h-4 w-4 text-indigo-500" />

@@ -70,7 +70,7 @@ interface Challenge {
     silver: string;
     bronze: string;
   };
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   color: string;
 }
 

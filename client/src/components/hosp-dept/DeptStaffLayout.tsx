@@ -30,7 +30,7 @@ import type { ModuleCopilotId } from "@/config/moduleCopilot.registry";
 // ─── Exported types ───────────────────────────────────────────────────────────
 
 export interface DeptNavItem {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   href: string;
   badge?: string | number;
@@ -49,7 +49,7 @@ interface DeptStaffLayoutProps {
   deptName: string;
   badgeLabel: string;
   loginPath: string;
-  DeptIcon: React.ElementType;
+  DeptIcon: React.ComponentType<any>;
   navSections: DeptNavSection[];
   title?: string;
   subtitle?: string;
@@ -61,7 +61,7 @@ interface DeptStaffLayoutProps {
 interface SidebarProps {
   deptKey: string;
   deptName: string;
-  DeptIcon: React.ElementType;
+  DeptIcon: React.ComponentType<any>;
   navSections: DeptNavSection[];
   logout: () => void;
 }

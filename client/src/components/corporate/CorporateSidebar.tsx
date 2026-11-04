@@ -32,7 +32,7 @@ import { useNavigate } from "react-router-dom";
 import api from "@/utils/api";
 
 interface SidebarItem {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   href: string;
   badge?: string | number;

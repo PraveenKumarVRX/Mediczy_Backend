@@ -135,7 +135,7 @@ const HealthConnectDashboard: React.FC = () => {
 
   // ── Stat card component ────────────────────────────────────────────────────
   const StatCard = ({ icon: Icon, label, value, unit, sub, color, bg }: {
-    icon: React.ElementType; label: string; value: string | number;
+    icon: React.ComponentType<any>; label: string; value: string | number;
     unit: string; sub?: string; color: string; bg: string;
   }) => (
     <Card className="border border-slate-200 shadow-sm">

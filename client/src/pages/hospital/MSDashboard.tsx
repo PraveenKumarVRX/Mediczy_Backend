@@ -30,7 +30,7 @@ const emptyDashboardData: any[] = [];
 
 // ─── KPI card ─────────────────────────────────────────────────────────────────
 function ClinicalKPI({ label, value, sub, icon: Icon, color, trend, target }: {
-  label: string; value: string; sub: string; icon: React.ElementType;
+  label: string; value: string; sub: string; icon: React.ComponentType<any>;
   color: string; trend?: 'up' | 'down' | 'neutral'; target?: string;
 }) {
   return (

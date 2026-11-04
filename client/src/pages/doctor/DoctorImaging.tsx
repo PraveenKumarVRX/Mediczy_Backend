@@ -44,7 +44,7 @@ interface ImagingStudy {
 // ─── Constants ───────────────────────────────────────────────────────────────
 const STUDY_TYPES = ["All", "CT", "MRI", "USG", "Echo", "Cathlab", "X-Ray", "Other"] as const;
 
-const STUDY_META: Record<string, { icon: React.ElementType; color: string; bg: string; label?: string }> = {
+const STUDY_META: Record<string, { icon: React.ComponentType<any>; color: string; bg: string; label?: string }> = {
   CT:      { icon: ScanLine,  color: "text-blue-400",    bg: "bg-blue-500/15" },
   MRI:     { icon: Activity,  color: "text-purple-400",  bg: "bg-purple-500/15" },
   // DICOM short code stored by Orthanc/PACS — treat as MRI in the doctor UI

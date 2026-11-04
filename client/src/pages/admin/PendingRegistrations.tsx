@@ -14,7 +14,7 @@ import {
   Phone, MapPin, RefreshCw, AlertCircle, ExternalLink, Download,
 } from "lucide-react";
 
-const ENTITY_META: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
+const ENTITY_META: Record<string, { label: string; color: string; bg: string; icon: React.ComponentType<any> }> = {
   clinic:    { label: "Clinic",    color: "text-teal-700",   bg: "bg-teal-50 border-teal-200",   icon: Building2 },
   lab:       { label: "Lab",       color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",   icon: FlaskConical },
   pharmacy:  { label: "Pharmacy",  color: "text-emerald-700",bg: "bg-emerald-50 border-emerald-200", icon: Pill },

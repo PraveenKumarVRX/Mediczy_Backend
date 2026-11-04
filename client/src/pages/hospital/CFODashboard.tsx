@@ -48,7 +48,7 @@ interface CfoData {
 }
 
 function KPI({ label, value, sub, icon: Icon, color }: {
-  label: string; value: string; sub: string; icon: React.ElementType; color: string;
+  label: string; value: string; sub: string; icon: React.ComponentType<any>; color: string;
 }) {
   return (
     <Card className="border-0 shadow-sm hover:shadow-md transition-all">

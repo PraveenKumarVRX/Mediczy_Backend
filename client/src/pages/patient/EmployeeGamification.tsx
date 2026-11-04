@@ -62,7 +62,7 @@ interface Challenge {
     silver: string;
     bronze: string;
   };
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   color: string;
   // User's personal data for this challenge
   myProgress: number;

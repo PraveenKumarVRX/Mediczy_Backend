@@ -21,7 +21,7 @@ import api from '@/utils/api';
 interface StatCard {
   label: string;
   value: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   color: string;
   bg: string;
   trend?: string;

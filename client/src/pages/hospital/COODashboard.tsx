@@ -47,7 +47,7 @@ interface CooData {
 }
 
 function KPI({ label, value, sub, icon: Icon, color, badge, badgeColor }: {
-  label: string; value: string; sub: string; icon: React.ElementType;
+  label: string; value: string; sub: string; icon: React.ComponentType<any>;
   color: string; badge?: string; badgeColor?: string;
 }) {
   return (

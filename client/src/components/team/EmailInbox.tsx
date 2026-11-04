@@ -122,7 +122,7 @@ const DEFAULT_SIG = '-- \nBest regards,\nMediqzy Team';
 
 // ── FormatButton (outside component to prevent remount) ─────────────
 const FormatButton: React.FC<{
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   title: string;
   onClick: (e: React.MouseEvent) => void;
 }> = ({ icon: Icon, title, onClick }) => (

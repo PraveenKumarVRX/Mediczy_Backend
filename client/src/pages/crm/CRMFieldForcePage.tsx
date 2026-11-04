@@ -807,7 +807,7 @@ function LeadsTab() {
 
 type TabId = 'overview' | 'expenses' | 'targets' | 'doctors' | 'leads';
 
-const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
+const TABS: { id: TabId; label: string; icon: React.ComponentType<any> }[] = [
   { id: 'overview',  label: 'Overview',     icon: BarChart3 },
   { id: 'expenses',  label: 'Expenses',     icon: IndianRupee },
   { id: 'targets',   label: 'Targets',      icon: Target },

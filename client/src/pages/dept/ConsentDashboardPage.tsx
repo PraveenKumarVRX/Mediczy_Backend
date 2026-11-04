@@ -36,7 +36,7 @@ interface ConsentStats {
 // ─── Stat card ─────────────────────────────────────────────────────────────────
 
 interface StatCardProps {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   value: string | number;
   sub: string;

@@ -523,7 +523,7 @@ export const DietaryAIAssistant = ({ defaultOpen = false, initialTool, onOrderGe
     }
   }, [input, chatLoading, messages, open]);
 
-  const tools: Array<{ id: ActiveTool; label: string; icon: React.ElementType; color: string }> = [
+  const tools: Array<{ id: ActiveTool; label: string; icon: React.ComponentType<any>; color: string }> = [
     { id: "chat",         label: "Ask iSHA",     icon: MessageSquare, color: "text-green-600 bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-700" },
     { id: "smart-order",  label: "Smart Order",  icon: Zap,           color: "text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-700" },
     { id: "allergy-guard",label: "Allergy Guard",icon: ShieldCheck,   color: "text-red-600 bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-700" },

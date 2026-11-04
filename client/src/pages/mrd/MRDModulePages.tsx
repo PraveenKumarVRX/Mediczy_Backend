@@ -28,7 +28,7 @@ const navSections: DeptNavSection[] = [
 ];
 
 const PlaceholderPage = ({ title, description, icon: Icon, addBtn }: {
-  title: string; description: string; icon: React.ElementType; addBtn?: string;
+  title: string; description: string; icon: React.ComponentType<any>; addBtn?: string;
 }) => (
   <Card>
     <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -58,7 +58,7 @@ const PlaceholderPage = ({ title, description, icon: Icon, addBtn }: {
   </Card>
 );
 
-const wrap = (title: string, subtitle: string, Icon: React.ElementType, addBtn?: string) =>
+const wrap = (title: string, subtitle: string, Icon: React.ComponentType<any>, addBtn?: string) =>
   () => (
     <HospDeptLayout deptKey="mrd" deptName="Medical Records" badgeLabel="MRD"
       loginPath="/mrd/login" DeptIcon={FolderOpen} navSections={navSections}

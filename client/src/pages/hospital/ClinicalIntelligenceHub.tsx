@@ -125,7 +125,7 @@ function VitalTile({
   value,
   unit,
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   value: string | number | null | undefined;
   unit?: string;

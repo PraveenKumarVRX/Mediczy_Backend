@@ -31,7 +31,7 @@ interface AIModule {
   requests: number;
   avgLatencyMs: number;
   errors: number;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   color: string;
 }
 

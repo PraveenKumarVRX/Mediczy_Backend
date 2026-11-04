@@ -21,7 +21,7 @@ import ModuleCopilot from "@/components/copilot/ModuleCopilot";
 import type { ModuleCopilotId } from "@/config/moduleCopilot.registry";
 
 export interface DeptNavItem {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   href: string;
   badge?: string | number;
@@ -38,7 +38,7 @@ interface HospDeptLayoutProps {
   deptName: string;
   badgeLabel: string;
   loginPath: string;
-  DeptIcon: React.ElementType;
+  DeptIcon: React.ComponentType<any>;
   navSections: DeptNavSection[];
   title?: string;
   subtitle?: string;
@@ -50,7 +50,7 @@ interface HospDeptLayoutProps {
 interface SidebarProps {
   deptKey: string;
   deptName: string;
-  DeptIcon: React.ElementType;
+  DeptIcon: React.ComponentType<any>;
   navSections: DeptNavSection[];
   logout: () => void;
 }
