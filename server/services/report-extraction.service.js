@@ -194,20 +194,36 @@ export async function extractReportObservations(buffer, mime, ctx = {}, db = poo
     if (ex.method === 'ocr_unavailable') { meta.errors.push(ex.note); meta.latency_ms = Date.now() - started; return { status: 'failed', observations: [], meta }; }
     if (!fullText) { meta.latency_ms = Date.now() - started; return { status: 'failed', observations: [], meta }; }
 
-    // Chunk long text so NOTHING is dropped (the old path truncated at 12k).
+    // Pack pages into as few chunks as possible (≤ LLM_CHUNK_CHARS each) so NOTHING is
+    // dropped (the old path truncated at 12k) WITHOUT making one LLM call per page.
     const chunks = [];
+    let buf = '', bufPage = null;
+    const flush = () => { if (buf) { chunks.push({ page: bufPage, text: buf }); buf = ''; bufPage = null; } };
     for (const p of ex.pages) {
-      const t = p.text || '';
-      if (!t.trim()) continue;
-      for (let o = 0; o < t.length; o += LLM_CHUNK_CHARS) chunks.push({ page: p.page, text: t.slice(o, o + LLM_CHUNK_CHARS) });
+      const t = (p.text || '').trim();
+      if (!t) continue;
+      if (t.length > LLM_CHUNK_CHARS) {                 // a single huge page: flush, then split it
+        flush();
+        for (let o = 0; o < t.length; o += LLM_CHUNK_CHARS) chunks.push({ page: p.page, text: t.slice(o, o + LLM_CHUNK_CHARS) });
+        continue;
+      }
+      if (buf && buf.length + t.length + 1 > LLM_CHUNK_CHARS) flush();
+      if (!buf) bufPage = p.page;
+      buf += (buf ? '\n' : '') + t;
     }
+    flush();
     meta.chunks = chunks.length;
 
-    let items = [];
-    for (const c of chunks) {
-      const { items: got, parseFailed } = await structureChunk(c.text, c.page);
-      if (parseFailed) meta.parseFailures++;
-      for (const it of got) { if (it && it.page == null) it.page = c.page; items.push(it); }
+    // Bounded concurrency so a multi-chunk report doesn't run fully serially.
+    const CONCURRENCY = 3;
+    const items = [];
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const batch = chunks.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(batch.map((c) => structureChunk(c.text, c.page)));
+      results.forEach((res, j) => {
+        if (res.parseFailed) meta.parseFailures++;
+        for (const it of res.items) { if (it && it.page == null) it.page = batch[j].page; items.push(it); }
+      });
     }
 
     const observations = await canonicalise(items.filter((x) => x && (x.raw_name || x.raw_value != null)), db);
