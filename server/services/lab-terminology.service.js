@@ -31,19 +31,23 @@ export async function resolveLabConcept(rawName, { tenantId = null, minConfidenc
   );
   if (exact.rows[0]) return { loinc: exact.rows[0].loinc_code || null, canonical: exact.rows[0].display, confidence: 1, source: 'exact' };
 
-  // 2. Containment: the raw name contains a known alias (e.g. "glycated haemoglobin (hba1c)" ⊇ "hba1c").
-  //    Prefer the longest (most specific) alias; confidence = alias coverage of the raw name.
+  // 2. Containment: the raw name contains a known alias (e.g. "serum creatinine" ⊇ "creatinine").
+  //    SAFETY: if aliases for MORE THAN ONE distinct concept are contained (e.g. "glycated
+  //    haemoglobin (hba1c)" ⊇ both "haemoglobin"→Haemoglobin AND "hba1c"→HbA1c), it is ambiguous
+  //    → return null → review. Never pick one by length. Only an unambiguous single concept maps.
   const contain = await db.query(
-    `SELECT local_code, loinc_code, display, length(local_code) AS len
+    `SELECT DISTINCT display, loinc_code, max(length(local_code)) AS len
        FROM hg_code_map
       WHERE local_system='lab-name' AND active AND (tenant_id=$2 OR tenant_id IS NULL)
-        AND length(local_code) >= 3 AND $1 LIKE '%' || lower(local_code) || '%'
-      ORDER BY len DESC LIMIT 1`,
+        AND length(local_code) >= 4 AND $1 LIKE '%' || lower(local_code) || '%'
+      GROUP BY display, loinc_code`,
     [n, tenantId]
   );
-  if (contain.rows[0]) {
-    const conf = Math.min(0.95, Number(contain.rows[0].len) / Math.max(n.length, 1) + 0.3);
-    if (conf >= minConfidence) return { loinc: contain.rows[0].loinc_code || null, canonical: contain.rows[0].display, confidence: Number(conf.toFixed(2)), source: 'contains' };
+  if (contain.rows.length > 1) return null;            // ambiguous → review
+  if (contain.rows.length === 1) {
+    const row = contain.rows[0];
+    const conf = Math.min(0.95, Number(row.len) / Math.max(n.length, 1) + 0.3);
+    if (conf >= minConfidence) return { loinc: row.loinc_code || null, canonical: row.display, confidence: Number(conf.toFixed(2)), source: 'contains' };
   }
 
   // 3. Trigram similarity (handles minor spelling/format differences).
