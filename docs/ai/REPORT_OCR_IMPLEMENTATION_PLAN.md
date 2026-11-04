@@ -338,3 +338,34 @@ else `'pending'` (→ WP4 review queue).
 ## A.3 Revised sequence
 WP0 (apply) → **WP3 code + converge migration (atomic)** → WP1 ingestion → WP2 OCR (can land with/before
 WP3) → WP4 verify gate → WP5 CRM webhook → WP6 trends.
+
+---
+
+# Appendix B — Step-3 shadow benchmark results (2026-11-04)
+
+Applied: WP0 + Step-1 identity migrations (prod); worker status-visibility fix (reloaded). Built the
+shared extractor (`report-extraction.service.js`), the shadow table (`report_extraction_candidates`),
+and the benchmark runner. First shadow run (report 182, a real multi-analyte panel):
+
+**Quality — strong, and far better than the regex path:**
+- 63 observations, **0 parse failures**, clean `raw_name` (e.g. `SERUM CREATININE` vs regex `AR:`),
+  units split (`%`, `mg/dL`), **numeric zero + decimals preserved**, and the **lab's own reference
+  range kept verbatim** (incl. multi-line HbA1c bands) — never substituted.
+
+**Three real findings (the benchmark's job):**
+1. **Latency / model.** Per-page chunking made 28 chunks → ~5.7 min. Packing pages + concurrency cut
+   it to ~68 s, but the **temporary Groq fallback (`gpt-oss-20b`, iSHA domain expired)** returns *empty
+   content* on larger chunks, dropping 63→11 obs (`partial`). Chunk size set to 4500 for reliability.
+   **Root lever is a capable primary model** — restore iSHA or pick a stronger model before cutover.
+2. **Confidence ≈ 1.0 on everything** — confirms the review: model confidence is **not** proven
+   correctness. Auto-verify stays off; **mandatory review (WP4) is required**.
+3. **Canonical/LOINC mapping only 14/63 (22%)** — exact-alias match on the 25-row seed is too strict
+   (`glycated haemoglobin (hba1c)` ≠ alias `hba1c`). Unmapped → `null` → review (correct). Real
+   coverage needs **HyperGrid + normalised/fuzzy matching** (deferred, as planned).
+
+**Also confirmed:** `pdftoppm`/poppler is **absent**, so scanned PDFs return `ocr_unavailable` (explicit,
+not garbage). Install poppler-utils (or a node rasterizer) before relying on OCR.
+
+**Step-3 gates before cutover:** (a) a capable extraction model; (b) poppler for scanned PDFs;
+(c) HyperGrid-backed canonicalisation; (d) accuracy/recall thresholds set and measured on a labelled
+corpus (not "> 0 values").
