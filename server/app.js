@@ -1978,6 +1978,10 @@ pharmacyStockAlertCronService.start();
 import corporateEmployeeQcService from './services/corporate-employee-qc.service.js';
 corporateEmployeeQcService.start();
 
+// ============== Health Checkup Appointment Reminders (Daily 18:00 IST) ==============
+import healthCheckupReminderCronService from './services/health-checkup-reminder-cron.service.js';
+healthCheckupReminderCronService.start();
+
 // ============== Imaging daily S3 → MinIO transfer (02:30) ==============
 import { startImagingDailyMinioCron } from './services/imaging/imaging-daily-minio-cron.service.js';
 startImagingDailyMinioCron();
