@@ -11,6 +11,7 @@
  */
 
 import pool from '../db/pgPool.js';
+import { enqueueDocumentDelivery, buildDocumentPayload } from './report-delivery.service.js';
 
 const UNRESTRICTED_ROLES = new Set(['medical_director', 'admin', 'super_admin', 'superadmin']);
 
@@ -51,7 +52,7 @@ export async function setVerification({ id, status, reviewerUserId, role, reason
   if (!['verified', 'rejected'].includes(status)) throw Object.assign(new Error('Invalid status'), { statusCode: 400 });
   const scope = await reviewerScope(reviewerUserId, role, db);
   const { rows: found } = await db.query(
-    `SELECT id, organization_uid, patient_id, verification_status FROM lab_results WHERE id = $1 LIMIT 1`, [id]);
+    `SELECT id, organization_uid, patient_id, "reportId", verification_status FROM lab_results WHERE id = $1 LIMIT 1`, [id]);
   const obs = found[0];
   if (!obs) throw Object.assign(new Error('Observation not found'), { statusCode: 404 });
   if (!scope.unrestricted && !(obs.organization_uid && scope.orgs.includes(obs.organization_uid)))
@@ -70,7 +71,38 @@ export async function setVerification({ id, status, reviewerUserId, role, reason
      JSON.stringify({ observation_id: id, status, reviewer_user_id: reviewerUserId, reason, organization_uid: obs.organization_uid })]
   ).catch((e) => console.error('[report-review] audit log write failed:', e.message));
 
+  // Stage F: a verify/reject changes the document's verified set → enqueue a (revisioned) delivery.
+  if (obs.reportId) enqueueDocumentDelivery(obs.reportId, db).catch((e) => console.error('[report-review] enqueue delivery failed:', e.message));
+
   return updated[0];
 }
 
-export default { listReviewQueue, setVerification };
+/** Pull: the verified extraction for one document (org-authorized). */
+export async function getDocumentExtraction({ reportId, reviewerUserId, role }, db = pool) {
+  const payload = await buildDocumentPayload(reportId, 0, db);
+  if (!payload) return null;
+  const scope = await reviewerScope(reviewerUserId, role, db);
+  if (!scope.unrestricted && !(payload.organization_uid && scope.orgs.includes(payload.organization_uid)))
+    throw Object.assign(new Error('Not authorized for this document\'s organization'), { statusCode: 403 });
+  return payload;
+}
+
+/** Pull/trends: a subject's VERIFIED observations (optionally one analyte), newest first, org-scoped. */
+export async function getSubjectObservations({ subjectUid, reviewerUserId, role, canonicalName = null }, db = pool) {
+  const scope = await reviewerScope(reviewerUserId, role, db);
+  const where = [`subject_uid = $1`, `verification_status = 'verified'`];
+  const params = [subjectUid];
+  if (!scope.unrestricted) {
+    if (!scope.orgs.length) return [];
+    params.push(scope.orgs); where.push(`organization_uid = ANY($${params.length})`);
+  }
+  if (canonicalName) { params.push(canonicalName); where.push(`canonical_name = $${params.length}`); }
+  const { rows } = await db.query(
+    `SELECT canonical_name, loinc_code, "testName", "value", "numericValue", unit, "referenceRange",
+            flag, "isAbnormal", "reportDate", "createdAt"
+       FROM lab_results WHERE ${where.join(' AND ')}
+      ORDER BY COALESCE("reportDate","createdAt") DESC LIMIT 500`, params);
+  return rows;
+}
+
+export default { listReviewQueue, setVerification, getDocumentExtraction, getSubjectObservations };

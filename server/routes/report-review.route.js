@@ -4,7 +4,7 @@
  */
 import express from 'express';
 import { requireRole } from '../middleware/auth.middleware.js';
-import { listReviewQueue, setVerification } from '../services/report-review.service.js';
+import { listReviewQueue, setVerification, getDocumentExtraction, getSubjectObservations } from '../services/report-review.service.js';
 
 const router = express.Router();
 const requireReviewer = requireRole(['medical_director', 'doctor', 'nurse', 'admin', 'team']);
@@ -34,6 +34,23 @@ router.post('/:id/reject', requireReviewer, async (req, res) => {
   try {
     const row = await setVerification({ id: Number(req.params.id), status: 'rejected', reviewerUserId: req.user.id, role: req.user.role, reason: req.body?.reason || null });
     res.json({ success: true, observation: row });
+  } catch (e) { res.status(e.statusCode || 500).json({ success: false, error: e.message }); }
+});
+
+// GET /api/report-review/documents/:reportId/extraction — verified contract for one document (pull)
+router.get('/documents/:reportId/extraction', requireReviewer, async (req, res) => {
+  try {
+    const payload = await getDocumentExtraction({ reportId: Number(req.params.reportId), reviewerUserId: req.user.id, role: req.user.role });
+    if (!payload) return res.status(404).json({ success: false, error: 'No verified observations for this document' });
+    res.json({ success: true, ...payload });
+  } catch (e) { res.status(e.statusCode || 500).json({ success: false, error: e.message }); }
+});
+
+// GET /api/report-review/patients/:subjectUid/observations?canonical= — verified observations / trend series (pull)
+router.get('/patients/:subjectUid/observations', requireReviewer, async (req, res) => {
+  try {
+    const items = await getSubjectObservations({ subjectUid: req.params.subjectUid, reviewerUserId: req.user.id, role: req.user.role, canonicalName: req.query.canonical || null });
+    res.json({ success: true, subject_uid: req.params.subjectUid, count: items.length, observations: items });
   } catch (e) { res.status(e.statusCode || 500).json({ success: false, error: e.message }); }
 });
 

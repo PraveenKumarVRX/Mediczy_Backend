@@ -2028,6 +2028,18 @@ cron.schedule('0 1 * * 0', async () => {
   }
 });
 
+// WP3 Stage F: durable CRM delivery of verified report observations (no-op until CRM_WEBHOOK_URL set)
+cron.schedule('*/2 * * * *', async () => {
+  if (!(await cronBeginJob('report_delivery_outbox'))) return;
+  try {
+    const { deliverPending } = await import('./services/report-delivery.service.js');
+    const r = await deliverPending(25);
+    cronTick('report_delivery_outbox', r);
+  } catch (err) {
+    cronTickError('report_delivery_outbox', err.message);
+  }
+});
+
 cron.schedule('0 1 * * 1', async () => {
   if (!(await cronBeginJob('ai_demographic_parity'))) return;   // one run at a time across processes; tick/tickError release it
   try {
