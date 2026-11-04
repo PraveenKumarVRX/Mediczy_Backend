@@ -1235,52 +1235,32 @@ export async function saveHealthReportFromEmail(email) {
       const newReportId = newReport?.id || null;
 
       // ── Extract & store structured lab results (EHR) ─────────────────────
-      if (pdfText && newReportId) {
+      // Stage E: extract via the canonical LLM+OCR extractor (replaces the regex parser) and write
+      // through the single canonical writer. Observations land as verification_status='pending'
+      // (they reach the verify queue, then the CRM), not the old messy regex rows.
+      if (newReportId && att?.contentBase64) {
         try {
-          const labResults = extractLabResults(pdfText);
-          if (labResults.length > 0) {
-            // Bulk insert into lab_results
-            const valuesSQL = labResults.map((_, i) =>
-              `(:reportId, :userId, :testName${i}, :section${i}, :value${i}, :numericValue${i}, :unit${i}, :referenceRange${i}, :flag${i}, :isAbnormal${i}, :reportDate, :labName, :labPatientId)`
-            ).join(', ');
-
-            const replacements = { reportId: newReportId, userId: user.id, reportDate, labName: meta.labName, labPatientId };
-            labResults.forEach((r, i) => {
-              replacements[`testName${i}`]      = r.testName;
-              replacements[`section${i}`]       = r.section;
-              replacements[`value${i}`]         = r.value;
-              replacements[`numericValue${i}`]  = r.numericValue;
-              replacements[`unit${i}`]          = r.unit;
-              replacements[`referenceRange${i}`]= r.referenceRange;
-              replacements[`flag${i}`]          = r.flag;
-              replacements[`isAbnormal${i}`]    = r.isAbnormal;
+          const { extractReportObservations } = await import('./report-extraction.service.js');
+          const { persistObservations } = await import('./report-persistence.service.js');
+          const buf = Buffer.from(att.contentBase64, 'base64');
+          const ex = await extractReportObservations(buf, att.mimeType || 'application/pdf', { reportId: newReportId });
+          if (ex.observations?.length) {
+            const { written } = await persistObservations({
+              reportId: newReportId, userId: user.id,
+              corporateId: user.corporate_id || null, tenantId: user.tenant_id || null,
+              documentHash: ex.meta.document_hash, observations: ex.observations, meta: ex.meta,
+              reportDate,
             });
-
-            await postgresSequelize.query(
-              `INSERT INTO lab_results ("reportId","userId","testName","section","value","numericValue","unit","referenceRange","flag","isAbnormal","reportDate","labName","labPatientId")
-               VALUES ${valuesSQL}`,
-              { replacements }
-            );
-
-            // Update aiAnalysis on the report for quick access
-            const abnormalTests = labResults.filter(r => r.isAbnormal).map(r => ({ testName: r.testName, value: r.value, unit: r.unit, flag: r.flag }));
+            const abnormalCount = ex.observations.filter(o => o.flag_source).length;
             await postgresSequelize.query(
               `UPDATE reports SET "aiAnalysis" = :aiAnalysis::jsonb WHERE id = :id`,
-              {
-                replacements: {
-                  id: newReportId,
-                  aiAnalysis: JSON.stringify({
-                    extractedAt: new Date().toISOString(),
-                    testCount: labResults.length,
-                    abnormalCount: abnormalTests.length,
-                    abnormalTests,
-                    tests: labResults,
-                  }),
-                },
-              }
+              { replacements: { id: newReportId, aiAnalysis: JSON.stringify({
+                  extractedAt: new Date().toISOString(), testCount: written, abnormalCount,
+                  method: ex.meta.ocr_method, status: ex.status }) } }
             );
-
-            logger.info(`[emailAutoProcess] EHR: stored ${labResults.length} test results (${abnormalTests.length} abnormal) for report ${newReportId}`);
+            logger.info(`[emailAutoProcess] EHR: stored ${written} canonical observations (${ex.status}) for report ${newReportId}`);
+          } else {
+            logger.info(`[emailAutoProcess] EHR: no observations extracted for report ${newReportId} (status ${ex.status})`);
           }
         } catch (ehrErr) {
           logger.warn(`[emailAutoProcess] EHR extraction failed for report ${newReportId}: ${ehrErr.message}`);
