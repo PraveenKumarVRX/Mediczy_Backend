@@ -116,6 +116,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261019000100-nursing-workflow-integrity.migration.js',
   '20261101000100-medical-device-gateway-foundation.migration.js',
   '20261101000100-biomedical-device-gateway.migration.js',
+  '20261104000200-pre-employment-healthcheckups.migration.js',
 ];
 
 function runStep(step) {

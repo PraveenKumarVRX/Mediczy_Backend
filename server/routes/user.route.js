@@ -1797,7 +1797,21 @@ router.post("/profile-picture", authUser, async (req, res) => {
  */
 router.put("/profile", authUser, async (req, res) => {
   try {
-    const { firstName, lastName, phoneNumber, abhaHealthId, dateOfBirth, gender, employerName, employeeId, corporateId, membershipType, ...otherFields } = req.body;
+    const { firstName, lastName, phoneNumber, abhaHealthId, dateOfBirth, gender, ...otherFields } = req.body;
+
+    // Employment and sponsored-benefit identity is roster-managed. A patient must
+    // never be able to create or alter an employer relationship from profile edit.
+    const protectedEmploymentFields = ['employerName', 'employeeId', 'corporateId', 'membershipType', 'isCorporate'];
+    const attemptedEmploymentWrite = protectedEmploymentFields.find((field) =>
+      Object.prototype.hasOwnProperty.call(req.body || {}, field)
+    );
+    if (attemptedEmploymentWrite) {
+      return res.status(403).json({
+        success: false,
+        code: 'employment_identity_managed',
+        message: 'Employment and corporate-benefit details are managed by your employer. Contact your HR administrator for changes.'
+      });
+    }
     
     const user = await userModel.findByPk(req.user.id);
     
@@ -1837,12 +1851,6 @@ router.put("/profile", authUser, async (req, res) => {
     if (abhaHealthId !== undefined) user.abhaHealthId = abhaHealthId;
     if (dateOfBirth) user.dateOfBirth = dateOfBirth;
     if (gender) user.gender = gender;
-    
-    // Update corporate employment fields
-    if (employerName !== undefined) user.employerName = employerName;
-    if (employeeId !== undefined) user.employeeId = employeeId;
-    if (corporateId !== undefined) user.corporateId = corporateId;
-    if (membershipType !== undefined) user.membershipType = membershipType;
     
     // Update other allowed fields
     const allowedFields = ['bloodType', 'allergies', 'medications', 'chronicConditions', 'medicalHistory', 'height', 'weight', 'familyHistory', 'personalHistory'];

@@ -68,6 +68,7 @@ const formSchema = z.object({
 
 type LoginMode = "password" | "otp";
 type OtpStep = "input" | "verify";
+type LoginAudience = "individual" | "corporate_employee";
 
 const WELLNESS_BENEFITS = [
   { icon: Video,       label: "Free Video Consult",    desc: "First consultation free",         color: "#f0fdf4", iconColor: "#16a34a", accent: "#bbf7d0" },
@@ -173,6 +174,9 @@ const Login = () => {
   }, []);
 
   const [showPassword, setShowPassword] = useState(false);
+  const [loginAudience, setLoginAudience] = useState<LoginAudience>(
+    searchParams.get("audience") === "corporate" ? "corporate_employee" : "individual"
+  );
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [loginMode, setLoginMode] = useState<LoginMode>("password");
   const [otpStep, setOtpStep] = useState<OtpStep>("input");
@@ -217,6 +221,26 @@ const Login = () => {
   const passwordValue = form.watch("password");
 
   const loginMutation = useLogin();
+
+  // The selector is a product boundary, not an authorization claim. The
+  // server-derived employee context remains the sole proof of employment.
+  const confirmSelectedAudience = async () => {
+    if (loginAudience === "individual") return true;
+    try {
+      const { data } = await api.get('/employee/context');
+      if (data?.success && data?.isCorporateEmployee) return true;
+    } catch {
+      // Treat an unavailable context as a failed corporate-employee login;
+      // never fall back silently to individual benefits.
+    }
+    clearAuthTokens();
+    toast({
+      variant: "destructive",
+      title: "Corporate employee access not available",
+      description: "This account is not on an active employer roster. Use Individual login or contact your HR team.",
+    });
+    return false;
+  };
 
   const handleOtpSend = async () => {
     if (!otpIdentifier.trim()) return;
@@ -269,6 +293,7 @@ const Login = () => {
       }
       window.dispatchEvent(new Event("authChange"));
       initializeFirebaseMessaging().catch(() => {});
+      if (!(await confirmSelectedAudience())) return;
       setLoginSuccess(true);
       try {
         const planRes = await api.get('/membership/my/current');
@@ -324,6 +349,7 @@ const Login = () => {
             navigate("/change-password", { replace: true });
             return;
           }
+          if (!(await confirmSelectedAudience())) return;
           try {
             const res = await api.post('/wallet/earn/daily-login');
             if (res?.data?.coinsEarned) {
@@ -332,7 +358,9 @@ const Login = () => {
                 description: `Earned ${res.data.coinsEarned} HC${res.data.bonusCoins ? ` + ${res.data.bonusCoins} bonus HC` : ''} for logging in.`,
               });
             }
-          } catch {}
+          } catch {
+            // Daily-login rewards are best-effort and never block authentication.
+          }
           initializeFirebaseMessaging().catch(() => {});
           window.dispatchEvent(new Event('authChange'));
           setLoginSuccess(true);
@@ -553,8 +581,23 @@ const Login = () => {
             className="mb-7"
           >
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Welcome back</h1>
-            <p className="text-slate-500 text-sm mt-1">Sign in to access your health dashboard</p>
+            <p className="text-slate-500 text-sm mt-1">{loginAudience === "corporate_employee" ? "Sign in to your employer-sponsored health experience" : "Sign in to access your health dashboard"}</p>
           </motion.div>
+
+          {/* Audience is explicit, while entitlement remains server-verified after sign-in. */}
+          <div className="mb-4" role="group" aria-label="Choose account experience">
+            <div className="grid grid-cols-2 rounded-xl border border-slate-200 p-1 bg-slate-50 gap-1">
+              <button type="button" onClick={() => setLoginAudience("individual")}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition ${loginAudience === "individual" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                Individual
+              </button>
+              <button type="button" onClick={() => setLoginAudience("corporate_employee")}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition ${loginAudience === "corporate_employee" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                Corporate employee
+              </button>
+            </div>
+            {loginAudience === "corporate_employee" && <p className="mt-2 text-xs text-slate-500">Your active employer roster determines access. Annual health check-ups are sponsored benefits; pre-employment checks use a separate candidate process.</p>}
+          </div>
 
           {/* Mode tabs */}
           <motion.div

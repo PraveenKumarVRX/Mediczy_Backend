@@ -94,15 +94,9 @@ async function getUserCorporate(userId) {
       LIMIT 1`,
     { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
   );
-  if (row) return row;
-  const [assigned] = await postgresSequelize.query(
-    `SELECT c.id AS "corporateId", c."companyName" FROM user_plans up
-      JOIN corporates c ON c.id::text = COALESCE(up.metadata->>'corporateId', up.metadata->>'corporate_id') AND LOWER(c.status) = 'active'
-      WHERE up."userId" = :userId AND up.status = 'active' AND (up."endDate" IS NULL OR up."endDate" >= NOW())
-      ORDER BY up."createdAt" DESC LIMIT 1`,
-    { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
-  );
-  return assigned || null;
+  // A subscription metadata field is not proof of employment. All employee
+  // capabilities below are gated by the active roster association above.
+  return row || null;
 }
 
 // A corporate association isn't the only path to real insurance - an
@@ -145,6 +139,37 @@ router.get('/my-corporate', authUser, async (req, res) => {
   } catch (err) {
     console.error('GET /my-corporate error:', err);
     return res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+});
+
+/**
+ * GET /api/employee/context
+ * Canonical, server-derived context for the corporate-employee user journey.
+ * Clients must not infer employment or benefit eligibility from profile fields.
+ */
+router.get('/context', authUser, async (req, res) => {
+  try {
+    const corp = await getUserCorporate(req.user.id);
+    if (!corp) {
+      return res.json({ success: true, audience: 'individual', isCorporateEmployee: false, corporate: null, employee: null });
+    }
+    const [employee] = await postgresSequelize.query(
+      `SELECT ce."employeeId",ce.department,ce.designation
+         FROM corporate_employees ce
+        WHERE ce."userId"=:userId AND ce.corporate_id=:corporateId AND ce."isActive"=true
+        ORDER BY ce."updatedAt" DESC NULLS LAST LIMIT 1`,
+      { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({
+      success: true,
+      audience: 'corporate_employee',
+      isCorporateEmployee: true,
+      corporate: { id: Number(corp.corporateId), name: corp.companyName },
+      employee: employee ? { employeeId: employee.employeeId, department: employee.department || null, designation: employee.designation || null } : null,
+    });
+  } catch (err) {
+    console.error('GET /employee/context error:', err);
+    return res.status(500).json({ success: false, message: 'Unable to resolve employee context' });
   }
 });
 

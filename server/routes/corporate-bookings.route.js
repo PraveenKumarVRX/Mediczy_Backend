@@ -731,6 +731,13 @@ router.post(
     if (!corporateId) {
       return res.status(400).json({ success: false, message: 'corporateId is required' });
     }
+    if (String(reportType).toLowerCase().includes('pre_employment')) {
+      return res.status(409).json({
+        success: false,
+        code: 'peme_case_required',
+        message: 'Pre-employment reports must be recorded in the candidate PEME workflow, not the employee health-report flow.'
+      });
+    }
 
     try {
       // ── 1. Fetch employee ──────────────────────────────────
@@ -909,6 +916,7 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
       LEFT JOIN LATERAL (SELECT r.metadata FROM reports r WHERE r."userId"=chr.employee_id AND r.metadata->>'source'='team_corporate_health_upload' AND r.metadata->>'corporateHealthReportId'=chr.id::text LIMIT 1) pr ON true
       LEFT JOIN lab_orders lo ON lo.id = chr.lab_order_id
       WHERE chr.corporate_id = :corporateId
+        AND COALESCE(chr.checkup_type, chr.report_type, '') <> 'pre_employment'
         ${empFilterChr}
 
       UNION ALL

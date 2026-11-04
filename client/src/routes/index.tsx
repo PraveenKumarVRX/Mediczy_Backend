@@ -66,6 +66,7 @@ const MyQueueToken          = lazy(() => import("@/pages/MyQueueToken"));
 const NurseBooking          = lazy(() => import("@/pages/NurseBooking"));
 const LabBooking            = lazy(() => import("@/pages/LabBooking"));
 const HealthCheckupBooking  = lazy(() => import("@/pages/HealthCheckupBooking"));
+const PreEmploymentConsent  = lazy(() => import("@/pages/PreEmploymentConsent"));
 const HomecareBooking       = lazy(() => import("@/pages/HomecareBooking"));
 const HealthFeedPage        = lazy(() => import("@/pages/HealthFeedPage"));
 const MyPlans               = lazy(() => import("@/pages/MyPlans"));
@@ -2089,6 +2090,7 @@ const AppRoutes = () => {
         <Route path="/lab-booking"            element={<LabBooking />} />
         <Route path="/lab-booking/:labId"     element={<LabBooking />} />
         <Route path="/health-checkups"         element={<HealthCheckupBooking />} />
+        <Route path="/pre-employment/consent/:token" element={<PreEmploymentConsent />} />
         <Route path="/homecare-booking/:homecareId" element={<HomecareBooking />} />
         <Route path="/my-bookings"           element={<Navigate to="/appointments" replace />} />
         <Route path="/appointments"          element={<Appointments />} />

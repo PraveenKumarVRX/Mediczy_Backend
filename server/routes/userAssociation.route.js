@@ -102,7 +102,7 @@ router.post('/clinic', authUser, async (req, res) => {
  * @desc    Associate user with corporate
  * @access  Admin/Corporate Admin
  */
-router.post('/corporate', authUser, async (req, res) => {
+router.post('/corporate', authUser, requireRole('admin'), async (req, res) => {
   try {
     const { userId, corporateId, role, ...options } = req.body;
     

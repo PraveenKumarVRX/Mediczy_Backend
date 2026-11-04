@@ -1776,9 +1776,12 @@ app.use('/api/homecare', homecareAuthRouter); // Homecare authentication (login,
 // Corporate Service Routes
 import corporateAuthRouter from './routes/corporate/auth.routes.js';
 import corporateHrManagementRouter from './routes/corporate/hr-management.routes.js';
+import preEmploymentRouter, { candidateRouter as preEmploymentCandidateRouter } from './routes/pre-employment.route.js';
 
 app.use('/api/corporate', corporateAuthRouter); // Corporate authentication (login, logout, verify)
 app.use('/api/corporate/hr', corporateHrManagementRouter); // Super-HR self-service team management (invite/remove/transfer)
+app.use('/api/corporate/pre-employment', preEmploymentRouter); // Candidate-first PEME workflow; never a benefit entitlement
+app.use('/api/pre-employment', preEmploymentCandidateRouter); // Secure candidate consent invitation endpoints
 
 // Hospital Service Routes - Backwards-compatible alias (no /auth prefix)
 app.use('/api/hospital', hospitalAuthAliasRouter); // Hospital authentication (login, logout, verify)

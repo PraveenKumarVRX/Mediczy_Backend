@@ -6,6 +6,9 @@ import {getCorporateReportClient,corporateStoredFileUrl,deleteCorporateReportObj
 const issue=(message,status=400)=>Object.assign(new Error(message),{status});
 export async function saveCorporateHealthReports(input){
   const uploaded=[];
+  if(String(input.reportType||'').toLowerCase().includes('pre_employment')){
+    throw Object.assign(new Error('Pre-employment reports belong to the candidate PEME workflow, not corporate employee health reports'),{status:409,code:'peme_case_required'});
+  }
   const corporateId=Number(input.corporateId),employeeId=Number(input.employeeId);
   if(!Number.isSafeInteger(corporateId)||corporateId<1||!Number.isSafeInteger(employeeId)||employeeId<1)throw issue('A valid corporate and employee are required');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(input.reportDate)||Number.isNaN(Date.parse(input.reportDate))||new Date(input.reportDate).toISOString().slice(0,10)!==input.reportDate)throw issue('Provide a valid report date');
