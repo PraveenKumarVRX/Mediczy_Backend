@@ -70,7 +70,7 @@ type LoginMode = "password" | "otp";
 type OtpStep = "input" | "verify";
 type LoginAudience = "individual" | "corporate_employee";
 
-const CORPORATE_EMPLOYEE_HOME = "/corporate/benefits";
+const CORPORATE_EMPLOYEE_HOME = "/employee/home";
 const POST_PASSWORD_ROUTE_KEY = "mediczy:post-password-route";
 
 const WELLNESS_BENEFITS = [

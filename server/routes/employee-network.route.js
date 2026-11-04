@@ -12,6 +12,7 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import { getEmployeeBenefitWallet, listBenefitNetworkProviders } from '../services/corporate-benefit-wallet.service.js';
 
 // insurance_claims.claim_type is CHECK-constrained to cashless/reimbursement/
 // emergency -- the human-readable claim type (opd/dental/etc, from
@@ -170,6 +171,132 @@ router.get('/context', authUser, async (req, res) => {
   } catch (err) {
     console.error('GET /employee/context error:', err);
     return res.status(500).json({ success: false, message: 'Unable to resolve employee context' });
+  }
+});
+
+/**
+ * GET /api/employee/home
+ *
+ * A deliberately small employee-dashboard contract.  It is not an HR
+ * dashboard: every item is resolved for the authenticated employee and no
+ * workforce, utilisation, or clinical data belonging to another person is
+ * included.  The client may use the regular patient APIs for personal health
+ * data, while employer-funded data starts here.
+ */
+router.get('/home', authUser, async (req, res) => {
+  try {
+    const corp = await getUserCorporate(req.user.id);
+    if (!corp) {
+      return res.status(403).json({
+        success: false,
+        code: 'corporate_employee_required',
+        message: 'An active corporate employee association is required.',
+      });
+    }
+
+    const safe = async (work, fallback) => {
+      try { return await work(); } catch (error) {
+        console.error('[employee/home] optional dashboard section unavailable:', error.message);
+        return fallback;
+      }
+    };
+
+    const [employeeRows, wallet, checkups, upcomingBooking, events, challenges, networkProviders] = await Promise.all([
+      safe(() => postgresSequelize.query(
+        `SELECT "employeeId", department, designation
+           FROM corporate_employees
+          WHERE "userId" = :userId AND corporate_id = :corporateId AND "isActive" = true
+          ORDER BY "updatedAt" DESC NULLS LAST LIMIT 1`,
+        { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      ), []),
+      safe(() => getEmployeeBenefitWallet(req.user.id), { isCorporateEmployee: true, corporate: null, wallets: [] }),
+      safe(() => postgresSequelize.query(
+        `SELECT DISTINCT ON (u."packageId")
+                u."packageId" AS id, u."packageName" AS name, u."validFrom" AS "validFrom",
+                u."validTo" AS "validTo", u."usedAt" AS "usedAt", p.features, p.metadata
+           FROM user_health_packages u
+           JOIN corporate_health_package_catalog p
+             ON p.id = u."packageId" AND p.corporate_id = :corporateId AND p.is_active = true
+          WHERE u."userId" = :userId
+            AND u.corporate_id = :corporateId
+            AND LOWER(COALESCE(u.status, 'active')) = 'active'
+            AND COALESCE(p.metadata->>'kind', '') = 'health_checkup'
+            -- Employee home surfaces annual sponsored benefits only.  PEME
+            -- candidates use their separate invitation/case journey and may
+            -- never inherit an employee's annual-plan entitlement.
+            AND LOWER(COALESCE(
+              p.metadata->>'workflowClass', p.metadata->>'workflow_class',
+              p.features->>'workflowClass', p.features->>'workflow_class',
+              p.features->>'type', ''
+            )) IN ('annual', 'annual_benefit')
+            AND (u."validFrom" IS NULL OR u."validFrom"::date <= CURRENT_DATE)
+            AND (u."validTo" IS NULL OR u."validTo"::date >= CURRENT_DATE)
+          ORDER BY u."packageId", u."createdAt" DESC`,
+        { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      ), []),
+      safe(() => postgresSequelize.query(
+        `SELECT id, booking_reference AS "bookingReference", package_name AS "packageName",
+                appointment_date AS date, time_slot AS "timeSlot", status, lab_snapshot AS "lab"
+           FROM health_checkup_bookings
+          WHERE user_id = :userId AND corporate_id = :corporateId
+            AND status IN ('confirmed', 'scheduled', 'rescheduled', 'payment_pending')
+          ORDER BY appointment_date ASC, time_slot ASC LIMIT 1`,
+        { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      ), []),
+      safe(() => postgresSequelize.query(
+        `SELECT e.id, e.title, e.description, e.event_date AS date, e.location,
+                e.event_type AS type, r.status AS "myRsvp"
+           FROM corporate_wellness_events e
+           JOIN corporate_wellness_event_rsvps r ON r.event_id = e.id AND r."userId" = :userId
+          WHERE e.corporate_id = :corporateId AND e.status IN ('upcoming', 'ongoing')
+          ORDER BY e.event_date ASC LIMIT 3`,
+        { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      ), []),
+      safe(() => postgresSequelize.query(
+        `SELECT c.id, c.title, c.description, c.type, c.target, c.unit, c."endDate", c.status,
+                EXISTS(SELECT 1 FROM corporate_challenge_participants p WHERE p.challenge_id = c.id AND p."userId" = :userId) AS joined
+           FROM corporate_challenges c
+          WHERE c.corporate_id = :corporateId AND c.status IN ('active', 'upcoming')
+          ORDER BY c."endDate" ASC LIMIT 3`,
+        { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      ), []),
+      safe(() => listBenefitNetworkProviders(corp.corporateId), []),
+    ]);
+
+    const employee = employeeRows[0] || null;
+    const annualHealthCheckups = checkups.map((item) => ({
+      id: String(item.id),
+      name: item.name || 'Annual Health Checkup',
+      validFrom: item.validFrom || null,
+      validTo: item.validTo || null,
+      usedAt: item.usedAt || null,
+      eligibleRelations: item.metadata?.eligibleRelations || ['self'],
+      description: item.features?.description || item.metadata?.description || 'Sponsored by your employer.',
+    }));
+
+    return res.json({
+      success: true,
+      audience: 'corporate_employee',
+      context: {
+        corporate: { id: Number(corp.corporateId), name: corp.companyName },
+        employee: employee ? {
+          employeeId: employee.employeeId,
+          department: employee.department || null,
+          designation: employee.designation || null,
+        } : null,
+      },
+      benefits: {
+        wallets: wallet.wallets || [],
+        annualHealthCheckups,
+        networkProviders: networkProviders.slice(0, 12),
+      },
+      upcomingAppointment: upcomingBooking[0] || null,
+      wellness: { events, challenges },
+      privacyNotice: 'Your employer can administer benefits and view authorised aggregate programme insights. Your clinical records remain private.',
+    });
+  } catch (err) {
+    console.error('GET /employee/home error:', err);
+    return res.status(500).json({ success: false, message: 'Unable to load employee dashboard' });
   }
 });
 

@@ -573,6 +573,7 @@ const HomecareSupportPage      = lazyNamed(_HomecareModulePages, "HomecareSuppor
 // ─── Corporate ───────────────────────────────────────────────────────────────
 const CorporateDashboard            = lazy(() => import("@/pages/CorporateDashboard"));
 const CorporateBenefits             = lazy(() => import("@/pages/CorporateBenefits"));
+const CorporateEmployeeDashboard    = lazy(() => import("@/pages/employee/CorporateEmployeeDashboard"));
 const CorporateLogin                = lazy(() => import("@/pages/corporate/CorporateLogin"));
 const CorporateRegister             = lazy(() => import("@/pages/corporate/CorporateRegister"));
 const CorporateNotifications        = lazy(() => import("@/pages/corporate/CorporateNotifications"));
@@ -1688,6 +1689,16 @@ const AppRoutes = () => {
         <Route path="/corporate/command-center"            element={<CorporateCommandCenter />} />
         <Route path="/corporate/user-management"            element={<CorporateUserManagement />} />
         <Route path="/corporate/org-structure"               element={<CorporateOrgStructure />} />
+
+        {/* Corporate employees use the patient-like employee shell.  These are
+            deliberately separate from the HR/admin /corporate routes. */}
+        <Route path="/employee"                    element={<Navigate to="/employee/home" replace />} />
+        <Route path="/employee/home"               element={<CorporateEmployeeDashboard />} />
+        <Route path="/employee/benefits"           element={<CorporateEmployeeDashboard />} />
+        <Route path="/employee/care"               element={<CorporateEmployeeDashboard />} />
+        <Route path="/employee/health"             element={<CorporateEmployeeDashboard />} />
+        <Route path="/employee/wellness"           element={<CorporateEmployeeDashboard />} />
+        <Route path="/employee/support"            element={<CorporateEmployeeDashboard />} />
         <Route path="/corporate/hr-team"                     element={<CorporateHrTeam />} />
 
         {/* ── TPA ─────────────────────────────────────────────────────── */}
