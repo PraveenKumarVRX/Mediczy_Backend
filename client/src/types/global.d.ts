@@ -8,6 +8,12 @@ namespace JSX {
     [elemName: string]: any;
   }
 }
+// App-specific globals attached at runtime (service-worker / health-sync scheduler).
+interface Window {
+  clients?: unknown;
+  healthSyncScheduler?: unknown;
+  skipWaiting?: () => void;
+}
 }
 
 declare module 'axios' {

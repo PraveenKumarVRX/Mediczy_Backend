@@ -14,6 +14,9 @@ import { Link as RouterLink } from 'react-router-dom';
 // ── Types ──────────────────────────────────────────────────────────
 interface Email {
   id: string;
+  aiConfidence?: number;
+  attachments?: unknown[];
+  date?: string;
   from: string;
   fromName: string;
   subject: string;

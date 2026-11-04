@@ -19,6 +19,7 @@ import {
   List, Target, FileCheck, LayoutDashboard, ArrowUpRight, ArrowDownRight,
   Calendar, Printer, AlertTriangle, XCircle, RefreshCw, IndianRupee,
   Landmark, Filter, ChevronRight, Mail, Phone,
+  Loader2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
