@@ -36,7 +36,11 @@ export async function currentDailyScore(userId) {
   const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
   const [enriched, logs, profiles] = await Promise.all([
     enrichLogDataFromDiary(userId, date),
-    postgresSequelize.query('SELECT * FROM daily_activity WHERE user_id = :userId AND date = :date LIMIT 1', { replacements: { userId, date }, type: QueryTypes.SELECT }),
+    // Use today's logged activity, else the most recent entry within the last 3 days, so the score
+    // doesn't snap to 0% the moment the clock rolls past midnight before the day's data is logged.
+    // Data older than the window is intentionally ignored — a stale reading should not prop up a
+    // "current" score (see /health/latest staleness handling for the vitals display side of this).
+    postgresSequelize.query("SELECT * FROM daily_activity WHERE user_id = :userId AND date <= :date AND date >= (:date::date - INTERVAL '3 days') ORDER BY date DESC LIMIT 1", { replacements: { userId, date }, type: QueryTypes.SELECT }),
     postgresSequelize.query(`SELECT u."dateOfBirth", COALESCE(ha.gender::text, u.gender::text, 'other') AS gender, ha.height,
       COALESCE((SELECT weight FROM daily_activity WHERE user_id = u.id AND weight IS NOT NULL ORDER BY date DESC LIMIT 1), ha.weight) AS weight
       FROM users u LEFT JOIN user_health_assessments ha ON ha.user_id = u.id
