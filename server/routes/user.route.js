@@ -1854,11 +1854,24 @@ router.put("/profile", authUser, async (req, res) => {
     if (dateOfBirth) user.dateOfBirth = dateOfBirth;
     if (gender) user.gender = gender;
     
-    // Update other allowed fields
+    // Update other allowed fields. height/weight are numeric columns: an empty string from the
+    // profile form was assigned raw and Postgres rejected it ("invalid input syntax for type
+    // numeric: \"\""), surfacing as a generic "Failed to update profile". Coerce blank/non-numeric
+    // values to null so clearing a field works instead of 500-ing.
     const allowedFields = ['bloodType', 'allergies', 'medications', 'chronicConditions', 'medicalHistory', 'height', 'weight', 'familyHistory', 'personalHistory'];
+    const numericFields = new Set(['height', 'weight']);
     allowedFields.forEach(field => {
       if (otherFields[field] !== undefined) {
-        user[field] = otherFields[field];
+        let value = otherFields[field];
+        if (numericFields.has(field)) {
+          if (value === '' || value === null) {
+            value = null;
+          } else {
+            const n = Number(value);
+            value = Number.isFinite(n) ? n : null;
+          }
+        }
+        user[field] = value;
       }
     });
     
