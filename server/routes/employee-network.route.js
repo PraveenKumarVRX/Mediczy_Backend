@@ -653,7 +653,12 @@ router.get('/claims', authUser, async (req, res) => {
       });
     }
 
-    const organizationId = Number(req.user.organization_id || req.user.organizationId || corp.corporateId);
+    // Guard against a non-numeric org ref (some accounts carry an entity-UID string in
+    // organization_id). Number('CC9FL6') is NaN, which would make setRlsContext write
+    // set_config('app.current_org_id','NaN') and the RLS int-cast then throws -> 500
+    // "Couldn't load claims". Fall back to the numeric corporate id from the roster.
+    const orgCandidate = Number(req.user.organization_id ?? req.user.organizationId);
+    const organizationId = Number.isFinite(orgCandidate) && orgCandidate > 0 ? orgCandidate : Number(corp.corporateId);
     const tx = await postgresSequelize.transaction();
     let rows;
     try {
