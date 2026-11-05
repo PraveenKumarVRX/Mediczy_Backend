@@ -235,10 +235,14 @@ router.get('/home', authUser, async (req, res) => {
         { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
       ), []),
       safe(() => postgresSequelize.query(
+        // Match on the member only — not corporate_id too. A booking's corporate_id can differ from
+        // the association corporate_id resolved here (multiple associations / tenant-vs-corporate id),
+        // which made a freshly-created booking "disappear after refresh" on the dashboard. It is the
+        // member's own booking, so user_id + active status is the correct, stable key.
         `SELECT id, booking_reference AS "bookingReference", package_name AS "packageName",
                 appointment_date AS date, time_slot AS "timeSlot", status, lab_snapshot AS "lab"
            FROM health_checkup_bookings
-          WHERE user_id = :userId AND corporate_id = :corporateId
+          WHERE user_id = :userId
             AND status IN ('confirmed', 'scheduled', 'rescheduled', 'payment_pending')
           ORDER BY appointment_date ASC, time_slot ASC LIMIT 1`,
         { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
