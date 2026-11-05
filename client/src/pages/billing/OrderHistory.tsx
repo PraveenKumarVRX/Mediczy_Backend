@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
+import { formatDateTime, formatMoney } from '@/lib/display';
 import {
   Package, ShoppingBag, Search, RefreshCw, Download, Receipt,
   ChevronRight, TrendingUp, Clock, CheckCircle2, XCircle, AlertCircle,
@@ -230,14 +231,14 @@ const OrderHistory = () => {
                                     <Badge variant="outline" className="text-[10px] capitalize font-medium shrink-0">{order.orderType}</Badge>
                                   </div>
                                   <div className="flex items-center gap-3 mt-1">
-                                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1"><Calendar className="w-3 h-3" />{format(new Date(order.createdAt), 'dd MMM yyyy, hh:mm a')}</span>
+                                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1"><Calendar className="w-3 h-3" />{formatDateTime(order.createdAt)}</span>
                                     {order.invoice && <span className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1"><Receipt className="w-3 h-3" />{order.invoice.invoiceNumber}</span>}
                                   </div>
                                 </div>
                               </div>
                               <div className="flex items-center gap-4 md:gap-6">
                                 <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium ${si.bg} ${si.color} ${si.dark}`}><SI className="w-3.5 h-3.5" /><span className="capitalize">{order.status}</span></div>
-                                <p className="text-lg font-bold text-gray-900 dark:text-white whitespace-nowrap">{order.currency === 'INR' ? '₹' : order.currency} {order.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-lg font-bold text-gray-900 dark:text-white whitespace-nowrap">{formatMoney(order.total)}</p>
                                 <div className="flex items-center gap-1 shrink-0">
                                   {order.invoice && <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={(e) => { e.stopPropagation(); handleDownloadInvoice(order.invoice!.id, order.invoice!.invoiceNumber); }} aria-label="Download invoice"><Download className="w-4 h-4" /></Button>}
                                   <ChevronRight className="w-5 h-5 text-gray-300 dark:text-slate-600 group-hover:text-indigo-500 transition-colors" />

@@ -16,7 +16,8 @@ import LegalNotice from '@/pages/LegalNotice';
 
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { ComponentType } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import TeamGuard from "@/auth/TeamGuard";
 import { portalClinicalRoutes } from "@/routes/portalClinicalRoutes";
 import HmisLegacyRedirect from "@/routes/HmisLegacyRedirect";
@@ -1092,13 +1093,30 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 // ─── AppRoutes ────────────────────────────────────────────────────────────────
+// Shown when a single screen throws during render. Keeping it inside the app shell (rather than
+// letting the root boundary replace everything) means one broken page no longer blanks the whole
+// PWA to the phone home screen — the person can reload the page or navigate elsewhere.
+const RouteErrorFallback = () => (
+  <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
+    <h1 className="text-xl font-semibold text-foreground">This page ran into a problem</h1>
+    <p className="max-w-md text-sm text-muted-foreground">Something on this screen didn’t load correctly. You can reload it or go back to your home screen.</p>
+    <div className="flex flex-wrap items-center justify-center gap-3">
+      <button onClick={() => window.location.reload()} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Reload page</button>
+      <a href="/" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted">Go to home</a>
+    </div>
+  </div>
+);
+
 const AppRoutes = () => {
+  const location = useLocation();
   const PharmacyEntry = () => {
     const token = localStorage.getItem("pharmacyToken");
     return <Navigate to={token ? "/pharmacy/dashboard" : "/pharmacy/login"} replace />;
   };
 
   return (
+    // Keyed by pathname so the boundary resets on navigation (a crashed page clears once you move away).
+    <ErrorBoundary key={location.pathname} fallback={<RouteErrorFallback />}>
     <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* ── Home / auth ─────────────────────────────────────────────── */}
@@ -2200,6 +2218,7 @@ const AppRoutes = () => {
         <Route path="*"           element={<NotFound />} />
       </Routes>
     </Suspense>
+    </ErrorBoundary>
   );
 };
 
