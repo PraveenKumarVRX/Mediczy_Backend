@@ -1,6 +1,7 @@
 import express from 'express';
 import { body, param } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import pool from '../db/pgPool.js';
 import { InsuranceProvider, InsurancePolicy, UserInsurance, InsuranceClaim, InsuranceProviderModel, InsurancePolicyModel } from '../models/insurance.model.intelligent.js';
 
 // Intelligent Database query operators (replaces Sequelize Op)
@@ -513,18 +514,45 @@ router.get('/policies/:providerId', async (req, res) => {
 
 // Get user's own insurances
 router.get('/my/insurances', authUser, async (req, res) => {
+  // NOTE: this used Sequelize includes ({ model: InsuranceProvider, as: 'provider' } etc.), but the
+  // models from insurance.model.intelligent.js are createWrapper() objects (no getTableName) and have
+  // no associations defined, and the InsurancePolicy model is mapped to a different schema than the
+  // real insurance_policies table — so the include threw "include.model.getTableName is not a function"
+  // / "column providerId does not exist" on every call, surfacing as "Unable to load insurance details".
+  // Rewritten as a direct query against the real columns so it returns a proper (possibly empty) list.
   try {
-    const insurances = await UserInsurance.findAll({
-      where: { userId: req.user.id },
-      include: [
-        { model: InsuranceProvider, as: 'provider' },
-        { model: InsurancePolicy, as: 'policy' }
-      ],
-      order: [['createdAt', 'DESC']]
-    });
+    const { rows } = await pool.query(
+      `SELECT ui.id, ui."userId", ui."policyId", ui."policyNumber", ui."membershipId",
+              ui."startDate", ui."endDate", ui.status, ui."primaryHolder",
+              ui.dependents, ui.documents, ui.metadata, ui."createdAt", ui."updatedAt",
+              p."policyName", p."policyType", p."sumInsured", p.premium,
+              p."policyStartDate", p."policyEndDate", p.status AS policy_status, p."insuranceCompanyId"
+         FROM user_insurances ui
+         LEFT JOIN insurance_policies p ON p.id = ui."policyId"
+        WHERE ui."userId" = $1
+        ORDER BY ui."createdAt" DESC`,
+      [req.user.id]
+    );
+    const insurances = rows.map((r) => ({
+      id: r.id, userId: r.userId, policyId: r.policyId, policyNumber: r.policyNumber,
+      membershipId: r.membershipId, startDate: r.startDate, endDate: r.endDate,
+      status: r.status, primaryHolder: r.primaryHolder, dependents: r.dependents,
+      documents: r.documents, metadata: r.metadata, createdAt: r.createdAt, updatedAt: r.updatedAt,
+      policy: r.policyId ? {
+        id: r.policyId,
+        name: r.policyName || null,
+        type: r.policyType || null,
+        coverageAmount: r.sumInsured != null ? Number(r.sumInsured) : null,
+        premiumAmount: r.premium != null ? Number(r.premium) : null,
+        startDate: r.policyStartDate || null,
+        endDate: r.policyEndDate || null,
+        status: r.policy_status || null,
+        insuranceCompanyId: r.insuranceCompanyId || null,
+      } : null,
+    }));
     res.json({ insurances });
   } catch (e) {
-    console.error(e);
+    console.error('[insurance] /my/insurances failed', e);
     res.status(500).json({ message: 'Failed to fetch insurances', error: e.message });
   }
 });
