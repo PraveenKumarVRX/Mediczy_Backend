@@ -424,7 +424,15 @@ export const ipBlocker = () => {
 
     res.on('finish', () => {
       if (res.statusCode === 429) {
-        recordRateLimitAbuse(ip, req.originalUrl || req.path).catch(() => {});
+        const url = req.originalUrl || req.path || '';
+        // Auth endpoints are already protected by authLimiter (per-window) and
+        // credentialStuffingGuard (progressive, auth-specific blocking). Don't let a user
+        // fumbling their password also feed the GENERAL abuse counter, which escalates to a
+        // 24h whole-IP block — too harsh for shared/mobile IPs and a legitimate mistyped login.
+        const isAuthEndpoint = /\/(login|signin|send-otp|verify-otp)(\/|$|\?)/i.test(url);
+        if (!isAuthEndpoint) {
+          recordRateLimitAbuse(ip, url).catch(() => {});
+        }
       }
     });
 
