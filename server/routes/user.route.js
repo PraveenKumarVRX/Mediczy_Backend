@@ -1083,7 +1083,9 @@ router.post(
  */
 router.post(
   "/login",
-  authLimiter,
+  // authLimiter is already applied to this path globally in app.js
+  // (app.use('/api/users/login', authLimiter)). Applying it again here counted every
+  // attempt twice against the same key, tripping the 5/15min limit at ~2-3 tries.
   [
     body().custom((_, { req }) => {
       const rawEmail = req.body?.email;
