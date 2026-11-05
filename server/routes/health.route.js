@@ -113,8 +113,18 @@ router.get('/latest', auth, async (req, res) => {
       console.log('Apple Health data not available:', e.message);
     }
 
+    // Staleness: vitals older than 48h should not be presented as "today's" readings.
+    // Surface it so the app can label "last synced N hours ago" and stay consistent with the
+    // daily health score (which only counts activity within the last 3 days).
+    const STALE_AFTER_HOURS = 48;
+    const ageMs = latestTimestamp ? (Date.now() - new Date(latestTimestamp).getTime()) : null;
+    const ageHours = ageMs != null ? Math.round(ageMs / 3600000) : null;
+    const stale = ageMs == null ? true : ageMs > STALE_AFTER_HOURS * 3600 * 1000;
+
     // Format response
     const response = {
+      stale,
+      ageHours,
       heartRate: latestMetrics.heartRate || null,
       steps: latestMetrics.steps || null,
       sleepHours: sleepHours(latestMetrics.sleepHours, latestUnits.sleepHours),
