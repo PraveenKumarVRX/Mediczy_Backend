@@ -14,6 +14,20 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
+// Normalize an order address (string, or {address|line1|city|state|pincode} object) to a display
+// string, or null. Used to surface a consistent deliveryAddress across order types.
+function normalizeOrderAddress(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value.trim() || null;
+  if (typeof value === 'object') {
+    if (typeof value.address === 'string' && value.address.trim()) return value.address.trim();
+    const parts = [value.line1 || value.street, value.area || value.locality, value.city, value.state, value.pincode || value.zip || value.zipCode]
+      .map((p) => (p == null ? '' : String(p).trim())).filter(Boolean);
+    return parts.length ? parts.join(', ') : null;
+  }
+  return null;
+}
+
 router.use(legacyBillingDeprecation);
 
 function buildOrderItemLabel(order) {
@@ -226,10 +240,24 @@ router.get('/orders', authUser, async (req, res) => {
       offset: parseInt(offset)
     });
 
+    // Normalize provider + delivery address across order types. The underlying data exists but under
+    // inconsistent keys (metadata.labName / pharmacyName / provider, shippingAddress.address /
+    // metadata.deliveryAddress / metadata.address), so the raw rows showed "Provider not specified"
+    // / "Address not provided". Surface a consistent shape the client can render.
+    const enriched = orders.map((o) => {
+      const plain = typeof o.toJSON === 'function' ? o.toJSON() : o;
+      const m = plain.metadata || {};
+      return {
+        ...plain,
+        provider: m.labName || m.pharmacyName || m.provider || m.vendorName || m.hospitalName || null,
+        deliveryAddress: normalizeOrderAddress(plain.shippingAddress) || normalizeOrderAddress(m.deliveryAddress) || normalizeOrderAddress(m.address) || null,
+      };
+    });
+
     return res.json({
       success: true,
       data: {
-        orders,
+        orders: enriched,
         pagination: {
           total: count,
           page: parseInt(page),
@@ -348,10 +376,12 @@ router.get('/orders/:orderId/detailed', authUser, async (req, res) => {
       items: items,
       itemCount: items.length,
       
-      // Address information
+      // Provider + address (normalized across order types so lab/pharmacy orders don't render
+      // "Provider not specified" / "Address not provided" when the data is under varying keys).
+      provider: order.metadata?.labName || order.metadata?.pharmacyName || order.metadata?.provider || order.metadata?.vendorName || order.metadata?.hospitalName || null,
       billingAddress: order.billingAddress,
       shippingAddress: order.shippingAddress,
-      deliveryAddress: order.metadata?.deliveryAddress || order.shippingAddress,
+      deliveryAddress: normalizeOrderAddress(order.shippingAddress) || normalizeOrderAddress(order.metadata?.deliveryAddress) || normalizeOrderAddress(order.metadata?.address) || null,
       
       // Delivery tracking
       estimatedDelivery: order.metadata?.estimatedDelivery,
