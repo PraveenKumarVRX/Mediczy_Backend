@@ -57,6 +57,7 @@ const managementItems: SidebarItem[] = [
   { icon: Wallet, label: "Benefits & Plans", href: "/corporate/benefits" },
   { icon: FileText, label: "Claims", href: "/corporate/claims" },
   { icon: ShieldCheck, label: "Fitness Certificates", href: "/corporate/fitness-certificates" },
+  { icon: FileText, label: "Referral Letters", href: "/corporate/referral-letters" },
   { icon: Stethoscope, label: "Occupational Health Clinic", href: "/corporate/ohc" },
   { icon: Stethoscope, label: "Doctor Partners", href: "/corporate/doctor-partners" },
   { icon: TrendingUp, label: "Program Analytics", href: "/corporate/programs" },

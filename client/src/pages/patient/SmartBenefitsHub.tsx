@@ -37,6 +37,7 @@ import { getToken } from '@/hooks/auth';
 import { useAuth } from '@/auth/AuthProvider';
 import MainLayout from '@/components/layout/MainLayout';
 import { FamilyMemberDialog } from '@/components/profile/FamilyMemberDialog';
+import EmployeeCheckupCenter from '@/components/patient/EmployeeCheckupCenter';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 const insurerLabel = (plan: BenefitPlan) => plan.insurer || (plan.isEmployerFunded ? 'Employer-funded service benefits' : 'Membership service benefits');
@@ -215,6 +216,7 @@ export default function SmartBenefitsHub() {
 
       {/* ─── Tab Navigation ──────────────────────────────────────────────── */}
       <div className="px-4 sm:px-6">
+        <EmployeeCheckupCenter />
         <div className="flex gap-1 bg-muted rounded-xl p-1 mb-6">
           {([
             { key: 'benefits', label: 'Benefits', icon: Shield },

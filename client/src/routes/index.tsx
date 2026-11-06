@@ -599,6 +599,7 @@ const CorporateAnnualHealthCheckup  = lazy(() => import("@/pages/corporate/Corpo
 const CorporateSupport              = lazy(() => import("@/pages/corporate/CorporateSupport"));
 const CorporateCommandCenter        = lazy(() => import("@/pages/corporate/CorporateCommandCenter"));
 const CorporateUserManagement       = lazy(() => import("@/pages/corporate/CorporateUserManagement"));
+const CorporateReferralLetters      = lazy(() => import("@/pages/corporate/CorporateReferralLetters"));
 const CorporateOrgStructure         = lazy(() => import("@/pages/corporate/CorporateOrgStructure"));
 const CorporateHrTeam                = lazy(() => import("@/pages/corporate/CorporateHrTeam"));
 
@@ -1688,6 +1689,7 @@ const AppRoutes = () => {
         <Route path="/corporate/assigned-employees" element={<CorporateAssignedEmployees />} />
         <Route path="/corporate/programs" element={<CorporateProgramAnalytics />} />
         <Route path="/corporate/fitness-certificates"    element={<CorporateFitnessCertificates />} />
+        <Route path="/corporate/referral-letters"        element={<CorporateReferralLetters />} />
         <Route path="/corporate/ohc"                     element={<CorporateOhc />} />
         {/* Occupational Health Clinic doctors and staff: their own sign-in and workspace */}
         <Route path="/ohc/login"                         element={<OhcLogin />} />

@@ -26,11 +26,18 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ 
 
 // Per-kind copy. `line` is the one-sentence status statement; `subject` prefixes the reference.
 const COPY = {
-  confirmed:   { subject: 'confirmed',   line: 'is confirmed',             closing: 'Please arrive 10 minutes early and carry a valid photo ID.' },
+  submitted:   { subject: 'submitted',   line: 'has been submitted and is awaiting confirmation', closing: 'We will notify you as soon as it is confirmed.' },
+  confirmed:   { subject: 'confirmed',   line: 'is confirmed',             closing: 'Please arrive 10 minutes early and carry a valid photo ID. You can view the checkup instructions in the app.' },
+  approved:    { subject: 'confirmed',   line: 'is confirmed',             closing: 'Please arrive 10 minutes early and carry a valid photo ID. You can view the checkup instructions in the app.' },
   rescheduled: { subject: 'rescheduled', line: 'has been rescheduled',     closing: 'Please arrive 10 minutes early and carry a valid photo ID.' },
   cancelled:   { subject: 'cancelled',   line: 'has been cancelled',       closing: 'If this was a mistake you can book again from your Benefits page.' },
+  completed:   { subject: 'completed',   line: 'is marked completed',      closing: 'Your reports will be shared here as soon as they are ready.' },
+  reports_available: { subject: 'reports ready', line: 'reports are now available', closing: 'You can download and share your report from the app.' },
   reminder:    { subject: 'reminder',    line: 'is scheduled for tomorrow', closing: 'Please arrive 10 minutes early and carry a valid photo ID.' },
 };
+const CONFIRMATION_KINDS = new Set(['confirmed', 'approved']);
+// Wellness-team inbox that should hear about every new booking awaiting confirmation.
+const TEAM_NOTIFY_EMAIL = process.env.CORPORATE_CARE_EMAIL || 'care@mysmarthealth.in';
 
 const normalisePhone = (raw) => {
   const digits = String(raw || '').replace(/\D/g, '');
@@ -82,16 +89,26 @@ async function sendToRecipient({ name, email, phone }, booking, kind) {
   }
 
   const phoneE164 = normalisePhone(phone);
+  // One line reused by the WhatsApp session message and the SMS fallback.
+  const plainText = `Mediczy: Your ${packageName} health checkup ${copy.line} on ${date} at ${booking.timeSlot}, ${location || 'the diagnostic centre'}. Ref ${booking.bookingReference}. ${copy.closing}`.trim();
+  // Structured WhatsApp templates exist only for appointment reminder/confirmation. Every other
+  // lifecycle state (submitted / completed / reports ready) still goes out on WhatsApp, as a plain
+  // session message, when WhatsApp is configured — and falls back to SMS when it is not.
+  const canUseWaTemplate = kind === 'reminder' || CONFIRMATION_KINDS.has(kind);
   if (phoneE164 && whatsappProductionService?.configured) {
     if (kind === 'reminder') {
       jobs.push(whatsappProductionService.sendAppointmentReminder({ to: phoneE164, patientName: name || 'Member', doctorName: location || 'the diagnostic centre', time: booking.timeSlot, location }).catch((error) => ({ channel: 'whatsapp', error: error.message })));
-    } else {
+    } else if (canUseWaTemplate) {
       jobs.push(whatsappProductionService.sendAppointmentConfirmation({ to: phoneE164, patientName: name || 'Member', date, time: booking.timeSlot, location, isHealthCheckup: true }).catch((error) => ({ channel: 'whatsapp', error: error.message })));
+    } else if (typeof whatsappProductionService.sendSessionMessage === 'function') {
+      jobs.push(whatsappProductionService.sendSessionMessage({ to: phoneE164, body: `Dear ${name || 'Member'},\n${plainText}` }).catch((error) => ({ channel: 'whatsapp', error: error.message })));
+    } else {
+      jobs.push(smsService.sendSMS({ to: phoneE164, message: plainText }).catch((error) => ({ channel: 'sms', error: error.message })));
+      smsSent = true;
     }
   } else if (phoneE164) {
     // SMS fallback when WhatsApp is not configured — self-guards (returns {success:false}) if no SMS provider.
-    const smsText = `Mediczy: Your ${packageName} health checkup ${copy.line} on ${date} at ${booking.timeSlot}, ${location || 'the diagnostic centre'}. Ref ${booking.bookingReference}.`;
-    jobs.push(smsService.sendSMS({ to: phoneE164, message: smsText }).catch((error) => ({ channel: 'sms', error: error.message })));
+    jobs.push(smsService.sendSMS({ to: phoneE164, message: plainText }).catch((error) => ({ channel: 'sms', error: error.message })));
     smsSent = true;
   }
 
@@ -111,8 +128,10 @@ export async function notifyBooking(row, kind = 'confirmed') {
   // Beneficiary (the person being checked).
   const summary = await sendToRecipient({ name: patient.name, email: patient.email, phone: patient.phone }, booking, kind);
 
-  // Booking employee — for non-self bookings, always keep the employee in the loop on their own contacts.
-  if (booking.relation && booking.relation !== 'self' && booking.userId) {
+  // Booking employee — always keep the employee in the loop on their own account contacts (their
+  // profile email/phone may differ from, or be richer than, the beneficiary details on the booking).
+  // Deduped below so a self-booking with identical contacts is not notified twice.
+  if (booking.userId) {
     try {
       const [emp] = await postgresSequelize.query(
         `SELECT "firstName","lastName",email,"phoneNumber" FROM users WHERE id=:userId LIMIT 1`,
@@ -131,6 +150,29 @@ export async function notifyBooking(row, kind = 'confirmed') {
       }
     } catch (error) {
       console.error('[health-checkups] employee notification lookup failed', error.message);
+    }
+  }
+
+  // A new booking awaiting confirmation also goes to the wellness-team inbox.
+  if (kind === 'submitted' && TEAM_NOTIFY_EMAIL) {
+    try {
+      const { date, location } = render(booking, kind);
+      const html = `<p>A new health checkup booking is awaiting confirmation.</p>` +
+        `<p><strong>Employee:</strong> ${escapeHtml(patient.name || 'Employee')}<br>` +
+        `<strong>Package:</strong> ${escapeHtml(booking.package?.name || 'Health checkup')}<br>` +
+        `<strong>Centre:</strong> ${escapeHtml(location)}<br>` +
+        `<strong>Date:</strong> ${escapeHtml(date)} at ${escapeHtml(booking.timeSlot)}<br>` +
+        `<strong>Reference:</strong> ${escapeHtml(booking.bookingReference)}</p>` +
+        `<p>Open the Team portal → Corporate Health Booking → <strong>Approvals</strong> to confirm or reject it.</p>`;
+      await emailServiceModule.sendOutboundEmail(1, {
+        to: TEAM_NOTIFY_EMAIL,
+        subject: `New health checkup awaiting confirmation — ${booking.bookingReference}`,
+        htmlContent: html,
+      });
+      summary.attempted += 1;
+    } catch (error) {
+      console.error('[health-checkups] team notification failed', error.message);
+      summary.failed += 1;
     }
   }
 
