@@ -792,8 +792,21 @@ router.post('/book', authUser, async (req, res) => {
       }
     }
 
-    // Create appointment record in database
-    const appointment = await Appointment.create({
+    // Create appointment inside an RLS-scoped transaction. `appointments` enforces FORCE RLS and
+    // the global rls-context middleware's GUC is not guaranteed on this Sequelize pooled connection,
+    // so the insert must set current_user_id()/current_org_id() here. Without it the insert failed
+    // with "new row violates row-level security policy for table appointments" -> "Failed to book
+    // lab appointment". The row's userId = this user satisfies the tenant-isolation policy.
+    const labBookingTx = await Appointment.sequelize.transaction();
+    let appointment;
+    try {
+      const orgRaw = Number(req.user?.organization_id ?? req.user?.organizationId);
+      const orgId = Number.isFinite(orgRaw) && orgRaw > 0 ? orgRaw : 0;
+      await Appointment.sequelize.query(
+        "SELECT set_config('app.current_org_id', :org, true), set_config('app.current_user_id', :uid, true)",
+        { replacements: { org: String(orgId), uid: String(req.user?.id ?? '') }, transaction: labBookingTx }
+      );
+      appointment = await Appointment.create({
       userId: req.user?.id,
       patientName: familyMember
         ? `${familyMember.firstName || ''} ${familyMember.lastName || ''}`.trim()
@@ -844,7 +857,12 @@ router.post('/book', authUser, async (req, res) => {
         bookingFor: familyMember ? 'family' : 'self',
         familyMemberId: familyMember ? familyMember.id : null
       }
-    });
+      }, { transaction: labBookingTx });
+      await labBookingTx.commit();
+    } catch (txErr) {
+      await labBookingTx.rollback().catch(() => {});
+      throw txErr;
+    }
 
     console.log('[Lab Booking] ✅ Appointment created:', {
       id: appointment.id,
