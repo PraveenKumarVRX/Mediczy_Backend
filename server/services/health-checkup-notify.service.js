@@ -19,7 +19,18 @@ import whatsappProductionService from './whatsapp-production.service.js';
 import { SMSService } from './sms.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 
-const smsService = new SMSService();
+// SMSService requires a config; `new SMSService()` would throw on first use ("reading 'provider'").
+// Build the same config queue-notify uses, and leave it null (fallback skips) when SMS is unconfigured.
+const smsConfig = {
+  provider: process.env.SMS_PROVIDER || 'twilio',
+  apiKey: process.env.SMS_API_KEY || process.env.TWILIO_ACCOUNT_SID,
+  apiSecret: process.env.SMS_API_SECRET || process.env.TWILIO_AUTH_TOKEN,
+  smsFrom: process.env.TWILIO_SMS_NUMBER || null,
+  messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_SMS_MESSAGING_SERVICE_SID || null,
+  senderId: process.env.SMS_SENDER_ID || process.env.TWILIO_SMS_NUMBER || null,
+  allowDiscover: String(process.env.TWILIO_SMS_AUTO_DISCOVER ?? 'true').toLowerCase() !== 'false',
+};
+const smsService = (smsConfig.apiKey && smsConfig.apiSecret) ? new SMSService(smsConfig) : null;
 
 const obj = (v) => { if (!v) return {}; if (typeof v === 'object' && !Array.isArray(v)) return v; try { const x = JSON.parse(v); return x && typeof x === 'object' && !Array.isArray(x) ? x : {}; } catch { return {}; } };
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -68,12 +79,34 @@ function mapRow(row) {
   };
 }
 
+const PATIENT_APP_URL = process.env.PATIENT_APP_URL || 'https://app.mediqzy.com';
+const ok = (r) => !(r && r.success === false); // provider helpers return {success:false} when self-disabled
+
+/**
+ * Send the right WhatsApp message for a lifecycle kind. Each path uses the proper
+ * provider template method, so once the matching GUPSHUP_TEMPLATE_* id is configured
+ * these deliver cold; without it the provider throws and we fall back to SMS.
+ *   confirmed/approved → sendAppointmentConfirmation (GUPSHUP_TEMPLATE_HEALTH_CHECKUP)
+ *   reports_available  → sendHealthReportReady       (GUPSHUP_TEMPLATE_HEALTH_REPORT)
+ *   reminder           → sendAppointmentReminder     (GUPSHUP_TEMPLATE_APPOINTMENT_REMINDER)
+ *   submitted/completed→ session message (delivers inside the 24h window; else falls back to SMS)
+ */
+function sendWhatsappForKind(kind, { to, name, date, time, location, plainText }) {
+  const patientName = name || 'Member';
+  if (kind === 'reminder') return whatsappProductionService.sendAppointmentReminder({ to, patientName, doctorName: location || 'the diagnostic centre', time, location });
+  if (CONFIRMATION_KINDS.has(kind)) return whatsappProductionService.sendAppointmentConfirmation({ to, patientName, date, time, location, isHealthCheckup: true });
+  if (kind === 'reports_available') return whatsappProductionService.sendHealthReportReady({ to, patientName, reportUrl: PATIENT_APP_URL });
+  if (typeof whatsappProductionService.sendSessionMessage === 'function') return whatsappProductionService.sendSessionMessage({ to, body: `Dear ${patientName},\n${plainText}` });
+  return Promise.reject(new Error('no WhatsApp method for kind'));
+}
+
 async function sendToRecipient({ name, email, phone }, booking, kind) {
   const { copy, packageName, date, location } = render(booking, kind);
-  const jobs = [];
-  let smsSent = false;
+  let attempted = 0, failed = 0, smsSent = false;
 
+  // Email — always, when present.
   if (email) {
+    attempted += 1;
     const html = `<p>Dear ${escapeHtml(name || 'Member')},</p>` +
       `<p>Your <strong>${escapeHtml(packageName)}</strong> health checkup ${copy.line}.</p>` +
       `<p><strong>Centre:</strong> ${escapeHtml(location)}<br>` +
@@ -81,39 +114,31 @@ async function sendToRecipient({ name, email, phone }, booking, kind) {
       `<strong>Time:</strong> ${escapeHtml(booking.timeSlot)}<br>` +
       `<strong>Reference:</strong> ${escapeHtml(booking.bookingReference)}</p>` +
       `<p>${escapeHtml(copy.closing)}</p>`;
-    jobs.push(emailServiceModule.sendOutboundEmail(1, {
-      to: email,
-      subject: `Health checkup booking ${copy.subject} — ${booking.bookingReference}`,
-      htmlContent: html,
-    }).catch((error) => ({ channel: 'email', error: error.message })));
+    try {
+      await emailServiceModule.sendOutboundEmail(1, { to: email, subject: `Health checkup booking ${copy.subject} — ${booking.bookingReference}`, htmlContent: html });
+    } catch (error) { failed += 1; console.error('[health-checkups] email send failed', error.message); }
   }
 
+  // Phone — try WhatsApp (kind-appropriate template/session), then fall back to SMS so a
+  // missing template or closed session window never leaves the member with no mobile notice.
   const phoneE164 = normalisePhone(phone);
-  // One line reused by the WhatsApp session message and the SMS fallback.
-  const plainText = `Mediczy: Your ${packageName} health checkup ${copy.line} on ${date} at ${booking.timeSlot}, ${location || 'the diagnostic centre'}. Ref ${booking.bookingReference}. ${copy.closing}`.trim();
-  // Structured WhatsApp templates exist only for appointment reminder/confirmation. Every other
-  // lifecycle state (submitted / completed / reports ready) still goes out on WhatsApp, as a plain
-  // session message, when WhatsApp is configured — and falls back to SMS when it is not.
-  const canUseWaTemplate = kind === 'reminder' || CONFIRMATION_KINDS.has(kind);
-  if (phoneE164 && whatsappProductionService?.configured) {
-    if (kind === 'reminder') {
-      jobs.push(whatsappProductionService.sendAppointmentReminder({ to: phoneE164, patientName: name || 'Member', doctorName: location || 'the diagnostic centre', time: booking.timeSlot, location }).catch((error) => ({ channel: 'whatsapp', error: error.message })));
-    } else if (canUseWaTemplate) {
-      jobs.push(whatsappProductionService.sendAppointmentConfirmation({ to: phoneE164, patientName: name || 'Member', date, time: booking.timeSlot, location, isHealthCheckup: true }).catch((error) => ({ channel: 'whatsapp', error: error.message })));
-    } else if (typeof whatsappProductionService.sendSessionMessage === 'function') {
-      jobs.push(whatsappProductionService.sendSessionMessage({ to: phoneE164, body: `Dear ${name || 'Member'},\n${plainText}` }).catch((error) => ({ channel: 'whatsapp', error: error.message })));
-    } else {
-      jobs.push(smsService.sendSMS({ to: phoneE164, message: plainText }).catch((error) => ({ channel: 'sms', error: error.message })));
-      smsSent = true;
+  if (phoneE164) {
+    attempted += 1;
+    const plainText = `Mediczy: Your ${packageName} health checkup ${copy.line} on ${date} at ${booking.timeSlot}, ${location || 'the diagnostic centre'}. Ref ${booking.bookingReference}. ${copy.closing}`.trim();
+    let delivered = false;
+    if (whatsappProductionService?.configured) {
+      try { delivered = ok(await sendWhatsappForKind(kind, { to: phoneE164, name, date, time: booking.timeSlot, location, plainText })); }
+      catch (error) { console.error(`[health-checkups] WhatsApp (${kind}) failed, falling back to SMS:`, error.message); }
     }
-  } else if (phoneE164) {
-    // SMS fallback when WhatsApp is not configured — self-guards (returns {success:false}) if no SMS provider.
-    jobs.push(smsService.sendSMS({ to: phoneE164, message: plainText }).catch((error) => ({ channel: 'sms', error: error.message })));
-    smsSent = true;
+    if (!delivered && smsService) {
+      // SMS fallback — only when SMS is actually configured.
+      try { smsSent = ok(await smsService.sendSMS({ to: phoneE164, message: plainText })); delivered = smsSent; }
+      catch (error) { console.error('[health-checkups] SMS fallback failed', error.message); }
+    }
+    if (!delivered) failed += 1;
   }
 
-  const results = await Promise.all(jobs);
-  return { attempted: jobs.length, failed: results.filter((r) => r?.error || r?.success === false).length, smsSent };
+  return { attempted, failed, smsSent };
 }
 
 /**
