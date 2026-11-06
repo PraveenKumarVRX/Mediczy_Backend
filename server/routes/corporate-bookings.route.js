@@ -134,7 +134,7 @@ async function sendCorporateEmail(teamUserId, { to, subject, html }) {
       tls: { rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false', minVersion: 'TLSv1.2' }
     });
 
-    const fromAddr = `"${cfg.display_name || 'Mediqzy Care'}" <${cfg.email}>`;
+    const fromAddr = `"${cfg.display_name || 'My SmartHealth Care'}" <${cfg.email}>`;
     const result = await transporter.sendMail({
       from: fromAddr,
       to,
@@ -583,7 +583,7 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, requireCorporateAcc
             `⏰ *Time:* ${checkupTime || 'As scheduled'}\n` +
             `🔖 *Ref:* ${orderNumber}\n\n` +
             `Please carry a valid ID and arrive 10 mins early.\n\n` +
-            `— Mediqzy | ${corporateName} Wellness Team`;
+            `— My SmartHealth | ${corporateName} Wellness Team`;
 
           whatsappResult = await whatsappProductionService.sendSessionMessage({
             to: phoneE164,
@@ -818,7 +818,7 @@ router.post(
                 `📅 *Date:* ${displayDate}\n` +
                 `${notes ? `📝 *Note:* ${notes}\n\n` : '\n'}` +
                 `🔗 *Download:*\n${uploadedReports[0].reportUrl}\n\n` +
-                `— Mediqzy | ${corporateName} Wellness Team`;
+                `— My SmartHealth | ${corporateName} Wellness Team`;
             } else {
               const fileLinks = uploadedReports.map((r, i) =>
                 `${i + 1}. ${r.reportName}\n   🔗 ${r.reportUrl}`
@@ -829,7 +829,7 @@ router.post(
                 `Your *${reportLabel}* reports from *${corporateName}* (${displayDate}) are now available:\n\n` +
                 `${fileLinks}\n\n` +
                 `${notes ? `📝 *Note:* ${notes}\n\n` : ''}` +
-                `— Mediqzy | ${corporateName} Wellness Team`;
+                `— My SmartHealth | ${corporateName} Wellness Team`;
             }
             await whatsappProductionService.sendSessionMessage({ to: phoneE164, body: waText });
             waStatus = 'sent';
@@ -1070,7 +1070,7 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
             `Dear ${employeeFullName},\n\n` +
             `Your *${row.report_name}* report (${displayDate}) from *${corporateName}* is available:\n\n` +
             `🔗 ${row.report_url}\n\n` +
-            `— Mediqzy | ${corporateName} Wellness Team`;
+            `— My SmartHealth | ${corporateName} Wellness Team`;
           await whatsappProductionService.sendSessionMessage({ to: phoneE164, body: waText });
           waStatus = 'sent';
         } catch (e) {
@@ -1202,7 +1202,7 @@ function buildHealthCheckupEmailHtml({ employeeName, corporateName, labName, lab
                 <li>Carry a valid government photo ID (Aadhaar / PAN / Passport)</li>
                 <li>Arrive 10 minutes before your scheduled time</li>
                 <li>Fasting may be required for certain tests — check with the lab</li>
-                <li>For queries, contact your HR or Mediqzy support</li>
+                <li>For queries, contact your HR or My SmartHealth support</li>
               </ul>
             </div>
           </td>
@@ -1210,7 +1210,7 @@ function buildHealthCheckupEmailHtml({ employeeName, corporateName, labName, lab
         <!-- Footer -->
         <tr>
           <td style="background:#f9fafb; border-top:1px solid #e5e7eb; padding:20px 40px; text-align:center;">
-            <p style="font-size:12px; color:#9ca3af; margin:0;">This is an automated notification from <strong>Mediqzy</strong> on behalf of <strong>${corporateName}</strong>.<br/>For support: <a href="mailto:support@mediqzy.com" style="color:#6366f1;">support@mediqzy.com</a></p>
+            <p style="font-size:12px; color:#9ca3af; margin:0;">This is an automated notification from <strong>My SmartHealth</strong> on behalf of <strong>${corporateName}</strong>.<br/>For support: <a href="mailto:support@mediqzy.com" style="color:#6366f1;">support@mediqzy.com</a></p>
           </td>
         </tr>
       </table>
@@ -1313,7 +1313,7 @@ function buildReportEmailHtml({ employeeName, corporateName, reportLabel, report
         <!-- Footer -->
         <tr>
           <td style="background:#f9fafb; border-top:1px solid #e5e7eb; padding:20px 40px; text-align:center;">
-            <p style="font-size:12px; color:#9ca3af; margin:0;">Sent by <strong>Mediqzy</strong> on behalf of <strong>${corporateName}</strong>.<br/>For support: <a href="mailto:support@mediqzy.com" style="color:#6366f1;">support@mediqzy.com</a></p>
+            <p style="font-size:12px; color:#9ca3af; margin:0;">Sent by <strong>My SmartHealth</strong> on behalf of <strong>${corporateName}</strong>.<br/>For support: <a href="mailto:support@mediqzy.com" style="color:#6366f1;">support@mediqzy.com</a></p>
           </td>
         </tr>
       </table>

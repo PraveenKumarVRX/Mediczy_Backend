@@ -122,7 +122,7 @@ class WhatsAppProductionService {
         `📅 *Date:* ${date}\n` +
         `🕐 *Time:* ${time}\n\n` +
         `Please carry a valid photo ID and arrive 10 minutes early.\n\n` +
-        `_Mediqzy Wellness Team_`;
+        `_My SmartHealth Wellness Team_`;
     } else {
       const doctorLine = doctorName ? `\n👨‍⚕️ ${doctorName}` : '';
       messageParams.body = `*Appointment Confirmation* ✅\n\nDear ${patientName},\n\nYour appointment has been confirmed!${doctorLine}\n📍 ${location}\n📅 Date: ${date}\n🕐 Time: ${time}\n\nPlease arrive 15 minutes early. For rescheduling or queries, contact us via this chat.\n\n_Team SmartHealth_`;

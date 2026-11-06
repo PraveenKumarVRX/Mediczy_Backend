@@ -124,7 +124,7 @@ async function sendToRecipient({ name, email, phone }, booking, kind) {
   const phoneE164 = normalisePhone(phone);
   if (phoneE164) {
     attempted += 1;
-    const plainText = `Mediczy: Your ${packageName} health checkup ${copy.line} on ${date} at ${booking.timeSlot}, ${location || 'the diagnostic centre'}. Ref ${booking.bookingReference}. ${copy.closing}`.trim();
+    const plainText = `My SmartHealth: Your ${packageName} health checkup ${copy.line} on ${date} at ${booking.timeSlot}, ${location || 'the diagnostic centre'}. Ref ${booking.bookingReference}. ${copy.closing}`.trim();
     let delivered = false;
     if (whatsappProductionService?.configured) {
       try { delivered = ok(await sendWhatsappForKind(kind, { to: phoneE164, name, date, time: booking.timeSlot, location, plainText })); }
