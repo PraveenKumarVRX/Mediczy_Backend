@@ -126,7 +126,7 @@ async function notifyEmployee(letter, kind = 'issued') {
     const digits = String(emp.phone || '').replace(/\D/g, '');
     if (digits.length >= 10 && whatsappProductionService?.configured) {
       const to = digits.startsWith('91') ? `+${digits}` : `+91${digits}`;
-      await whatsappProductionService.sendSessionMessage({ to, body: `Dear ${name}, ${line}\n— Mediqzy` }).catch(() => {});
+      await whatsappProductionService.sendSessionMessage({ to, body: `Dear ${name}, ${line}\n— My SmartHealth` }).catch(() => {});
     }
   } catch (e) {
     console.error('[corporate-referral] notify failed:', e.message);
