@@ -21,6 +21,7 @@ import { saveCorporateHealthReports } from '../services/corporate-health-reports
 import { corporateReportDownloadUrl } from '../services/corporate-report-storage-client.js';
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 import { computeReportSla } from '../services/corporate-wellness-mis.service.js';
+import { notifyBooking } from '../services/health-checkup-notify.service.js';
 
 // ──────────────────────────────────────────────
 // Reports are stored in MinIO via uploadToMinio service
@@ -1321,5 +1322,201 @@ function buildReportEmailHtml({ employeeName, corporateName, reportLabel, report
 </body>
 </html>`;
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Employee-initiated AHC lifecycle (health_checkup_bookings) — Team approval surface.
+// Distinct from the Team-initiated lab_orders flow above. Flow:
+//   booked → (approve) confirmed → (complete) completed → (upload report) reports_available
+// ════════════════════════════════════════════════════════════════════════════════
+
+const teamCheckupView = (r) => {
+  const snap = (v) => { if (!v) return {}; if (typeof v === 'object' && !Array.isArray(v)) return v; try { const x = JSON.parse(v); return x && typeof x === 'object' ? x : {}; } catch { return {}; } };
+  const patient = snap(r.patient_details);
+  const lab = snap(r.lab_snapshot);
+  const refs = Array.isArray(r.report_refs) ? r.report_refs : (() => { try { return JSON.parse(r.report_refs || '[]'); } catch { return []; } })();
+  return {
+    id: String(r.id),
+    bookingReference: r.booking_reference,
+    status: r.status,
+    employee: { id: r.user_id, name: r.employee_name || patient.name || null, email: r.employee_email || null, phone: patient.phone || r.employee_phone || null },
+    beneficiary: { name: patient.name || null, relation: r.beneficiary_relation || 'self' },
+    packageName: r.package_name,
+    lab: { name: lab.name || null, address: lab.address || null },
+    appointment: { date: r.appointment_date, timeSlot: r.time_slot },
+    reportCount: refs.length,
+    approvedAt: r.approved_at || null,
+    completedAt: r.completed_at || null,
+    reportsAvailableAt: r.reports_available_at || null,
+    createdAt: r.created_at,
+  };
+};
+
+async function loadCheckup(id) {
+  const [row] = await postgresSequelize.query(
+    `SELECT b.*, u."firstName", u."lastName", u.email AS employee_email, u."phoneNumber" AS employee_phone,
+            TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name
+       FROM health_checkup_bookings b LEFT JOIN users u ON u.id = b.user_id
+      WHERE b.id = :id LIMIT 1`,
+    { replacements: { id }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  return row || null;
+}
+
+// GET /api/corporate-bookings/checkups?corporateId=&status=
+router.get('/checkups', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const rows = await postgresSequelize.query(
+      `SELECT b.*, u."firstName", u."lastName", u.email AS employee_email, u."phoneNumber" AS employee_phone,
+              TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name
+         FROM health_checkup_bookings b LEFT JOIN users u ON u.id = b.user_id
+        WHERE b.corporate_id = :corporateId AND (:status = '' OR b.status = :status)
+        ORDER BY (b.status = 'booked') DESC, b.appointment_date ASC, b.created_at DESC
+        LIMIT 200`,
+      { replacements: { corporateId: req.resolvedCorporate.id, status: String(status || '').trim() }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({ success: true, checkups: rows.map(teamCheckupView) });
+  } catch (err) {
+    console.error('[corporate-bookings] GET /checkups error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/corporate-bookings/pending-approvals?corporateId= — employee bookings awaiting confirmation
+router.get('/pending-approvals', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
+  try {
+    const rows = await postgresSequelize.query(
+      `SELECT b.*, u."firstName", u."lastName", u.email AS employee_email, u."phoneNumber" AS employee_phone,
+              TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name
+         FROM health_checkup_bookings b LEFT JOIN users u ON u.id = b.user_id
+        WHERE b.corporate_id = :corporateId AND b.status = 'booked'
+        ORDER BY b.appointment_date ASC, b.created_at ASC LIMIT 200`,
+      { replacements: { corporateId: req.resolvedCorporate.id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({ success: true, checkups: rows.map(teamCheckupView) });
+  } catch (err) {
+    console.error('[corporate-bookings] GET /pending-approvals error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/corporate-bookings/checkups/:id/approve  (booked → confirmed)
+router.post('/checkups/:id/approve', authUser, requireTeamOrAdmin, async (req, res) => {
+  try {
+    const booking = await loadCheckup(req.params.id);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (!(await assertCorporateAccessForId(req, res, booking.corporate_id))) return;
+    if (booking.status !== 'booked') return res.status(409).json({ success: false, message: 'Only a booking awaiting confirmation can be approved' });
+    const instructions = req.body?.instructions ? String(req.body.instructions).slice(0, 4000) : null;
+    const [row] = await postgresSequelize.query(
+      `UPDATE health_checkup_bookings
+          SET status='confirmed', approved_by_user_id=:by, approved_at=NOW(), approval_note=:note,
+              instructions=COALESCE(:instructions, instructions), updated_at=NOW()
+        WHERE id=:id AND status='booked' RETURNING *`,
+      { replacements: { id: booking.id, by: req.user.id, note: req.body?.note ? String(req.body.note).slice(0, 500) : null, instructions }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
+    void notifyBooking(row, 'approved').catch((e) => console.error('[corporate-bookings] approve notify failed', e.message));
+    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
+  } catch (err) {
+    console.error('[corporate-bookings] approve error:', err);
+    return res.status(500).json({ success: false, message: 'Unable to approve booking' });
+  }
+});
+
+// POST /api/corporate-bookings/checkups/:id/reject  (booked → cancelled)
+router.post('/checkups/:id/reject', authUser, requireTeamOrAdmin, async (req, res) => {
+  try {
+    const booking = await loadCheckup(req.params.id);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (!(await assertCorporateAccessForId(req, res, booking.corporate_id))) return;
+    if (booking.status !== 'booked') return res.status(409).json({ success: false, message: 'Only a booking awaiting confirmation can be rejected' });
+    const [row] = await postgresSequelize.query(
+      `UPDATE health_checkup_bookings SET status='cancelled', cancellation_reason=:reason, updated_at=NOW() WHERE id=:id AND status='booked' RETURNING *`,
+      { replacements: { id: booking.id, reason: (req.body?.reason ? String(req.body.reason) : 'Not approved by the wellness team').slice(0, 500) }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
+    void notifyBooking(row, 'cancelled').catch((e) => console.error('[corporate-bookings] reject notify failed', e.message));
+    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
+  } catch (err) {
+    console.error('[corporate-bookings] reject error:', err);
+    return res.status(500).json({ success: false, message: 'Unable to reject booking' });
+  }
+});
+
+// POST /api/corporate-bookings/checkups/:id/complete  (confirmed → completed)
+router.post('/checkups/:id/complete', authUser, requireTeamOrAdmin, async (req, res) => {
+  try {
+    const booking = await loadCheckup(req.params.id);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (!(await assertCorporateAccessForId(req, res, booking.corporate_id))) return;
+    if (!['confirmed', 'scheduled', 'rescheduled'].includes(booking.status)) return res.status(409).json({ success: false, message: 'Only a confirmed booking can be marked completed' });
+    const [row] = await postgresSequelize.query(
+      `UPDATE health_checkup_bookings SET status='completed', completed_at=NOW(), updated_at=NOW()
+        WHERE id=:id AND status IN ('confirmed','scheduled','rescheduled') RETURNING *`,
+      { replacements: { id: booking.id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
+    void notifyBooking(row, 'completed').catch((e) => console.error('[corporate-bookings] complete notify failed', e.message));
+    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
+  } catch (err) {
+    console.error('[corporate-bookings] complete error:', err);
+    return res.status(500).json({ success: false, message: 'Unable to mark booking completed' });
+  }
+});
+
+// POST /api/corporate-bookings/checkups/:id/reports  (attach report(s) → reports_available)
+router.post(
+  '/checkups/:id/reports',
+  authUser,
+  requireTeamOrAdmin,
+  (req, res, next) => reportUpload.array('reports', 10)(req, res, (error) => {
+    if (!error) return next();
+    return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ success: false, message: error.code === 'LIMIT_FILE_SIZE' ? 'Each report must be 25 MB or smaller' : error.message });
+  }),
+  async (req, res) => {
+    try {
+      const booking = await loadCheckup(req.params.id);
+      if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+      if (!(await assertCorporateAccessForId(req, res, booking.corporate_id))) return;
+      if (!['confirmed', 'completed', 'scheduled', 'rescheduled', 'reports_available'].includes(booking.status)) {
+        return res.status(409).json({ success: false, message: 'Reports can be attached only after the checkup is confirmed' });
+      }
+      if (!booking.user_id) return res.status(409).json({ success: false, message: 'This booking is not linked to an employee login' });
+      const files = req.files;
+      if (!files || !files.length) return res.status(400).json({ success: false, message: 'At least one report file is required' });
+
+      const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.reportDate || '')) ? req.body.reportDate : new Date().toISOString().slice(0, 10);
+      const reportType = 'annual_health_checkup';
+      const corporateName = req.body?.corporateName || '';
+      const reportName = String(req.body?.reportName || `${booking.package_name} report`).slice(0, 255);
+      const checkupCompletedAt = new Date(`${reportDate}T00:00:00.000Z`);
+      const deliveredAt = new Date();
+      const sla = computeReportSla(checkupCompletedAt, deliveredAt);
+
+      const saved = await saveCorporateHealthReports({
+        corporateId: booking.corporate_id, employeeId: booking.user_id, uploadedBy: req.user.id, files,
+        reportName, reportType, reportDate, labOrderId: null, notes: req.body?.notes || '', corporateName,
+        reportLabel: 'Annual Health Checkup', checkupCompletedAt, deliveredAt, sla,
+        patientReportType: (mime) => mapCorporateReportTypeToPatientReportType(reportType, mime),
+      });
+
+      const newRefs = saved.map((s) => ({ id: s.id, patientReportId: s.patientReportId, key: s.key, bucket: s.bucket, reportName: s.reportName, mimeType: s.mimeType, uploadedAt: new Date().toISOString(), uploadedBy: req.user.id }));
+      const [row] = await postgresSequelize.query(
+        `UPDATE health_checkup_bookings
+            SET report_refs = COALESCE(report_refs, '[]'::jsonb) || CAST(:refs AS JSONB),
+                status='reports_available', reports_available_at=NOW(),
+                completed_at=COALESCE(completed_at, NOW()), updated_at=NOW()
+          WHERE id=:id RETURNING *`,
+        { replacements: { id: booking.id, refs: JSON.stringify(newRefs) }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      void notifyBooking(row, 'reports_available').catch((e) => console.error('[corporate-bookings] reports notify failed', e.message));
+      return res.status(201).json({ success: true, attached: newRefs.length, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
+    } catch (err) {
+      console.error('[corporate-bookings] attach reports error:', err);
+      return res.status(err.status || err.statusCode || 500).json({ success: false, code: err.code || 'REPORT_ATTACH_FAILED', message: err.status || err.statusCode ? err.message : 'Unable to attach reports. Please retry.' });
+    }
+  }
+);
 
 export default router;

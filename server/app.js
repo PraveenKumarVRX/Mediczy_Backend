@@ -186,6 +186,7 @@ import videoEventsRouter from './routes/video-events.route.js';
 import otpRouter from './routes/otp.route.js';
 import otpTestRouter from './routes/otp.test.route.js';
 import corporateRouter from './routes/corporate.route.js';
+import corporateReferralRouter from './routes/corporate-referral.route.js';
 import aggregatorRouter from './routes/aggregator.route.js';
 import aggregatorAuthRouter from './routes/aggregator-auth.route.js';
 import cartRouter from './routes/cart.route.js';
@@ -1601,6 +1602,7 @@ app.use('/api/admin/dedicated-installations', dedicatedInstallationsRouter({ poo
 app.use('/api/field', fieldForceRouter); // Smart Force field force module (Team login, 'Field Force' permission)
 app.use('/api/crm/field-force', crmFieldForceRouter); // Field force management — Business Head CRM view
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
+app.use('/api/corporate', corporateReferralRouter); // HR-issued lab referral letters (template + issue + PDF)
 app.use('/api/aggregators', aggregatorRouter); // Aggregator organizational hierarchy
 app.use('/api/aggregator-auth', aggregatorAuthRouter); // Aggregator authentication (login/register)
 app.use('/api/corporates', aggregatorRouter); // Corporate management endpoints
