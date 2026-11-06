@@ -93,7 +93,7 @@ const ok = (r) => !(r && r.success === false); // provider helpers return {succe
  */
 function sendWhatsappForKind(kind, { to, name, date, time, location, plainText }) {
   const patientName = name || 'Member';
-  if (kind === 'reminder') return whatsappProductionService.sendAppointmentReminder({ to, patientName, doctorName: location || 'the diagnostic centre', time, location });
+  if (kind === 'reminder') return whatsappProductionService.sendHealthCheckupReminder({ to, patientName, date, time, location });
   if (CONFIRMATION_KINDS.has(kind)) return whatsappProductionService.sendAppointmentConfirmation({ to, patientName, date, time, location, isHealthCheckup: true });
   if (kind === 'reports_available') return whatsappProductionService.sendHealthReportReady({ to, patientName, reportUrl: PATIENT_APP_URL });
   if (typeof whatsappProductionService.sendSessionMessage === 'function') return whatsappProductionService.sendSessionMessage({ to, body: `Dear ${patientName},\n${plainText}` });
