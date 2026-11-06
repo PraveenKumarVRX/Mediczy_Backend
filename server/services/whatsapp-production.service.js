@@ -39,6 +39,7 @@ class WhatsAppProductionService {
       prescription: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_PRESCRIPTION : process.env.WHATSAPP_TEMPLATE_PRESCRIPTION),
       otp: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_OTP : process.env.WHATSAPP_TEMPLATE_OTP),
       checkupReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_CHECKUP_REMINDER : process.env.WHATSAPP_TEMPLATE_CHECKUP_REMINDER),
+      healthCheckupReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_HEALTH_CHECKUP_REMINDER : process.env.WHATSAPP_TEMPLATE_HEALTH_CHECKUP_REMINDER),
       membershipRenewalReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER : process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER),
       membershipRenewalPayment: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT : process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT),
       membershipPlanActivated: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_PLAN_ACTIVATED : process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_PLAN_ACTIVATED),
@@ -151,6 +152,29 @@ class WhatsAppProductionService {
     }
 
     return await this.sendMessageParams(messageParams, 'appointmentReminder');
+  }
+
+  /**
+   * Send a health-checkup reminder. Dedicated template (no doctor variable) so the AHC
+   * reminder maps cleanly to [name, date, time, venue] — distinct from the doctor
+   * appointmentReminder template whose {{2}} is the doctor name.
+   */
+  async sendHealthCheckupReminder({ to, patientName, date, time, location }) {
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
+    }
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+    if (this.templates.healthCheckupReminder) {
+      messageParams.contentSid = this.templates.healthCheckupReminder;
+    }
+    messageParams.contentVariables = JSON.stringify({ '1': patientName, '2': date, '3': time, '4': location });
+    messageParams.body =
+      `*Health Checkup Reminder* 🏥\n\n` +
+      `Dear ${patientName}, your health checkup is on ${date} at ${time}.\n` +
+      `📍 ${location}\n\n` +
+      `Please carry a valid photo ID and arrive 10 minutes early.\n\n` +
+      `_My SmartHealth Wellness Team_`;
+    return await this.sendMessageParams(messageParams, 'healthCheckupReminder');
   }
 
   /**
