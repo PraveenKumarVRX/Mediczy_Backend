@@ -2670,7 +2670,7 @@ const Index = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-800 dark:text-white truncate">{apt.doctorName || apt.doctor?.name || "Doctor"}</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">{apt.specialty || apt.doctor?.specialization || apt.doctor?.specialty || "Specialty not provided"}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{apt.specialty || apt.doctor?.specialization || apt.doctor?.specialty || "General Physician"}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-slate-800 dark:text-white">
