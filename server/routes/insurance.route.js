@@ -597,4 +597,18 @@ router.post('/claims', authUser, [
   }
 });
 
+// Patient's own insurance claims (the app calls GET /insurance/claims?policyId&limit).
+router.get('/claims', authUser, async (req, res) => {
+  try {
+    const where = { userId: req.user.id };
+    if (req.query.policyId && /^\d+$/.test(String(req.query.policyId))) where.userInsuranceId = Number(req.query.policyId);
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const claims = await InsuranceClaim.findAll({ where, order: [['createdAt', 'DESC']], limit });
+    return res.json({ success: true, claims });
+  } catch (e) {
+    console.error('[insurance] GET /claims error:', e.message);
+    return res.status(500).json({ success: false, message: 'Unable to load your claims' });
+  }
+});
+
 export default router;

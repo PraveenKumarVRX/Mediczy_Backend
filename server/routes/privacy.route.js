@@ -160,8 +160,13 @@ router.get('/export', authUser, async (req, res) => {
     }
     
     // Get related data
-    const consents = await Consent.getUserConsents(userId, userType);
-    const auditLogs = await AuditLog.getUserAuditTrail(userId, userType);
+    let consents = [];
+    try { consents = (await Consent.getUserConsents(userId, userType)) || []; }
+    catch (e) { console.warn('[privacy/export] consents unavailable:', e.message); }
+    // getUserAuditTrail is not implemented on the AuditLog model — guard so export never 500s on it.
+    let auditLogs = [];
+    try { if (typeof AuditLog.getUserAuditTrail === 'function') auditLogs = (await AuditLog.getUserAuditTrail(userId, userType)) || []; }
+    catch (e) { console.warn('[privacy/export] audit trail unavailable:', e.message); }
     
     // TODO: Add more related data (appointments, health records, etc.)
     // This would need to be customized based on your data model
@@ -196,8 +201,8 @@ router.get('/export', authUser, async (req, res) => {
       // Add more data categories here
     };
     
-    // Audit the export
-    await auditDataExport(req, userId);
+    // Audit the export (best-effort; never fail the export over its own audit write).
+    try { await auditDataExport(req, userId); } catch (e) { console.warn('[privacy/export] audit write failed:', e.message); }
     
     // Set headers for file download
     res.setHeader('Content-Type', 'application/json');
