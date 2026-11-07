@@ -2,7 +2,7 @@
  * Downloads are authorized before a short-lived signed URL is issued.
  */
 import { CreateBucketCommand, HeadBucketCommand, BucketAlreadyOwnedByYou, BucketAlreadyExists } from '@aws-sdk/client-s3';
-import { getCorporateReportClient } from './corporate-report-storage-client.js';
+import { getCorporateReportClient, corporateReportsUseS3 } from './corporate-report-storage-client.js';
 
 const BUCKET_PREFIX = process.env.MINIO_CORPORATE_BUCKET_PREFIX || 'mediczy-corp-health';
 
@@ -22,6 +22,15 @@ export function normalizeCorporateId(corporateId) {
 export function getCorporateHealthReportsBucket(corporateId) {
   const id = normalizeCorporateId(corporateId);
   if (!id) throw new Error('corporateId is required to resolve a per-corporate health-reports bucket');
+  // Default backend is the shared platform AWS S3 bucket; per-corporate
+  // isolation is by key prefix (health-reports/corp-<id>/emp-<id>/...), not by
+  // a separate bucket (S3 bucket names are globally unique — one per corporate
+  // does not scale and would require s3:CreateBucket).
+  if (corporateReportsUseS3()) {
+    const b = process.env.CORPORATE_REPORTS_S3_BUCKET || process.env.S3_UPLOADS_BUCKET;
+    if (!b) throw Object.assign(new Error('Corporate report S3 bucket (S3_UPLOADS_BUCKET) is not configured'), { status: 503, code: 'REPORT_STORAGE_NOT_CONFIGURED' });
+    return b;
+  }
   return process.env.CORPORATE_REPORTS_MINIO_BUCKET || process.env.PACS_ARCHIVE_MINIO_BUCKET || `${BUCKET_PREFIX}-c${id}`.toLowerCase().slice(0,63);
 }
 
@@ -34,6 +43,10 @@ export function getCorporateHealthReportsBucket(corporateId) {
  */
 export async function ensureCorporateHealthReportsBucket(corporateId) {
   const bucket = getCorporateHealthReportsBucket(corporateId);
+  // Shared, pre-existing platform S3 bucket — never try to create it (the
+  // write IAM identity isn't expected to hold s3:CreateBucket, and the bucket
+  // is already provisioned for web uploads).
+  if (corporateReportsUseS3()) return { bucket, created: false };
   const client = getCorporateReportClient();
 
   try {
