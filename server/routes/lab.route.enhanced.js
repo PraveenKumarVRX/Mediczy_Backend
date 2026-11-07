@@ -3,6 +3,7 @@ import { Op, Sequelize } from 'sequelize';
 import Lab from '../models/postgres/lab.model.postgres.js';
 import FamilyMember from '../models/postgres/family-member.model.postgres.js';
 import { Appointment } from '../models/index.js';
+import { Order as BillingOrder } from '../models/billing.model.intelligent.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { orchestrator } from '../db/orchestrator.js';
 
@@ -873,6 +874,29 @@ router.post('/book', authUser, async (req, res) => {
       appointmentTime
     });
 
+    // Payment bridge: a fee-bearing lab booking also gets a billing Order (orderType lab_test) linked
+    // to the appointment, so the app pays via the existing /billing/payments/razorpay/create + /verify
+    // (which also yields Payment records and refunds). verify propagates 'paid' back to the appointment.
+    let paymentOrder = null;
+    if (Number(totalFee) > 0) {
+      try {
+        paymentOrder = await BillingOrder.create({
+          orderNumber: `LABAPT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          userId: req.user.id,
+          orderType: 'lab_test',
+          status: 'pending',
+          subtotal: Number(totalFee),
+          total: Number(totalFee),
+          currency: 'INR',
+          metadata: { source: 'lab_appointment', appointmentId: appointment.id, labId, labName: lab.name },
+          notes: (tests || []).map(t => t.name).filter(Boolean).join(', '),
+        });
+      } catch (ordErr) {
+        console.error('[Lab Booking] payment order create failed (booking still valid):', ordErr.message);
+      }
+    }
+    const paymentRequired = Number(totalFee) > 0;
+
     res.status(201).json({
       success: true,
       message: 'Lab appointment booked successfully',
@@ -887,8 +911,10 @@ router.post('/book', authUser, async (req, res) => {
         testType,
         tests,
         totalFee,
-        status: 'scheduled'
-      }
+        status: 'scheduled',
+        paymentStatus: paymentRequired ? 'payment_pending' : 'not_required'
+      },
+      payment: { required: paymentRequired, orderId: paymentOrder?.id || null, amount: Number(totalFee) || 0, currency: 'INR' }
     });
   } catch (error) {
     console.error('[Lab Booking] ❌ Error:', error);
