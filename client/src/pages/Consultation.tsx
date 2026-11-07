@@ -329,6 +329,10 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
   };
 };
 
+// Inline placeholder shown when a doctor has no photo or the image URL is broken, so the
+// circle never collapses to the doctor's name as alt text.
+const DOCTOR_AVATAR_FALLBACK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%23e2e8f0'/%3E%3Cpath d='M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4 0-7 2-7 5v1h14v-1c0-3-3-5-7-5z' fill='%2394a3b8'/%3E%3C/svg%3E";
+
 const Consultation = () => {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -585,7 +589,7 @@ const Consultation = () => {
                           <div className="flex items-start gap-6 mb-6">
                             <div className="relative">
                 <img
-                  src={doctor.profileImage || "/default-doctor.png"}
+                  src={doctor.profileImage || DOCTOR_AVATAR_FALLBACK} onError={(e) => { const t = e.currentTarget as HTMLImageElement; t.onerror = null; t.src = DOCTOR_AVATAR_FALLBACK; }}
                   alt={`${doctor.firstName} ${doctor.lastName}`}
                                 className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-700 shadow-md"
                               />
@@ -749,7 +753,7 @@ const Consultation = () => {
                       <div className="flex items-center gap-5 mb-5">
                         <div className="relative">
                           <img
-                            src={doctor.profileImage || "/default-doctor.png"}
+                            src={doctor.profileImage || DOCTOR_AVATAR_FALLBACK} onError={(e) => { const t = e.currentTarget as HTMLImageElement; t.onerror = null; t.src = DOCTOR_AVATAR_FALLBACK; }}
                             alt={`${doctor.firstName} ${doctor.lastName}`}
                             className="w-16 h-16 rounded-full object-cover ring-2 ring-slate-200 dark:ring-slate-700 group-hover:ring-teal-400/50 dark:group-hover:ring-teal-500/50 transition-all"
                           />
