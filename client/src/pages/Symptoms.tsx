@@ -135,8 +135,8 @@ const Symptoms = () => {
 
     let report = "30-Day Symptom Report\n";
     report += "===================\n\n";
-    report += `Generated on: ${new Date().toLocaleDateString()}\n`;
-    report += `Period: ${thirtyDaysAgo.toLocaleDateString()} to ${new Date().toLocaleDateString()}\n\n`;
+    report += `Generated on: ${new Date().toLocaleDateString('en-IN')}\n`;
+    report += `Period: ${thirtyDaysAgo.toLocaleDateString('en-IN')} to ${new Date().toLocaleDateString('en-IN')}\n\n`;
 
     // Add summary section
     const symptomCounts: Record<string, number> = {};
@@ -159,7 +159,7 @@ const Symptoms = () => {
     report += "-----------\n\n";
 
     recentSymptoms.forEach((symptom) => {
-      report += `Date: ${new Date(symptom.date).toLocaleDateString()}\n`;
+      report += `Date: ${new Date(symptom.date).toLocaleDateString('en-IN')}\n`;
       report += `Symptom: ${symptom.name}\n`;
       report += `Severity: ${symptom.severity}/5\n`;
       report += `Frequency: ${symptom.frequency}\n`;
@@ -221,8 +221,8 @@ const Symptoms = () => {
   const filteredSymptoms = filterDate
     ? symptoms.filter(
         (s) =>
-          new Date(s.date).toLocaleDateString() ===
-          new Date(filterDate).toLocaleDateString()
+          new Date(s.date).toLocaleDateString('en-IN') ===
+          new Date(filterDate).toLocaleDateString('en-IN')
       )
     : symptoms;
 
@@ -447,7 +447,7 @@ const Symptoms = () => {
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Clock className="h-4 w-4" />
-                            {new Date(symptom.date).toLocaleDateString()}
+                            {new Date(symptom.date).toLocaleDateString('en-IN')}
                           </span>
                           <span className="flex items-center gap-1">
                             <Activity className="h-4 w-4" />
@@ -613,7 +613,7 @@ const Symptoms = () => {
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
-                              {new Date(symptom.date).toLocaleDateString()}
+                              {new Date(symptom.date).toLocaleDateString('en-IN')}
                             </span>
                             <span className="flex items-center gap-1">
                               <Activity className="h-4 w-4" />

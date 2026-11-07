@@ -818,7 +818,7 @@ export default function MedicinePage() {
 
                       <div className="text-sm">
                         <span className="text-gray-400">Next Refill:</span>
-                        <p className="font-medium text-gray-200">{new Date(medication.nextRefillDate).toLocaleDateString()}</p>
+                        <p className="font-medium text-gray-200">{new Date(medication.nextRefillDate).toLocaleDateString('en-IN')}</p>
                       </div>
 
                       <Separator className="bg-[#00FFF3]/10" />

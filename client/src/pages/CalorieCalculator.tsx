@@ -198,7 +198,7 @@ const CalorieCalculator = () => {
                         ))}
                       </div>
                       <div className="text-xs text-muted-foreground mt-2">
-                        Saved on {new Date(meal.date).toLocaleDateString()}
+                        Saved on {new Date(meal.date).toLocaleDateString('en-IN')}
                       </div>
                     </Card>
                   ))

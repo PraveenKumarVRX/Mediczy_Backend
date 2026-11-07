@@ -81,7 +81,7 @@ const MyFitnessCertificates = () => {
                       <CardTitle className="text-base">{c.employer_name || 'Fitness Certificate'}</CardTitle>
                       <CardDescription className="flex items-center gap-1.5 mt-1">
                         <CalendarDays className="h-3.5 w-3.5" />
-                        Examined {new Date(c.examination_date).toLocaleDateString()} by {c.issued_by}
+                        Examined {new Date(c.examination_date).toLocaleDateString('en-IN')} by {c.issued_by}
                       </CardDescription>
                     </div>
                     <Badge variant="outline" className={`text-xs py-1 px-2.5 ${meta.className}`}>
@@ -96,7 +96,7 @@ const MyFitnessCertificates = () => {
                   )}
                   <div className="flex items-center justify-between pt-2">
                     <p className="text-xs text-muted-foreground">
-                      Valid {new Date(c.valid_from).toLocaleDateString()} – {new Date(c.valid_until).toLocaleDateString()}
+                      Valid {new Date(c.valid_from).toLocaleDateString('en-IN')} – {new Date(c.valid_until).toLocaleDateString('en-IN')}
                     </p>
                     <Button size="sm" variant="outline" onClick={() => download(c.id)}>
                       <FileDown className="h-3.5 w-3.5 mr-1" /> Download PDF

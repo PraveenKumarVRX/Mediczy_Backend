@@ -97,7 +97,7 @@ export default function HealthFeedPage() {
           title: decodeTitle(item.snippet.title),
           description: item.snippet.description,
           thumbnail: item.snippet.thumbnails?.medium?.url || "/placeholder.svg",
-          publishedAt: new Date(item.snippet.publishedAt).toLocaleDateString(),
+          publishedAt: new Date(item.snippet.publishedAt).toLocaleDateString('en-IN'),
           channelTitle: item.snippet.channelTitle,
           duration,
           isShort

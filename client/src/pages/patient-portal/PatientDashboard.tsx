@@ -171,7 +171,7 @@ export default function PatientDashboard() {
                     <div>
                       <p className="font-medium text-slate-900">{report.fileName || 'Report'}</p>
                       <p className="text-sm text-slate-500">
-                        {report.reportType || 'general'} · {report.createdAt ? new Date(report.createdAt).toLocaleDateString() : ''}
+                        {report.reportType || 'general'} · {report.createdAt ? new Date(report.createdAt).toLocaleDateString('en-IN') : ''}
                       </p>
                     </div>
                     {report.fileUrl && (

@@ -1645,7 +1645,7 @@ const Index = () => {
                   <HeartPulse className="w-6 h-6" />
                 </div>
                 <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
-                  {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                  {new Date().toLocaleDateString('en-IN', { weekday: 'long', month: 'short', day: 'numeric' })}
                 </Badge>
               </div>
               <h1 className="text-2xl md:text-3xl font-bold mb-2">
@@ -2489,7 +2489,7 @@ const Index = () => {
                             </div>
                           )}
                           <p className="text-[10px] text-slate-500">
-                            {device.lastSync ? `Last seen ${new Date(device.lastSync).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : 'Not seen in this browser session'}
+                            {device.lastSync ? `Last seen ${new Date(device.lastSync).toLocaleString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })}` : 'Not seen in this browser session'}
                           </p>
                         </div>
                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-teal-400 hover:bg-teal-500/10" title="Sync Now" onClick={() => syncDevice(device.id)}>
@@ -2674,7 +2674,7 @@ const Index = () => {
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-slate-800 dark:text-white">
-                          {new Date(apt.date || apt.appointmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          {new Date(apt.date || apt.appointmentDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
                         </p>
                         <p className="text-xs text-teal-600 dark:text-teal-400 font-medium">{slotTime(apt.time || apt.appointmentTime)}</p>
                       </div>

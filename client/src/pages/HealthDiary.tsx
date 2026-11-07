@@ -314,7 +314,7 @@ const HealthDiary: React.FC = () => {
       d.setDate(d.getDate() - (13 - i));
       d.setHours(0, 0, 0, 0);
       const count = entries.filter(e => eventDate(e).toDateString() === d.toDateString()).length;
-      return { date: d, count, label: d.toLocaleDateString('en-US', { weekday: 'short' }) };
+      return { date: d, count, label: d.toLocaleDateString('en-IN', { weekday: 'short' }) };
     });
   }, [entries]);
 
@@ -350,7 +350,7 @@ const HealthDiary: React.FC = () => {
       .map(([key, items]) => {
         const label = key === today ? 'Today'
           : key === yesterday ? 'Yesterday'
-          : new Date(key).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+          : new Date(key).toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
         return { key, label, items: [...items].sort((a, b) => eventDate(b).getTime() - eventDate(a).getTime()) };
       });
   }, [filteredEntries]);
@@ -604,7 +604,7 @@ const HealthDiary: React.FC = () => {
                         {src.lastSync && (
                           <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />
-                            Last: {new Date(src.lastSync).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            Last: {new Date(src.lastSync).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
                         )}
                       </div>
@@ -671,7 +671,7 @@ const HealthDiary: React.FC = () => {
               })}
             </div>
             <div className="flex justify-between mt-1 text-[9px] text-slate-400">
-              <span>{sparkline[0].date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+              <span>{sparkline[0].date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}</span>
               <span className="text-teal-600 font-semibold">Today</span>
             </div>
           </div>

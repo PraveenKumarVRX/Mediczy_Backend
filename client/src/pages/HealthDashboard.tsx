@@ -936,7 +936,7 @@ const HealthDashboard = () => {
                           ></div>
                         </div>
                         <p className="text-sm text-slate-600 dark:text-slate-400">
-                          {goal.current} / {goal.target} {goal.unit} • Due {new Date(goal.deadline).toLocaleDateString()}
+                          {goal.current} / {goal.target} {goal.unit} • Due {new Date(goal.deadline).toLocaleDateString('en-IN')}
                         </p>
                       </div>
                     ))}

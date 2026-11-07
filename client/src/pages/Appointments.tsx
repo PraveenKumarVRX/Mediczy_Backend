@@ -1013,7 +1013,7 @@ const Appointments = () => {
                           <div className="flex items-center gap-4 text-sm text-gray-400">
                             <div className="flex items-center gap-1">
                               <Calendar className="h-4 w-4" />
-                              {new Date(appointment.date).toLocaleDateString()}
+                              {new Date(appointment.date).toLocaleDateString('en-IN')}
                             </div>
                             <div className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
@@ -1144,7 +1144,7 @@ const Appointments = () => {
                           <div className="flex items-center gap-4 text-sm text-gray-500">
                             <div className="flex items-center gap-1">
                               <Calendar className="h-4 w-4" />
-                              {new Date(appointment.date).toLocaleDateString()}
+                              {new Date(appointment.date).toLocaleDateString('en-IN')}
                             </div>
                             <div className="flex items-center gap-1">
                               {getTypeIcon(appointment.channel)}
