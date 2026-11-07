@@ -11,6 +11,7 @@ import { User } from '../models/user.model.intelligent.js';
 import doctorModel from '../models/postgres/doctor.model.postgres.js';
 import { Op } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { Appointment } from '../models/index.js';
 
 const router = express.Router();
 
@@ -901,6 +902,30 @@ router.post('/payments/razorpay/verify', authUser, async (req, res) => {
       }
     } catch (pharmErr) {
       console.error(`❌ failed to mark pharmacy order paid for order ${payment.orderId}:`, pharmErr.message);
+    }
+
+    // ── Propagate the payment to a linked lab appointment (lab-payment bridge) ────────────────
+    // A fee-bearing /labs/book creates a billing Order with metadata.appointmentId. The appointments
+    // table enforces FORCE RLS, so set the per-request GUCs on this connection before the update.
+    try {
+      const linked = await Order.findByPk(payment.orderId);
+      const appointmentId = linked?.metadata?.appointmentId;
+      if (appointmentId) {
+        await sequelize.transaction(async (apptTx) => {
+          const orgRaw = Number(req.user?.organization_id ?? req.user?.organizationId);
+          await sequelize.query(
+            "SELECT set_config('app.current_org_id', :org, true), set_config('app.current_user_id', :uid, true)",
+            { replacements: { org: String(Number.isFinite(orgRaw) && orgRaw > 0 ? orgRaw : 0), uid: String(userId) }, transaction: apptTx }
+          );
+          await Appointment.update(
+            { paymentStatus: 'paid' },
+            { where: { id: appointmentId, userId }, transaction: apptTx }
+          );
+        });
+        console.log(`✅ lab appointment ${appointmentId} marked paid via order ${payment.orderId}`);
+      }
+    } catch (apptErr) {
+      console.error(`❌ failed to mark lab appointment paid for order ${payment.orderId}:`, apptErr.message);
     }
 
     await sequelize.transaction(async transaction => {
@@ -1814,6 +1839,44 @@ router.get('/doctor/stats', authDoctor, async (req, res) => {
       message: 'Failed to fetch statistics',
       error: error.message
     });
+  }
+});
+
+/**
+ * Refund a paid order (full or partial). Reusable by the cancel flow and the staff endpoint.
+ * Returns the Refund row. Throws on no successful payment / gateway failure.
+ */
+export async function refundOrder(orderId, { amount = null, reason = '', actorUserId = null } = {}) {
+  const order = await Order.findByPk(orderId);
+  if (!order) { const e = new Error('Order not found'); e.status = 404; throw e; }
+  const payment = await Payment.findOne({ where: { orderId: order.id, status: 'success' }, order: [['createdAt', 'DESC']] });
+  if (!payment || !payment.gatewayPaymentId) { const e = new Error('No captured payment to refund for this order'); e.status = 409; throw e; }
+  const refundAmount = amount != null ? Number(amount) : Number(payment.amount);
+  const gw = await paymentGateway.createRazorpayRefund(payment.gatewayPaymentId, refundAmount, { orderId: order.id, reason: String(reason || '').slice(0, 200) });
+  const refund = await Refund.create({
+    refundId: `REF_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    paymentId: payment.id, orderId: order.id, userId: order.userId,
+    amount: refundAmount, currency: order.currency || 'INR', reason: String(reason || '').slice(0, 500),
+    status: 'processing', gatewayRefundId: gw?.refundId || null,
+    metadata: { gateway: 'razorpay', initiatedBy: actorUserId },
+  });
+  await Order.update({ status: 'refunded' }, { where: { id: order.id } });
+  await Payment.update({ status: 'refunded' }, { where: { id: payment.id } });
+  return refund;
+}
+
+// Staff-initiated refund for an order (admin / team / hospital only).
+router.post('/orders/:orderId/refund', authUser, async (req, res) => {
+  const role = req.user?.role;
+  if (!req.user?.isAdmin && !['admin', 'super_admin', 'team', 'team_member', 'team_lead', 'hospital'].includes(role)) {
+    return res.status(403).json({ success: false, message: 'Refunds require admin, team or hospital access' });
+  }
+  try {
+    const refund = await refundOrder(req.params.orderId, { amount: req.body?.amount ?? null, reason: req.body?.reason || 'Staff-initiated refund', actorUserId: req.user.id });
+    return res.json({ success: true, refund: { id: refund.id, refundId: refund.refundId, amount: Number(refund.amount), status: refund.status, gatewayRefundId: refund.gatewayRefundId } });
+  } catch (e) {
+    console.error('[billing] refund error:', e.message);
+    return res.status(e.status || 500).json({ success: false, message: e.status ? e.message : 'Refund could not be processed' });
   }
 });
 
