@@ -47,6 +47,20 @@ const TIME_12H_REGEX = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
 const DOCTOR_ID_REGEX = /^\d+$/;
 const DOCTOR_PUBLIC_ID_REGEX = /^D[A-Z0-9]{5}$/i;
 
+// The doctor API returns the fee under inconsistent keys (consultationFee, onlineConsultationFee,
+// fees.online/.inPerson, bookingFee, serviceTiers[0].price) and sometimes as strings like "0.00".
+// Resolve the first POSITIVE fee for the chosen consultation type so the UI never shows "Rs -".
+const feeNum = (v: any) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
+const resolveConsultFee = (doctor: any, type?: string): number | null => {
+  if (!doctor) return null;
+  const online = feeNum(doctor.onlineConsultationFee) ?? feeNum(doctor.fees?.online) ?? feeNum(doctor.videoConsultationFee);
+  const inPerson = feeNum(doctor.inPersonConsultationFee) ?? feeNum(doctor.fees?.inPerson) ?? feeNum(doctor.clinicConsultationFee);
+  const generic = feeNum(doctor.consultationFee) ?? feeNum(doctor.serviceTiers?.[0]?.price) ?? feeNum(doctor.bookingFee) ?? feeNum(doctor.fee);
+  return (type === 'walkin' || type === 'in-person')
+    ? (inPerson ?? generic ?? online ?? null)
+    : (online ?? generic ?? inPerson ?? null);
+};
+
 const normalizeTimeString = (value?: string) => {
   if (!value) return "";
   const source = value.includes("-") ? value.split("-")[0].trim() : value.trim();
@@ -303,10 +317,7 @@ const ConsultationBooking = () => {
         return;
       }
 
-      const fee =
-        doctor?.consultationFee ??
-        doctor?.serviceTiers?.[0]?.price ??
-        0;
+      const fee = resolveConsultFee(doctor, consultationType) ?? 0;
 
       const bookingData = {
         doctorId: DOCTOR_ID_REGEX.test(doctorIdentifier)
@@ -416,7 +427,7 @@ const ConsultationBooking = () => {
                     <p className="text-gray-600">{doctor.experience} years experience</p>
                     <p className="text-gray-600">
                       Consultation Fee: ₹
-                      {doctor.consultationFee ?? doctor.serviceTiers?.[0]?.price ?? "-"}
+                      {resolveConsultFee(doctor, consultationType) ?? "-"}
                     </p>
                   </div>
                   <Button
@@ -582,7 +593,7 @@ const ConsultationBooking = () => {
                 <>
                   <CalendarCheck className="h-5 w-5 mr-2" />
                   Book Consultation - ₹
-                  {doctor?.consultationFee ?? doctor?.serviceTiers?.[0]?.price ?? "-"}
+                  {resolveConsultFee(doctor, consultationType) ?? "-"}
                 </>
               )}
             </Button>
@@ -607,7 +618,7 @@ const ConsultationBooking = () => {
                   <p><strong>Type:</strong> {consultationType === 'walkin' ? 'Walk-in' : 'Online'}</p>
                   <p>
                     <strong>Fee:</strong> ₹
-                    {doctor?.consultationFee ?? doctor?.serviceTiers?.[0]?.price ?? "-"}
+                    {resolveConsultFee(doctor, consultationType) ?? "-"}
                   </p>
                   {consultationType === 'walkin' && (
                     <label className="flex items-start gap-2 text-sm pt-2">
