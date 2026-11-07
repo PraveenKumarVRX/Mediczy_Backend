@@ -598,13 +598,24 @@ router.post('/claims', authUser, [
 });
 
 // Patient's own insurance claims (the app calls GET /insurance/claims?policyId&limit).
+// Raw SQL: the Sequelize InsuranceClaim model has drifted from the table (no userId column,
+// timestamps:true but no createdAt column), so query the real schema and scope via the
+// patient's insurances (user_insurances."userId") plus any direct patient_id linkage.
 router.get('/claims', authUser, async (req, res) => {
   try {
-    const where = { userId: req.user.id };
-    if (req.query.policyId && /^\d+$/.test(String(req.query.policyId))) where.userInsuranceId = Number(req.query.policyId);
+    const policyId = req.query.policyId && /^\d+$/.test(String(req.query.policyId)) ? Number(req.query.policyId) : null;
     const limit = Math.min(Number(req.query.limit) || 50, 100);
-    const claims = await InsuranceClaim.findAll({ where, order: [['createdAt', 'DESC']], limit });
-    return res.json({ success: true, claims });
+    const { rows } = await pool.query(
+      `SELECT c.*
+         FROM insurance_claims c
+         LEFT JOIN user_insurances ui ON ui.id = c.user_insurance_id
+        WHERE (ui."userId" = $1 OR c.patient_id = $1)
+          AND ($2::int IS NULL OR c.user_insurance_id = $2)
+        ORDER BY c.submitted_at DESC NULLS LAST
+        LIMIT $3`,
+      [req.user.id, policyId, limit]
+    );
+    return res.json({ success: true, claims: rows });
   } catch (e) {
     console.error('[insurance] GET /claims error:', e.message);
     return res.status(500).json({ success: false, message: 'Unable to load your claims' });

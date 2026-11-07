@@ -271,6 +271,8 @@ router.get('/home', authUser, async (req, res) => {
     const annualHealthCheckups = checkups.map((item) => ({
       id: String(item.id),
       name: item.name || 'Annual Health Checkup',
+      displayName: item.features?.displayName || item.metadata?.displayName
+        || String(item.name || 'Annual Health Checkup').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim(),
       validFrom: item.validFrom || null,
       validTo: item.validTo || null,
       usedAt: item.usedAt || null,
