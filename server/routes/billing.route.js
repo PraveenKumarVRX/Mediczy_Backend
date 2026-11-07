@@ -1880,4 +1880,46 @@ router.post('/orders/:orderId/refund', authUser, async (req, res) => {
   }
 });
 
+// Cancel an order (patient's own). Pending/processing orders cancel directly; a completed (paid)
+// order is refunded (reusing refundOrder) and marked refunded.
+router.post('/orders/:orderId/cancel', authUser, async (req, res) => {
+  try {
+    const order = await Order.findOne({ where: { id: req.params.orderId, userId: req.user.id } });
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (['cancelled', 'refunded'].includes(order.status)) {
+      return res.status(409).json({ success: false, message: `Order is already ${order.status}` });
+    }
+    const reason = String(req.body?.reason || 'Cancelled by customer').slice(0, 500);
+    let refund = null, finalStatus = 'cancelled';
+    if (order.status === 'completed') {
+      try { refund = await refundOrder(order.id, { reason, actorUserId: req.user.id }); finalStatus = 'refunded'; }
+      catch (e) { if (e.status !== 409) throw e; /* nothing captured to refund — just cancel */ }
+    }
+    const meta = { ...(order.metadata || {}), cancelledAt: new Date().toISOString(), cancellationReason: reason };
+    await Order.update({ status: finalStatus, metadata: meta }, { where: { id: order.id } });
+    return res.json({ success: true, order: { id: order.id, orderNumber: order.orderNumber, status: finalStatus }, refund: refund ? { id: refund.id, status: refund.status, amount: Number(refund.amount) } : null });
+  } catch (e) {
+    console.error('[billing] cancel order error:', e.message);
+    return res.status(e.status || 500).json({ success: false, message: e.status ? e.message : 'Unable to cancel the order' });
+  }
+});
+
+// Order tracking — a status timeline synthesised from the order's lifecycle timestamps.
+router.get('/orders/:orderId/tracking', authUser, async (req, res) => {
+  try {
+    const order = await Order.findOne({ where: { id: req.params.orderId, userId: req.user.id } });
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    const m = order.metadata || {};
+    const timeline = [{ status: 'placed', at: order.createdAt }];
+    if (['processing', 'completed', 'refunded'].includes(order.status)) timeline.push({ status: 'confirmed', at: m.confirmedAt || order.updatedAt });
+    if (['completed', 'refunded'].includes(order.status)) timeline.push({ status: 'completed', at: m.completedAt || order.updatedAt });
+    if (order.status === 'cancelled' || m.cancelledAt) timeline.push({ status: 'cancelled', at: m.cancelledAt || order.updatedAt });
+    if (order.status === 'refunded') timeline.push({ status: 'refunded', at: order.updatedAt });
+    return res.json({ success: true, tracking: { orderNumber: order.orderNumber, status: order.status, timeline } });
+  } catch (e) {
+    console.error('[billing] order tracking error:', e.message);
+    return res.status(500).json({ success: false, message: 'Unable to load order tracking' });
+  }
+});
+
 export default router;
