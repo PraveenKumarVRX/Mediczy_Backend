@@ -2108,6 +2108,7 @@ const AppRoutes = () => {
         <Route path="/sib-control"           element={<AdminRoute><MainLayout><SIBControlDashboard /></MainLayout></AdminRoute>} />
         <Route path="/consultation"          element={<MainLayout><Consultation /></MainLayout>} />
         <Route path="/doctors"               element={<DoctorListBooking />} />
+        <Route path="/doctors/:doctorId"     element={<ConsultationBooking />} />
         <Route path="/symptoms"              element={<MainLayout><Symptoms /></MainLayout>} />
         <Route path="/medicine"              element={<MainLayout><Medicine /></MainLayout>} />
         <Route path="/chat"                  element={<ChatCall />} />
