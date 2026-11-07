@@ -253,6 +253,8 @@ import authLoginRouter from './routes/auth.login.route.js';
 import { authUser, requireRole } from './middleware/auth.middleware.js';
 import { requireAppKey } from './middleware/appAuth.middleware.js';
 import communicationRouter from './routes/communication.route.js';
+import customerCareRouter from './routes/customer-care.route.js';
+import customerCareCrmRouter from './routes/customer-care-crm.route.js';
 import assetRouter from './routes/dept/asset.route.js';
 import biomedicalRouter from './routes/dept/biomedical.route.js';
 import bloodBankRouter from './routes/dept/bloodBank.route.js';
@@ -1534,6 +1536,7 @@ app.use('/api/crm/worldclass', hospitalCrmWorldclassRouter);
 app.use('/api/crm/growth', hospitalCrmGrowthRouter); // Hospital CRM phases 2-8
 app.use('/api/crm/growth', hospitalCrmSpecialtyRouter); // Specialty, diagnostic, and digital growth domains
 app.use('/api/crm/communication-hub', hospitalCrmCommunicationHubRouter); // Brevo-style campaign and communications monitoring
+app.use('/api/crm/customer-care', customerCareCrmRouter); // Customer-care queues, knowledge and audited handoffs
 app.use('/api/crm/segments', crmSegmentsRouter);
 app.use('/api/crm/automations', crmAutomationsRouter);
 app.use('/api/rfq/underwriting', crmUnderwritingRouter); // RFQ underwriting pipeline — isolated from /api/crm; Team-only (authTeam)
@@ -1942,6 +1945,7 @@ app.use('/api/mrd', mrdModuleRouter); // Upgrade Plan A2 — Medical Records Dep
 app.use('/api/iam', iamModuleRouter); // Upgrade Plan A3 — consolidated core identity surface (additive, fronts existing routers)
 app.use('/api/india-health', indiaHealthIntelligenceRouter); // Upgrade Plan A4 — India Health Intelligence layer (additive, fronts existing ABDM/CDA/CDS-Hooks routers)
 app.use('/api/patient-copilot', patientCopilotRouter); // Upgrade Plan B6 — patient-facing record Q&A, hard-locked to req.user.id
+app.use('/api/customer-care', customerCareRouter); // Customer-safe, non-clinical task bot
 app.use('/api/specialty-module', specialtyModuleRouter); // Upgrade Plan B5 — specialty order-set/CDS engine; content stays draft-only until a named specialist approves it
 
 // ============== ENTERPRISE API v2 (New Architecture) ==============

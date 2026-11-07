@@ -470,6 +470,31 @@ router.get('/:id', authUser, async (req, res) => {
 });
 
 /**
+ * GET /api/lab-tests/:id/invoice — a structured invoice for a lab test order.
+ */
+router.get('/:id/invoice', authUser, async (req, res) => {
+  try {
+    const labTest = await LabTest.findOne({ where: { id: req.params.id, userId: req.user.id } });
+    if (!labTest) return res.status(404).json({ success: false, message: 'Lab test not found' });
+    const t = typeof labTest.toJSON === 'function' ? labTest.toJSON() : labTest;
+    const amount = Number(t.price ?? t.amount ?? t.totalAmount ?? t.totalFee ?? 0) || 0;
+    const invoice = {
+      invoiceNumber: `LAB-INV-${t.id}`,
+      date: t.createdAt || null,
+      status: t.paymentStatus || (amount > 0 ? 'pending' : 'not_required'),
+      patientName: t.patientName || null,
+      lab: { name: t.labName || null, address: t.labAddress || null },
+      items: [{ name: t.testName || t.name || 'Lab test', amount }],
+      subtotal: amount, tax: 0, total: amount, currency: t.currency || 'INR',
+    };
+    return res.json({ success: true, invoice });
+  } catch (error) {
+    console.error('[lab-tests] invoice error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to generate the invoice' });
+  }
+});
+
+/**
  * POST /api/lab-tests/:id/confirm
  * Confirm a lab test booking
  */
