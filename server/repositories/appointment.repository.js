@@ -126,6 +126,27 @@ export async function findByIdForPatient(req, id, { include = [DOCTOR_INCLUDE] }
   );
 }
 
+/**
+ * Customer-facing appointment status is deliberately a separate, named
+ * repository operation.  It is scoped to the authenticated patient and runs
+ * under the same RLS transaction as every other appointment read.
+ */
+export async function findRecentForPatient(req, { limit = 10 } = {}) {
+  const actor = await resolveActor(req);
+  if (actor.type !== 'patient' || !actor.id) return [];
+  const boundedLimit = Math.min(Math.max(Number(limit) || 10, 1), 25);
+  return withTransaction(req, (transaction) => Appointment.findAll({
+    where: { userId: actor.id },
+    attributes: [
+      'id', 'doctorName', 'specialization', 'appointmentDate', 'appointmentTime',
+      'consultationType', 'status', 'updatedAt',
+    ],
+    order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']],
+    limit: boundedLimit,
+    transaction,
+  }));
+}
+
 export async function findTodayForDoctor(req, doctorId) {
   const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const todayIST = `${nowIST.getFullYear()}-${String(nowIST.getMonth() + 1).padStart(2, '0')}-${String(nowIST.getDate()).padStart(2, '0')}`;

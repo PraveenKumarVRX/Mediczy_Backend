@@ -216,3 +216,5 @@ await runHmisExtended();
 console.log('\n==> 2026-Q4 wave');
 await runNew2026Migrations();
 console.log('\n[migrate-all] All steps completed.');
+  '20261107000100-customer-care-v1.migration.js',
+  '20261107000200-customer-care-content-owner.migration.js',

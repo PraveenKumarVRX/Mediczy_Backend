@@ -927,6 +927,35 @@ router.post('/book', authUser, async (req, res) => {
 });
 
 /**
+ * GET /api/labs/:labId/slots?date=YYYY-MM-DD — bookable slots for a lab on a date.
+ * Uses the lab's configured slots (metadata.slots) or a default working set, marking slots
+ * already taken by lab appointments that day as unavailable.
+ */
+router.get('/:labId/slots', authUser, async (req, res) => {
+  try {
+    const labId = Number(req.params.labId);
+    const date = String(req.query.date || '');
+    if (!Number.isFinite(labId) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ success: false, message: 'A valid labId and date (YYYY-MM-DD) are required' });
+    }
+    const lab = await Lab.findByPk(labId);
+    if (!lab) return res.status(404).json({ success: false, message: 'Lab not found' });
+    const configured = Array.isArray(lab.metadata?.slots) && lab.metadata.slots.length ? lab.metadata.slots.map(String) : null;
+    const base = configured || ['08:00', '09:00', '10:00', '11:00', '12:00', '16:00', '17:00', '18:00'];
+    const booked = await Appointment.findAll({
+      where: { clinicId: labId, appointmentDate: date, type: 'lab', status: { [Op.in]: ['scheduled', 'confirmed', 'rescheduled'] } },
+      attributes: ['appointmentTime'],
+    });
+    const taken = new Set(booked.map((b) => b.appointmentTime));
+    const slots = base.map((t, i) => ({ id: `slot-${i + 1}`, label: t, value: t, available: !taken.has(t) }));
+    return res.json({ success: true, date, labId: String(labId), slots });
+  } catch (error) {
+    console.error('[labs] slots error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to load available slots' });
+  }
+});
+
+/**
  * GET /api/labs/:labId/tests
  * Get available tests for a lab
  */
