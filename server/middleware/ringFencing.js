@@ -41,6 +41,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/health-data',  // BLE device health data sync
       '/api/vitals',  // Patient vitals alias -> /health-data/vitals (mobile app)
       '/api/abdm',  // ABHA / ABDM self-service (the router enforces staff-only HPR/HFR sub-routes)
+      '/api/programs',  // Health coaching programs (was 403 for patients/employees — real route, unlisted)
       '/api/health-assessment',  // Health risk assessments
       '/api/hra',  // HRA alias for health assessments
       '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
@@ -129,6 +130,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/health-data',  // BLE device health data sync
       '/api/vitals',  // Patient vitals alias -> /health-data/vitals (mobile app)
       '/api/abdm',  // ABHA / ABDM self-service (the router enforces staff-only HPR/HFR sub-routes)
+      '/api/programs',  // Health coaching programs (was 403 for patients/employees — real route, unlisted)
       '/api/health-assessment',  // Health risk assessments
       '/api/hra',  // HRA alias for health assessments
       '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
