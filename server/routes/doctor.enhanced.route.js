@@ -1369,12 +1369,33 @@ router.get('/:doctorId/slots', [
     }
 
     const slots = await doctorModel.getAvailableSlots(doctor.id, date, consultationType);
+    const hasAvailability = Array.isArray(slots) && slots.some((s) => s.available);
+
+    // BUG-02: when the requested day has no open slot, look ahead (up to 14 days,
+    // IST calendar dates) for the first day that does, so the app can offer a
+    // "next available" date instead of a dead "No slots available".
+    let nextAvailableDate = null;
+    let nextAvailableSlots = 0;
+    if (!hasAvailability) {
+      const base = new Date(`${date}T00:00:00Z`);
+      for (let i = 1; i <= 14; i++) {
+        const ds = new Date(base.getTime() + i * 86400000).toISOString().slice(0, 10);
+        try {
+          const future = await doctorModel.getAvailableSlots(doctor.id, ds, consultationType);
+          const open = (future || []).filter((s) => s.available);
+          if (open.length > 0) { nextAvailableDate = ds; nextAvailableSlots = open.length; break; }
+        } catch { /* skip an unparseable/odd day and keep scanning */ }
+      }
+    }
 
     res.json({
       success: true,
       date,
       consultationType,
-      slots
+      slots,
+      hasAvailability,
+      nextAvailableDate,
+      nextAvailableSlots
     });
   } catch (error) {
     console.error('Get slots error:', error);
