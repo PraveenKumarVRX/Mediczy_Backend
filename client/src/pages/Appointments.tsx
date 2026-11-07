@@ -14,6 +14,7 @@ import QuickAppointmentModal from "@/components/QuickAppointmentModal";
 import DoctorCallNotification from "@/components/DoctorCallNotification";
 import { drIshaAPI } from "@/services/drIsha";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
@@ -139,6 +140,7 @@ const Appointments = () => {
   const [showAIChat, setShowAIChat] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null);
   const [reminderSettings, setReminderSettings] = useState({
     enabled: true,
     timeBeforeAppointment: 30, // minutes
@@ -680,9 +682,6 @@ const Appointments = () => {
       return;
     }
 
-    const confirmed = window.confirm("Cancel this appointment?");
-    if (!confirmed) return;
-
     setActionLoadingId(appointment.id);
     try {
       await cancelMutation.mutateAsync(appointment.backendId);
@@ -1086,7 +1085,7 @@ const Appointments = () => {
                                 size="sm"
                                 className="border-red-500/30 text-red-500"
                                 disabled={actionLoadingId === appointment.id}
-                                onClick={() => handleCancelAppointment(appointment)}
+                                onClick={() => setCancelTarget(appointment)}
                               >
                                 Cancel
                               </Button>
@@ -1376,6 +1375,21 @@ const Appointments = () => {
           onOpenChange={setShowBookingModal}
         />
       </div>
+
+      <AlertDialog open={!!cancelTarget} onOpenChange={(o) => { if (!o) setCancelTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel this appointment?</AlertDialogTitle>
+            <AlertDialogDescription>This can't be undone. You can book again anytime.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep appointment</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { const t = cancelTarget; setCancelTarget(null); if (t) handleCancelAppointment(t); }}>
+              Cancel appointment
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </MainLayout>
   );
 };
