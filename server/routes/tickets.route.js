@@ -644,8 +644,16 @@ router.post('/:id/messages', auth, async (req, res) => {
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
+    // SECURITY: a non-staff user may only reply on their own ticket, and never post an internal note.
+    const isStaff = req.user?.isAdmin === true
+      || ['admin', 'super_admin', 'team', 'team_member', 'team_lead', 'support', 'support_agent', 'agent', 'hospital'].includes(req.user?.role);
+    if (!isStaff && ticket.requester?.email && req.user?.email && ticket.requester.email !== req.user.email) {
+      return res.status(404).json({ message: 'Ticket not found' });
+    }
+    const internalNote = isStaff ? isInternal : false;
+
     // Determine sender type
-    const senderType = req.user.role === 'admin' || req.user.role === 'agent' ? 'agent' : 'user';
+    const senderType = isStaff ? 'agent' : 'user';
 
     await ticket.addMessage({
       sender: {
@@ -655,7 +663,7 @@ router.post('/:id/messages', auth, async (req, res) => {
         type: senderType
       },
       content: content.trim(),
-      isInternal
+      isInternal: internalNote
     });
 
     // Mirror the message to the agent workspace
@@ -663,7 +671,7 @@ router.post('/:id/messages', auth, async (req, res) => {
       const channelName = `ticket-${ticket.ticketId || ticket._id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
       
       const senderIcon = senderType === 'agent' ? '👨‍💼' : '👤';
-      const visibilityTag = isInternal ? ' 🔒 *[INTERNAL]*' : '';
+      const visibilityTag = internalNote ? ' 🔒 *[INTERNAL]*' : '';
       
       const chatMessage = `${senderIcon} *${req.user.name}*${visibilityTag}\n\n${content.trim()}`;
       
