@@ -18,6 +18,8 @@ import { body } from 'express-validator';
 import n8nService from '../services/n8n.service.js';
 import { uploadEncryptedReport, downloadDecryptedReport } from '../services/minio-upload.service.js';
 import healthDiaryService from '../services/health-diary.service.js';
+import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import { analyzeReport } from '../services/report-analysis.service.js';
 
 const router = express.Router();
@@ -464,6 +466,61 @@ router.get('/download/:id', authUser, async (req, res) => {
       message: 'Failed to download report',
       error: error.message
     });
+  }
+});
+
+// Stream a report's bytes (shared by the authed download and the public share link).
+async function sendReportFile(report, res) {
+  const meta = report.metadata || {};
+  if (meta.storageBackend === 'corporate_minio' && !meta.encryption?.iv) {
+    return res.redirect(await corporateReportDownloadUrl(report.filePath, meta.bucket));
+  }
+  if (meta.encryption && meta.encryption.iv) {
+    const { buffer, mimeType } = await downloadDecryptedReport({
+      key: report.filePath, bucket: meta.bucket, iv: meta.encryption.iv, authTag: meta.encryption.authTag,
+      compressionMethod: meta.compressionMethod, mimeType: meta.storedMimeType || report.mimeType,
+      client: meta.storageBackend === 'corporate_minio' ? getCorporateReportClient() : undefined,
+    });
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${report.fileName}"`);
+    res.setHeader('Content-Length', buffer.length);
+    return res.send(buffer);
+  }
+  if (report.fileUrl && report.fileUrl.startsWith('http')) return res.redirect(report.fileUrl);
+  const uploadDir = path.join(__dirname, '../../uploads/reports');
+  const filePath = path.resolve(path.join(uploadDir, path.basename(report.filePath)));
+  if (!filePath.startsWith(path.resolve(uploadDir))) return res.status(403).json({ success: false, message: 'Access denied' });
+  return res.download(filePath, report.fileName);
+}
+
+// Create a time-limited, shareable link for a report (stateless signed token — no DB column).
+router.post('/:id/share-link', authUser, async (req, res) => {
+  try {
+    const report = await Report.findOne({ where: { id: req.params.id, userId: req.user.id } });
+    if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
+    const hours = Math.min(Math.max(Number(req.body?.expiresInHours) || 72, 1), 720);
+    const token = jwt.sign({ rid: report.id, uid: req.user.id, t: 'report_share' }, JWT_CONFIG.SECRET || process.env.JWT_SECRET, { expiresIn: `${hours}h` });
+    const base = process.env.PUBLIC_API_URL || 'https://app.mediqzy.com';
+    return res.json({ success: true, shareUrl: `${base}/api/reports/shared/${token}`, token, expiresAt: new Date(Date.now() + hours * 3600 * 1000).toISOString() });
+  } catch (e) {
+    console.error('[reports] share-link error:', e.message);
+    return res.status(500).json({ success: false, message: 'Unable to create a share link' });
+  }
+});
+
+// Public: open a shared report by its signed token (the token is the authorization).
+router.get('/shared/:token', async (req, res) => {
+  try {
+    let payload;
+    try { payload = jwt.verify(req.params.token, JWT_CONFIG.SECRET || process.env.JWT_SECRET); }
+    catch { return res.status(401).json({ success: false, message: 'This share link is invalid or has expired' }); }
+    if (payload?.t !== 'report_share' || !payload.rid) return res.status(401).json({ success: false, message: 'Invalid share link' });
+    const report = await Report.findOne({ where: { id: payload.rid, userId: payload.uid } });
+    if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
+    return await sendReportFile(report, res);
+  } catch (e) {
+    console.error('[reports] shared open error:', e.message);
+    if (!res.headersSent) return res.status(500).json({ success: false, message: 'Unable to open the shared report' });
   }
 });
 

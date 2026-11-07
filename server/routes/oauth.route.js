@@ -66,8 +66,9 @@ const parseMobileState = (state) => {
   }
 };
 
-const buildOAuthSuccessRedirect = ({ req, provider, token, refreshToken }) => {
+const buildOAuthSuccessRedirect = ({ req, provider, token, refreshToken, tenantId }) => {
   const mobileState = parseMobileState(req.query.state);
+  const tenantQs = tenantId != null && tenantId !== '' ? `&tenantId=${encodeURIComponent(String(tenantId))}` : '';
 
   if (mobileState?.mobileRedirectUri) {
     const params = {
@@ -77,13 +78,14 @@ const buildOAuthSuccessRedirect = ({ req, provider, token, refreshToken }) => {
       provider,
       state: mobileState.clientState,
     };
+    if (tenantId != null && tenantId !== '') params.tenantId = String(tenantId);
 
     return `${mobileState.mobileRedirectUri}${mobileState.mobileRedirectUri.includes('?') ? '&' : '?'}${toQueryString(params)}`;
   }
 
   return process.env.NODE_ENV === 'production'
-    ? `https://app.mediqzy.com/oauth-callback?token=${token}&userType=patient&provider=${provider}`
-    : `http://localhost:5173/oauth-callback?token=${token}&userType=patient&provider=${provider}`;
+    ? `https://app.mediqzy.com/oauth-callback?token=${token}&userType=patient&provider=${provider}${tenantQs}`
+    : `http://localhost:5173/oauth-callback?token=${token}&userType=patient&provider=${provider}${tenantQs}`;
 };
 
 const buildOAuthErrorRedirect = ({ req, provider, error = 'oauth_failed' }) => {
@@ -102,6 +104,8 @@ const buildOAuthErrorRedirect = ({ req, provider, error = 'oauth_failed' }) => {
 
 const handleOAuthProviderSuccess = (req, res, provider) => {
   const { user } = req.user;
+  // Carry tenant context through the callback (app convention: always return tenantId at login).
+  const tenantId = user.tenant_id || user.tenantId || user.organization_id || user.organizationId || null;
   const refreshToken = generateRefreshToken(user.id, user.role || 'patient');
   const token = jwt.sign(
     {
@@ -111,12 +115,14 @@ const handleOAuthProviderSuccess = (req, res, provider) => {
       role: user.role || 'patient',
       userType: user.userType || 'patient',
       firstName: user.firstName,
-      lastName: user.lastName
+      lastName: user.lastName,
+      tenant_id: tenantId,
+      organization_id: tenantId
     },
     JWT_CONFIG.SECRET || process.env.JWT_SECRET,
     { expiresIn: '30d' }
   );
-  const redirectUrl = buildOAuthSuccessRedirect({ req, provider, token, refreshToken });
+  const redirectUrl = buildOAuthSuccessRedirect({ req, provider, token, refreshToken, tenantId });
   res.redirect(redirectUrl);
 };
 
