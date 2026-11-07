@@ -89,7 +89,7 @@ Criticality uses the thread's own "critical / important" labels.
 | 14 | **Insurance write-offs** | Important | `createAdjustment` (contractual/write-off) via ERA | **E** |
 | 15 | **Claim-wise profitability** (claimed vs cost vs settled margin) | Important | `net_amount`, `tariff_metadata` present; **no margin/cost rollup** | **G** |
 | 16 | **NHCX** integration | Important | `nhcx-client.service.js` + webhooks + lifecycle hooks | **E** (verify prod enablement) |
-| 17 | **PM-JAY / state-scheme** workflow | Important | Ayushman eligibility/e-card/claims/status (NHA portal) | **P** (portal-scrape depth; no package-master/TMS block) |
+| 17 | **PM-JAY / state-scheme** workflow | Important | Ayushman eligibility/e-card/claims/status (NHA portal) **+ now: `scheme_packages` master (national/state, bulk-import) and `scheme_preauths` with a guarded TMS lifecycle** (initiated→submitted→query→approved→bed_blocked→claimed→closed) + Scheme Packages UI | **E** (master import + pre-auth TMS built; real HBP master to be loaded via import) |
 | 18 | **Days-in-AR / DSO** metric & trend | Important | Not computed anywhere | **G** |
 | 19 | **Denial root-cause analytics** (Pareto by CARC/RARC) | Important | Reason codes stored; no Pareto/root-cause rollup | **G** |
 | 20 | **Unified RCM cockpit** (HIS+RCM KPIs in one command center) | Important | Insurance-Desk + TPA dashboards exist but are **role-fragmented** | **P** |
@@ -129,8 +129,10 @@ Builds entirely on `insurance_claims`, `era_*`, and `payerRcmAnalytics`.
 ### Phase 3 — Profitability, scheme depth, cockpit — ~2 sprints
 1. **Claim-wise profitability** (item 15): join settled amount to case cost (package/tariff from
    `tariff_metadata` + consumables/OT where available); margin per claim/payer/specialty.
-2. **PM-JAY/state-scheme depth** (item 17): package masters, pre-auth/TMS blocking states; keep NHA portal
-   client as fallback.
+2. **PM-JAY/state-scheme depth** (item 17): **DONE** — `scheme_packages` master (national/state reference,
+   bulk-import endpoint; no fabricated rates shipped) + `scheme_preauths` with a guarded TMS lifecycle and a
+   Scheme Packages UI page. Remaining: load the official HBP master via the import endpoint, and wire a
+   scheme claim to require an approved package pre-auth. NHA portal client stays as the lookup fallback.
 3. **Unified RCM cockpit** (item 20) + **post-settlement revenue-leakage** report (item 21): one KPI command
    center (Days-in-AR, collection %, denial %, clean-claim %, aging rollforward, leakage) — pattern after the
    "RCM Command Center" reference, fed by `payerRcmAnalytics` + the new metrics. No new backend platform.

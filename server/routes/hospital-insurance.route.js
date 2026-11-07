@@ -27,6 +27,7 @@ import denialService from '../services/denial-management.service.js';
 import rcmGovernance from '../services/insurance-rcm-governance.service.js';
 import arFollowUp from '../services/ar-follow-up.service.js';
 import rcmCockpit from '../services/rcm-cockpit.service.js';
+import schemePackages from '../services/scheme-package.service.js';
 import socketService from '../services/socket.service.js';
 import cacheService from '../services/cache.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
@@ -2420,6 +2421,50 @@ router.get('/rcm/claim-realization', authUser, requireRole(['hospital', 'admin']
     const hospitalId = resolveTenantId(req.user);
     res.json({ success: true, ...(await rcmCockpit.claimRealization(hospitalId, req.query)) });
   } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+// Phase-3 PM-JAY/state-scheme: package master (national/state reference data).
+router.get('/rcm/schemes/packages', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try { res.json({ success: true, packages: await schemePackages.listPackages(req.query) }); }
+  catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.post('/rcm/schemes/packages', authUser, requireRole(['admin']), async (req, res) => {
+  try { res.status(201).json({ success: true, package: await schemePackages.upsertPackage(req.body || {}) }); }
+  catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.post('/rcm/schemes/packages/import', authUser, requireRole(['admin']), async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.packages) ? req.body.packages : Array.isArray(req.body) ? req.body : [];
+    res.json({ success: true, ...(await schemePackages.bulkImportPackages(rows, { source: req.body?.source || 'api' })) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+// Phase-3 PM-JAY/state-scheme: scheme pre-authorisation (TMS lifecycle).
+router.get('/rcm/scheme-preauths', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, preauths: await schemePackages.listSchemePreauths(hospitalId, req.query) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.post('/rcm/scheme-preauths', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    const preauth = await schemePackages.createSchemePreauth({
+      ...(req.body || {}), hospitalId, createdByUserId: req.user.id, actor: { id: req.user.id, name: req.user.name },
+    });
+    res.status(201).json({ success: true, preauth });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.post('/rcm/scheme-preauths/:id/transition', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    const preauth = await schemePackages.transitionSchemePreauth(hospitalId, req.params.id, req.body?.status, req.body || {}, { id: req.user.id, name: req.user.name });
+    res.json({ success: true, preauth });
+  } catch (error) { res.status(error.message.includes('not found') ? 404 : 400).json({ success: false, message: error.message }); }
 });
 
 router.post('/reconciliation/import', authUser, requireRole(['hospital', 'admin']), async (req, res) => {

@@ -825,6 +825,7 @@ const InsuranceDeskCompliancePage      = lazy(() => import("@/pages/insurance-de
 const InsuranceDeskMessagesPage        = lazy(() => import("@/pages/insurance-desk/InsuranceDeskMessages"));
 const InsuranceDeskReconciliationPage  = lazy(() => import("@/pages/insurance-desk/InsuranceDeskReconciliation"));
 const InsuranceDeskArQueuePage         = lazy(() => import("@/pages/insurance-desk/InsuranceDeskArQueue"));
+const InsuranceDeskSchemesPage         = lazy(() => import("@/pages/insurance-desk/InsuranceDeskSchemes"));
 const InsuranceDeskClaimDetailPage     = lazy(() => import("@/pages/insurance-desk/InsuranceDeskClaimDetail"));
 const ClaimStatusPublicPage            = lazy(() => import("@/pages/ClaimStatusPublic"));
 const InsuranceDeskPatientInsurancePage= lazy(() => import("@/pages/insurance-desk/InsuranceDeskPatientInsurance"));
@@ -1923,6 +1924,7 @@ const AppRoutes = () => {
         <Route path="/insurance-desk/messages"          element={<InsuranceDeskMessagesPage />} />
         <Route path="/insurance-desk/reconciliation"    element={<InsuranceDeskReconciliationPage />} />
         <Route path="/insurance-desk/ar-work-queue"     element={<InsuranceDeskArQueuePage />} />
+        <Route path="/insurance-desk/schemes"           element={<InsuranceDeskSchemesPage />} />
         <Route path="/insurance-desk/tpa"               element={<InsuranceDeskTPAPage />} />
         <Route path="/insurance-desk/patient-insurance" element={<InsuranceDeskPatientInsurancePage />} />
         <Route path="/insurance-desk/search"            element={<InsuranceDeskSearchPage />} />
