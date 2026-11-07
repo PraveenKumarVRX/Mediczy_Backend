@@ -769,6 +769,27 @@ const UserHealthRiskAssessment = () => {
       return;
     }
 
+    // Reject physiologically implausible values (e.g. a 30 cm waist / 10 cm neck were accepted
+    // silently and skewed the risk score). Optional fields are only checked when entered.
+    const rangeErrors: string[] = [];
+    if (heightVal < 100 || heightVal > 250) rangeErrors.push('height (100–250 cm)');
+    if (weightVal < 20 || weightVal > 300) rangeErrors.push('weight (20–300 kg)');
+    if (ageVal < 1 || ageVal > 120) rangeErrors.push('age (1–120)');
+    const waistV = parseFloat(measurements.waist);
+    if (measurements.waist && (waistV < 40 || waistV > 200)) rangeErrors.push('waist (40–200 cm)');
+    const hipV = parseFloat(measurements.hip);
+    if (measurements.hip && (hipV < 50 || hipV > 220)) rangeErrors.push('hip (50–220 cm)');
+    const neckV = parseFloat(measurements.neck);
+    if (measurements.neck && (neckV < 20 || neckV > 70)) rangeErrors.push('neck (20–70 cm)');
+    if (rangeErrors.length) {
+      toast({
+        variant: 'destructive',
+        title: 'Please check your measurements',
+        description: `These values look out of range: ${rangeErrors.join(', ')}.`,
+      });
+      return;
+    }
+
     try {
       setSubmitting(true);
       // Compute clinical scores client-side for instant display

@@ -1050,10 +1050,10 @@ const DisplayAdminPage       = lazy(() => import("@/pages/display/DisplayAdminPa
 
 // ─── PageLoader — Suspense fallback ──────────────────────────────────────────
 const PageLoader = () => (
-  <div className="flex items-center justify-center h-screen w-full bg-white">
+  <div className="flex items-center justify-center h-screen w-full bg-background">
     <div className="flex flex-col items-center gap-3">
       <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      <p className="text-sm text-gray-500">Loading…</p>
+      <p className="text-sm text-muted-foreground">Loading…</p>
     </div>
   </div>
 );
