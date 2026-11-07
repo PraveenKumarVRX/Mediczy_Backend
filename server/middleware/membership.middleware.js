@@ -37,14 +37,37 @@ const activeCorporateEmployee = async (userId) => {
   return Boolean(row);
 };
 
+// Minimal-gating policy (2026-11-07): patient flows are OPEN by default. Only this
+// explicit, short list of premium features requires an active membership plan;
+// everything else — including ALL read-only APIs (pharmacy list, prescriptions,
+// reports, etc.) — is ungated. Add a premium feature by its method + full path.
+const MEMBERSHIP_REQUIRED_FEATURES = [
+  { method: 'POST', path: '/api/family-members' },   // Add patient (family member / dependent)
+  { method: 'POST', path: '/api/pharmacy-orders' },  // Place a pharmacy order
+];
+
+// Full request path, independent of where in the stack the gate runs.
+const normalizedFullPath = (req) => {
+  const base = req.baseUrl || '';
+  const sub = !req.path || req.path === '/' ? '' : req.path.replace(/\/+$/, '');
+  return (base + sub) || '/';
+};
+
+const requiresMembership = (req) =>
+  MEMBERSHIP_REQUIRED_FEATURES.some(
+    (rule) => rule.method === req.method && normalizedFullPath(req) === rule.path
+  );
+
 /**
- * Middleware to validate user has an active membership plan
- * Sets user status to inactive if no valid membership found
+ * Membership/entitlement gate — minimal-gating model: allow by default; require an
+ * active plan only for MEMBERSHIP_REQUIRED_FEATURES. It never deactivates the
+ * account (account status is owned by syncUserStatusWithMembership), and returns a
+ * user-facing, CTA-friendly message rather than a raw "Access denied".
  */
 export const validateMembership = async (req, res, next) => {
   // Skip membership check for non-user roles
   const exemptRoles = ['admin', 'super_admin', 'system_admin', 'platform_admin', 'doctor', 'nurse', 'assistant', 'corporate', 'lab', 'team'];
-  
+
   if (exemptRoles.includes(req.userRole)) {
     return next();
   }
@@ -54,35 +77,16 @@ export const validateMembership = async (req, res, next) => {
     return next();
   }
 
-  // Do this before any individual-plan lookup or status mutation. Corporate
-  // employees may use their sponsored AHC benefits without purchasing a
-  // personal membership, while non-employees remain subject to the normal
-  // membership policy below.
+  // Minimal gating: everything except the explicit premium feature list is open,
+  // including every read-only API. This is the fix for BUG-01/05/06 + W-PLAN-2.
+  if (!requiresMembership(req)) {
+    return next();
+  }
+
+  // This IS a plan-gated premium feature. Corporate employees' premium access is
+  // funded by their employer relationship, not a personal membership.
   if (req.userRole === 'user' && await activeCorporateEmployee(req.user?.id)) {
     req.userCorporateSponsored = true;
-    return next();
-  }
-
-  // Allow read-only profile access without membership (for onboarding/account management)
-  const isProfileRead = req.method === 'GET' && req.path === '/profile';
-  if (isProfileRead) {
-    return next();
-  }
-
-  // Allow core patient records/lab flows without membership gating.
-  const membershipFreeBases = new Set([
-    '/api/lab-tests',
-    '/api/reports',
-    '/api/labs',
-    '/api/cart',
-    '/api/wallet',
-    '/api/medical-ai',       // Dr. iSHA AI consultation - free for all users
-    '/api/ai',               // General AI features
-    '/api/ai-doctor',        // AI doctor consultations
-    '/api/appointments',     // Users can always view their own appointments
-    '/api/health-assessment' // Health risk assessments are always accessible
-  ]);
-  if (membershipFreeBases.has(req.baseUrl)) {
     return next();
   }
 
@@ -141,36 +145,17 @@ export const validateMembership = async (req, res, next) => {
     });
 
     if (!activePlan) {
-      // No active membership found - user should be inactive
-      console.warn(`⚠️ User ${userId} has no active membership plan`);
-      
-      // Update user status to inactive if currently active
-      if (req.user.status === 'active') {
-        const userModel = await import('../models/user.model.intelligent.js');
-        await userModel.default.update(
-          { status: 'inactive' },
-          { where: { id: userId } }
-        );
-        await auditAccountStatusTransition(req, {
-          userId,
-          userEmail: req.user?.email,
-          fromStatus: 'active',
-          toStatus: 'inactive',
-          reasonCode: 'NO_ACTIVE_MEMBERSHIP',
-          reason: 'No active membership plan found',
-          source: 'validateMembership',
-        });
-        console.log(`❌ User ${userId} status set to inactive - no valid membership`);
-      }
-
+      // Premium feature attempted without an active plan. Do NOT deactivate the
+      // account — the user is valid, just not a member. Return a friendly CTA.
+      console.warn(`⚠️ User ${userId} attempted a plan-gated feature (${normalizedFullPath(req)}) with no active plan`);
       return res.status(403).json({
         success: false,
-        message: 'Access denied: No active membership plan found',
+        message: 'Please activate a plan to use this feature.',
         errorCode: 'MEMBERSHIP_REQUIRED',
         details: {
-          userId: userId,
+          feature: normalizedFullPath(req),
           reason: 'No active membership plan',
-          action: 'Please subscribe to a membership plan to continue using the app'
+          action: 'Activate a membership plan to continue'
         }
       });
     }
@@ -183,43 +168,24 @@ export const validateMembership = async (req, res, next) => {
     
     if (endOfDay < now) {
       console.warn(`⚠️ User ${userId} membership plan expired on ${activePlan.endDate}`);
-      
-      // Update plan status to expired
+
+      // Mark the plan expired (data hygiene). Do NOT deactivate the account here —
+      // account status is owned by syncUserStatusWithMembership.
       await UserPlan.update(
         { status: 'expired' },
         { where: { id: activePlan.id } }
       );
 
-      // Update user status to inactive
-      const userModel = await import('../models/user.model.intelligent.js');
-      await userModel.default.update(
-        { status: 'inactive' },
-        { where: { id: userId } }
-      );
-      await auditAccountStatusTransition(req, {
-        userId,
-        userEmail: req.user?.email,
-        fromStatus: req.user?.status || 'unknown',
-        toStatus: 'inactive',
-        reasonCode: 'MEMBERSHIP_EXPIRED',
-        reason: 'Membership plan expired',
-        source: 'validateMembership',
-        extra: {
-          planId: activePlan.membershipPlanId,
-          expiredOn: activePlan.endDate,
-        },
-      });
-
       return res.status(403).json({
         success: false,
-        message: 'Access denied: Membership plan has expired',
+        message: 'Your membership plan has expired. Please renew to use this feature.',
         errorCode: 'MEMBERSHIP_EXPIRED',
         details: {
-          userId: userId,
+          feature: normalizedFullPath(req),
           planId: activePlan.membershipPlanId,
           expiredOn: activePlan.endDate,
           reason: 'Membership plan expired',
-          action: 'Please renew your membership plan to continue'
+          action: 'Renew your membership plan to continue'
         }
       });
     }
