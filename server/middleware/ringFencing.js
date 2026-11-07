@@ -39,6 +39,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/apple-health',  // Apple Health integration
       '/api/health-diary',  // Health diary entries
       '/api/health-data',  // BLE device health data sync
+      '/api/vitals',  // Patient vitals alias -> /health-data/vitals (mobile app)
+      '/api/abdm',  // ABHA / ABDM self-service (the router enforces staff-only HPR/HFR sub-routes)
       '/api/health-assessment',  // Health risk assessments
       '/api/hra',  // HRA alias for health assessments
       '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
@@ -125,6 +127,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/apple-health',  // Apple Health integration
       '/api/health-diary',  // Health diary entries
       '/api/health-data',  // BLE device health data sync
+      '/api/vitals',  // Patient vitals alias -> /health-data/vitals (mobile app)
+      '/api/abdm',  // ABHA / ABDM self-service (the router enforces staff-only HPR/HFR sub-routes)
       '/api/health-assessment',  // Health risk assessments
       '/api/hra',  // HRA alias for health assessments
       '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
