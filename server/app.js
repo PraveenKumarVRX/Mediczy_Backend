@@ -2106,6 +2106,17 @@ cron.schedule('0 2 * * *', async () => {
   }
 });
 
+// ============== AR Follow-up: aging work-items + SLA escalation (01:30) ==============
+import arFollowUpService from './services/ar-follow-up.service.js';
+cron.schedule('30 1 * * *', async () => {
+  // runArEscalation() holds its own cron lease (ar_follow_up_escalation).
+  try {
+    await arFollowUpService.runArEscalation();
+  } catch (err) {
+    cronTickError('ar_follow_up_escalation', err.message);
+  }
+});
+
 // ============== ITEM-16: Audit Chain Integrity Check (daily 03:00 AM) ==============
 import { verifyChain as verifyAuditChain } from './services/audit-chain.service.js';
 

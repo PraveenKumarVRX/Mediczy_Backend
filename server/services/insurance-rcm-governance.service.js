@@ -119,6 +119,8 @@ export async function payerRcmAnalytics(hospitalId, actor, { from, to } = {}) {
   const fromDate = from ? new Date(from) : new Date(Date.now() - 90 * 86400000);
   const toDate = to ? new Date(to) : new Date();
   if (Number.isNaN(fromDate.valueOf()) || Number.isNaN(toDate.valueOf()) || fromDate >= toDate) throw new Error('Invalid reporting period');
+  // Period length in days for Days-Sales-Outstanding (DSO). DSO = AR / (claimed / days).
+  const periodDays = Math.max(1, Math.round((toDate.valueOf() - fromDate.valueOf()) / 86400000));
   return withRlsTransaction(pool, { orgId: hospitalId, userId: actor?.id || 0, isPlatformAdmin: false }, async (client) => {
     const { rows } = await client.query(
       `WITH claims AS (
@@ -134,14 +136,92 @@ export async function payerRcmAnalytics(hospitalId, actor, { from, to } = {}) {
         COALESCE(SUM(outstanding) FILTER (WHERE age_days <= 30),0) AS ar_0_30,
         COALESCE(SUM(outstanding) FILTER (WHERE age_days BETWEEN 31 AND 60),0) AS ar_31_60,
         COALESCE(SUM(outstanding) FILTER (WHERE age_days BETWEEN 61 AND 90),0) AS ar_61_90,
+        COALESCE(SUM(outstanding) FILTER (WHERE age_days BETWEEN 91 AND 180),0) AS ar_91_180,
+        COALESCE(SUM(outstanding) FILTER (WHERE age_days > 180),0) AS ar_180_plus,
         COALESCE(SUM(outstanding) FILTER (WHERE age_days > 90),0) AS ar_90_plus
       FROM claims GROUP BY payer ORDER BY outstanding_amount DESC, payer`, [hospitalId, fromDate.toISOString(), toDate.toISOString()]);
-    return { period: { from: fromDate.toISOString(), to: toDate.toISOString() }, payers: rows.map((row) => ({
-      ...row, cleanClaimRate: row.claim_count ? Number(row.clean_claim_count) / Number(row.claim_count) : 0,
+    const payers = rows.map((row) => ({
+      ...row,
+      cleanClaimRate: row.claim_count ? Number(row.clean_claim_count) / Number(row.claim_count) : 0,
       denialRate: row.claim_count ? Number(row.denied_claim_count) / Number(row.claim_count) : 0,
       collectionRate: Number(row.claimed_amount) ? Number(row.collected_amount) / Number(row.claimed_amount) : 0,
-    })) };
+      // DSO per payer: outstanding / average daily claimed over the period.
+      daysInAr: Number(row.claimed_amount) ? Math.round((Number(row.outstanding_amount) / (Number(row.claimed_amount) / periodDays)) * 10) / 10 : 0,
+    }));
+    const sum = (k) => payers.reduce((s, p) => s + Number(p[k] || 0), 0);
+    const totalClaimed = sum('claimed_amount');
+    const totalOutstanding = sum('outstanding_amount');
+    const totalClaims = payers.reduce((s, p) => s + Number(p.claim_count || 0), 0);
+    const totalClean = payers.reduce((s, p) => s + Number(p.clean_claim_count || 0), 0);
+    const totalDenied = payers.reduce((s, p) => s + Number(p.denied_claim_count || 0), 0);
+    const overall = {
+      claim_count: totalClaims,
+      claimed_amount: totalClaimed,
+      collected_amount: sum('collected_amount'),
+      outstanding_amount: totalOutstanding,
+      ar_0_30: sum('ar_0_30'), ar_31_60: sum('ar_31_60'), ar_61_90: sum('ar_61_90'),
+      ar_91_180: sum('ar_91_180'), ar_180_plus: sum('ar_180_plus'), ar_90_plus: sum('ar_90_plus'),
+      cleanClaimRate: totalClaims ? totalClean / totalClaims : 0,
+      denialRate: totalClaims ? totalDenied / totalClaims : 0,
+      collectionRate: totalClaimed ? sum('collected_amount') / totalClaimed : 0,
+      daysInAr: totalClaimed ? Math.round((totalOutstanding / (totalClaimed / periodDays)) * 10) / 10 : 0,
+    };
+    return { period: { from: fromDate.toISOString(), to: toDate.toISOString(), days: periodDays }, overall, payers };
   });
 }
 
-export default { listDenialReasonCodes, upsertDenialReasonCode, createDenialWorkItem, listDenialWorkQueue, updateDenialWorkItem, advanceDenialWorkByDenial, importEraBatch, payerRcmAnalytics };
+// Short-payments (underpayments) flagged at ERA posting — AR review list.
+export async function listShortPayments(hospitalId, { limit = 100, from, to } = {}) {
+  const lim = Math.max(1, Math.min(500, Number(limit) || 100));
+  const userId = 0;
+  return withRlsTransaction(pool, { orgId: hospitalId, userId, isPlatformAdmin: false }, async (client) => {
+    const { rows } = await client.query(
+      `SELECT e.id, e.claim_id, e.invoice_id, e.payer_name, e.check_number,
+              e.payment_amount, e.adjustment_amount, e.patient_responsibility,
+              e.expected_amount, e.shortfall_amount, e.posted_at,
+              c.claim_number, c.claim_amount, c.settled_amount, c.status AS claim_status, c.patient_id
+         FROM era_remittances e
+         LEFT JOIN insurance_claims c ON c.id = e.claim_id
+        WHERE e.hospital_id = $1 AND e.short_paid = TRUE
+          AND ($2::timestamptz IS NULL OR e.posted_at >= $2)
+          AND ($3::timestamptz IS NULL OR e.posted_at < $3)
+        ORDER BY e.shortfall_amount DESC, e.posted_at DESC
+        LIMIT $4`,
+      [hospitalId, from ? new Date(from).toISOString() : null, to ? new Date(to).toISOString() : null, lim]);
+    const totalShortfall = rows.reduce((s, r) => s + Number(r.shortfall_amount || 0), 0);
+    return { count: rows.length, totalShortfall: Math.round(totalShortfall * 100) / 100, items: rows };
+  });
+}
+
+// Denial Pareto — root-cause ranking by denial reason code (highest denied amount first).
+export async function denialPareto(hospitalId, { from, to, limit = 20 } = {}) {
+  const lim = Math.max(1, Math.min(100, Number(limit) || 20));
+  const fromDate = from ? new Date(from) : new Date(Date.now() - 180 * 86400000);
+  const toDate = to ? new Date(to) : new Date();
+  if (Number.isNaN(fromDate.valueOf()) || Number.isNaN(toDate.valueOf()) || fromDate >= toDate) throw new Error('Invalid reporting period');
+  const { rows } = await pool.query(
+    `WITH d AS (
+       SELECT COALESCE(NULLIF(TRIM(denial_code), ''), 'UNCODED') AS code,
+              COALESCE(denied_amount, 0) AS denied_amount, denial_reason
+         FROM claim_denials
+        WHERE hospital_id = $1 AND created_at >= $2 AND created_at < $3
+     )
+     SELECT d.code, COUNT(*)::int AS denial_count, COALESCE(SUM(d.denied_amount),0) AS denied_amount,
+            MAX(d.denial_reason) AS sample_reason,
+            MAX(rc.description) AS code_description, MAX(rc.category) AS category
+       FROM d
+       LEFT JOIN insurance_denial_reason_codes rc ON rc.code = d.code AND rc.active
+      GROUP BY d.code
+      ORDER BY denied_amount DESC, denial_count DESC
+      LIMIT $4`, [hospitalId, fromDate.toISOString(), toDate.toISOString(), lim]);
+  const totalDenied = rows.reduce((s, r) => s + Number(r.denied_amount || 0), 0);
+  const totalCount = rows.reduce((s, r) => s + Number(r.denial_count || 0), 0);
+  let cum = 0;
+  const items = rows.map((r) => {
+    cum += Number(r.denied_amount || 0);
+    return { ...r, cumulativePct: totalDenied ? Math.round((cum / totalDenied) * 1000) / 10 : 0 };
+  });
+  return { period: { from: fromDate.toISOString(), to: toDate.toISOString() }, totalDenied: Math.round(totalDenied * 100) / 100, totalCount, items };
+}
+
+export default { listDenialReasonCodes, upsertDenialReasonCode, createDenialWorkItem, listDenialWorkQueue, updateDenialWorkItem, advanceDenialWorkByDenial, importEraBatch, payerRcmAnalytics, listShortPayments, denialPareto };

@@ -5,6 +5,7 @@ import pool from '../db/pgPool.js';
 import * as hospitalBilling from './hospital-billing.service.js';
 import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
 import { notifyClaimStatusChange } from './insurance-claim-notify.service.js';
+import arFollowUp from './ar-follow-up.service.js';
 
 export async function postEraRemittance(hospitalId, era, actor) {
   const parsed = typeof era === 'string' ? JSON.parse(era) : (era || {});
@@ -19,7 +20,7 @@ export async function postEraRemittance(hospitalId, era, actor) {
   // below, which were previously silent no-ops (RLS-blocked SELECT always
   // returned zero rows) and, worse, referenced total_paid/total_claimed
   // columns that don't exist on insurance_claims at all.
-  const { claim, eraRow, insurancePaid, updatedStatus } = await withRlsTransaction(
+  const { claim, eraRow, insurancePaid, updatedStatus, shortPay } = await withRlsTransaction(
     pool,
     { orgId: hospitalId, userId: actor?.id || actor?.actorId || 0, isPlatformAdmin: false },
     async (client) => {
@@ -38,19 +39,11 @@ export async function postEraRemittance(hospitalId, era, actor) {
       const resolvedInvoiceId = invoiceId || claimRow?.invoice_id || null;
       const paid = Number(paidAmount ?? parsed.totalPaid ?? 0);
       const adjustmentTotal = adjustments.reduce((s, a) => s + Number(a.amount || 0), 0);
+      const patientResp = Number(parsed.patientResponsibility || 0);
 
-      const era = await client.query(
-        `INSERT INTO era_remittances
-           (hospital_id, claim_id, invoice_id, payer_name, check_number, payment_amount, adjustment_amount, patient_responsibility, raw_payload, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'posted') RETURNING *`,
-        [
-          hospitalId, claimRow?.id || null, resolvedInvoiceId,
-          payerName || parsed.payerName || null, checkNumber || parsed.checkNumber || null,
-          paid, adjustmentTotal, parsed.patientResponsibility || 0, JSON.stringify(parsed),
-        ]
-      );
-
+      // Settle the claim first so short-pay detection can use the cumulative total.
       let newStatus = null;
+      let settledAfter = Number(claimRow?.settled_amount || 0);
       if (claimRow?.id && paid > 0) {
         const updated = await client.query(
           `UPDATE insurance_claims
@@ -59,13 +52,49 @@ export async function postEraRemittance(hospitalId, era, actor) {
                settlement_status = CASE WHEN COALESCE(settled_amount,0) + $2 >= COALESCE(claim_amount,0) THEN 'settled' ELSE 'partial' END,
                updated_at = NOW()
            WHERE id = $1
-           RETURNING status`,
+           RETURNING status, settled_amount`,
           [claimRow.id, paid]
         );
         newStatus = updated.rows[0]?.status || null;
+        settledAfter = Number(updated.rows[0]?.settled_amount || settledAfter);
       }
 
-      return { claim: claimRow, eraRow: era, insurancePaid: paid, updatedStatus: newStatus };
+      // Short-payment (underpayment) detection: once the payer has adjudicated
+      // (a payment or a check reference is present), the amount expected from the
+      // payer is claim_amount − patient_responsibility − posted_adjustments. If the
+      // cumulative settled amount still falls short of that by more than a rounding
+      // tolerance, flag the remittance for AR follow-up. Adjustment totals are
+      // per-remittance; cumulative-adjustment precision is handled in a later phase.
+      const claimAmount = Number(claimRow?.claim_amount || 0);
+      let expectedAmount = null;
+      let shortfall = 0;
+      let shortPaid = false;
+      if (claimRow?.id && claimAmount > 0) {
+        expectedAmount = Math.max(0, Math.round((claimAmount - patientResp - adjustmentTotal) * 100) / 100);
+        const tolerance = Math.max(50, claimAmount * 0.01);
+        const gap = expectedAmount - settledAfter;
+        if ((paid > 0 || checkNumber || parsed.checkNumber) && gap > tolerance) {
+          shortfall = Math.round(gap * 100) / 100;
+          shortPaid = true;
+        }
+      }
+
+      const era = await client.query(
+        `INSERT INTO era_remittances
+           (hospital_id, claim_id, invoice_id, payer_name, check_number, payment_amount, adjustment_amount, patient_responsibility, raw_payload, status, expected_amount, shortfall_amount, short_paid)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'posted',$10,$11,$12) RETURNING *`,
+        [
+          hospitalId, claimRow?.id || null, resolvedInvoiceId,
+          payerName || parsed.payerName || null, checkNumber || parsed.checkNumber || null,
+          paid, adjustmentTotal, patientResp, JSON.stringify(parsed),
+          expectedAmount, shortfall, shortPaid,
+        ]
+      );
+
+      return {
+        claim: claimRow, eraRow: era, insurancePaid: paid, updatedStatus: newStatus,
+        shortPay: { shortPaid, shortfall, expectedAmount },
+      };
     }
   );
 
@@ -106,9 +135,21 @@ export async function postEraRemittance(hospitalId, era, actor) {
     action: 'era.posted',
     resourceType: 'era_remittance',
     resourceId: String(eraRow.rows[0].id),
-    afterState: { insurancePaid, claimNumber, checkNumber },
+    afterState: { insurancePaid, claimNumber, checkNumber, shortPaid: shortPay?.shortPaid || false },
     req: actor?.req,
   });
+
+  // Phase-2 AR depth: a short-paid remittance opens an AR follow-up work-item
+  // (deduped on the remittance id). Fire-and-forget — never blocks posting.
+  if (shortPay?.shortPaid) {
+    arFollowUp.createFromShortPay({
+      hospitalId,
+      eraRemittanceId: eraRow.rows[0].id,
+      claimId: claim?.id || null,
+      payerName: payerName || parsed.payerName || null,
+      shortfall: shortPay.shortfall,
+    }).catch((e) => console.warn('[hospital-era] AR short-pay work-item failed:', e.message));
+  }
 
   return {
     eraId: eraRow.rows[0].id,
@@ -116,6 +157,9 @@ export async function postEraRemittance(hospitalId, era, actor) {
     claimId: claim?.id || null,
     invoiceId: resolvedInvoiceId,
     adjustmentsPosted: adjustments.length,
+    shortPaid: shortPay?.shortPaid || false,
+    shortfall: shortPay?.shortfall || 0,
+    expectedAmount: shortPay?.expectedAmount ?? null,
   };
 }
 

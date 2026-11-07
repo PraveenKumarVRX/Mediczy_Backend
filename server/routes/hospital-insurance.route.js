@@ -25,6 +25,8 @@ import { draftAppealLetter, checkDocumentationGaps } from '../services/insurance
 import ClaimDenial from '../models/postgres/claimDenial.model.postgres.js';
 import denialService from '../services/denial-management.service.js';
 import rcmGovernance from '../services/insurance-rcm-governance.service.js';
+import arFollowUp from '../services/ar-follow-up.service.js';
+import rcmCockpit from '../services/rcm-cockpit.service.js';
 import socketService from '../services/socket.service.js';
 import cacheService from '../services/cache.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
@@ -2346,6 +2348,77 @@ router.get('/rcm/payer-analytics', authUser, requireRole(['hospital', 'admin']),
   try {
     const hospitalId = resolveTenantId(req.user);
     res.json({ success: true, ...(await rcmGovernance.payerRcmAnalytics(hospitalId, req.user, req.query)) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+// Phase-1 AR depth: short-payment (underpayment) review list from ERA posting.
+router.get('/rcm/short-payments', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, ...(await rcmGovernance.listShortPayments(hospitalId, req.query)) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+// Phase-1 AR depth: denial Pareto (root-cause ranking by denial reason code).
+router.get('/rcm/denial-pareto', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, ...(await rcmGovernance.denialPareto(hospitalId, req.query)) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+// Phase-2 AR depth: AR follow-up / collections work-queue.
+router.get('/rcm/ar-work-queue', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, ...(await arFollowUp.listArWorkQueue(hospitalId, req.query)) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.post('/rcm/ar-work-queue', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    const item = await arFollowUp.createArFollowUpItem({
+      ...(req.body || {}), hospitalId, createdByUserId: req.user.id, actor: { id: req.user.id, name: req.user.name },
+    });
+    res.status(item ? 201 : 200).json({ success: true, item, deduped: !item });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.patch('/rcm/ar-work-queue/:id', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    const item = await arFollowUp.updateArFollowUpItem(hospitalId, req.params.id, req.body || {}, { id: req.user.id, name: req.user.name });
+    res.json({ success: true, item });
+  } catch (error) { res.status(error.message.includes('not found') ? 404 : 400).json({ success: false, message: error.message }); }
+});
+
+// Admin trigger for the aging/SLA escalation sweep (also runs on a daily cron).
+router.post('/rcm/ar-escalation/run', authUser, requireRole(['admin']), async (req, res) => {
+  try {
+    res.json({ success: true, ...(await arFollowUp.runArEscalation(req.body || {})) });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// Phase-3 AR depth: unified RCM cockpit + revenue-leakage + claim realization.
+router.get('/rcm/cockpit', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, ...(await rcmCockpit.rcmCockpit(hospitalId, req.user, req.query)) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.get('/rcm/revenue-leakage', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, ...(await rcmCockpit.revenueLeakage(hospitalId, req.query)) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.get('/rcm/claim-realization', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, ...(await rcmCockpit.claimRealization(hospitalId, req.query)) });
   } catch (error) { res.status(400).json({ success: false, message: error.message }); }
 });
 
