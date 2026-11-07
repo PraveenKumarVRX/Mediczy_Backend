@@ -1636,6 +1636,9 @@ app.use('/api/pharmacy-orders', patientPharmacyOrdersRouter); // Patient-facing 
 app.use('/api/devices', deviceRouter); // Device management (smart tablets with SIM)
 app.use('/api/wearables', wearableRouter); // Wearable devices (smartwatch, band, ring)
 app.use('/api/health-data', healthDataRouter); // BLE device health data sync
+// Mobile app v1.2.8 calls bare /api/vitals; the store lives at /health-data/vitals.
+app.get('/api/vitals', forwardToRouter(healthDataRouter, '/vitals'));
+app.post('/api/vitals', forwardToRouter(healthDataRouter, '/vitals'));
 app.use('/api/poc-devices', pocDeviceRouter); // Point-of-care diagnostic devices (BLE)
 app.use('/api/health-camps', healthCampRouter); // Outdoor health camp management
 app.use('/api/email', emailRouter); // Production-ready email management system
