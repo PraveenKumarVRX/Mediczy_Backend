@@ -113,25 +113,30 @@ router.post('/book', async (req, res) => {
       emergencyContact
     } = req.body;
 
-    // Validate required fields
-    if (!homecareId || !appointmentDate || !appointmentTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'Homecare ID, appointment date, and time are required'
-      });
-    }
+    // Field-level validation (BUG-07): collect every problem and return it keyed
+    // by field, so the client/mobile can show inline messages instead of a
+    // generic "Request failed with status code 400". Same required set as before
+    // (no new blocking), plus format checks on PIN code and phone when present.
+    const fieldErrors = {};
+    if (!homecareId) fieldErrors.homecareId = 'Homecare provider is required';
+    if (!appointmentDate) fieldErrors.appointmentDate = 'Select an appointment date';
+    else if (Number.isNaN(Date.parse(appointmentDate))) fieldErrors.appointmentDate = 'Appointment date is invalid';
+    if (!appointmentTime) fieldErrors.appointmentTime = 'Select an appointment time';
+    if (!serviceType) fieldErrors.serviceType = 'Select a service type';
+    else if (!['doctor', 'nurse', 'lab'].includes(serviceType)) fieldErrors.serviceType = 'Service type must be "doctor", "nurse", or "lab"';
+    const addr = patientAddress || {};
+    if (!addr.street) fieldErrors['patientAddress.street'] = 'Street address is required';
+    if (!addr.city) fieldErrors['patientAddress.city'] = 'City is required';
+    if (addr.pincode && !/^\d{6}$/.test(String(addr.pincode).trim())) fieldErrors['patientAddress.pincode'] = 'Enter a valid 6-digit PIN code';
+    if (patientPhone && !/^\d{10}$/.test(String(patientPhone).replace(/\D/g, '').slice(-10))) fieldErrors.patientPhone = 'Enter a valid 10-digit mobile number';
 
-    if (!serviceType || !['doctor', 'nurse', 'lab'].includes(serviceType)) {
+    if (Object.keys(fieldErrors).length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Service type must be "doctor", "nurse", or "lab"'
-      });
-    }
-
-    if (!patientAddress || !patientAddress.street || !patientAddress.city) {
-      return res.status(400).json({
-        success: false,
-        message: 'Complete patient address is required for homecare services'
+        message: 'Please correct the highlighted fields and try again.',
+        errorCode: 'VALIDATION_ERROR',
+        errors: fieldErrors,
+        fields: Object.keys(fieldErrors)
       });
     }
 
