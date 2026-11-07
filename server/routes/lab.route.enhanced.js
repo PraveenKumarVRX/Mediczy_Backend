@@ -942,11 +942,12 @@ router.get('/:labId/slots', authUser, async (req, res) => {
     if (!lab) return res.status(404).json({ success: false, message: 'Lab not found' });
     const configured = Array.isArray(lab.metadata?.slots) && lab.metadata.slots.length ? lab.metadata.slots.map(String) : null;
     const base = configured || ['08:00', '09:00', '10:00', '11:00', '12:00', '16:00', '17:00', '18:00'];
+    // appointments has no clinicId column; lab appointments carry the lab id in doctorDetails.labId.
     const booked = await Appointment.findAll({
-      where: { clinicId: labId, appointmentDate: date, type: 'lab', status: { [Op.in]: ['scheduled', 'confirmed', 'rescheduled'] } },
-      attributes: ['appointmentTime'],
+      where: { type: 'lab', appointmentDate: date, status: { [Op.in]: ['scheduled', 'confirmed', 'rescheduled'] } },
+      attributes: ['appointmentTime', 'doctorDetails'],
     });
-    const taken = new Set(booked.map((b) => b.appointmentTime));
+    const taken = new Set(booked.filter((b) => Number(b.doctorDetails?.labId) === labId).map((b) => b.appointmentTime));
     const slots = base.map((t, i) => ({ id: `slot-${i + 1}`, label: t, value: t, available: !taken.has(t) }));
     return res.json({ success: true, date, labId: String(labId), slots });
   } catch (error) {

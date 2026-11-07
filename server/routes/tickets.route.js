@@ -48,7 +48,15 @@ router.get('/', auth, async (req, res) => {
     if (priority) filter.priority = priority;
     if (category) filter.category = category;
     if (assignee) filter['assignee.email'] = assignee;
-    if (requester) filter['requester.email'] = requester;
+    // SECURITY: a non-staff user may only see their OWN tickets. Previously the list was
+    // unscoped, so any authenticated user received every user's tickets.
+    const isStaff = req.user?.isAdmin === true
+      || ['admin', 'super_admin', 'team', 'team_member', 'team_lead', 'support', 'support_agent', 'agent', 'hospital'].includes(req.user?.role);
+    if (!isStaff) {
+      filter['requester.email'] = req.user?.email || '__no_such_user__';
+    } else if (requester) {
+      filter['requester.email'] = requester;
+    }
     
     if (search) {
       filter.$or = [
@@ -339,6 +347,13 @@ router.get('/:id', auth, async (req, res) => {
     });
 
     if (!ticket) {
+      return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    // SECURITY: a non-staff user may only open their own ticket.
+    const isStaff = req.user?.isAdmin === true
+      || ['admin', 'super_admin', 'team', 'team_member', 'team_lead', 'support', 'support_agent', 'agent', 'hospital'].includes(req.user?.role);
+    if (!isStaff && ticket.requester?.email && req.user?.email && ticket.requester.email !== req.user.email) {
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
