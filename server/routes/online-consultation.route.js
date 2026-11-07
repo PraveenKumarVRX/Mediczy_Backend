@@ -2419,4 +2419,36 @@ router.get('/chat/unread-count', authUser, async (req, res) => {
   }
 });
 
+// GET /api/consultation/calls — the patient's video/audio call history.
+router.get('/calls', authUser, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const rows = await Appointment.findAll({
+      where: {
+        userId: req.user.id,
+        [Op.or]: [
+          { consultationType: { [Op.in]: ['online', 'video', 'audio'] } },
+          { channel: { [Op.in]: ['video', 'online'] } },
+        ],
+      },
+      order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']],
+      limit,
+    });
+    const calls = rows.map((a) => ({
+      id: String(a.id),
+      doctorName: a.doctorName || null,
+      specialization: a.specialization || null,
+      date: a.appointmentDate,
+      time: a.appointmentTime,
+      type: a.consultationType || a.channel || 'online',
+      status: a.status,
+      durationMinutes: a.metadata?.callDurationMinutes ?? null,
+    }));
+    return res.json({ success: true, calls });
+  } catch (e) {
+    console.error('[consultation] call history error:', e.message);
+    return res.json({ success: true, calls: [] });
+  }
+});
+
 export default router;
