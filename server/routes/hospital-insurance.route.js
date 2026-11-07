@@ -901,6 +901,14 @@ router.post('/claims/new', authUser, requireRole(['hospital', 'admin']), [
     const resolvedHospitalId = req.user.hospitalId || hospitalId || req.user.organizationId || organizationId;
     const resolvedOrganizationId = req.user.organizationId || organizationId || resolvedHospitalId;
 
+    // Government-scheme (PM-JAY/CGHS/ECHS/…) claims must be backed by an approved
+    // scheme pre-authorisation. Validate BEFORE creating the claim so a failure does
+    // not leave an orphan draft; the link (and pre-auth → 'claimed') happens after.
+    const isSchemeClaim = claimType === 'government_scheme';
+    if (isSchemeClaim) {
+      await schemePackages.assertPreauthClaimable(resolvedHospitalId, req.body.schemePreauthId, schemeName);
+    }
+
     // Generate claim number
     const claimNumber = `CLM${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
 
@@ -927,14 +935,24 @@ router.post('/claims/new', authUser, requireRole(['hospital', 'admin']), [
       createdAt: new Date()
     }, { transaction }));
 
+    // Link the approved scheme pre-auth to the new claim and mark it 'claimed'.
+    let schemePreauth = null;
+    if (isSchemeClaim) {
+      schemePreauth = await schemePackages.linkClaimToPreauth(resolvedHospitalId, {
+        preauthId: req.body.schemePreauthId, claimId: claim.id, scheme: schemeName,
+        actor: { id: req.user.id, name: req.user.name },
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Claim created successfully',
-      claim
+      claim,
+      schemePreauth,
     });
   } catch (error) {
     console.error('Create claim error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 

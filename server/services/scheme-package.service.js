@@ -13,7 +13,7 @@ const PREAUTH_TRANSITIONS = {
   initiated: ['submitted', 'cancelled'],
   submitted: ['query', 'approved', 'rejected'],
   query: ['submitted', 'rejected'],       // respond to a payer query / resubmit
-  approved: ['bed_blocked', 'cancelled'],
+  approved: ['bed_blocked', 'claimed', 'cancelled'],  // claim can be raised directly from approval
   bed_blocked: ['claimed', 'cancelled'],  // admission blocked under TMS
   rejected: ['submitted'],                // correct and resubmit
   claimed: ['closed'],
@@ -22,6 +22,15 @@ const PREAUTH_TRANSITIONS = {
 };
 
 const histEntry = (action, detail, actor) => ({ at: new Date().toISOString(), action, detail: detail || null, by: actor?.name || actor?.id || 'system' });
+
+// Normalise scheme display-names/aliases to canonical codes so the claim wizard's
+// labels ("Ayushman Bharat") reconcile with pre-auth codes ("PMJAY").
+const SCHEME_ALIAS = {
+  'PMJAY': 'PMJAY', 'PM-JAY': 'PMJAY', 'PMJAY-AB': 'PMJAY',
+  'AYUSHMAN BHARAT': 'PMJAY', 'AYUSHMAN': 'PMJAY', 'AB-PMJAY': 'PMJAY',
+  'CGHS': 'CGHS', 'ECHS': 'ECHS', 'ESIC': 'ESIC', 'RGHS': 'RGHS',
+};
+export const normScheme = (s) => { const u = String(s || '').trim().toUpperCase(); return SCHEME_ALIAS[u] || u; };
 
 // ───────────────────────── Package master ─────────────────────────
 
@@ -120,7 +129,7 @@ export async function createSchemePreauth(input) {
         status, admission_date, los_days, created_by_user_id, history)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'initiated',$9,$10,$11,$12::jsonb)
      RETURNING *`,
-    [hospitalId, patientId, String(scheme).toUpperCase(), beneficiaryId,
+    [hospitalId, patientId, normScheme(scheme), beneficiaryId,
      pkg?.id || null, pkg?.package_code || input.packageCode || null, pkg?.package_name || null,
      Number(pkg?.package_rate || 0), admissionDate, losDays == null ? null : Number(losDays),
      createdByUserId, JSON.stringify([histEntry('created', `Pre-auth initiated (${pkg?.package_code || 'no package'})`, actor)])]);
@@ -133,7 +142,7 @@ export async function listSchemePreauths(hospitalId, { status, scheme, limit = 1
     `SELECT * FROM scheme_preauths
       WHERE hospital_id = $1 AND ($2::text IS NULL OR status = $2) AND ($3::text IS NULL OR scheme = $3)
       ORDER BY created_at DESC LIMIT $4`,
-    [hospitalId, status || null, scheme ? String(scheme).toUpperCase() : null, lim]);
+    [hospitalId, status || null, scheme ? normScheme(scheme) : null, lim]);
   return rows;
 }
 
@@ -168,8 +177,30 @@ export async function transitionSchemePreauth(hospitalId, id, toStatus, patch = 
   return rows[0];
 }
 
+/**
+ * Validate that a scheme pre-auth can back a claim (same hospital + scheme, approved,
+ * not already linked elsewhere). Returns the pre-auth row or throws (status 400).
+ */
+export async function assertPreauthClaimable(hospitalId, preauthId, scheme, claimId = null) {
+  if (!preauthId) throw Object.assign(new Error('A government-scheme claim requires an approved scheme pre-authorisation (schemePreauthId).'), { status: 400 });
+  const { rows } = await pool.query(`SELECT * FROM scheme_preauths WHERE id = $1 AND hospital_id = $2`, [Number(preauthId), hospitalId]);
+  const row = rows[0];
+  if (!row) throw Object.assign(new Error('Scheme pre-auth not found for this hospital'), { status: 400 });
+  if (scheme && normScheme(row.scheme) !== normScheme(scheme)) throw Object.assign(new Error(`Pre-auth scheme (${row.scheme}) does not match the claim scheme (${normScheme(scheme)})`), { status: 400 });
+  if (!['approved', 'bed_blocked'].includes(row.status)) throw Object.assign(new Error(`Pre-auth must be approved before a claim can be raised (currently '${row.status}')`), { status: 400 });
+  if (row.claim_id && claimId != null && Number(row.claim_id) !== Number(claimId)) throw Object.assign(new Error(`This pre-auth is already linked to claim ${row.claim_id}`), { status: 409 });
+  return row;
+}
+
+/** Link a created claim to its approved scheme pre-auth and move the pre-auth to 'claimed'. */
+export async function linkClaimToPreauth(hospitalId, { preauthId, claimId, scheme, actor } = {}) {
+  await assertPreauthClaimable(hospitalId, preauthId, scheme, claimId);
+  return transitionSchemePreauth(hospitalId, preauthId, 'claimed', { claimId, note: `Linked to claim ${claimId}` }, actor);
+}
+
 export default {
   listPackages, getPackage, upsertPackage, bulkImportPackages,
   createSchemePreauth, listSchemePreauths, transitionSchemePreauth,
+  assertPreauthClaimable, linkClaimToPreauth,
   PREAUTH_TRANSITIONS,
 };
