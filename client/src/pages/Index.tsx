@@ -901,16 +901,6 @@ const Index = () => {
       highlights: ["Quick filing", "Live status tracking", "Reduced rework"],
     },
     {
-      title: "AI Report Scanner",
-      description: "Scan reports and extract actionable insights instantly",
-      icon: FileText,
-      color: "secondary-gradient",
-      borderColor: "border-secondary/20",
-      iconColor: "text-secondary",
-      link: "/report-scanner",
-      highlights: ["Document OCR", "AI interpretation", "Share-ready outputs"],
-    },
-    {
       title: "Diet & Nutrition",
       description: "Personalized meal plans and nutrition tracking",
       icon: Apple,
@@ -919,16 +909,6 @@ const Index = () => {
       iconColor: "text-success",
       link: "/diet",
       highlights: ["Meal planning", "Nutritional analysis", "Diet tracking"],
-    },
-    {
-      title: "Health Risk Assessment",
-      description: "Quick personalized health risk evaluation",
-      icon: Shield,
-      color: "warning-gradient",
-      borderColor: "border-warning/20",
-      iconColor: "text-warning",
-      link: "/health-risk-assessment",
-      highlights: ["5-minute assessment", "Risk scoring", "Personalized insights"],
     },
     {
       title: "Find Clinics",
