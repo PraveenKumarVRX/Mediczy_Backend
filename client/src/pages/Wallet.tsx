@@ -114,7 +114,7 @@ export default function Wallet() {
   };
 
   const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('en-US', {
+    return new Date(date).toLocaleDateString('en-IN', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -391,7 +391,7 @@ export default function Wallet() {
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">{offer.description || 'Apply this code while buying coins'}</p>
                       <div className="mt-1 text-[11px] text-muted-foreground flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />Valid till {new Date(offer.validUntil).toLocaleDateString()}</span>
+                        <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />Valid till {new Date(offer.validUntil).toLocaleDateString('en-IN')}</span>
                         <span>Uses left: {offer.remainingForUser}</span>
                       </div>
                     </div>

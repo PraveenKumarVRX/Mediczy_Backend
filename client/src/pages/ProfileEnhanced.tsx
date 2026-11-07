@@ -1025,7 +1025,7 @@ const ProfileEnhanced = () => {
                 {[
                   { icon: Clock,    label: "Last login",       value: securityInfo.last_login_at ? new Date(securityInfo.last_login_at).toLocaleString() : "Unknown" },
                   { icon: Monitor,  label: "Last login IP",    value: securityInfo.last_login_ip || "Unknown" },
-                  { icon: Key,      label: "Password changed", value: securityInfo.password_changed_at ? new Date(securityInfo.password_changed_at).toLocaleDateString() : "Never" },
+                  { icon: Key,      label: "Password changed", value: securityInfo.password_changed_at ? new Date(securityInfo.password_changed_at).toLocaleDateString('en-IN') : "Never" },
                 ].map(({ icon: Icon, label, value }) => (
                   <div key={label} className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
                     <Icon className="w-4 h-4 text-teal-500 mt-0.5 shrink-0" />

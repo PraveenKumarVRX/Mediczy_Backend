@@ -978,7 +978,7 @@ const HealthTracker = () => {
                         </div>
                         
                         <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
-                          <span>Target: {new Date(goal.deadline).toLocaleDateString()}</span>
+                          <span>Target: {new Date(goal.deadline).toLocaleDateString('en-IN')}</span>
                           <span>{goal.progress.toFixed(1)}% complete</span>
                         </div>
                       </div>

@@ -746,7 +746,7 @@ const Diet = () => {
                           ))}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                          Saved on {new Date(meal.date).toLocaleDateString()}
+                          Saved on {new Date(meal.date).toLocaleDateString('en-IN')}
                         </div>
                       </Card>
                     ))
