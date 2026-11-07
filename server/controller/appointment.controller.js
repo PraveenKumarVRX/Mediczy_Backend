@@ -878,6 +878,12 @@ export const getUserAppointments = async (req, res) => {
 
     const whereClause = { userId };
 
+    // W-SEP-1: this is the Individual view (the corporate-employee view uses the
+    // separate /corporate/my-appointments). Exclude appointments booked in the
+    // corporate context (corporate_tenant_id is set only for employer-context
+    // bookings) so employer activity never leaks into the personal view.
+    whereClause.corporate_tenant_id = { [Op.is]: null };
+
     // Filter by status if provided (supports comma-separated values)
     if (status) {
       const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
