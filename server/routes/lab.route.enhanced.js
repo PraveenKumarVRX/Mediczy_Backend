@@ -6,6 +6,7 @@ import { Appointment } from '../models/index.js';
 import { Order as BillingOrder } from '../models/billing.model.intelligent.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { orchestrator } from '../db/orchestrator.js';
+import { sanitiseContact } from '../utils/placeholder-contact.js';
 
 const router = express.Router();
 
@@ -285,6 +286,12 @@ router.get('/', async (req, res) => {
       row.coordinates = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
       const km = Number(row.distanceKm);
       row.distanceKm = Number.isFinite(km) ? Math.round(km * 10) / 10 : null;
+      // 2,363 of 2,428 labs carry a seeded +91-90000000xx number. That range is
+      // live, so showing it invites a patient to call a stranger.
+      const contact = sanitiseContact({ phone: row.phoneNumber, email: row.email });
+      row.phoneNumber = contact.phone;
+      row.email = contact.email;
+      row.contactUnavailable = contact.placeholder;
       return row;
     });
 

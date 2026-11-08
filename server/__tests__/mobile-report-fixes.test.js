@@ -12,6 +12,7 @@ jest.unstable_mockModule('../db/pgPool.js', () => ({ default: { query: mockQuery
 const { joinAddressParts } = await import('../services/nearby-places.service.js');
 const { publicPlanCatalogue } = await import('../utils/plan-catalogue.js');
 const { packageDisplayName } = await import('../utils/health-package-tests.js');
+const { isPlaceholderPhone, sanitiseContact } = await import('../utils/placeholder-contact.js');
 const cartRouter = (await import('../routes/cart.route.js')).default;
 
 /** Pull a route handler out of the router so it can be called directly. */
@@ -194,5 +195,40 @@ describe('health package display name (report rows 53, 55)', () => {
   test('an empty package still gets a readable label', () => {
     expect(packageDisplayName('')).toBe('Health Checkup Package');
     expect(packageDisplayName(null, {}, {})).toBe('Health Checkup Package');
+  });
+});
+
+describe('placeholder lab contact details (report row 112)', () => {
+  test('the seeded +91-90000000xx range is never shown', () => {
+    // QA saw "+91-9000000057". 2,363 of 2,428 labs carry a number from this
+    // range, and 9xxxxxxxxx is a live Indian mobile series — a patient tapping
+    // Call reaches a stranger.
+    for (const seeded of ['+91-9000000057', '9000000003', '+91 90000 00013', '919000000999']) {
+      expect(isPlaceholderPhone(seeded)).toBe(true);
+    }
+  });
+
+  test('repeated digits and the classic fakes are caught', () => {
+    for (const fake of ['9999999999', '0000000000', '9876543210', '1234567890']) {
+      expect(isPlaceholderPhone(fake)).toBe(true);
+    }
+  });
+
+  test('genuine mobiles and landlines are left alone', () => {
+    for (const real of ['+919884089921', '080-25551234', '+91-9845098450', '044 2345 6789']) {
+      expect(isPlaceholderPhone(real)).toBe(false);
+    }
+  });
+
+  test('an absent number is not reported as a placeholder', () => {
+    expect(isPlaceholderPhone(null)).toBe(false);
+    expect(isPlaceholderPhone('')).toBe(false);
+  });
+
+  test('sanitiseContact withholds the fake and flags that it did', () => {
+    expect(sanitiseContact({ phone: '+91-9000000057', email: 'lab@example.com' }))
+      .toEqual({ phone: null, email: null, placeholder: true });
+    expect(sanitiseContact({ phone: '+919845098450', email: 'care@lab.com' }))
+      .toEqual({ phone: '+919845098450', email: 'care@lab.com', placeholder: false });
   });
 });

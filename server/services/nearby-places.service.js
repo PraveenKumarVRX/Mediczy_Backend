@@ -12,6 +12,7 @@
  * `distance_km` field, so the fallback is a drop-in.
  */
 import pool from '../db/pgPool.js';
+import { sanitiseContact } from '../utils/placeholder-contact.js';
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -117,7 +118,9 @@ function toPlace(row, types) {
     user_ratings_total: Number(row.total_reviews || 0),
     types,
     business_status: 'OPERATIONAL',
-    formatted_phone_number: row.phone_number || '',
+    // Never hand back a seeded number: it is a live mobile series and the
+    // viewer may tap Call.
+    formatted_phone_number: sanitiseContact({ phone: row.phone_number }).phone || '',
     distance_km: Math.round(Number(row.distance_km) * 10) / 10,
   };
 }
