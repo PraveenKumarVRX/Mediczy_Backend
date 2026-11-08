@@ -528,6 +528,7 @@ app.set('trust proxy', 1); // Trust first proxy only
 // ipBlocker() docstring for what the original in-memory version got wrong.
 import { ipBlocker as _ipBlocker } from './middleware/rateLimiter.middleware.js';
 app.use(_ipBlocker());
+app.use(cookieParser());
 
 // SSL/HTTPS compatibility middleware
 // With trust proxy enabled, Express automatically reads X-Forwarded-Proto
@@ -734,10 +735,13 @@ app.options('*', (req, res) => {
 });
 
 // 3. Rate Limiting - Global and Authentication-specific
+import { identifyRateLimitAccount, accountOrIpRateLimitKey } from './middleware/rate-limit-identity.js';
+app.use(identifyRateLimitAccount);
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 300, // tighter global cap to reduce abuse
-  message: 'Too many requests from this IP, please try again later.',
+  message: 'Too many requests, please try again later.',
+  keyGenerator: accountOrIpRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
   // Loopback-only exemption: internal service-to-service calls (e.g. the Orthanc->HyperGrid
@@ -762,6 +766,7 @@ const authLimiter = rateLimit({
 const aiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 60,
+  keyGenerator: accountOrIpRateLimitKey,
   message: 'Too many AI requests, please slow down.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -770,6 +775,7 @@ const aiLimiter = rateLimit({
 const aiImageLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
+  keyGenerator: accountOrIpRateLimitKey,
   message: 'Image analysis limit reached. Please retry later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -778,6 +784,7 @@ const aiImageLimiter = rateLimit({
 const configLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
+  keyGenerator: accountOrIpRateLimitKey,
   message: 'Too many config requests, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -807,6 +814,7 @@ const resetLimiter = rateLimit({
 const walletEarnLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
+  keyGenerator: accountOrIpRateLimitKey,
   message: 'Too many reward requests. Please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -926,7 +934,6 @@ app.post('/api/doctor/forgot-password', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to process password reset request' });
   }
 });
-app.use(cookieParser());
 
 // D-9: honour the Idempotency-Key header the mobile app sends on bookings and
 // orders — replay the first successful response for 24h instead of creating a
