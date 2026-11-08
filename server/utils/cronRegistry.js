@@ -44,6 +44,7 @@ export const TASK_DEFINITIONS = [
   { key: 'hospital-billing-nightly', name: 'Hospital Billing (bed-day charging, overdue invoices)', schedule: 'Nightly 2 AM IST', category: 'billing',    scheduleDesc: '0 2 * * *' },
   { key: 'hospital_billing_nightly', name: 'Hospital Billing scheduler (app.js wrapper)',            schedule: 'Nightly 2 AM IST', category: 'billing',    scheduleDesc: '0 2 * * *' },
   { key: 'ar_follow_up_escalation', name: 'AR Follow-up: aging work-items + SLA escalation',        schedule: 'Nightly 1:30 AM', category: 'billing', scheduleDesc: '30 1 * * *' },
+  { key: 'order_abandonment_expiry', name: 'Abandoned Checkout Expiry (cancel stale unpaid orders)', schedule: 'Every 10 min',   category: 'billing', scheduleDesc: '*/10 * * * *' },
   { key: 'corporate_weekly_mis',   name: 'Corporate Wellness Weekly MIS (emails)',  schedule: 'Mon 08:00 IST',   category: 'corporate', scheduleDesc: '30 2 * * 1' },
   // Clinical
   { key: 'medication_morning',    name: 'Medication Reminder — Morning',         schedule: 'Daily 8 AM',       category: 'clinical',   scheduleDesc: '0 8 * * *' },

@@ -2117,6 +2117,18 @@ cron.schedule('30 1 * * *', async () => {
   }
 });
 
+// ============== Abandoned checkout expiry: cancel stale unpaid orders (W-ORD-1/2) ==============
+import orderExpiryService from './services/order-expiry.service.js';
+cron.schedule('*/10 * * * *', async () => {
+  // expireAbandonedOrders() holds its own cron lease (order_abandonment_expiry)
+  // and never cancels an order that has a successful or in-flight payment.
+  try {
+    await orderExpiryService.expireAbandonedOrders();
+  } catch (err) {
+    cronTickError('order_abandonment_expiry', err.message);
+  }
+});
+
 // ============== ITEM-16: Audit Chain Integrity Check (daily 03:00 AM) ==============
 import { verifyChain as verifyAuditChain } from './services/audit-chain.service.js';
 
