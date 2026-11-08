@@ -9,6 +9,12 @@ import { Achievement, UserAchievement } from '../models/postgres/achievement.mod
 import UserModel from '../models/postgres/user.model.postgres.js';
 import healthCoinsService from './health-coins.service.js';
 
+// The model is imported directly here, so register the association used by
+// leaderboard queries even when the central association bootstrap is absent.
+if (!Leaderboard.associations.user) {
+  Leaderboard.belongsTo(UserModel, { as: 'user', foreignKey: 'userId' });
+}
+
 class LeaderboardService {
   // ===================== HEALTH GOALS =====================
   
@@ -363,7 +369,7 @@ class LeaderboardService {
       include: [{
         model: UserModel,
         as: 'user',
-        attributes: ['id', 'name', 'email', 'profilePicture']
+        attributes: ['id', 'firstName', 'lastName', 'profileImage']
       }],
       order: [['rank', 'ASC']],
       limit
@@ -444,7 +450,7 @@ class LeaderboardService {
       include: [{
         model: UserModel,
         as: 'user',
-        attributes: ['id', 'name', 'email', 'profilePicture']
+        attributes: ['id', 'firstName', 'lastName', 'profileImage']
       }],
       order: [['rank', 'ASC']],
       limit
@@ -479,7 +485,7 @@ class LeaderboardService {
       include: [{
         model: UserModel,
         as: 'user',
-        attributes: ['id', 'name', 'email', 'profilePicture']
+        attributes: ['id', 'firstName', 'lastName', 'profileImage']
       }],
       order: [['rank', 'ASC']]
     });
@@ -495,7 +501,7 @@ class LeaderboardService {
       include: [{
         model: UserModel,
         as: 'user',
-        attributes: ['id', 'name', 'email', 'profilePicture']
+        attributes: ['id', 'firstName', 'lastName', 'profileImage']
       }],
       order: [['rank', 'ASC']],
       limit

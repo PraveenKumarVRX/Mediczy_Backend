@@ -412,6 +412,7 @@ export const ipBlocker = () => {
 
     const { blocked, ttl } = await isIPBlocked(ip);
     if (blocked) {
+      res.setHeader('Retry-After', String(ttl));
       return res.status(429).json({
         success: false,
         error: {
@@ -428,9 +429,9 @@ export const ipBlocker = () => {
         // Auth endpoints are already protected by authLimiter (per-window) and
         // credentialStuffingGuard (progressive, auth-specific blocking). Don't let a user
         // fumbling their password also feed the GENERAL abuse counter, which escalates to a
-        // 24h whole-IP block — too harsh for shared/mobile IPs and a legitimate mistyped login.
+        // whole-IP block — too harsh for shared/mobile IPs and a legitimate mistyped login.
         const isAuthEndpoint = /\/(login|signin|send-otp|verify-otp)(\/|$|\?)/i.test(url);
-        if (!isAuthEndpoint) {
+        if (!isAuthEndpoint && !req.rateLimitAccountKey) {
           recordRateLimitAbuse(ip, url).catch(() => {});
         }
       }

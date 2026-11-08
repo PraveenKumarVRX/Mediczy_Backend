@@ -4,8 +4,8 @@
  * Tracks failed login attempts per real client IP using Redis.
  * Applies progressive blocking:
  *   - 5  fails in 15 min  → block for 15 min
- *   - 15 fails in 1 hour  → block for 1 hour
- *   - 30 fails in 24 hrs  → block for 24 hours
+ *   - 15 fails in 1 hour  → block for 15 minutes
+ *   - 30 fails in 24 hrs  → block for 15 minutes
  *
  * Reads real IP from Cloudflare's CF-Connecting-IP header first,
  * then X-Forwarded-For, then req.ip.
@@ -41,8 +41,8 @@ const getRedis = () => {
 // [ windowSeconds, maxFailures, blockDurationSeconds, levelName ]
 const THRESHOLDS = [
   { window: 15 * 60,      max: 5,  blockDuration: 15 * 60,      level: 'short'  },
-  { window: 60 * 60,      max: 15, blockDuration: 60 * 60,      level: 'medium' },
-  { window: 24 * 60 * 60, max: 30, blockDuration: 24 * 60 * 60, level: 'long'   },
+  { window: 60 * 60,      max: 15, blockDuration: 15 * 60,      level: 'medium' },
+  { window: 24 * 60 * 60, max: 30, blockDuration: 15 * 60,      level: 'long'   },
 ];
 
 /**
@@ -140,6 +140,7 @@ export const credentialStuffingGuard = async (req, res, next) => {
   }
 
   if (blocked) {
+    res.setHeader('Retry-After', String(Math.max(ttl, 0)));
     return res.status(429).json({
       success: false,
       error: {
@@ -220,6 +221,7 @@ export const blockIP = async (ip, durationSeconds = 24 * 60 * 60, reason = 'manu
 export const unblockIP = async (ip) => {
   const r = getRedis();
   await r.del(`csguard:blocked:${ip}`);
+  await r.del(`csguard:fails:abuse:${ip}`);
   // Also clear failure counters so it starts fresh
   for (const { level } of THRESHOLDS) {
     await r.del(`csguard:fails:${level}:${ip}`).catch(() => {});
@@ -235,7 +237,7 @@ export const unblockIP = async (ip) => {
 // one admin list, one set of block/unblock endpoints (already live at
 // /api/admin/security/*) covers both credential-stuffing and general abuse
 // blocks, and either can be cleared without restarting the app.
-const ABUSE_THRESHOLD = { window: 60 * 60, max: 10, blockDuration: 24 * 60 * 60 };
+const ABUSE_THRESHOLD = { window: 60 * 60, max: 10, blockDuration: 15 * 60 };
 
 /**
  * Check whether an IP is currently blocked (any reason). Fails open — if
@@ -256,7 +258,7 @@ export const isIPBlocked = async (ip) => {
 
 /**
  * Record one rate-limit violation (a 429 from any limiter) for an IP.
- * 10 violations inside a rolling hour -> 24h block, same store as above.
+ * 10 violations within the counter window -> 15-minute block.
  */
 export const recordRateLimitAbuse = async (ip, endpoint) => {
   const r = getRedis();
@@ -283,6 +285,9 @@ export const recordRateLimitAbuse = async (ip, endpoint) => {
         reason: 'repeated rate-limit violations across the app',
       });
       await r.set(blockKey, payload, 'EX', ABUSE_THRESHOLD.blockDuration).catch(() => {});
+      // Start a fresh violation window after the temporary block; otherwise
+      // a single later 429 can immediately re-block the same shared network.
+      await r.del(key).catch(() => {});
       console.warn(`[CSGuard] ⛔ IP ${ip} auto-blocked (abuse) — ${count} rate-limit violations, last on ${endpoint}`);
     }
   }

@@ -64,11 +64,11 @@ describe('credentialStuffingGuard — general abuse tracking (isIPBlocked / reco
     expect(result.blocked).toBe(false);
   });
 
-  test('the 10th violation blocks the IP for 24h, and isIPBlocked reports it', async () => {
+  test('the 10th violation blocks the IP for 15 minutes, and isIPBlocked reports it', async () => {
     for (let i = 0; i < 10; i++) await recordRateLimitAbuse('9.9.9.9', '/api/some-route');
     const result = await isIPBlocked('9.9.9.9');
     expect(result.blocked).toBe(true);
-    expect(result.ttl).toBeGreaterThan(0);
+    expect(result.ttl).toBe(900);
   });
 
   test('a rate-limit-abuse block shares the exact same blocklist as blockIP/unblockIP — one admin view covers both', async () => {
@@ -78,6 +78,8 @@ describe('credentialStuffingGuard — general abuse tracking (isIPBlocked / reco
     // The real, already-live admin endpoint (server/routes/admin.route.js)
     // calls unblockIP for a manual override — must clear this block too.
     await unblockIP('10.10.10.10');
+    expect((await isIPBlocked('10.10.10.10')).blocked).toBe(false);
+    await recordRateLimitAbuse('10.10.10.10', '/api/whatever');
     expect((await isIPBlocked('10.10.10.10')).blocked).toBe(false);
   });
 
@@ -112,6 +114,7 @@ describe('ipBlocker middleware (rateLimiter.middleware.js)', () => {
       statusCode,
       on: jest.fn((event, cb) => { listeners[event] = cb; }),
       status: jest.fn(function (code) { this.statusCode = code; return this; }),
+      setHeader: jest.fn(),
       json: jest.fn(),
       _fireFinish: () => listeners.finish && listeners.finish(),
     };
@@ -163,6 +166,21 @@ describe('ipBlocker middleware (rateLimiter.middleware.js)', () => {
     await middleware(req, res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '900');
+  });
+
+  test('authenticated account rate limits do not escalate into a shared IP block', async () => {
+    for (let i = 0; i < 12; i++) {
+      const { req, res } = mockReqRes({ ip: '198.51.100.77', statusCode: 429 });
+      req.rateLimitAccountKey = 'account:user:42';
+      await ipBlocker()(req, res, jest.fn());
+      res._fireFinish();
+      await new Promise((r) => setImmediate(r));
+    }
+    const { req, res } = mockReqRes({ ip: '198.51.100.77' });
+    const next = jest.fn();
+    await ipBlocker()(req, res, next);
+    expect(next).toHaveBeenCalled();
   });
 
   test('DISABLE_RATE_LIMIT=true bypasses the guard entirely', async () => {
