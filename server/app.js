@@ -928,6 +928,12 @@ app.post('/api/doctor/forgot-password', async (req, res) => {
 });
 app.use(cookieParser());
 
+// D-9: honour the Idempotency-Key header the mobile app sends on bookings and
+// orders — replay the first successful response for 24h instead of creating a
+// duplicate booking/charge. No-op without the header; fails open if Redis is down.
+import { idempotency } from './middleware/idempotency.middleware.js';
+app.use(idempotency());
+
 app.use((err, req, res, next) => {
   if (err?.type === 'entity.too.large') {
     return res.status(413).json({
