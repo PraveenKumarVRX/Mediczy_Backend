@@ -118,6 +118,8 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261101000100-medical-device-gateway-foundation.migration.js',
   '20261101000100-biomedical-device-gateway.migration.js',
   '20261104000200-pre-employment-healthcheckups.migration.js',
+  '20261107000100-customer-care-v1.migration.js',
+  '20261107000200-customer-care-content-owner.migration.js',
   // MED-MIND-001. The health-coaching framework was never registered in any
   // runner list, so a fresh environment never got its 9 tables (it IS applied in
   // production — Phase 0 PF-1). Register it here, immediately before the
@@ -222,5 +224,3 @@ await runHmisExtended();
 console.log('\n==> 2026-Q4 wave');
 await runNew2026Migrations();
 console.log('\n[migrate-all] All steps completed.');
-  '20261107000100-customer-care-v1.migration.js',
-  '20261107000200-customer-care-content-owner.migration.js',
