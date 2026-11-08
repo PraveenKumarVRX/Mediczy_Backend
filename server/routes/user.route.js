@@ -302,6 +302,7 @@ router.post(
     if (!errors.isEmpty()) {
       return res.status(400).json({ success: false, errors: errors.array() });
     }
+    const { corporateId, employeeId } = req.body;
     const corpId = parseInt(corporateId);
     const empId = String(employeeId).trim();
     try {
