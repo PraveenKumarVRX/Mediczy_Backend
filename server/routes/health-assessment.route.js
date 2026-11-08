@@ -335,7 +335,7 @@ router.post('/save', authUser, async (req, res) => {
     // accepting those values let an assessment for this account be stored with
     // a different age/gender from its profile.
     const accountProfile = await User.findByPk(userId, {
-      attributes: ['dateOfBirth', 'gender']
+      attributes: ['dateOfBirth', 'gender', 'height', 'weight']
     }).catch(() => null);
     const profileAge = ageOnDate(accountProfile?.dateOfBirth);
     const profileGender = normaliseGender(accountProfile?.gender);
@@ -343,19 +343,32 @@ router.post('/save', authUser, async (req, res) => {
     const assessmentAge = profileAge ?? parseInt(age, 10);
     const assessmentGender = profileGender ?? submittedGender;
 
-    // Validate required fields
-    if (!assessmentAge || !assessmentGender || !height || !weight) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields: age, gender, height, weight'
-      });
-    }
+    // Height and weight refine the score through BMI, but they are not required
+    // to produce one: calculateHealthRiskScore guards every factor with
+    // `if (assessment.x)` and computeAllClinicalScores takes `bmi: null`.
+    // Requiring them here rejected every save from the mobile app, whose
+    // 10-question assessment never asks for them — the user was shown a score
+    // and then told it "could not be synced to your account". Prefer the
+    // submitted value, fall back to the stored profile, and save without them
+    // rather than refusing the assessment.
+    const measurement = (value) => {
+      const n = parseFloat(value);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const assessmentHeight = measurement(height) ?? measurement(accountProfile?.height);
+    const assessmentWeight = measurement(weight) ?? measurement(accountProfile?.weight);
 
-    // Validate numeric fields
-    if (Number.isNaN(assessmentAge) || Number.isNaN(parseFloat(height)) || Number.isNaN(parseFloat(weight))) {
+    // Age and gender do change the score, so they stay required — but say which
+    // one is missing instead of listing four fields, two of which are not.
+    const missing = [];
+    if (!assessmentAge || Number.isNaN(assessmentAge)) missing.push('age');
+    if (!assessmentGender) missing.push('gender');
+    if (missing.length) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid values for age, height, or weight'
+        code: 'missing_demographics',
+        message: `Add your ${missing.join(' and ')} to your profile to save a health assessment.`,
+        missingFields: missing
       });
     }
 
@@ -363,8 +376,8 @@ router.post('/save', authUser, async (req, res) => {
     const assessmentData = {
       age: assessmentAge,
       gender: assessmentGender,
-      height: parseFloat(height),
-      weight: parseFloat(weight),
+      height: assessmentHeight,
+      weight: assessmentWeight,
       waist: waist ? parseFloat(waist) : null,
       hip: hip ? parseFloat(hip) : null,
       bmi: bmi ? parseFloat(bmi) : null,
@@ -460,12 +473,14 @@ router.post('/save', authUser, async (req, res) => {
       assessedAt: new Date()
     });
 
-    // Update user profile with health data
+    // Update user profile with health data. Only write measurements we actually
+    // have: parseFloat(undefined) is NaN, which this previously wrote straight
+    // into the profile's height and weight.
     try {
       await User.update(
         {
-          height: parseFloat(height),
-          weight: parseFloat(weight),
+          ...(assessmentHeight === null ? {} : { height: assessmentHeight }),
+          ...(assessmentWeight === null ? {} : { weight: assessmentWeight }),
           age: assessmentAge,
           gender: assessmentGender
         },

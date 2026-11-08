@@ -50,6 +50,29 @@ async function catalogueByIdentifier(identifiers) {
 
 const itemIdentifier = (item) => (item?.test?.id ?? item?.id ?? null);
 
+/**
+ * The catalogue row an item resolved to, which is what makes two items "the
+ * same test". The client may name a test by test_id, test_code or name, and
+ * CATALOGUE_SQL accepts all three — so two adds of one test can arrive under
+ * two different identifiers. Comparing the raw client identifier let the same
+ * test sit in the cart twice (CBC from MEDALL appeared as 2 items).
+ */
+const catalogueKey = (item) => {
+  const test = item?.test || item;
+  return test?.catalogTestId === null || test?.catalogTestId === undefined
+    ? null
+    : String(test.catalogTestId).toLowerCase();
+};
+
+/** Does this cart item answer to `identifier` in any of the forms the catalogue accepts? */
+const itemAnswersTo = (item, identifier) => {
+  const wanted = String(identifier ?? '').toLowerCase();
+  if (!wanted) return false;
+  const test = item?.test || item;
+  return [itemIdentifier(item), test?.catalogTestId, test?.test_code, test?.testCode, test?.name]
+    .some((candidate) => candidate !== null && candidate !== undefined && String(candidate).toLowerCase() === wanted);
+};
+
 /** Replace each item's price with the catalogue price. Returns { items, dropped }. */
 async function repriceItems(rawItems) {
   const source = Array.isArray(rawItems) ? rawItems : [];
@@ -68,6 +91,9 @@ async function repriceItems(rawItems) {
         ...test,
         id: test?.id ?? row.test_id,
         catalogTestId: row.test_id,
+        // Carry the catalogue code so the item can later be matched by it —
+        // the client may name the same test by id, code or name.
+        testCode: row.test_code ?? test?.testCode ?? null,
         name: row.name,
         price: Number(row.price),
         currency: row.currency || 'INR',
@@ -139,7 +165,14 @@ router.post('/add', authUser, async (req, res) => {
     const pricedItem = resolved[0];
 
     const cart = getCart(userId);
-    const existingIndex = cart.items.findIndex((item) => String(itemIdentifier(item)) === String(test.id));
+    // Match on the catalogue row first, so the same test added under a second
+    // identifier merges into the existing line instead of duplicating it.
+    const pricedKey = catalogueKey(pricedItem);
+    const existingIndex = cart.items.findIndex((item) => {
+      const key = catalogueKey(item);
+      if (key && pricedKey && key === pricedKey) return true;
+      return itemAnswersTo(item, test.id);
+    });
 
     if (existingIndex >= 0) {
       cart.items[existingIndex] = {
@@ -173,7 +206,10 @@ router.delete('/remove/:testId', authUser, async (req, res) => {
     const { testId } = req.params;
 
     const cart = getCart(userId);
-    cart.items = cart.items.filter((item) => String(itemIdentifier(item)) !== String(testId));
+    // Remove ONE line, not every line that answers to this identifier —
+    // removing one of two identical items used to empty the cart.
+    const index = cart.items.findIndex((item) => itemAnswersTo(item, testId));
+    if (index >= 0) cart.items.splice(index, 1);
     cart.updatedAt = new Date();
     cartStore.set(userId, cart);
 
@@ -202,7 +238,7 @@ router.put('/update/:testId', authUser, async (req, res) => {
     }
 
     const cart = getCart(userId);
-    const itemIndex = cart.items.findIndex((item) => String(itemIdentifier(item)) === String(testId));
+    const itemIndex = cart.items.findIndex((item) => itemAnswersTo(item, testId));
     if (itemIndex >= 0) {
       cart.items[itemIndex].quantity = quantity;
       cart.updatedAt = new Date();

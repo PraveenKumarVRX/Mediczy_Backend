@@ -875,6 +875,7 @@ app.use('/api/ai', sibAIGuard, attachAIReporter);
 app.use('/api/medical-ai', sibAIGuard, attachAIReporter);
 app.use('/api/consultation-recordings', sibAIGuard, attachAIReporter);
 app.use('/api/v3/ai-intelligence', sibAIGuard, attachAIReporter);
+app.use('/api/ai-intelligence', sibAIGuard, attachAIReporter); // same router, unversioned alias (mobile app)
 app.use('/api/sib-chatbots', sibAIGuard, attachAIReporter);
 app.use('/api/doctor/clinical-workflow', sibAIGuard, attachAIReporter);
 app.use('/api/reports', sibAIGuard, attachAIReporter);
@@ -1510,6 +1511,10 @@ app.use("/api/v3/hospital-os", sibAIGuard, attachAIReporter, hospitalOsRouter); 
 app.use("/api/v3/rwe", authUser, rwePlatformRouter); // Real-world evidence platform (Wave 4)
 app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights
 app.use("/api/emergency", authUser, aiIntelligenceRouter); // Emergency alias (triage/assess, risk-score)
+// Unversioned alias: the shipped mobile app calls /api/ai-intelligence/risk-score/me,
+// which ring-fencing refused (403) because only the /api/v3 prefix was known —
+// so the app fell back to generic tips instead of the user's own risk score.
+app.use("/api/ai-intelligence", authUser, aiIntelligenceRouter);
 app.use('/api/medcore-adoption', medcoreAdoptionRouter); // Clean-room MedCore capability adoption
 app.use("/api/v3/ai-analytics", authUser, aiAnalyticsRouter); // AI analytics dashboard (LLM ops, quality, tools, population health)
 app.use("/api/v3/ai-deeptech", authUser, aiDeepTechRouter); // DeepTech: HIS, Clinical NLP, Pre-auth, Multi-agent Context, Federated Learning

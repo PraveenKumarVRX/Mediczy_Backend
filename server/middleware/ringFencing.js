@@ -54,6 +54,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/mobile',  // Mobile API gateway
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/ai-intelligence',  // same router, unversioned alias the mobile app calls
       '/api/v3/ai-analytics',  // AI usage analytics
       '/api/ai-health',  // AI health chat & Dr. iSHA
       '/api/users',  // User profile management
@@ -143,6 +144,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/mobile',  // Mobile API gateway
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/ai-intelligence',  // same router, unversioned alias the mobile app calls
       '/api/v3/ai-analytics',  // AI usage analytics
       '/api/ai-health',  // AI health chat & Dr. iSHA
       '/api/users',  // User profile management
@@ -219,6 +221,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/mobile',  // Mobile API gateway for doctor app
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/ai-intelligence',  // same router, unversioned alias the mobile app calls
       '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
       '/api/v3/healthos',  // Mediqzy HealthOS — Living Patient Workspace
       '/api/v3/careos',  // HealthOS alias
@@ -324,6 +327,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/feedback-intelligence',  // Self-healing AI feedback intelligence dashboard
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/ai-intelligence',  // same router, unversioned alias the mobile app calls
       '/api/v3/ai-analytics',  // AI analytics dashboard (admin only)
       '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
       '/api/v3/healthos',  // Mediqzy HealthOS
