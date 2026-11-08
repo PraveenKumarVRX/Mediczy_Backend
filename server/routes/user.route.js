@@ -20,7 +20,29 @@ import twilioOTPService from "../services/twilio-otp.service.js";
 import n8nService from "../services/n8n.service.js";
 import Consent from "../models/consent.model.intelligent.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
-import { authLimiter, otpLimiter } from "../middleware/rateLimiter.middleware.js";
+import { authLimiter, otpLimiter, createRateLimiter } from "../middleware/rateLimiter.middleware.js";
+
+/**
+ * D-11: /register/validate-employee is public and, given only a corporateId and an
+ * employee ID, confirms whether that ID exists and returns the employee's name,
+ * department and designation. That lets anyone walk EMP001, EMP002, ... and harvest
+ * a company's roster. The generic register limiter is far too permissive for a
+ * lookup like this, so it gets its own tight ceiling.
+ *
+ * NOTE: rate limiting only blunts enumeration. The real fix is to stop returning
+ * personal details before identity is proven — i.e. OTP the employee's rostered
+ * email/phone and release the details only after verification. That needs a
+ * matching client change, so it is tracked separately.
+ */
+const employeeLookupLimiter = createRateLimiter("auth", {
+  windowMs: 10 * 60 * 1000,
+  max: 8,
+  message: {
+    success: false,
+    message: "Too many employee verification attempts. Please try again later or contact your HR.",
+    code: "EMPLOYEE_LOOKUP_RATE_LIMITED",
+  },
+});
 import intelligentDb from "../utils/intelligentDbClient.js";
 import OTP from "../models/otp.model.intelligent.js";
 import { tryAutoActivateCorporateEmployeeForLogin } from "../services/corporate-employee-activation.service.js";
@@ -201,6 +223,7 @@ router.get("/register/corporates", async (req, res) => {
  */
 router.post(
   "/register/validate-employee",
+  employeeLookupLimiter,
   [
     body("corporateId").isInt({ min: 1 }).withMessage("Corporate ID required"),
     body("employeeId").notEmpty().trim().withMessage("Employee ID required"),
