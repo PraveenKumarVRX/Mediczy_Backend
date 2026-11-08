@@ -43,6 +43,75 @@ const employeeLookupLimiter = createRateLimiter("auth", {
     code: "EMPLOYEE_LOOKUP_RATE_LIMITED",
   },
 });
+
+/** Mask an address so a hint can be shown without disclosing the contact. */
+const maskEmail = (email) => {
+  const [user = "", domain = ""] = String(email || "").split("@");
+  if (!domain) return "your registered email";
+  return `${user.slice(0, 1)}${"\u2022".repeat(Math.max(user.length - 1, 1))}@${domain}`;
+};
+
+/**
+ * Resolve an employee from the corporate roster. Checks the dedicated
+ * corporate_employees table first, then the user_associations fallback used for
+ * rosters uploaded without an employeeId column.
+ */
+async function resolveRosterEmployee(corporateId, employeeId) {
+  const [emp] = await postgresSequelize.query(
+    `SELECT ce.id, ce."employeeId", ce.email, ce.department, ce.designation, ce."userId", ce.metadata,
+            c."companyName"
+     FROM corporate_employees ce
+     JOIN corporates c ON c.id = ce.corporate_id
+     WHERE ce.corporate_id = :corporateId AND UPPER(ce."employeeId") = UPPER(:employeeId) AND ce."isActive" = true
+     LIMIT 1`,
+    { replacements: { corporateId, employeeId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  if (emp) {
+    const meta = emp.metadata || {};
+    return {
+      dbId: emp.id,
+      employeeId: emp.employeeId,
+      email: emp.email || meta.email || null,
+      department: emp.department || meta.department || null,
+      designation: emp.designation || meta.designation || null,
+      firstName: meta.firstName || null,
+      lastName: meta.lastName || null,
+      companyName: emp.companyName,
+      userId: emp.userId,
+    };
+  }
+
+  const [uaEmp] = await postgresSequelize.query(
+    `SELECT ua."userId", ua.metadata,
+            ua.metadata->>'employeeId'  AS "employeeId",
+            ua.metadata->>'email'       AS email,
+            ua.metadata->>'department'  AS department,
+            ua.metadata->>'designation' AS designation,
+            ua.metadata->>'firstName'   AS "firstName",
+            ua.metadata->>'lastName'    AS "lastName",
+            c."companyName"
+       FROM user_associations ua
+       JOIN corporates c ON c.id = ua."entityId"
+      WHERE ua."entityType" = 'corporate'
+        AND ua."entityId"   = :corporateId
+        AND ua.status       = 'active'
+        AND UPPER(ua.metadata->>'employeeId') = UPPER(:employeeId)
+      LIMIT 1`,
+    { replacements: { corporateId, employeeId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  if (!uaEmp) return null;
+  return {
+    dbId: null,
+    employeeId: uaEmp.employeeId || employeeId,
+    email: uaEmp.email || null,
+    department: uaEmp.department || null,
+    designation: uaEmp.designation || null,
+    firstName: uaEmp.firstName || null,
+    lastName: uaEmp.lastName || null,
+    companyName: uaEmp.companyName,
+    userId: uaEmp.userId,
+  };
+}
 import intelligentDb from "../utils/intelligentDbClient.js";
 import OTP from "../models/otp.model.intelligent.js";
 import { tryAutoActivateCorporateEmployeeForLogin } from "../services/corporate-employee-activation.service.js";
@@ -233,84 +302,124 @@ router.post(
     if (!errors.isEmpty()) {
       return res.status(400).json({ success: false, errors: errors.array() });
     }
-    const { corporateId, employeeId } = req.body;
+    const corpId = parseInt(corporateId);
+    const empId = String(employeeId).trim();
     try {
-      // Check corporate_employees roster (pre-loaded by admin)
-      const [emp] = await postgresSequelize.query(
-        `SELECT ce.id, ce."employeeId", ce.department, ce.designation, ce."userId", ce.metadata,
-                c."companyName"
-         FROM corporate_employees ce
-         JOIN corporates c ON c.id = ce.corporate_id
-         WHERE ce.corporate_id = :corporateId AND UPPER(ce."employeeId") = UPPER(:employeeId) AND ce."isActive" = true
-         LIMIT 1`,
-        {
-          replacements: { corporateId: parseInt(corporateId), employeeId: String(employeeId).trim() },
-          type: postgresSequelize.QueryTypes.SELECT,
-        }
-      );
-      if (!emp) {
-        // Fallback: check user_associations where employeeId is stored in metadata
-        // (employees uploaded without a dedicated employeeId column land here only)
-        const [uaEmp] = await postgresSequelize.query(
-          `SELECT ua."userId", ua.metadata,
-                  ua.metadata->>'employeeId'  AS "employeeId",
-                  ua.metadata->>'department'  AS department,
-                  ua.metadata->>'designation' AS designation,
-                  ua.metadata->>'firstName'   AS "firstName",
-                  ua.metadata->>'lastName'    AS "lastName",
-                  c."companyName"
-           FROM user_associations ua
-           JOIN corporates c ON c.id = ua."entityId"
-           WHERE ua."entityType" = 'corporate'
-             AND ua."entityId"   = :corporateId
-             AND ua.status       = 'active'
-             AND UPPER(ua.metadata->>'employeeId') = UPPER(:employeeId)
-           LIMIT 1`,
-          {
-            replacements: { corporateId: parseInt(corporateId), employeeId: String(employeeId).trim() },
-            type: postgresSequelize.QueryTypes.SELECT,
-          }
-        );
-        if (!uaEmp) {
-          return res.status(404).json({ success: false, message: "Employee ID not found for this company. Please contact your HR." });
-        }
-        if (uaEmp.userId) {
-          return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });
+      const resolved = await resolveRosterEmployee(corpId, empId);
+      if (!resolved) {
+        return res.status(404).json({ success: false, message: "Employee ID not found for this company. Please contact your HR." });
+      }
+      if (resolved.userId) {
+        return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });
+      }
+
+      // D-11: never disclose WHO the employee is before identity is proven. When
+      // the roster carries a contact, send an OTP there and release the personal
+      // details only from /register/verify-employee.
+      if (resolved.email) {
+        try {
+          await signupVerificationService.sendSignupOTP({
+            email: resolved.email,
+            firstName: resolved.firstName || "there",
+          });
+        } catch (otpErr) {
+          console.error("Employee verification OTP send failed:", otpErr?.message);
+          return res.status(502).json({
+            success: false,
+            message: "Could not send the verification code. Please try again, or contact your HR.",
+            code: "OTP_SEND_FAILED",
+          });
         }
         return res.json({
           success: true,
-          message: "Employee verified",
-          employee: {
-            dbId: null,
-            employeeId: uaEmp.employeeId || String(employeeId).trim(),
-            department: uaEmp.department || null,
-            designation: uaEmp.designation || null,
-            corporateName: uaEmp.companyName,
-            firstName: uaEmp.firstName || null,
-            lastName: uaEmp.lastName || null,
-          },
+          requiresOtp: true,
+          message: `We've sent a verification code to ${maskEmail(resolved.email)}.`,
+          maskedEmail: maskEmail(resolved.email),
+          employee: { employeeId: resolved.employeeId, corporateName: resolved.companyName },
         });
       }
-      if (emp.userId) {
-        return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });
-      }
-      const meta = emp.metadata || {};
+
+      // No contact on the roster, so identity cannot be proven here. Confirm only
+      // that the ID is on the roster — still no name, department or designation.
       return res.json({
         success: true,
-        message: "Employee verified",
-        employee: {
-          dbId: emp.id,
-          employeeId: emp.employeeId,
-          department: emp.department || meta.department || null,
-          designation: emp.designation || meta.designation || null,
-          corporateName: emp.companyName,
-          firstName: meta.firstName || null,
-          lastName: meta.lastName || null,
-        },
+        requiresOtp: false,
+        message: "Employee ID found. Please continue your registration.",
+        employee: { employeeId: resolved.employeeId, corporateName: resolved.companyName },
       });
     } catch (error) {
       console.error("Employee validation error:", error);
       return res.status(500).json({ success: false, message: "Validation failed" });
+    }
+  }
+);
+
+/**
+ * @route   POST /api/users/register/verify-employee
+ * @desc    D-11: confirm the OTP sent to the rostered contact, then release the
+ *          employee's details for signup pre-fill. This is the only place those
+ *          details are disclosed.
+ * @access  Public (rate limited)
+ */
+router.post(
+  "/register/verify-employee",
+  employeeLookupLimiter,
+  [
+    body("corporateId").isInt({ min: 1 }).withMessage("Corporate ID required"),
+    body("employeeId").notEmpty().trim().withMessage("Employee ID required"),
+    body("code").notEmpty().trim().withMessage("Verification code required"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+    const corpId = parseInt(req.body.corporateId);
+    const empId = String(req.body.employeeId).trim();
+    try {
+      const resolved = await resolveRosterEmployee(corpId, empId);
+      if (!resolved) {
+        return res.status(404).json({ success: false, message: "Employee ID not found for this company. Please contact your HR." });
+      }
+      if (resolved.userId) {
+        return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });
+      }
+      if (!resolved.email) {
+        return res.status(400).json({
+          success: false,
+          message: "No contact is on file for this employee ID. Please contact your HR.",
+          code: "NO_CONTACT_ON_ROSTER",
+        });
+      }
+
+      const result = await signupVerificationService.verifySignupOTP({
+        email: resolved.email,
+        code: String(req.body.code).trim(),
+      });
+      if (!result?.success) {
+        return res.status(400).json({
+          success: false,
+          message: "That code is incorrect or has expired. Please request a new one.",
+          code: "OTP_INVALID",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Employee verified",
+        employee: {
+          dbId: resolved.dbId,
+          employeeId: resolved.employeeId,
+          department: resolved.department,
+          designation: resolved.designation,
+          corporateName: resolved.companyName,
+          firstName: resolved.firstName,
+          lastName: resolved.lastName,
+        },
+      });
+    } catch (error) {
+      console.error("Employee verification error:", error);
+      return res.status(500).json({ success: false, message: "Verification failed" });
     }
   }
 );
