@@ -215,6 +215,37 @@ export function normalizeVerificationStatus(doc) {
  * Safe to call on Sequelize model instances or plain objects.
  */
 /**
+ * D-3/D-4: the model used to hard-code a consultationTypes default of
+ * online ₹500 / walkIn ₹600 / homeVisit ₹1000, and that default got materialised
+ * into almost every row (1117 of 1118 doctors store exactly online=500,walkIn=600;
+ * 901 also have onlineConsultationFee=500). Those are placeholders, not fees the
+ * doctor set, so patients were being quoted an invented price.
+ *
+ * We cannot distinguish a genuine ₹500 from the placeholder ₹500, and blanking it
+ * would break booking (a null fee makes createAppointment return 503). So instead
+ * we LABEL provenance and let the UI say "indicative, confirmed at booking".
+ *
+ * feeSource: 'doctor'           — a differentiated fee the doctor/ops actually set
+ *            'platform_default' — matches the legacy placeholder; treat as indicative
+ */
+const LEGACY_PLACEHOLDER_ONLINE_FEE = 500;
+const LEGACY_PLACEHOLDER_WALKIN_FEE = 600;
+
+function resolveFeeProvenance(doc) {
+  const ct = doc.consultationTypes && typeof doc.consultationTypes === 'object' ? doc.consultationTypes : {};
+  const ctOnline = Number(ct?.online?.fee);
+  const ctWalkIn = Number(ct?.walkIn?.fee);
+  const matchesLegacyTriple = ctOnline === LEGACY_PLACEHOLDER_ONLINE_FEE
+    && ctWalkIn === LEGACY_PLACEHOLDER_WALKIN_FEE;
+
+  const scalarOnline = Number(doc.onlineConsultationFee);
+  const scalarIsPlaceholder = !Number.isFinite(scalarOnline)
+    || scalarOnline === LEGACY_PLACEHOLDER_ONLINE_FEE;
+
+  return (matchesLegacyTriple && scalarIsPlaceholder) ? 'platform_default' : 'doctor';
+}
+
+/**
  * D-6: clinicAddress is a TEXT column that holds a JSON document for most rows
  * (759 of them), so clients had to JSON.parse it themselves. Resolve it to a real
  * object: prefer the structured clinicAddress_json, then parse the JSON text, and
@@ -264,6 +295,12 @@ export function normalizeDoctorProfile(raw) {
   }
 
   doc.feeStructure      = normalizeFeeStructure(doc);
+
+  // D-3/D-4: tell clients whether this fee is doctor-set or the legacy placeholder,
+  // so an indicative price is never presented as a confirmed one.
+  doc.feeSource    = resolveFeeProvenance(doc);
+  doc.feeConfirmed = doc.feeSource === 'doctor';
+  doc.feeIsIndicative = !doc.feeConfirmed;
   doc.qualifications    = toArray(doc.qualifications);
   doc.languages         = toArray(doc.languages);
   doc.servicesOffered   = toArray(doc.servicesOffered);
