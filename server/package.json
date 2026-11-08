@@ -44,6 +44,8 @@
     "fix:lab-login:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/reset-lab-qa-account.mjs",
     "fix:clinic-login": "node scripts/qa/ensure-clinic-login-account.mjs",
     "fix:clinic-login:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/ensure-clinic-login-account.mjs",
+    "store:reviewer-account:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/ensure-play-reviewer-account.mjs",
+    "store:review-origin:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/provision-review-mobile-origin.mjs",
     "test:lab-login-unit": "node scripts/qa/lab-login-unit-smoke.mjs",
     "test:doctor-assistant-nav-regression": "node scripts/qa/doctor-assistant-navigation-regression.mjs",
     "test:voice-assistant-prod-smoke": "node scripts/qa/voice-assistant-prod-smoke.mjs",

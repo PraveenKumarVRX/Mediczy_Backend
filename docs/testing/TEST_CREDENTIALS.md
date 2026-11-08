@@ -1,5 +1,21 @@
 # 🎯 MEDICZY TEST CREDENTIALS - Complete Reference
 
+> ## ⛔ Not for app-store review
+> Do **not** give any account on this page to Google Play or App Store reviewers. These
+> credentials are published in this repository, shared across QA, and rewritten by the reset
+> scripts below — a reset mid-review breaks the reviewer's login, which is a rejection.
+> `user@mediczy.com` additionally **cannot sign in to the mobile app at all**
+> (`/api/patient/login` needs `role='patient'` with an `organization_id`; that row is
+> `role='user'` with `organization_id=NULL`).
+>
+> Store review has its own dedicated account: see
+> [docs/deployment/APP_STORE_REVIEW_ACCESS.md](../deployment/APP_STORE_REVIEW_ACCESS.md).
+
+> ## ⚠️ Passwords on this page drift
+> They are reset by hand (`npm run fix:qa-login-blockers:ssm`, `reset-user-qa-account.mjs`) and
+> this file is not updated in step. The patient account's live password is **not** `User123` as
+> listed below. Treat every value here as a hint, not a fact.
+
 ## 🔐 ALL USER TYPES WITH RING-FENCING (13 Verticals)
 
 ### Password Pattern: `{UserType}123`
