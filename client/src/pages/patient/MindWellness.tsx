@@ -69,16 +69,51 @@ const MOOD_LABELS = ["Very low", "Low", "Neutral", "Good", "Great"];
 /**
  * National mental-health helplines (India). Shown as selectable text as well as
  * a tel: link, because tel: is unreliable in some embedded views.
+ *
+ * These come from the server (`GET /programs/instruments` -> `helplines`), which
+ * serves `server/utils/crisis-detection.js` — one list for the diary, the
+ * instrument scorer and this page, so a number can never be updated in one
+ * place and go stale in another. The constant below is only the fallback for
+ * when that call fails: a crisis panel with no number on it would be worse than
+ * one showing a number a release behind. Verified 2026-11-08 against MoHFW
+ * (Tele-MANAS) and PIB PRID 1652240 (KIRAN).
  */
-const HELPLINES = [
-  { name: "Tele-MANAS (Govt. of India)", number: "14416", note: "24x7, 20+ languages" },
-  { name: "KIRAN Mental Health Helpline", number: "1800-599-0019", note: "24x7, toll-free" },
+type Helpline = { name: string; numbers: string[]; note: string };
+
+const FALLBACK_HELPLINES: Helpline[] = [
+  { name: "Tele-MANAS (Govt. of India)", numbers: ["14416", "1800-891-4416"], note: "24x7, 20+ languages" },
+  { name: "KIRAN Mental Health Helpline", numbers: ["1800-599-0019"], note: "24x7, toll-free" },
+  { name: "Emergency services", numbers: ["112"], note: "24x7" },
 ];
+
+/** Map the server's helpline shape onto the page's, tolerating a partial row. */
+function normalizeHelplines(raw: unknown): Helpline[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((h: any) => {
+      const numbers = (Array.isArray(h?.numbers) ? h.numbers : [])
+        .filter((n: unknown) => typeof n === "string" && n.trim() !== "");
+      if (!h?.name || numbers.length === 0) return null;
+      const note = [h.hours, h.languages].filter((p: unknown) => typeof p === "string" && p).join(", ");
+      return { name: String(h.name), numbers, note } as Helpline;
+    })
+    .filter((h): h is Helpline => h !== null);
+}
 
 const fadeUp = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
 
 /* ─── Crisis card ────────────────────────────────────────────────────────── */
-function CrisisCard({ onDismissToSupport }: { onDismissToSupport: () => void }) {
+function CrisisCard({
+  onDismissToSupport,
+  helplines,
+  message,
+}: {
+  onDismissToSupport: () => void;
+  helplines: Helpline[];
+  /** The server's wording when the card was raised by a text scan; the default
+   *  copy below is for an instrument's flagged crisis item. */
+  message?: string | null;
+}) {
   return (
     <Card className="border-2 border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40">
       <CardHeader className="pb-2">
@@ -89,18 +124,20 @@ function CrisisCard({ onDismissToSupport }: { onDismissToSupport: () => void }) 
       </CardHeader>
       <CardContent className="space-y-3 text-sm text-red-900 dark:text-red-100">
         <p>
-          Your answers mention thoughts of harming yourself. You deserve support right now, and
-          help is free and confidential.
+          {message ??
+            "Your answers mention thoughts of harming yourself. You deserve support right now, and help is free and confidential."}
         </p>
         <div className="space-y-2">
-          {HELPLINES.map((h) => (
-            <div key={h.number} className="rounded-lg bg-white/70 p-3 dark:bg-black/20">
+          {helplines.map((h) => (
+            <div key={h.name} className="rounded-lg bg-white/70 p-3 dark:bg-black/20">
               <div className="font-semibold">{h.name}</div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                <a href={`tel:${h.number.replace(/[^0-9]/g, "")}`} className="text-lg font-bold underline">
-                  {h.number}
-                </a>
-                <span className="text-xs opacity-80">{h.note}</span>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                {h.numbers.map((n) => (
+                  <a key={n} href={`tel:${n.replace(/[^0-9]/g, "")}`} className="text-lg font-bold underline">
+                    {n}
+                  </a>
+                ))}
+                {h.note && <span className="text-xs opacity-80">{h.note}</span>}
               </div>
             </div>
           ))}
@@ -238,16 +275,29 @@ export default function MindWellness() {
   const [activeInstrument, setActiveInstrument] = useState<Instrument | null>(null);
   const [lastResult, setLastResult] = useState<ScoreResult | null>(null);
   const [showCrisis, setShowCrisis] = useState(false);
+  const [crisisMessage, setCrisisMessage] = useState<string | null>(null);
   const [moodNote, setMoodNote] = useState("");
   const [moodValue, setMoodValue] = useState<number | null>(null);
   const [consultMode, setConsultMode] = useState<"online" | "walkIn">("online");
   const [showSpecialists, setShowSpecialists] = useState(false);
 
-  const { data: instruments = [], isLoading: loadingInstruments } = useQuery<Instrument[]>({
+  const { data: catalogue, isLoading: loadingInstruments } = useQuery<{
+    instruments: Instrument[];
+    helplines: Helpline[];
+  }>({
     queryKey: ["mind-instruments"],
-    queryFn: () => api.get("/programs/instruments").then((r) => r.data.data),
+    queryFn: () =>
+      api.get("/programs/instruments").then((r) => ({
+        instruments: Array.isArray(r.data?.data) ? r.data.data : [],
+        helplines: normalizeHelplines(r.data?.helplines),
+      })),
     staleTime: 60 * 60 * 1000,
   });
+
+  const instruments = catalogue?.instruments ?? [];
+  // Fall back the moment the served list is missing or empty — never render the
+  // crisis card with an empty helpline list.
+  const helplines = catalogue?.helplines?.length ? catalogue.helplines : FALLBACK_HELPLINES;
 
   const { data: enrollments = [] } = useQuery<any[]>({
     queryKey: ["my-programs"],
@@ -305,7 +355,11 @@ export default function MindWellness() {
     onSuccess: (result) => {
       setLastResult(result);
       setActiveInstrument(null);
-      if (result.crisis) setShowCrisis(true);
+      if (result.crisis) {
+        // null = use the card's instrument-specific copy, not a scan message.
+        setCrisisMessage(null);
+        setShowCrisis(true);
+      }
       qc.invalidateQueries({ queryKey: ["my-programs"] });
       qc.invalidateQueries({ queryKey: ["mind-history"] });
     },
@@ -332,10 +386,18 @@ export default function MindWellness() {
         tags: ["mind-wellness"],
       });
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       toast({ title: "Saved", description: "Your check-in is private to you." });
       setMoodValue(null);
       setMoodNote("");
+      // Phase 3: the server scans the note's text and returns `support` when it
+      // reads as distress. Surfacing it here is the whole effect — nothing was
+      // flagged on the entry and nobody was notified.
+      const support = res?.data?.support;
+      if (support) {
+        setCrisisMessage(support.message ?? null);
+        setShowCrisis(true);
+      }
     },
     onError: (err: any) => toast({
       title: "Could not save",
@@ -378,7 +440,11 @@ export default function MindWellness() {
 
         {showCrisis && (
           <motion.div variants={fadeUp} initial="hidden" animate="show" className="mb-5">
-            <CrisisCard onDismissToSupport={() => { setShowCrisis(false); setShowSpecialists(true); }} />
+            <CrisisCard
+              helplines={helplines}
+              message={crisisMessage}
+              onDismissToSupport={() => { setShowCrisis(false); setShowSpecialists(true); }}
+            />
           </motion.div>
         )}
 

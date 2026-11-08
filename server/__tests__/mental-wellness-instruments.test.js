@@ -94,6 +94,24 @@ describe('MED-MIND-001 instrument scoring', () => {
     expect(score('GAD7', [3, 3, 3, 3, 3, 3, 3]).crisis).toBe(false);
   });
 
+  // Phase 3: a flagged crisis item carries the helplines with it, so no caller
+  // can forget to look them up.
+  it('attaches helplines to a crisis result', () => {
+    const a = zeros(9);
+    a[8] = 2;
+    const r = score('PHQ9', a);
+    expect(r.support).toBeTruthy();
+    expect(r.support.message).toMatch(/free, confidential/i);
+    const numbers = r.support.helplines.flatMap((h) => h.numbers);
+    expect(numbers).toContain('14416');
+    expect(numbers).toContain('1800-599-0019');
+  });
+
+  it('attaches no support when no crisis item is flagged, even at a severe total', () => {
+    expect(score('PHQ9', [3, 3, 3, 3, 3, 3, 3, 3, 0]).support).toBeNull();
+    expect(score('GAD7', [3, 3, 3, 3, 3, 3, 3]).support).toBeNull();
+  });
+
   it('is pure — identical answers always produce an identical result', () => {
     const a = [0, 1, 2, 3, 0, 1, 2, 3, 0];
     expect(score('PHQ9', a)).toEqual(score('PHQ9', a));

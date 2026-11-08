@@ -9,8 +9,24 @@ import { authUser } from '../middleware/auth.middleware.js';
 import { Op } from 'sequelize';
 import healthDiaryService from '../services/health-diary.service.js';
 import * as prescriptionRepository from '../repositories/prescription.repository.js';
+// MED-MIND-001 Phase 3. A diary entry is often where distress is written down
+// first. Scanning it is deterministic keyword matching, not an assessment: the
+// only effect is that helpline numbers come back with the saved entry. Nothing
+// is flagged, stored, or reported to anyone — see utils/crisis-detection.js for
+// why that restraint is deliberate.
+import { detectCrisis, crisisSupportPayload } from '../utils/crisis-detection.js';
 
 const router = express.Router();
+
+/**
+ * Attach crisis-support resources to a diary write response when the text the
+ * patient just saved contains crisis language. Returns the response body
+ * unchanged when it does not, so every existing client keeps working.
+ */
+function withCrisisSupport(body, ...textParts) {
+  const support = crisisSupportPayload(detectCrisis(...textParts));
+  return support ? { ...body, support } : body;
+}
 
 /**
  * @route   GET /api/health-diary
@@ -196,11 +212,11 @@ router.post('/', authUser, async (req, res) => {
       isPrivate: isPrivate || false
     });
     
-    res.status(201).json({
+    res.status(201).json(withCrisisSupport({
       success: true,
       message: 'Diary entry created',
       entry
-    });
+    }, title, description));
   } catch (error) {
     console.error('Create diary entry error:', error);
     res.status(500).json({
@@ -250,11 +266,13 @@ router.put('/:id', authUser, async (req, res) => {
       isPrivate: isPrivate !== undefined ? isPrivate : entry.isPrivate
     });
     
-    res.json({
+    // Scan the entry as it now stands, not just the fields in this request —
+    // an edit that only changes the title should still see the body's text.
+    res.json(withCrisisSupport({
       success: true,
       message: 'Entry updated',
       entry
-    });
+    }, entry.title, entry.description));
   } catch (error) {
     console.error('Update diary entry error:', error);
     res.status(500).json({
@@ -370,11 +388,11 @@ router.post('/log-symptom', authUser, async (req, res) => {
       tags: ['symptom']
     });
     
-    res.status(201).json({
+    res.status(201).json(withCrisisSupport({
       success: true,
       message: 'Symptom logged',
       entry
-    });
+    }, symptom, description));
   } catch (error) {
     console.error('Log symptom error:', error);
     res.status(500).json({

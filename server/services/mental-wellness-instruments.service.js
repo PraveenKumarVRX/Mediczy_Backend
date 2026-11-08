@@ -20,6 +20,12 @@
  * until their terms are confirmed in writing — do not add one without that.
  */
 
+// Phase 3: the helplines shown on a crisis-item flag come from the one shared
+// list, so the diary, this scorer and the Mind & Mood page can never drift to
+// different numbers. HELPLINES is a frozen constant — importing it keeps score()
+// pure and I/O-free, which is the basis of the Tier A position above.
+import { HELPLINES, SUPPORT_MESSAGE } from '../utils/crisis-detection.js';
+
 /** Instruments intentionally not implemented yet — licence terms unconfirmed. */
 export const PENDING_LICENCE_REVIEW = Object.freeze({
   PSS10: 'Perceived Stress Scale (Cohen) — free for academic use; commercial terms unconfirmed',
@@ -214,6 +220,8 @@ export function score(instrumentCode, answers) {
     .filter((itemNo) => values[itemNo - 1] > 0)
     .map((itemNo) => `${instrument.code}_Q${itemNo}`);
 
+  const crisis = flaggedItems.length > 0;
+
   return {
     instrumentCode: instrument.code,
     instrumentVersion: instrument.version,
@@ -222,7 +230,18 @@ export function score(instrumentCode, answers) {
     band,
     interpretation,
     flaggedItems,
-    crisis: flaggedItems.length > 0,
+    crisis,
+    // Phase 3: a flagged crisis item (PHQ-9 Q9 answered above 0) now carries the
+    // helplines with it, so no caller has to remember to look them up. Treated
+    // as resources, not a finding — it says nothing about the person beyond
+    // which item they answered.
+    support: crisis
+      ? {
+          level: 'elevated',
+          message: SUPPORT_MESSAGE.elevated,
+          helplines: HELPLINES,
+        }
+      : null,
     answers: values,
     disclaimer: DISCLAIMER,
   };

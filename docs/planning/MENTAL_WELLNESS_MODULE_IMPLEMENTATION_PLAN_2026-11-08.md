@@ -663,7 +663,86 @@ under-stating is the more harmful error), else a mood-diary average over 30 days
 **Acceptance:** nav item appears once a program is seeded; a check-in round-trips and renders in the
 trend; every score displays the non-diagnostic disclaimer; page works at 400px width.
 
-### Phase 3 — Safety and the human leg *(2–3 days)*
+### Phase 3 — Safety and the human leg — ✅ BUILT 2026-11-08
+
+**Delivered**
+
+| File | What it does |
+|---|---|
+| `server/utils/crisis-detection.js` *(new)* | One definition of the crisis phrases **and** of the helplines. Two tiers (`imminent`, `elevated`), 10 patterns, `detectCrisis()` + `crisisSupportPayload()`. Imports nothing — no db, no mailer, no notifier — which is asserted by test. |
+| `server/services/ai-emergency-triage.service.js` | Now imports `TRIAGE_PSYCHIATRIC_RED_FLAG` instead of carrying the regex inline. **Byte-identical pattern — zero behaviour change** (see the governance note below). |
+| `server/routes/health-diary.route.js` | `POST /`, `PUT /:id` and `POST /log-symptom` scan the entry's own text and return a `support` object when it reads as distress. `PUT` scans the entry *as it stands after the edit*, so an untouched body still counts. |
+| `server/services/mental-wellness-instruments.service.js` | A flagged crisis item (PHQ-9 Q9 > 0) now carries `support` with the helplines. Still pure — `HELPLINES` is a frozen constant. |
+| `server/routes/health-programs.route.js` | `GET /instruments` serves `helplines` so the client needs no hardcoded copy. |
+| `client/src/pages/patient/MindWellness.tsx` | Helplines come from the server; the hardcoded list is now only a fallback for a failed fetch. `CrisisCard` renders every number per line and takes the server's wording when raised by a text scan. |
+| `client/src/pages/HealthDiary.tsx` *(new banner)* | Shows the support card on a detection, with "Your entry is private. Showing this did not notify anyone." |
+| `server/scripts/propose-triage-crisis-pattern-alignment.mjs` *(new)* | Files the triage-pattern broadening for medical-director review. Dry-run by default. |
+
+**Helplines re-verified 2026-11-08** (the item the plan flagged as outstanding):
+
+| Helpline | Numbers | Source |
+|---|---|---|
+| Tele-MANAS | **14416**, **1800-891-4416** | MoHFW; NIMHANS apex centre. The alternate toll-free number was **missing** from the Phase 2 card and has been added. |
+| KIRAN | **1800-599-0019** | PIB release PRID 1652240 (launched 08-09-2020, 13 languages) |
+| Emergency | **112** | Added — the Phase 2 card only mentioned "your local emergency number" in prose |
+
+**⚠️ Governance: the triage red flag was deliberately NOT broadened.**
+`ai-emergency-triage`'s red-flag list is a governed SaMD artefact — its model card's
+`changeControlPlan` reads *"Adding or changing any phrase/pattern requires
+`governanceService.proposeChange()` and medical-director sign-off — never applied autonomously."*
+Widening it changes which patients are triaged **ESI-2 (emergent)**, which is a clinical threshold
+change, not a refactor. So the extraction is behaviour-preserving and the broadening is filed as a
+proposal for a human to decide:
+
+```
+node scripts/ssm-env-loader.mjs scripts/propose-triage-crisis-pattern-alignment.mjs           # dry run
+node scripts/ssm-env-loader.mjs scripts/propose-triage-crisis-pattern-alignment.mjs --apply   # file it
+```
+
+The proposal measures the gap: of 10 real-world phrasings of suicidal intent, the current
+four-phrase regex matches **1** and misses **9** (an explicit plan, a named means, a farewell, and
+all of the hopelessness/burden phrasings). It also tells the reviewer the likeliest right answer —
+adopt the `imminent` tier for triage and leave `elevated` to the patient-facing surfaces, which
+needs no new code beyond a filter on `rule.level`.
+
+**Two design decisions worth stating, because both are deliberate asymmetries**
+
+1. **No figurative-use suppression.** "I'll kill myself if I sit through another review" matches.
+   A false positive costs an unwanted panel offering a free helpline; a false negative costs a life.
+2. **But four patterns are deliberately narrowed, because this is a *health* diary.** A crisis panel
+   on a grazed knee teaches people to dismiss the panel, which is how a safety feature becomes
+   noise. Each narrowing and the phrasing it gives up is pinned by name in
+   `__tests__/crisis-detection.test.js`:
+
+   | Narrowed | Because this is routine diary text | Cost |
+   |---|---|---|
+   | `kill myself` only, never bare `kill me` | "my back pain is killing me" | misses a terse "I want someone to kill me" |
+   | `jump off/from` requires a place (building, terrace, bridge…) | "jumped off the treadmill when my knee twinged" | misses an unqualified "I want to jump" |
+   | `this is my last` requires *message/note/entry/day/night* | "this is my last tablet of the course" | misses an unusual farewell phrasing |
+   | self-harm needs a progressive form or an intent marker (`cutting myself`, `cut myself again / on purpose`) | "I cut myself shaving", "hurt myself lifting", "burned myself on the stove" | misses a terse "I cut myself" that was not an accident |
+
+**Detection notifies nobody.** No alert, no email, no row written, no flag on the entry, no
+employer visibility. Asserted three ways: the detector imports nothing; `withCrisisSupport` contains
+no `notify`/`sendEmail`/`INSERT`/`alert` token; and an HTTP test proves the stored row is
+*byte-identical* whether or not a detection fired. Someone who learns that typing how they feel
+triggers a report stops typing how they feel.
+
+**Tests: 89 added, all passing** — `crisis-detection.test.js` (66), `health-diary-crisis-support.test.js`
+(10), `mental-wellness-lane-boundary.test.js` (11), plus 2 in the instruments suite.
+
+**Lane boundary, now enforced by test rather than by inspection** —
+`mental-wellness-lane-boundary.test.js` sweeps every `.js/.mjs/.ts` file under `routes`, `services`,
+`controllers`, `repositories`, `models`, `middleware`, `utils`, `migrations`, `scripts` and
+`__tests__` (1 000+ files) and fails if any file outside a 10-entry allow-list so much as *mentions*
+`program_assessment_responses`; separately it fails if any corporate/HR/OHC/CMO-named file does. It
+also asserts the table's `CREATE TABLE` body declares no `corporate_id`/`employer_id`/`tenant_id`
+and that its only foreign keys are `program_enrollments` and `program_assessments` — so the absence
+of a join path to an employer is a *checked* property, not a remembered one.
+
+**Still open:** the broadening proposal needs filing (`--apply`) and then a medical director.
+
+<details>
+<summary>Original Phase 3 plan (for the record)</summary>
 
 - Extract the suicidality pattern from `ai-emergency-triage.service.js:40` into
   `server/utils/crisis-detection.js`; the triage service imports it (AD-6 — one definition).
@@ -683,6 +762,8 @@ trend; every score displays the non-diagnostic disclaimer; page works at 400px w
 returns ≥1 psychiatrist for both `online` and `walkIn`; no unconfirmed fee is rendered as a price; no
 corporate endpoint returns a mind response (negative test); the triage service's existing behaviour
 is unchanged after the extraction (regression test).
+
+</details>
 
 ### Phase 4 — AI coach, Tier B *(deferred, needs governance sign-off)*
 

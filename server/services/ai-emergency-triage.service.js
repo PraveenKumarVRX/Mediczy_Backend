@@ -23,6 +23,12 @@ import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import interpretabilityService from './ai-interpretability.service.js';
 import qualityGates from './ai-quality-gates.service.js';
+// MED-MIND-001 Phase 3: the psychiatric red-flag phrases now live in one shared
+// module alongside the helplines the patient-facing surfaces show. The constant
+// imported here is byte-identical to the regex that was previously inline, so
+// triage behaviour is unchanged — see the warning on TRIAGE_PSYCHIATRIC_RED_FLAG
+// before touching it (it is a governed SaMD threshold).
+import { TRIAGE_PSYCHIATRIC_RED_FLAG } from '../utils/crisis-detection.js';
 
 // ─── Red Flag Conditions (ESI Level 1-2) ────────────────────
 const RED_FLAGS = [
@@ -37,7 +43,7 @@ const RED_FLAGS = [
   { pattern: /severe.?pain.*(10|9|8).*(10|out.?of)/i, esi: 2, category: 'pain', action: 'PAIN_PROTOCOL' },
   { pattern: /poisoning|overdose|ingested|toxic/i, esi: 2, category: 'toxicology', action: 'POISON_CONTROL' },
   { pattern: /high.?fever.*(child|infant|baby|newborn)|febrile.?seizure/i, esi: 2, category: 'pediatric', action: 'PEDIATRIC_ALERT' },
-  { pattern: /suicid|self.?harm|want.?to.?die|kill.?myself/i, esi: 2, category: 'psychiatric', action: 'CRISIS_INTERVENTION' },
+  { pattern: TRIAGE_PSYCHIATRIC_RED_FLAG, esi: 2, category: 'psychiatric', action: 'CRISIS_INTERVENTION' },
   { pattern: /snake.?bite|scorpion|envenomation/i, esi: 2, category: 'toxicology', action: 'ANTIVENOM_READY' },
   { pattern: /fracture.?open|compound.?fracture|bone.?visible/i, esi: 2, category: 'trauma', action: 'ORTHO_TRAUMA_ALERT' },
   { pattern: /burn.*(face|airway|>20%|third.?degree)/i, esi: 2, category: 'burns', action: 'BURN_PROTOCOL' },

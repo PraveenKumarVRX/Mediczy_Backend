@@ -21,8 +21,21 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { Link } from 'react-router-dom';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/**
+ * MED-MIND-001 Phase 3. When a saved entry's text reads as distress, the server
+ * returns `support` alongside it: a message plus the national helplines. It is
+ * shown here and nowhere else — nothing is stored on the entry and nobody is
+ * notified, so the diary stays a place a patient can be honest in.
+ */
+interface CrisisSupport {
+  level: 'imminent' | 'elevated';
+  message: string;
+  helplines: { id?: string; name: string; numbers: string[]; hours?: string; languages?: string }[];
+}
 
 interface HealthDiaryEntry {
   id: number;
@@ -222,6 +235,7 @@ const HealthDiary: React.FC = () => {
   const [showLogModal, setShowLogModal] = useState(false);
   const [form, setForm]                 = useState<LogForm>({ ...BLANK_FORM });
   const [saving, setSaving]             = useState(false);
+  const [crisisSupport, setCrisisSupport] = useState<CrisisSupport | null>(null);
   const [expandedIds, setExpandedIds]   = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters]   = useState(false);
   const [sources, setSources]           = useState<DataSource[]>([]);
@@ -385,9 +399,14 @@ const HealthDiary: React.FC = () => {
         body: JSON.stringify({ entryType: form.entryType, title: form.title.trim(), description: form.description.trim(), entryDate: new Date(form.entryDate).toISOString(), data }),
       });
       if (!res.ok) throw new Error();
+      const body = await res.json().catch(() => ({}));
       toast.success('Health event logged');
       setShowLogModal(false);
       setForm({ ...BLANK_FORM, entryDate: toLocalDatetimeValue() });
+      // Phase 3: surface helplines when the entry's own words suggest distress.
+      if (body?.support?.message && Array.isArray(body.support.helplines)) {
+        setCrisisSupport(body.support as CrisisSupport);
+      }
       fetchDiaryEntries();
     } catch { toast.error('Failed to save entry'); }
     finally { setSaving(false); }
@@ -489,6 +508,60 @@ const HealthDiary: React.FC = () => {
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-5 animate-in fade-in duration-500">
+
+      {/* ── Crisis support (shown only to the person who wrote the entry) ───── */}
+      <AnimatePresence>
+        {crisisSupport && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="rounded-2xl border-2 border-red-300 bg-red-50 p-5 dark:border-red-800 dark:bg-red-950/40"
+          >
+            <div className="flex items-start gap-3">
+              <Shield className="mt-0.5 h-5 w-5 shrink-0 text-red-700 dark:text-red-300" />
+              <div className="min-w-0 flex-1 space-y-3">
+                <p className="text-sm font-medium text-red-900 dark:text-red-100">{crisisSupport.message}</p>
+                <div className="space-y-2">
+                  {crisisSupport.helplines.map((h) => (
+                    <div key={h.name} className="rounded-lg bg-white/70 p-3 dark:bg-black/20">
+                      <div className="text-sm font-semibold text-red-900 dark:text-red-100">{h.name}</div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        {(h.numbers || []).map((n) => (
+                          <a
+                            key={n}
+                            href={`tel:${n.replace(/[^0-9]/g, '')}`}
+                            className="text-lg font-bold text-red-900 underline dark:text-red-100"
+                          >
+                            {n}
+                          </a>
+                        ))}
+                        <span className="text-xs text-red-900/80 dark:text-red-100/80">
+                          {[h.hours, h.languages].filter(Boolean).join(', ')}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline" className="border-red-300 dark:border-red-800">
+                    <Link to="/mind-wellness">
+                      <Brain className="mr-2 h-4 w-4" />
+                      Mind &amp; Mood
+                    </Link>
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setCrisisSupport(null)}>
+                    Dismiss
+                  </Button>
+                </div>
+                <p className="text-xs text-red-900/80 dark:text-red-100/80">
+                  Your entry is private. Showing this did not notify anyone.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Page header ──────────────────────────────────────────────────────── */}
       <motion.div

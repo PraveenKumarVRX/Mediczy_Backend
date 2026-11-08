@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db/pgPool.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import instrumentsService from '../services/mental-wellness-instruments.service.js';
+import { HELPLINES } from '../utils/crisis-detection.js';
 
 const router = express.Router();
 
@@ -282,6 +283,11 @@ router.get('/instruments', authUser, (req, res) => {
     success: true,
     data: instrumentsService.listInstruments(),
     disclaimer: instrumentsService.DISCLAIMER,
+    // Phase 3: served from the one shared list so the client never has to ship
+    // its own copy of a crisis number. The client keeps a hardcoded fallback for
+    // the case where this call fails — a crisis panel with no number on it would
+    // be worse than a stale one.
+    helplines: HELPLINES,
   });
 });
 
@@ -355,6 +361,9 @@ router.post('/enrollment/:id/assessments', authUser, async (req, res) => {
         // The client uses this to raise the crisis pathway (Phase 3). It is a
         // deterministic consequence of the patient's own answer, not a prediction.
         crisis: result.crisis,
+        // The helplines travel with the flag, so a client that forgets to carry
+        // its own list still has numbers to show. Null when nothing is flagged.
+        support: result.support,
       },
       disclaimer: result.disclaimer,
     });
