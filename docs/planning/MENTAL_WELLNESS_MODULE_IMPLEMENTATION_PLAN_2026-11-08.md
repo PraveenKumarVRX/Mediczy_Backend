@@ -687,12 +687,13 @@ trend; every score displays the non-diagnostic disclaimer; page works at 400px w
 | Emergency | **112** | Added — the Phase 2 card only mentioned "your local emergency number" in prose |
 
 **⚠️ Governance: the triage red flag was deliberately NOT broadened.**
-`ai-emergency-triage`'s red-flag list is a governed SaMD artefact — its model card's
-`changeControlPlan` reads *"Adding or changing any phrase/pattern requires
-`governanceService.proposeChange()` and medical-director sign-off — never applied autonomously."*
-Widening it changes which patients are triaged **ESI-2 (emergent)**, which is a clinical threshold
-change, not a refactor. So the extraction is behaviour-preserving and the broadening is filed as a
-proposal for a human to decide:
+The red-flag list belongs to model card **`emergency-triage-esi-v1` — Class III SaMD (high risk)**,
+whose `changeControlPlan` reads *"Changes to red-flag patterns or vital thresholds require medical
+director sign-off."* Widening it changes which patients are triaged **ESI-2 (emergent)**, which is a
+clinical threshold change, not a refactor. That same card already lists, under known limitations,
+*"Red flag patterns are regex-based and may miss paraphrased descriptions"* — exactly the gap here.
+So the extraction is behaviour-preserving and the broadening is filed as a proposal for a human to
+decide:
 
 ```
 node scripts/ssm-env-loader.mjs scripts/propose-triage-crisis-pattern-alignment.mjs           # dry run

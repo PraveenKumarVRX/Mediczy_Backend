@@ -8,10 +8,15 @@
  * MED-MIND-001 Phase 3 built a shared crisis detector. The patient-facing
  * surfaces (health diary, instrument scoring) use its full pattern set. The
  * emergency triage service does NOT: it still matches only the four phrases it
- * has always matched, because its red-flag list is a governed SaMD artefact —
- * model card `ai-emergency-triage`, changeControlPlan: "Adding or changing any
- * phrase/pattern requires governanceService.proposeChange() and
- * medical-director sign-off — never applied autonomously" (CLAUDE.md §3).
+ * has always matched, because its red-flag list belongs to model card
+ * `emergency-triage-esi-v1` — **Class III SaMD (high risk)** — whose
+ * changeControlPlan reads: "Changes to red-flag patterns or vital thresholds
+ * require medical director sign-off." (CLAUDE.md §3 adds that model changes are
+ * never applied autonomously.)
+ *
+ * That card already lists, as a known limitation, "Red flag patterns are
+ * regex-based and may miss paraphrased descriptions" — which is precisely the
+ * gap this proposal quantifies.
  *
  * Broadening it would change which patients are triaged ESI-2 (emergent). That
  * is a clinical threshold change and a clinician's call, not a refactor's. So
@@ -73,8 +78,14 @@ function buildProposal() {
   const missed = COVERAGE_GAP_EXAMPLES.filter((t) => !TRIAGE_PSYCHIATRIC_RED_FLAG.test(t));
 
   return {
-    component: 'ai-emergency-triage',
-    changeType: 'red_flag_pattern',
+    // Must match the MODEL_CARDS key in ai-model-governance.service.js so the
+    // proposal is attached to the right card.
+    component: 'emergency-triage-esi-v1',
+    // ai_model_change_log_change_type_check admits only: prompt_update,
+    // weight_adjustment, threshold_change, tool_selection, routing_update,
+    // model_swap, feature_addition. A red-flag pattern decides which patients
+    // cross into ESI-2, so it is a threshold change.
+    changeType: 'threshold_change',
     description:
       'Align the ESI-2 psychiatric red flag with the MED-MIND-001 Phase 3 shared crisis patterns '
       + '(intent, plan, means, farewell, ideation, self-harm, hopelessness, burden), replacing the '
@@ -96,7 +107,10 @@ function buildProposal() {
       patternCount: CRISIS_PATTERNS.length,
     },
     rationale:
-      'The current pattern misses common phrasings of suicidal intent, including an explicit plan, a '
+      'The model card for emergency-triage-esi-v1 already records as a known limitation that "red '
+      + 'flag patterns are regex-based and may miss paraphrased descriptions". This quantifies that '
+      + 'limitation for the psychiatric red flag. '
+      + 'The current pattern misses common phrasings of suicidal intent, including an explicit plan, a '
       + 'named means and a farewell message. '
       + `Of ${COVERAGE_GAP_EXAMPLES.length} real-world phrasings, the current regex matches `
       + `${COVERAGE_GAP_EXAMPLES.length - missed.length} and misses ${missed.length}: `
@@ -117,8 +131,8 @@ async function main() {
   const apply = process.argv.includes('--apply');
   const proposal = buildProposal();
 
-  console.log('── Proposed change (ai-emergency-triage / red_flag_pattern) ──────────────');
-  console.log(`component       : ${proposal.component}`);
+  console.log('── Proposed change — psychiatric red flag, emergency triage ──────────────');
+  console.log(`component       : ${proposal.component}  (Class III SaMD)`);
   console.log(`changeType      : ${proposal.changeType}`);
   console.log(`risk            : ${proposal.riskAssessment}`);
   console.log(`current phrases : ${proposal.previousConfig.pattern}`);

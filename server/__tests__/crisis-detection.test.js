@@ -212,10 +212,10 @@ describe('helplines', () => {
 
 describe('triage red flag is unchanged (governed SaMD threshold)', () => {
   it('matches exactly the four phrases the triage service always matched', () => {
-    // This constant backs an ESI-2 red flag. Broadening it changes which
-    // patients are triaged as emergent, which per the model card requires
-    // governanceService.proposeChange() + medical-director sign-off. If this
-    // test fails, that approval is what is missing — not the test.
+    // This constant backs an ESI-2 red flag in `emergency-triage-esi-v1`,
+    // a Class III SaMD component whose model card requires medical director
+    // sign-off for "changes to red-flag patterns or vital thresholds".
+    // If this test fails, that approval is what is missing — not the test.
     expect(TRIAGE_PSYCHIATRIC_RED_FLAG.source).toBe('suicid|self.?harm|want.?to.?die|kill.?myself');
     expect(TRIAGE_PSYCHIATRIC_RED_FLAG.flags).toBe('i');
   });

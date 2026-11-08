@@ -89,11 +89,11 @@ export const HELPLINES = Object.freeze([
  * ESI-2 psychiatric red flag. It is re-exported here unchanged so that service
  * and this module share one definition.
  *
- * ⚠️ DO NOT BROADEN THIS CONSTANT. The triage red-flag set is a governed SaMD
- * artefact (model card `ai-emergency-triage`, changeControlPlan: "Adding or
- * changing any phrase/pattern requires governanceService.proposeChange() and
- * medical-director sign-off — never applied autonomously"). Widening it would
- * change which patients are triaged ESI-2, which is a clinical threshold change.
+ * ⚠️ DO NOT BROADEN THIS CONSTANT. The triage red-flag set belongs to model card
+ * `emergency-triage-esi-v1` — **Class III SaMD (high risk)** — whose
+ * changeControlPlan reads: "Changes to red-flag patterns or vital thresholds
+ * require medical director sign-off." Widening it would change which patients
+ * are triaged ESI-2, which is a clinical threshold change.
  * The broader `CRISIS_PATTERNS` below are used only by non-clinical surfaces
  * (diary, self-report instruments) that offer resources rather than triage.
  * A proposal to align the two is filed via
