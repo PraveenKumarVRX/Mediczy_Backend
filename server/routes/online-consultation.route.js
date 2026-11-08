@@ -7,6 +7,7 @@ import userModel from '../models/user.model.intelligent.js';
 import paymentService from '../services/payment.service.js';
 import notificationService from '../services/notification.service.js';
 import healthCoinsService from '../services/health-coins.service.js';
+import { getTeleconsultEntitlement, consumeTeleconsult } from '../services/teleconsult-entitlement.service.js';
 import {
   buildLiveKitJoinData,
   createMeetingInfo,
@@ -470,9 +471,15 @@ router.post('/book', authUser, [
     }
 
     // Calculate consultation fee
-    const consultationFee = consultationType === 'online'
+    const listedFee = consultationType === 'online'
       ? (doctor.feeStructure?.online   || doctor.onlineConsultationFee   || doctor.consultationFees || 500)
       : (doctor.feeStructure?.inClinic || doctor.inPersonConsultationFee || doctor.consultationFees || 700);
+
+    // D-23: a member whose plan includes online consultations was still being
+    // charged the doctor's full rate. The join path already honoured an active
+    // plan, so the member could join for free but was quoted ₹800 to book.
+    const entitlement = await getTeleconsultEntitlement(patientId, { consultationType });
+    const consultationFee = entitlement.covered ? 0 : listedFee;
 
     // Normalize symptoms to array (handles string, array, null)
     const symptomsArray = toArray(symptoms).length > 0 ? toArray(symptoms)
@@ -480,7 +487,11 @@ router.post('/book', authUser, [
 
     // Determine initial status based on payment method
     let initialStatus = 'pending'; // Default: waiting for doctor approval
-    let initialPaymentStatus = 'pending';
+    // Nothing is owed on a plan-covered consultation. The enum has no
+    // 'covered' value (adding one needs a migration), so 'paid' with a zero
+    // amount is the honest state: no outstanding balance. Provenance goes in
+    // paymentDetails so this is never mistaken for a settled card payment.
+    let initialPaymentStatus = entitlement.covered ? 'paid' : 'pending';
     let meetingId = null;
     let meetingLink = null;
     let meetingDetails = null;
@@ -520,11 +531,42 @@ router.post('/book', authUser, [
       status: initialStatus,
       paymentAmount: consultationFee,
       paymentStatus: initialPaymentStatus,
+      ...(entitlement.covered ? {
+        paymentDetails: {
+          method: 'membership_plan',
+          coveredByPlan: true,
+          planId: entitlement.planId,
+          listedFee,
+          amountCharged: 0,
+          teleconsultsRemainingBefore: entitlement.remaining,
+        },
+      } : {}),
       symptoms: symptomsArray,
       reason
     }, {
       transaction: rlsTransaction,
     });
+
+    // Spend the teleconsult only once the appointment exists, and inside the
+    // same transaction, so a failure cannot burn an allowance with no booking.
+    if (entitlement.covered) {
+      const consumed = await consumeTeleconsult(
+        patientId,
+        doctor.specialization || 'general',
+        1,
+        { transaction: rlsTransaction },
+      );
+      if (!consumed) {
+        // Raced with another booking that spent the last one — charge normally
+        // rather than give away a consultation that is no longer covered.
+        await appointment.update(
+          { paymentAmount: listedFee, paymentStatus: 'pending', paymentDetails: null },
+          { transaction: rlsTransaction },
+        );
+        entitlement.covered = false;
+        entitlement.reason = 'teleconsult_allowance_exhausted';
+      }
+    }
 
     notifyCareTeamOfBooking({
       appointment,
@@ -626,7 +668,19 @@ router.post('/book', authUser, [
       success: true,
       message: isHealthCoinsPayment && hcPaymentResult
         ? `Appointment booked and paid successfully! Paid ${hcPaymentResult.hcPaid} HC for ₹${consultationFee} consultation.`
-        : 'Appointment request sent to doctor. Waiting for confirmation.',
+        : entitlement.covered
+          ? 'Appointment request sent to doctor. This consultation is covered by your plan — nothing to pay.'
+          : 'Appointment request sent to doctor. Waiting for confirmation.',
+      // So the app can say "covered by your plan" instead of showing a price
+      // the member does not owe.
+      planCoverage: {
+        covered: entitlement.covered,
+        listedFee,
+        amountPayable: consultationFee,
+        teleconsultsRemaining: entitlement.covered ? Math.max(0, entitlement.remaining - 1) : entitlement.remaining,
+        teleconsultsIncluded: entitlement.limit,
+        reason: entitlement.reason,
+      },
       appointment: {
         id: appointment.id,
         doctorName: appointment.doctorName,

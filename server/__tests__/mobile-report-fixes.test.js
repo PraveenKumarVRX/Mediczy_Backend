@@ -14,6 +14,7 @@ const { publicPlanCatalogue } = await import('../utils/plan-catalogue.js');
 const { packageDisplayName } = await import('../utils/health-package-tests.js');
 const { isPlaceholderPhone, sanitiseContact } = await import('../utils/placeholder-contact.js');
 const { normaliseResetIdentifier } = await import('../routes/user.route.js');
+const { usedTeleconsults, teleconsultAllowance } = await import('../services/teleconsult-entitlement.service.js');
 const cartRouter = (await import('../routes/cart.route.js')).default;
 
 /** Pull a route handler out of the router so it can be called directly. */
@@ -269,5 +270,46 @@ describe('forgot password by mobile (report rows 96, 189)', () => {
 
   test('junk is left for the validator to reject, not silently treated as a phone', () => {
     expect(run({ email: 'not-an-email' })).toEqual({ email: 'not-an-email' });
+  });
+});
+
+describe('teleconsult entitlement (report row 169 / D-23)', () => {
+  // Viveka: "Plan has 10 free teleconsults, but online consult still asks to
+  // pay 800." The entitlement lived in plan.metadata.coverageDetails and the
+  // join path honoured it, but the booking path priced off the doctor's rate.
+  const plan = (limit, usage = {}) => ({
+    appliedLimits: { teleConsultLimits: { allSpecialties: limit } },
+    usage: { teleConsult: usage },
+  });
+
+  test('an unused allowance is counted in full', () => {
+    expect(teleconsultAllowance(plan(10))).toBe(10);
+    expect(usedTeleconsults(plan(10))).toBe(0);
+  });
+
+  test('usage is pooled across specialties, not counted per specialty', () => {
+    const meta = plan(10, { cardiology: 2, general: 1 });
+    expect(usedTeleconsults(meta)).toBe(3);
+    expect(teleconsultAllowance(meta) - usedTeleconsults(meta)).toBe(7);
+  });
+
+  test('an exhausted allowance leaves nothing to waive', () => {
+    const meta = plan(2, { general: 2 });
+    expect(teleconsultAllowance(meta) - usedTeleconsults(meta)).toBe(0);
+  });
+
+  test('a plan without the benefit never waives a fee', () => {
+    expect(teleconsultAllowance({ appliedLimits: { teleConsultLimits: {} } })).toBe(0);
+    expect(teleconsultAllowance({})).toBe(0);
+    expect(teleconsultAllowance(null)).toBe(0);
+  });
+
+  test('a stated limit of zero is not a benefit', () => {
+    // Guards against `?? 0` defaults reading as "covered".
+    expect(teleconsultAllowance(plan(0))).toBe(0);
+  });
+
+  test('malformed usage counters cannot inflate the balance', () => {
+    expect(usedTeleconsults(plan(10, { general: 'two', cardiology: null, derm: 3 }))).toBe(3);
   });
 });

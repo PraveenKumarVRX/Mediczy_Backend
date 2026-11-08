@@ -1090,6 +1090,23 @@ router.get('/my/usage', authUser, async (req,res) => {
 });
 
 // -------- Usage Increment Endpoints --------
+/**
+ * GET /api/membership/my/teleconsult-entitlement
+ * What the member's plan covers for an online consultation, so the booking
+ * screen can show "covered by your plan" instead of quoting a fee they do not
+ * owe (D-23). Same source of truth the booking path charges from.
+ */
+router.get('/my/teleconsult-entitlement', authUser, async (req, res) => {
+  try {
+    const { getTeleconsultEntitlement } = await import('../services/teleconsult-entitlement.service.js');
+    const entitlement = await getTeleconsultEntitlement(req.user.id, { consultationType: 'online' });
+    return res.json({ success: true, ...entitlement });
+  } catch (e) {
+    console.error('[membership] teleconsult entitlement error:', e.message);
+    return res.status(500).json({ success: false, message: 'Failed to resolve teleconsult entitlement' });
+  }
+});
+
 // Increment teleconsult usage by specialty (default +1)
 router.post('/usage/teleconsult', authUser, [
   body('specialty').isString().notEmpty(),
