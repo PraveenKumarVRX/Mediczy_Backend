@@ -313,43 +313,84 @@ router.post(
         return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });
       }
 
-      // D-11: never disclose WHO the employee is before identity is proven. When
-      // the roster carries a contact, send an OTP there and release the personal
-      // details only from /register/verify-employee.
-      if (resolved.email) {
-        try {
-          await signupVerificationService.sendSignupOTP({
-            email: resolved.email,
-            firstName: resolved.firstName || "there",
-          });
-        } catch (otpErr) {
-          console.error("Employee verification OTP send failed:", otpErr?.message);
-          return res.status(502).json({
-            success: false,
-            message: "Could not send the verification code. Please try again, or contact your HR.",
-            code: "OTP_SEND_FAILED",
-          });
-        }
-        return res.json({
-          success: true,
-          requiresOtp: true,
-          message: `We've sent a verification code to ${maskEmail(resolved.email)}.`,
-          maskedEmail: maskEmail(resolved.email),
-          employee: { employeeId: resolved.employeeId, corporateName: resolved.companyName },
-        });
-      }
-
-      // No contact on the roster, so identity cannot be proven here. Confirm only
-      // that the ID is on the roster — still no name, department or designation.
+      // D-11: never disclose WHO the employee is before identity is proven, and
+      // never send an OTP from this endpoint — the signup screen calls it on a
+      // debounce while the employee ID is being typed, so sending here would spam
+      // a real employee's inbox and burn the rate limit. Lookup is existence-only;
+      // /register/send-employee-otp sends, /register/verify-employee releases.
       return res.json({
         success: true,
-        requiresOtp: false,
-        message: "Employee ID found. Please continue your registration.",
+        requiresOtp: Boolean(resolved.email),
+        ...(resolved.email ? { maskedEmail: maskEmail(resolved.email) } : {}),
+        message: resolved.email
+          ? "Employee ID found. Request a verification code to continue."
+          : "Employee ID found. Please continue your registration.",
         employee: { employeeId: resolved.employeeId, corporateName: resolved.companyName },
       });
     } catch (error) {
       console.error("Employee validation error:", error);
       return res.status(500).json({ success: false, message: "Validation failed" });
+    }
+  }
+);
+
+/**
+ * @route   POST /api/users/register/send-employee-otp
+ * @desc    D-11: send the verification code to the employee's rostered contact.
+ *          Separate from the lookup so a debounced existence check never emails
+ *          a real employee.
+ * @access  Public (rate limited)
+ */
+router.post(
+  "/register/send-employee-otp",
+  employeeLookupLimiter,
+  [
+    body("corporateId").isInt({ min: 1 }).withMessage("Corporate ID required"),
+    body("employeeId").notEmpty().trim().withMessage("Employee ID required"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+    try {
+      const resolved = await resolveRosterEmployee(parseInt(req.body.corporateId), String(req.body.employeeId).trim());
+      if (!resolved) {
+        return res.status(404).json({ success: false, message: "Employee ID not found for this company. Please contact your HR." });
+      }
+      if (resolved.userId) {
+        return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });
+      }
+      if (!resolved.email) {
+        return res.status(400).json({
+          success: false,
+          message: "No contact is on file for this employee ID. Please contact your HR.",
+          code: "NO_CONTACT_ON_ROSTER",
+        });
+      }
+
+      try {
+        await signupVerificationService.sendSignupOTP({
+          email: resolved.email,
+          firstName: resolved.firstName || "there",
+        });
+      } catch (otpErr) {
+        console.error("Employee verification OTP send failed:", otpErr?.message);
+        return res.status(502).json({
+          success: false,
+          message: "Could not send the verification code. Please try again, or contact your HR.",
+          code: "OTP_SEND_FAILED",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: `We've sent a verification code to ${maskEmail(resolved.email)}.`,
+        maskedEmail: maskEmail(resolved.email),
+      });
+    } catch (error) {
+      console.error("Employee OTP send error:", error);
+      return res.status(500).json({ success: false, message: "Could not send the verification code" });
     }
   }
 );
