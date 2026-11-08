@@ -118,6 +118,12 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261101000100-medical-device-gateway-foundation.migration.js',
   '20261101000100-biomedical-device-gateway.migration.js',
   '20261104000200-pre-employment-healthcheckups.migration.js',
+  // MED-MIND-001. The health-coaching framework was never registered in any
+  // runner list, so a fresh environment never got its 9 tables (it IS applied in
+  // production — Phase 0 PF-1). Register it here, immediately before the
+  // migration that depends on it; both are idempotent.
+  'health-coaching-framework.migration.js',
+  '20261110000100-mental-wellness-instruments.migration.js',
 ];
 
 function runStep(step) {

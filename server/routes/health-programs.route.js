@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../db/pgPool.js';
 import { authUser } from '../middleware/auth.middleware.js';
+import instrumentsService from '../services/mental-wellness-instruments.service.js';
 
 const router = express.Router();
 
@@ -243,6 +244,169 @@ router.post('/', authUser, async (req, res) => {
   } catch (err) {
     console.error('[programs] create error', err);
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MED-MIND-001 — mental-wellness instruments (PHQ-9, GAD-7)
+// Plan: docs/planning/MENTAL_WELLNESS_MODULE_IMPLEMENTATION_PLAN_2026-11-08.md
+//
+// These live on /api/programs deliberately (plan AD-1): the prefix is already
+// allow-listed for both `user` and `patient` in ringFencing.js, so a new prefix
+// would 403 for every patient until both allow-lists were edited.
+//
+// They MUST stay above the /:slug catch-all below (plan R-3) — declared after it,
+// GET /instruments resolves to the slug handler and 404s as "Program not found".
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Confirm the enrollment belongs to the calling user. Returns the row, or null.
+ * Never trust an enrollment id from the client without this.
+ */
+async function loadOwnEnrollment(enrollmentId, userId) {
+  const id = Number.parseInt(enrollmentId, 10);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const { rows: [row] } = await pool.query(
+    `SELECT e.id, e.user_id, e.program_id, p.name AS program_name, p.slug AS program_slug
+       FROM program_enrollments e
+       JOIN health_programs p ON p.id = e.program_id
+      WHERE e.id = $1 AND e.user_id = $2`,
+    [id, userId],
+  );
+  return row || null;
+}
+
+// ── GET /api/programs/instruments — catalogue of screening instruments ────────
+router.get('/instruments', authUser, (req, res) => {
+  res.json({
+    success: true,
+    data: instrumentsService.listInstruments(),
+    disclaimer: instrumentsService.DISCLAIMER,
+  });
+});
+
+// ── POST /api/programs/enrollment/:id/assessments — submit answers ────────────
+router.post('/enrollment/:id/assessments', authUser, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Not signed in' });
+
+    const enrollment = await loadOwnEnrollment(req.params.id, userId);
+    if (!enrollment) {
+      // Same response whether it does not exist or belongs to someone else, so
+      // this cannot be used to probe for other people's enrollment ids.
+      return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    }
+
+    const { instrumentCode, answers, assessmentId } = req.body || {};
+
+    let result;
+    try {
+      result = instrumentsService.score(instrumentCode, answers);
+    } catch (err) {
+      if (err instanceof instrumentsService.InstrumentAnswerError) {
+        return res.status(400).json({ success: false, message: err.message });
+      }
+      throw err;
+    }
+
+    // Only accept an assessmentId that belongs to this enrollment's program.
+    let resolvedAssessmentId = null;
+    if (assessmentId !== undefined && assessmentId !== null) {
+      const aId = Number.parseInt(assessmentId, 10);
+      if (Number.isInteger(aId) && aId > 0) {
+        const { rows: [a] } = await pool.query(
+          `SELECT id FROM program_assessments WHERE id = $1 AND program_id = $2`,
+          [aId, enrollment.program_id],
+        );
+        if (a) resolvedAssessmentId = a.id;
+      }
+    }
+
+    const { rows: [saved] } = await pool.query(`
+      INSERT INTO program_assessment_responses
+        (enrollment_id, assessment_id, instrument_code, instrument_ver,
+         answers, raw_score, severity_band, flagged_items, is_self_report)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)
+      RETURNING id, administered_at
+    `, [
+      enrollment.id,
+      resolvedAssessmentId,
+      result.instrumentCode,
+      result.instrumentVersion,
+      JSON.stringify(result.answers),
+      result.rawScore,
+      result.band,
+      JSON.stringify(result.flaggedItems),
+    ]);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        id: saved.id,
+        administeredAt: saved.administered_at,
+        instrumentCode: result.instrumentCode,
+        instrumentVersion: result.instrumentVersion,
+        rawScore: result.rawScore,
+        maxScore: result.maxScore,
+        band: result.band,
+        interpretation: result.interpretation,
+        flaggedItems: result.flaggedItems,
+        // The client uses this to raise the crisis pathway (Phase 3). It is a
+        // deterministic consequence of the patient's own answer, not a prediction.
+        crisis: result.crisis,
+      },
+      disclaimer: result.disclaimer,
+    });
+  } catch (err) {
+    console.error('[programs] assessment submit error', err);
+    res.status(500).json({ success: false, message: 'Could not save your check-in' });
+  }
+});
+
+// ── GET /api/programs/enrollment/:id/assessments — own response history ───────
+router.get('/enrollment/:id/assessments', authUser, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Not signed in' });
+
+    const enrollment = await loadOwnEnrollment(req.params.id, userId);
+    if (!enrollment) return res.status(404).json({ success: false, message: 'Enrollment not found' });
+
+    const instrumentCode = instrumentsService.normalizeInstrumentCode(req.query.instrumentCode);
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 200);
+
+    const { rows } = await pool.query(`
+      SELECT id, instrument_code, instrument_ver, raw_score, severity_band,
+             flagged_items, administered_at
+        FROM program_assessment_responses
+       WHERE enrollment_id = $1
+         AND ($2::text IS NULL OR instrument_code = $2)
+       ORDER BY administered_at DESC
+       LIMIT $3
+    `, [enrollment.id, instrumentCode, limit]);
+
+    res.json({
+      success: true,
+      data: rows.map((r) => {
+        const instrument = instrumentsService.getInstrument(r.instrument_code);
+        return {
+          id: r.id,
+          instrumentCode: r.instrument_code,
+          instrumentVersion: r.instrument_ver,
+          instrumentName: instrument?.name || r.instrument_code,
+          rawScore: r.raw_score === null ? null : Number(r.raw_score),
+          maxScore: instrument?.maxScore ?? null,
+          band: r.severity_band,
+          flaggedItems: r.flagged_items || [],
+          administeredAt: r.administered_at,
+        };
+      }),
+      disclaimer: instrumentsService.DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('[programs] assessment history error', err);
+    res.status(500).json({ success: false, message: 'Could not load your check-in history' });
   }
 });
 

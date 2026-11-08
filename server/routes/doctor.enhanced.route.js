@@ -30,12 +30,20 @@ import {
 } from '../services/s3-presign.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import { normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
+import {
+  consultationCapabilitySql,
+  ONLINE_PRESENCE_SQL,
+} from '../utils/doctorConsultationCapability.js';
 import { DOCTOR_SENSITIVE_FIELDS, sanitizeDoctorForResponse } from '../utils/doctorSanitizer.js';
 
 const router = express.Router();
 // Ensure request bodies are parsed even if app-level parser order changes.
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
+
+// F-1: consultationType=online/walkIn/homeVisit all resolved to the wrong signal
+// and returned (almost) nothing in production. Predicates and the rationale now
+// live in ../utils/doctorConsultationCapability.js.
 
 const getCurrentAccessJti = (req) => {
   try {
@@ -239,13 +247,18 @@ router.get('/available', [
       status: 'active'
     };
 
-    const onlineCapabilityLiteral = `("isOnline" = true)`;
+    const onlinePresenceLiteral = ONLINE_PRESENCE_SQL;
 
     const hasAddressLiteral = `(
       ("clinicAddress" IS NOT NULL AND BTRIM("clinicAddress") <> '')
       OR COALESCE("clinicAddress_json", '{}'::jsonb) <> '{}'::jsonb
     )`;
 
+    // RETAINED BUT CURRENTLY UNUSED. This matched 0 of 1104 active doctors — the
+    // Google location-verification pipeline never populated placeId/source/
+    // provider into clinicAddress_json — so requiring it zeroed out every
+    // in-person search (F-1 part 2). Kept here for when that data does exist, at
+    // which point it belongs in result RANKING, never as a hard filter.
     const googleVerifiedLocationLiteral = `(
       COALESCE(
         "clinicAddress_json"->>'placeId',
@@ -265,13 +278,18 @@ router.get('/available', [
       )
     )`;
 
-    const inPersonCapabilityLiteral = `(
-      ${hasAddressLiteral}
-      AND ${googleVerifiedLocationLiteral}
-    )`;
+    // F-1: one predicate per requested consultation type; null when unrecognised.
+    const consultationCapabilityLiteral = consultationCapabilitySql(consultationType, {
+      hasAddressSql: hasAddressLiteral,
+    });
 
+    // Deliberately still PRESENCE, not capability: this OR-branch has been
+    // effectively dead (5 of 1104 rows), so strictQc has been address-based in
+    // practice. Switching it to the permissive capability predicate would let
+    // 72 doctors with no usable address pass QC on a bulk-defaulted flag. Keep
+    // the behaviour unchanged here; F-1 is about the consultationType filter.
     const strictQcLiteral = `(
-      ${onlineCapabilityLiteral}
+      ${onlinePresenceLiteral}
       OR ${hasAddressLiteral}
       OR (
         COALESCE(
@@ -340,29 +358,11 @@ router.get('/available', [
       whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(strictQcLiteral));
     }
 
-    if (consultationType) {
-      const normalizedConsultationType = String(consultationType).toLowerCase();
-
-      if (normalizedConsultationType === 'online') {
-        if (!whereClause[sequelize.Sequelize.Op.and]) {
-          whereClause[sequelize.Sequelize.Op.and] = [];
-        }
-        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(onlineCapabilityLiteral));
+    if (consultationCapabilityLiteral) {
+      if (!whereClause[sequelize.Sequelize.Op.and]) {
+        whereClause[sequelize.Sequelize.Op.and] = [];
       }
-
-      if (
-        normalizedConsultationType === 'inperson' ||
-        normalizedConsultationType === 'in-person' ||
-        normalizedConsultationType === 'walkin' ||
-        normalizedConsultationType === 'walk-in' ||
-        normalizedConsultationType === 'homevisit' ||
-        normalizedConsultationType === 'home-visit'
-      ) {
-        if (!whereClause[sequelize.Sequelize.Op.and]) {
-          whereClause[sequelize.Sequelize.Op.and] = [];
-        }
-        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(inPersonCapabilityLiteral));
-      }
+      whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(consultationCapabilityLiteral));
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -483,13 +483,16 @@ router.get('/', [
     // Build where clause
     const whereClause = {};
 
-    const onlineCapabilityLiteral = `("isOnline" = true)`;
-
     const hasAddressLiteral = `(
       ("clinicAddress" IS NOT NULL AND BTRIM("clinicAddress") <> '')
       OR COALESCE("clinicAddress_json", '{}'::jsonb) <> '{}'::jsonb
     )`;
 
+    // RETAINED BUT CURRENTLY UNUSED. This matched 0 of 1104 active doctors — the
+    // Google location-verification pipeline never populated placeId/source/
+    // provider into clinicAddress_json — so requiring it zeroed out every
+    // in-person search (F-1 part 2). Kept here for when that data does exist, at
+    // which point it belongs in result RANKING, never as a hard filter.
     const googleVerifiedLocationLiteral = `(
       COALESCE(
         "clinicAddress_json"->>'placeId',
@@ -509,10 +512,10 @@ router.get('/', [
       )
     )`;
 
-    const inPersonCapabilityLiteral = `(
-      ${hasAddressLiteral}
-      AND ${googleVerifiedLocationLiteral}
-    )`;
+    // F-1: one predicate per requested consultation type; null when unrecognised.
+    const consultationCapabilityLiteral = consultationCapabilitySql(consultationType, {
+      hasAddressSql: hasAddressLiteral,
+    });
 
     if (specialization) {
       whereClause.specialization = specialization;
@@ -551,29 +554,11 @@ router.get('/', [
       ];
     }
 
-    if (consultationType) {
-      const normalizedConsultationType = String(consultationType).toLowerCase();
-
-      if (normalizedConsultationType === 'online') {
-        if (!whereClause[sequelize.Sequelize.Op.and]) {
-          whereClause[sequelize.Sequelize.Op.and] = [];
-        }
-        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(onlineCapabilityLiteral));
+    if (consultationCapabilityLiteral) {
+      if (!whereClause[sequelize.Sequelize.Op.and]) {
+        whereClause[sequelize.Sequelize.Op.and] = [];
       }
-
-      if (
-        normalizedConsultationType === 'inperson' ||
-        normalizedConsultationType === 'in-person' ||
-        normalizedConsultationType === 'walkin' ||
-        normalizedConsultationType === 'walk-in' ||
-        normalizedConsultationType === 'homevisit' ||
-        normalizedConsultationType === 'home-visit'
-      ) {
-        if (!whereClause[sequelize.Sequelize.Op.and]) {
-          whereClause[sequelize.Sequelize.Op.and] = [];
-        }
-        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(inPersonCapabilityLiteral));
-      }
+      whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(consultationCapabilityLiteral));
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);

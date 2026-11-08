@@ -27,6 +27,10 @@ const isPHIEndpoint = (path) => {
     /\/insurance/i,
     /\/hypergrid\/dicom/i,
     /\/imaging/i,
+    // MED-MIND-001 (gap G-5): /api/programs carries health-coaching enrollments
+    // and mental-wellness instrument responses (PHQ-9, GAD-7). It matched none
+    // of the patterns above, so that PHI was being read and written unaudited.
+    /\/programs/i,
   ];
   
   return phiPatterns.some(pattern => pattern.test(path));
