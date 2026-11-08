@@ -200,9 +200,13 @@ router.get('/hospitals/:id', async (req, res) => {
   try {
     const { id } = req.params;
     if (id.startsWith(TENANT_ID_PREFIX)) {
-      const tenantId = Number(id.replace(TENANT_ID_PREFIX, ''));
+      const rawTenantId = id.slice(TENANT_ID_PREFIX.length);
+      if (!/^[1-9]\d*$/.test(rawTenantId) || !Number.isSafeInteger(Number(rawTenantId))) {
+        return res.status(404).json({ success: false, error: 'Hospital not found' });
+      }
+      const tenantId = Number(rawTenantId);
       const tenant = await Tenant.findOne({
-        where: { id: tenantId, type: 'hospital' }
+        where: { id: tenantId, type: 'hospital', status: 'active' }
       });
       if (!tenant) {
         return res.status(404).json({
@@ -211,7 +215,10 @@ router.get('/hospitals/:id', async (req, res) => {
         });
       }
 
-      if (!canUseTenantOverride(req) && (!req.tenant || req.tenant.id !== tenant.id)) {
+      // The main directory already lists active hospitals. Allow the same
+      // directory data on detail reads when no tenant subdomain is selected;
+      // a tenant-scoped host remains confined to its own hospital.
+      if (!canUseTenantOverride(req) && req.tenant && String(req.tenant.id) !== String(tenant.id)) {
         return res.status(403).json({
           success: false,
           error: 'Cross-tenant access blocked. Use the hospital subdomain for details.'
@@ -242,7 +249,7 @@ router.get('/hospitals/:id', async (req, res) => {
     });
 
     if (tenant) {
-      if (!canUseTenantOverride(req) && (!req.tenant || req.tenant.id !== tenant.id)) {
+      if (!canUseTenantOverride(req) && req.tenant && String(req.tenant.id) !== String(tenant.id)) {
         return res.status(403).json({
           success: false,
           error: 'Cross-tenant access blocked. Use the hospital subdomain for details.'
@@ -252,6 +259,10 @@ router.get('/hospitals/:id', async (req, res) => {
         success: true,
         data: mapTenantHospital(tenant)
       });
+    }
+
+    if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) {
+      return res.status(404).json({ success: false, error: 'Hospital not found' });
     }
 
     const [hospital] = await sequelize.query(
