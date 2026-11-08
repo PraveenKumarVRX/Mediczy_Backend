@@ -5,12 +5,25 @@ import CorporatePlanSponsorship from '../models/postgres/corporate-plan-sponsors
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { MEMBERSHIP_PLANS, canUpgrade } from '../config/membership-plans.config.js';
 import healthCoinsService from './health-coins.service.js';
+import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
 
 class MembershipService {
   /**
    * Get all active membership plans
    */
-  async getAllPlans(type = null) {
+  /**
+   * The public plan catalogue.
+   *
+   * `membership_plans` holds working rows as well as sellable ones, and the
+   * app showed all of them: QA saw "Basic, Smart Basic, Basic Plan, Free Trial,
+   * Basic Test Plan" — five ₹0 plans, one of them a test fixture, plus
+   * "Corporate Basic Plus" twice.
+   *
+   * This filters the *listing* only. Nothing is deactivated or deleted, so
+   * anyone already subscribed to a hidden plan keeps it and every plan stays
+   * reachable by id or slug; pass `includeAll=true` for the admin view.
+   */
+  async getAllPlans(type = null, { includeAll = false } = {}) {
     const where = { isActive: true };
     if (type) {
       where.type = type;
@@ -21,7 +34,7 @@ class MembershipService {
       order: [['tier', 'ASC'], ['price', 'ASC']]
     });
 
-    return plans;
+    return includeAll ? plans : publicPlanCatalogue(plans);
   }
 
   /**

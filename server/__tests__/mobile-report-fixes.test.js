@@ -10,6 +10,8 @@ const mockQuery = jest.fn();
 jest.unstable_mockModule('../db/pgPool.js', () => ({ default: { query: mockQuery } }));
 
 const { joinAddressParts } = await import('../services/nearby-places.service.js');
+const { publicPlanCatalogue } = await import('../utils/plan-catalogue.js');
+const { packageDisplayName } = await import('../utils/health-package-tests.js');
 const cartRouter = (await import('../routes/cart.route.js')).default;
 
 /** Pull a route handler out of the router so it can be called directly. */
@@ -122,5 +124,75 @@ describe('lab test cart (report rows 115, 116)', () => {
     await handler('post', '/add')({ user: { id: 9005 }, body: { test: { id: 404404 } } }, res);
     expect(res.statusCode).toBe(400);
     expect(res.body.errorCode).toBe('TEST_NOT_BOOKABLE');
+  });
+});
+
+describe('membership plan catalogue (report rows 63, 171)', () => {
+  // The live rows QA saw on Explore Membership Plans.
+  const plans = [
+    { id: 1, name: 'Basic Plan', price: '0.00', tier: 0 },
+    { id: 2, name: 'Basic Test Plan', price: '0.00', tier: 0 },
+    { id: 3, name: 'Free Trial', price: '0.00', tier: 0 },
+    { id: 10, name: 'Basic', price: '0.00', tier: 0 },
+    { id: 20, name: 'Smart Basic', price: '0.00', tier: 0 },
+    { id: 5, name: 'Silver', price: '1499.00', tier: 1 },
+    { id: 21, name: 'Silver+', price: '3699.00', tier: 2 },
+    { id: 9, name: 'Corporate Basic Plus', price: '250.00', tier: 1 },
+    { id: 13, name: 'Corporate Basic Plus', price: '449.00', tier: 2 },
+  ];
+
+  test('a working fixture is never offered for sale', () => {
+    const names = publicPlanCatalogue(plans).map((p) => p.name);
+    expect(names).not.toContain('Basic Test Plan');
+  });
+
+  test('the five ₹0 plans collapse to one', () => {
+    const free = publicPlanCatalogue(plans).filter((p) => Number(p.price) === 0);
+    expect(free).toHaveLength(1);
+    // Lowest tier, then price, then id — so the plain "Basic Plan" (id 1) wins.
+    expect(free[0].id).toBe(1);
+  });
+
+  test('"Silver+" survives alongside "Silver" — + is a tier, not punctuation', () => {
+    const names = publicPlanCatalogue(plans).map((p) => p.name);
+    expect(names).toContain('Silver');
+    expect(names).toContain('Silver+');
+  });
+
+  test('a repeated name keeps the cheaper tier only', () => {
+    const corporate = publicPlanCatalogue(plans).filter((p) => p.name === 'Corporate Basic Plus');
+    expect(corporate).toHaveLength(1);
+    expect(corporate[0].id).toBe(9);
+  });
+
+  test('nothing is lost beyond duplicates and fixtures', () => {
+    // 9 in: 4 surplus free + 1 fixture + 1 duplicate name removed = 4 out.
+    expect(publicPlanCatalogue(plans)).toHaveLength(4);
+    expect(publicPlanCatalogue([])).toEqual([]);
+  });
+});
+
+describe('health package display name (report rows 53, 55)', () => {
+  test('a raw catalog id is humanised, trailing space and all', () => {
+    expect(packageDisplayName('DairyDay_AHC_Sales_2026-27 ')).toBe('DairyDay AHC Sales 2026-27');
+  });
+
+  test('a written name in the package features wins over the id', () => {
+    expect(packageDisplayName('Equitas_MHC_2025', { name: 'Equitas Bank Managers Health checkup FY-2025-2026' }))
+      .toBe('Equitas Bank Managers Health checkup FY-2025-2026');
+  });
+
+  test('features.name that is just the id echoed back is not treated as a title', () => {
+    expect(packageDisplayName('SOME_PACKAGE_ID', { name: 'SOME_PACKAGE_ID' })).toBe('SOME PACKAGE ID');
+  });
+
+  test('an explicit displayName wins over everything', () => {
+    expect(packageDisplayName('raw_name', { name: 'Features Name' }, { displayName: 'Curated Title' }))
+      .toBe('Curated Title');
+  });
+
+  test('an empty package still gets a readable label', () => {
+    expect(packageDisplayName('')).toBe('Health Checkup Package');
+    expect(packageDisplayName(null, {}, {})).toBe('Health Checkup Package');
   });
 });

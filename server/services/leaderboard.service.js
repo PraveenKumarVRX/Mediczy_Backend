@@ -18,17 +18,53 @@ if (!Leaderboard.associations.user) {
 class LeaderboardService {
   // ===================== HEALTH GOALS =====================
   
-  async getAllGoals(filters = {}) {
+  /**
+   * @param {object} filters
+   * @param {number} [userId] when given, each goal is annotated with the
+   *   caller's enrolment. Without it a client cannot tell a goal it has
+   *   already joined from one it has not: the app kept a joined goal under
+   *   "Available", and tapping Join again answered "Already enrolled".
+   */
+  async getAllGoals(filters = {}, userId = null) {
     const where = { isActive: true };
-    
+
     if (filters.category) where.category = filters.category;
     if (filters.type) where.type = filters.type;
     if (filters.difficulty) where.difficulty = filters.difficulty;
     if (filters.isPublic !== undefined) where.isPublic = filters.isPublic;
-    
-    return await HealthGoal.findAll({
+
+    const goals = await HealthGoal.findAll({
       where,
       order: [['difficulty', 'ASC'], ['points', 'ASC']]
+    });
+
+    if (!userId) return goals;
+
+    const progress = await UserGoalProgress.findAll({
+      where: { userId, goalId: { [Op.in]: goals.map((g) => g.id) } },
+      order: [['createdAt', 'DESC']],
+    });
+    const byGoal = new Map();
+    for (const row of progress) {
+      // Keep the most recent record per goal; an active one always wins.
+      const current = byGoal.get(String(row.goalId));
+      const active = ['NOT_STARTED', 'IN_PROGRESS'].includes(row.status);
+      if (!current || (active && !['NOT_STARTED', 'IN_PROGRESS'].includes(current.status))) {
+        byGoal.set(String(row.goalId), row);
+      }
+    }
+
+    return goals.map((goal) => {
+      const row = byGoal.get(String(goal.id));
+      const active = row ? ['NOT_STARTED', 'IN_PROGRESS'].includes(row.status) : false;
+      return {
+        ...goal.toJSON(),
+        joined: active,
+        completed: row ? row.status === 'COMPLETED' : false,
+        progress: row
+          ? { status: row.status, currentValue: row.currentValue, targetValue: row.targetValue, startedAt: row.createdAt }
+          : null,
+      };
     });
   }
 
@@ -56,8 +92,12 @@ class LeaderboardService {
         }
       });
 
+      // Joining a goal you are already in is not an error — it is the same
+      // outcome. Throwing here meant a user whose goal the list still showed
+      // as "Available" got a failure message for tapping Join. Idempotent.
       if (existing) {
-        throw new Error('Already enrolled in this goal');
+        await transaction.rollback();
+        return { progress: existing, alreadyEnrolled: true };
       }
 
       const goal = await HealthGoal.findByPk(goalId);
@@ -84,7 +124,7 @@ class LeaderboardService {
       }, { transaction });
 
       await transaction.commit();
-      return progress;
+      return { progress, alreadyEnrolled: false };
     } catch (error) {
       await transaction.rollback();
       throw error;

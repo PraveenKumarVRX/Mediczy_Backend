@@ -8,6 +8,7 @@ import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
+import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
 
 const router = express.Router();
 
@@ -286,11 +287,15 @@ router.get('/plans', async (req,res) => {
     const { type } = req.query;
     const where = { isActive: true, planType: 'primary' };
     if (type) where.type = type;
-    const plans = await MembershipPlan.findAll({ 
+    const plans = await MembershipPlan.findAll({
       where,
-      order:[['tier','ASC'],['price','ASC']] 
+      order:[['tier','ASC'],['price','ASC']]
     });
-    res.json({ plans });
+    // Customer-facing list: drop working fixtures ("Basic Test Plan") and
+    // collapse the duplicate ₹0 tiers the app was showing side by side. Nothing
+    // is deactivated, so existing subscriptions and direct lookups are
+    // unaffected; `?includeAll=true` returns the unfiltered list.
+    res.json({ plans: req.query.includeAll === 'true' ? plans : publicPlanCatalogue(plans) });
   } catch(e) {
     console.error(e);
     res.status(500).json({ message:'Failed to get plans', error:e.message });

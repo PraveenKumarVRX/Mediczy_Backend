@@ -12,6 +12,7 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import { packageDisplayName } from '../utils/health-package-tests.js';
 import { getEmployeeBenefitWallet, listBenefitNetworkProviders } from '../services/corporate-benefit-wallet.service.js';
 
 // insurance_claims.claim_type is CHECK-constrained to cashless/reimbursement/
@@ -607,7 +608,9 @@ router.get('/benefits', authUser, async (req, res) => {
         id: `health-package-${row.packageId || idx}`,
         source: 'user_health_packages',
         packageId: row.packageId || null,
-        name: row.packageName || details.name || `Health Checkup Package ${idx + 1}`,
+        // Was printing the raw catalog id ("DairyDay_AHC_Sales_2026-27 ").
+        name: packageDisplayName(row.packageName, details, row.metadata) || `Health Checkup Package ${idx + 1}`,
+        rawName: row.packageName || null,
         type: 'wellness',
         benefitCategory: 'health_checkup',
         insurer: null,

@@ -91,4 +91,36 @@ export async function getEmployeeAhcTests(employeeUserId, corporateId) {
   };
 }
 
-export default { parseTestList, testNames, getEmployeeAhcTests, TEST_SAMPLE_TYPES };
+/**
+ * A package name fit to show a customer.
+ *
+ * Catalog ids double as names, so the app showed employees the raw
+ * "DairyDay_AHC_Sales_2026-27 " — underscores, trailing space and all — on
+ * Benefits & Plans and the Membership Card. Some packages do carry a written
+ * name in their features ("Equitas Bank Managers Health checkup FY-2025-2026");
+ * prefer that, then any explicit displayName, and otherwise humanise the raw
+ * identifier rather than printing it as stored.
+ *
+ * @param {string} rawName       the stored package/catalog name
+ * @param {object} [details]     package features/details JSON
+ * @param {object} [metadata]    package metadata JSON
+ */
+export function packageDisplayName(rawName, details = {}, metadata = {}) {
+  const clean = (value) => String(value ?? '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const explicit = clean(details?.displayName || metadata?.displayName);
+  if (explicit) return explicit;
+
+  // features.name is a written title when it reads like one — a space and no
+  // underscore separate "Equitas Bank Managers Health checkup FY-2025-2026"
+  // from an id echoed back into the field.
+  const featureName = String(details?.name ?? '');
+  if (featureName.includes(' ') && !featureName.includes('_')) {
+    const written = clean(featureName);
+    if (written) return written;
+  }
+
+  return clean(rawName) || clean(featureName) || 'Health Checkup Package';
+}
+
+export default { parseTestList, testNames, getEmployeeAhcTests, packageDisplayName, TEST_SAMPLE_TYPES };

@@ -2174,4 +2174,44 @@ router.get('/health-summary', authUser, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/medical-ai/nearby-hospitals?lat=&lng=&radius=
+ *
+ * The shipped mobile app's Find Hospital screen calls this and got a 404 — the
+ * route never existed. It is a directory lookup over our own 10,645 geocoded
+ * hospitals, not an AI endpoint; it lives here only because this is the path
+ * the app asks for. Distances are real, so the screen can finally show them.
+ */
+router.get('/nearby-hospitals', authUser, async (req, res) => {
+  try {
+    const lat = Number(req.query.lat ?? req.query.latitude);
+    const lng = Number(req.query.lng ?? req.query.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ success: false, message: 'Valid lat and lng are required.' });
+    }
+    const radiusMeters = Number(req.query.radius) > 0 ? Number(req.query.radius) : 10000;
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const { nearbyFromDatabase } = await import('../services/nearby-places.service.js');
+    const results = await nearbyFromDatabase(lat, lng, 'hospital', radiusMeters, limit);
+    return res.json({
+      success: true,
+      count: results.length,
+      hospitals: results.map((place) => ({
+        name: place.name,
+        address: place.vicinity,
+        phone: place.formatted_phone_number || null,
+        latitude: place.geometry.location.lat,
+        longitude: place.geometry.location.lng,
+        distanceKm: place.distance_km,
+        rating: place.rating || null,
+      })),
+      // Google-Places-shaped alias, for callers that already parse that form.
+      results,
+    });
+  } catch (error) {
+    console.error('nearby-hospitals error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load nearby hospitals.' });
+  }
+});
+
 export default router;

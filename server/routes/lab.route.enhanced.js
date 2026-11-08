@@ -12,10 +12,49 @@ const router = express.Router();
 /**
  * Enhanced Laboratory Routes
  * =========================
- * 
+ *
  * Comprehensive laboratory management with advanced search,
  * filtering, and detailed information retrieval.
  */
+
+/**
+ * Proximity search over the lab directory.
+ *
+ * `latitude`, `longitude` and `radius` were accepted by GET / and then
+ * dropped on the floor: results came back sorted by rating, so the "nearest
+ * lab" to a user in Bengaluru was one 287 km away in Chennai. 2,414 of 2,428
+ * labs carry address->'coordinates', so the data was there all along.
+ *
+ * The coordinates are JSONB text, so the regex guard matters: one row with a
+ * non-numeric lat would otherwise fail the cast and 500 the whole listing.
+ */
+const LAB_LAT = `(address->'coordinates'->>'lat')::double precision`;
+const LAB_LNG = `(address->'coordinates'->>'lng')::double precision`;
+const LAB_HAS_COORDS = `address->'coordinates'->>'lat' ~ '^-?[0-9]+(\\.[0-9]+)?$' AND address->'coordinates'->>'lng' ~ '^-?[0-9]+(\\.[0-9]+)?$'`;
+
+/** Finite number in range, or null — never interpolate an unvalidated value into SQL. */
+const coordinate = (value, limit) => {
+  const n = Number(value);
+  return Number.isFinite(n) && Math.abs(n) <= limit ? n : null;
+};
+
+/**
+ * Haversine distance in km as a SQL expression, or null when no usable point
+ * was supplied. LEAST/GREATEST clamp the cosine: floating point can push it
+ * just outside [-1, 1], and acos() of 1.0000000001 is an error, not a rounding
+ * issue. NULL for labs without coordinates, so they sort last.
+ */
+function labDistanceSql(latitude, longitude) {
+  const lat = coordinate(latitude, 90);
+  const lng = coordinate(longitude, 180);
+  if (lat === null || lng === null) return null;
+  return `(CASE WHEN ${LAB_HAS_COORDS} THEN
+    6371 * acos(LEAST(1, GREATEST(-1,
+      cos(radians(${lat})) * cos(radians(${LAB_LAT})) * cos(radians(${LAB_LNG}) - radians(${lng}))
+      + sin(radians(${lat})) * sin(radians(${LAB_LAT}))
+    )))
+  ELSE NULL END)`;
+}
 
 // GET /api/labs - Enhanced lab search and listing
 router.get('/', async (req, res) => {
@@ -181,10 +220,25 @@ router.get('/', async (req, res) => {
     
     // Pagination
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    
+
+    // Proximity: when the caller gives a point, restrict to labs that have
+    // coordinates, optionally inside `radius` km, and sort nearest-first.
+    const distanceSql = labDistanceSql(latitude, longitude);
+    if (distanceSql) {
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      whereConditions[Op.and].push(Sequelize.literal(LAB_HAS_COORDS));
+      const radiusKm = Number(radius);
+      if (Number.isFinite(radiusKm) && radiusKm > 0) {
+        whereConditions[Op.and].push(Sequelize.literal(`${distanceSql} <= ${radiusKm}`));
+      }
+    }
+
     // Build order clause - for pincode search, show exact matches first
     let orderClause = [[sortBy, sortOrder.toUpperCase()]];
-    if (pincode) {
+    if (distanceSql) {
+      // Nearest first. An explicit sortBy still breaks ties.
+      orderClause = [[Sequelize.literal(`${distanceSql} ASC NULLS LAST`)], ['rating', 'DESC']];
+    } else if (pincode) {
       // Sort by exact pincode match first, then by rating
       orderClause = [
         [Sequelize.literal(`CASE WHEN "address"->>'zipCode' = '${pincode.replace(/'/g, "''")}' THEN 0 ELSE 1 END`), 'ASC'],
@@ -209,19 +263,36 @@ router.get('/', async (req, res) => {
     // Execute query
     const { rows: labs, count: total } = await Lab.findAndCountAll({
       where: whereConditions,
+      ...(distanceSql
+        ? { attributes: { include: [[Sequelize.literal(distanceSql), 'distanceKm']] } }
+        : {}),
       order: orderClause,
       limit: parseInt(limit),
       offset: offset
     });
-    
+
     // Calculate pagination info
     const totalPages = Math.ceil(total / limit);
-    
+
+    // Surface the distance and a flat coordinate pair. The client could not
+    // show "2.3 km away" or drop a map pin before, because neither was in the
+    // payload — the map just said "Location unavailable".
+    const labsOut = labs.map((lab) => {
+      const row = typeof lab.toJSON === 'function' ? lab.toJSON() : { ...lab };
+      const coords = row.address?.coordinates;
+      const lat = Number(coords?.lat);
+      const lng = Number(coords?.lng);
+      row.coordinates = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+      const km = Number(row.distanceKm);
+      row.distanceKm = Number.isFinite(km) ? Math.round(km * 10) / 10 : null;
+      return row;
+    });
+
     res.json({
       success: true,
       total,
       count: labs.length,
-      labs,
+      labs: labsOut,
       searchedPincode: pincode || null,
       pagination: {
         currentPage: parseInt(page),

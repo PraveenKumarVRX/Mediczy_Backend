@@ -15,7 +15,7 @@ router.get('/goals', authUser, async (req, res) => {
       type,
       difficulty,
       isPublic: isPublic ? isPublic === 'true' : undefined
-    });
+    }, req.user.id);
 
     res.json({
       success: true,
@@ -77,11 +77,12 @@ router.post('/goals', authUser, async (req, res) => {
 // Join a goal
 router.post('/goals/:goalId/join', authUser, async (req, res) => {
   try {
-    const progress = await leaderboardService.joinGoal(req.user.id, req.params.goalId);
+    const { progress, alreadyEnrolled } = await leaderboardService.joinGoal(req.user.id, req.params.goalId);
 
     res.json({
       success: true,
-      message: 'Successfully joined goal',
+      alreadyEnrolled,
+      message: alreadyEnrolled ? 'You are already in this goal' : 'Successfully joined goal',
       data: { progress }
     });
   } catch (error) {

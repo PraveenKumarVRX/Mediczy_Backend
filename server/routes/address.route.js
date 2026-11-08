@@ -183,16 +183,14 @@ router.get('/default', authUser, async (req, res) => {
     const userId = req.user.id;
     const address = await Address.getDefault(userId);
 
-    if (!address) {
-      return res.status(404).json({
-        success: false,
-        message: 'No default address found'
-      });
-    }
-
+    // A user who has not saved an address yet is a normal state, not a failure.
+    // This used to answer 404, which the mobile app surfaced as an error on the
+    // delivery-address step (and filled the access log with 404s). The web
+    // client does not call this endpoint, so 200-with-null breaks no caller.
     return res.json({
       success: true,
-      data: address
+      data: address || null,
+      message: address ? undefined : 'No default address set'
     });
   } catch (error) {
     console.error('Get default address error:', error);

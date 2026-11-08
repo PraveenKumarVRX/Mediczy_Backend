@@ -1457,6 +1457,26 @@ router.post('/checkups/:id/complete', authUser, requireTeamOrAdmin, async (req, 
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
     if (!(await assertCorporateAccessForId(req, res, booking.corporate_id))) return;
     if (!['confirmed', 'scheduled', 'rescheduled'].includes(booking.status)) return res.status(409).json({ success: false, message: 'Only a confirmed booking can be marked completed' });
+
+    // A checkup cannot be completed before the visit has happened. Two 10-Nov
+    // bookings were marked completed on 7 Nov, minutes after being created, and
+    // the employee's app showed "Completed" for a visit three days away. The
+    // appointment date is a date, not a timestamp, so the whole of that day
+    // counts as "today or earlier".
+    const appointmentDate = booking.appointment_date ? new Date(booking.appointment_date) : null;
+    if (appointmentDate && !Number.isNaN(appointmentDate.getTime())) {
+      const endOfAppointmentDay = new Date(appointmentDate);
+      endOfAppointmentDay.setUTCHours(23, 59, 59, 999);
+      if (Date.now() < endOfAppointmentDay.getTime()) {
+        return res.status(409).json({
+          success: false,
+          code: 'appointment_not_yet_due',
+          message: 'This checkup is scheduled for a future date and cannot be marked completed yet.',
+          appointmentDate: booking.appointment_date,
+        });
+      }
+    }
+
     const [row] = await postgresSequelize.query(
       `UPDATE health_checkup_bookings SET status='completed', completed_at=NOW(), updated_at=NOW()
         WHERE id=:id AND status IN ('confirmed','scheduled','rescheduled') RETURNING *`,

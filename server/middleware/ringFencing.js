@@ -73,6 +73,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/devices',  // Device management
       '/api/health-camps',  // Health camp discovery
       '/api/leaderboard',  // Health goals, challenges & leaderboard
+      '/api/wellness',  // Wellness tab aggregate (goals, challenges, HealthCoins) — mobile app
       '/api/masterdata',  // Specialties, hospitals, labs directory
       '/api/places',  // Nearby places search
       '/api/module-access',  // Module access check
@@ -163,6 +164,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/devices',  // Device management
       '/api/health-camps',  // Health camp discovery
       '/api/leaderboard',  // Health goals, challenges & leaderboard
+      '/api/wellness',  // Wellness tab aggregate (goals, challenges, HealthCoins) — mobile app
       '/api/masterdata',  // Specialties, hospitals, labs directory
       '/api/places',  // Nearby places search
       '/api/module-access',  // Module access check
