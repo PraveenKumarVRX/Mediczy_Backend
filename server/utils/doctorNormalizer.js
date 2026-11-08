@@ -214,9 +214,46 @@ export function normalizeVerificationStatus(doc) {
  * Apply all normalizations to a raw doctor record.
  * Safe to call on Sequelize model instances or plain objects.
  */
+/**
+ * D-6: clinicAddress is a TEXT column that holds a JSON document for most rows
+ * (759 of them), so clients had to JSON.parse it themselves. Resolve it to a real
+ * object: prefer the structured clinicAddress_json, then parse the JSON text, and
+ * fall back to wrapping a plain free-text address. Returns null when there is none.
+ */
+function normalizeClinicAddress(doc) {
+  const structured = doc.clinicAddress_json;
+  if (structured && typeof structured === 'object' && !Array.isArray(structured)
+      && Object.keys(structured).length > 0) {
+    return structured;
+  }
+
+  const raw = doc.clinicAddress;
+  if (raw && typeof raw === 'object') return raw;
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch { /* stored text is not valid JSON — treat it as a plain address */ }
+    }
+    return { address: trimmed };
+  }
+
+  return null;
+}
+
 export function normalizeDoctorProfile(raw) {
   if (!raw || typeof raw !== 'object') return raw;
   const doc = typeof raw.toJSON === 'function' ? raw.toJSON() : { ...raw };
+
+  // Keep the original text around for any client still expecting the string form.
+  if (typeof doc.clinicAddress === 'string') {
+    doc.clinicAddressText = doc.clinicAddress;
+  }
+  doc.clinicAddress = normalizeClinicAddress(doc);
 
   if (doc.weeklySchedule) {
     doc.weeklySchedule = normalizeWeeklySchedule(doc.weeklySchedule) ?? doc.weeklySchedule;
