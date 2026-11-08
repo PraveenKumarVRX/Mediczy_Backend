@@ -17,19 +17,34 @@ import api from '@/lib/api';
 
 // ─── Types ────────────────────────────────────────────────────────
 
+/**
+ * G-9: these subscores live in the row's `subscores` JSONB and are flattened by
+ * the API (server/utils/riskScoreNormalizer.js). They were previously declared
+ * here as non-nullable flat fields that the API never returned, so every row of
+ * the Risk Analysis panel rendered as `--`.
+ *
+ * `null` means "not computed for this patient" and the UI must OMIT that row,
+ * not show a placeholder. There is deliberately no `respiratory_risk`: nothing
+ * in the platform computes one.
+ */
 export interface HealthRiskScore {
   id: number;
   patient_id: number;
-  overall_score: number;
+  overall_score: number | null;
   risk_level: string;
-  cardiovascular_risk: number;
-  diabetes_risk: number;
-  respiratory_risk: number;
-  mental_health_score: number;
-  lifestyle_score: number;
+  cardiovascular_risk: number | null;
+  diabetes_risk: number | null;
+  hypertension_risk: number | null;
+  adherence_score: number | null;
+  lifestyle_score: number | null;
+  mental_health_score: number | null;
+  /** Names of the flat fields that are non-null on this row. */
+  available_subscores?: string[];
+  subscores?: Record<string, number>;
   risk_factors: string[];
   recommendations: string[];
   model_version: string;
+  confidence_score?: number | null;
   updated_at: string;
   created_at: string;
 }

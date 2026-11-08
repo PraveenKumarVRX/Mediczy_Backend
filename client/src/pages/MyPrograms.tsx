@@ -11,16 +11,21 @@ import api from "@/utils/api";
 import {
   Heart, Activity, Scale, Flower2, Leaf, Briefcase, HeartPulse, Crown,
   ChevronRight, Plus, CheckCircle2, Circle, Sparkles, Users,
-  ArrowRight, Clock, Trophy, Target, Search
+  ArrowRight, Clock, Trophy, Target, Search, Brain, Wind, Moon
 } from "lucide-react";
 
 // ── Icon map ──────────────────────────────────────────────────────────────────
-const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
+type IconProps = { className?: string; style?: React.CSSProperties };
+const ICON_MAP: Record<string, React.FC<IconProps>> = {
   Heart, Activity, Scale, Flower2, Leaf, Briefcase, HeartPulse, Crown, Sparkles, Trophy, Target,
+  Brain, Wind, Moon,
 };
-function ProgramIcon({ name, className }: { name: string; className?: string }) {
+// `style` is declared here because both call sites pass one to colour the icon;
+// without it they were silenced only by an `as any` on the value, which does not
+// make the prop exist, so tsc flagged both.
+function ProgramIcon({ name, className, style }: IconProps & { name: string }) {
   const I = ICON_MAP[name] ?? Heart;
-  return <I className={className} />;
+  return <I className={className} style={style} />;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -32,6 +37,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   hypertension:      "Hypertension",
   executive_health:  "Executive",
   cardiac:           "Cardiac",
+  mental_health:     "Mind & Mood",
 };
 
 const stagger = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.07 } } };
@@ -172,7 +178,7 @@ function EnrolledCard({ enrollment: e, onClick }: { enrollment: any; onClick: ()
               className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
               style={{ backgroundColor: e.color_hex + "20" }}
             >
-              <ProgramIcon name={e.icon_name} className="w-5 h-5" style={{ color: e.color_hex } as any} />
+              <ProgramIcon name={e.icon_name} className="w-5 h-5" style={{ color: e.color_hex }} />
             </div>
 
             <div className="flex-1 min-w-0">
@@ -235,7 +241,7 @@ function CatalogCard({ program: p, isEnrolled, onClick }: {
               className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
               style={{ backgroundColor: p.color_hex + "18" }}
             >
-              <ProgramIcon name={p.icon_name} className="w-6 h-6" style={{ color: p.color_hex } as any} />
+              <ProgramIcon name={p.icon_name} className="w-6 h-6" style={{ color: p.color_hex }} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">

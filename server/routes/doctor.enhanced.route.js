@@ -222,6 +222,7 @@ const normalizeClinicLocationUpdate = (payload = {}, existingDoctor = null) => {
 router.get('/available', [
   query('search').optional().trim(),
   query('specialization').optional().notEmpty(),
+  query('specializationLike').optional().notEmpty(),   // F-2: opt-in substring match
   query('city').optional().notEmpty(),
   query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit']),
   query('strictQc').optional().isBoolean(),
@@ -234,6 +235,7 @@ router.get('/available', [
     const {
       search,
       specialization,
+      specializationLike,
       city,
       consultationType,
       strictQc,
@@ -307,8 +309,28 @@ router.get('/available', [
       )
     )`;
 
+    // F-2: `specialization` stays an EXACT match, so no existing caller changes
+    // behaviour. `specializationLike` is the opt-in substring form, needed because
+    // the master is fragmented: 61 active mental-health doctors are spread over 13
+    // strings ("Psychiatry" 26, "Psychiatrist" 15, "Psychologist" 10, "Child
+    // Psychiatry", "Geriatric Psychiatry", …), so an exact 'Psychiatrist' reaches
+    // only 15 of them. Normalising the master is the real fix; this unblocks
+    // callers meanwhile. Comma-separated terms are OR-ed.
     if (specialization) {
       whereClause.specialization = specialization;
+    } else if (specializationLike) {
+      const terms = String(specializationLike)
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 3)   // 3+ chars, so a stray ','  cannot match everything
+        .slice(0, 5);
+      if (terms.length) {
+        whereClause.specialization = {
+          [sequelize.Sequelize.Op.or]: terms.map((t) => ({
+            [sequelize.Sequelize.Op.iLike]: `%${t}%`,
+          })),
+        };
+      }
     }
 
     // D-1: there is no "city" column on doctors — the city lives in
@@ -463,6 +485,7 @@ router.get('/partnered', authUser, async (req, res) => {
 router.get('/', [
   query('search').optional().trim(),
   query('specialization').optional().notEmpty(),
+  query('specializationLike').optional().notEmpty(),   // F-2: opt-in substring match
   query('city').optional().notEmpty(),
   query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit']),
   query('isVerified').optional().isBoolean(),
@@ -473,6 +496,7 @@ router.get('/', [
     const {
       search,
       specialization,
+      specializationLike,
       city,
       consultationType,
       isVerified,
@@ -517,8 +541,28 @@ router.get('/', [
       hasAddressSql: hasAddressLiteral,
     });
 
+    // F-2: `specialization` stays an EXACT match, so no existing caller changes
+    // behaviour. `specializationLike` is the opt-in substring form, needed because
+    // the master is fragmented: 61 active mental-health doctors are spread over 13
+    // strings ("Psychiatry" 26, "Psychiatrist" 15, "Psychologist" 10, "Child
+    // Psychiatry", "Geriatric Psychiatry", …), so an exact 'Psychiatrist' reaches
+    // only 15 of them. Normalising the master is the real fix; this unblocks
+    // callers meanwhile. Comma-separated terms are OR-ed.
     if (specialization) {
       whereClause.specialization = specialization;
+    } else if (specializationLike) {
+      const terms = String(specializationLike)
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 3)   // 3+ chars, so a stray ','  cannot match everything
+        .slice(0, 5);
+      if (terms.length) {
+        whereClause.specialization = {
+          [sequelize.Sequelize.Op.or]: terms.map((t) => ({
+            [sequelize.Sequelize.Op.iLike]: `%${t}%`,
+          })),
+        };
+      }
     }
 
     // D-1: there is no "city" column on doctors — the city lives in
@@ -1644,6 +1688,7 @@ router.post('/upload/:mediaType/confirm', authenticateDoctorUpload, [
  */
 router.get('/search', [
   query('specialization').optional().notEmpty(),
+  query('specializationLike').optional().notEmpty(),   // F-2: opt-in substring match
   query('city').optional().notEmpty(),
   query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit']),
   query('languages').optional(),
@@ -1981,7 +2026,7 @@ router.put('/services', authUser, [
  */
 router.get('/services/second-opinion', async (req, res) => {
   try {
-    const { specialization, page = 1, limit = 20 } = req.query;
+    const { specialization, specializationLike, page = 1, limit = 20 } = req.query;
 
     const whereClause = {
       offersSecondOpinion: true,
@@ -1989,8 +2034,28 @@ router.get('/services/second-opinion', async (req, res) => {
       status: 'active'
     };
 
+    // F-2: `specialization` stays an EXACT match, so no existing caller changes
+    // behaviour. `specializationLike` is the opt-in substring form, needed because
+    // the master is fragmented: 61 active mental-health doctors are spread over 13
+    // strings ("Psychiatry" 26, "Psychiatrist" 15, "Psychologist" 10, "Child
+    // Psychiatry", "Geriatric Psychiatry", …), so an exact 'Psychiatrist' reaches
+    // only 15 of them. Normalising the master is the real fix; this unblocks
+    // callers meanwhile. Comma-separated terms are OR-ed.
     if (specialization) {
       whereClause.specialization = specialization;
+    } else if (specializationLike) {
+      const terms = String(specializationLike)
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 3)   // 3+ chars, so a stray ','  cannot match everything
+        .slice(0, 5);
+      if (terms.length) {
+        whereClause.specialization = {
+          [sequelize.Sequelize.Op.or]: terms.map((t) => ({
+            [sequelize.Sequelize.Op.iLike]: `%${t}%`,
+          })),
+        };
+      }
     }
 
     const doctors = await doctorModel.findAll({
@@ -2025,7 +2090,7 @@ router.get('/services/second-opinion', async (req, res) => {
  */
 router.get('/services/home-visits', async (req, res) => {
   try {
-    const { specialization, page = 1, limit = 20 } = req.query;
+    const { specialization, specializationLike, page = 1, limit = 20 } = req.query;
 
     const whereClause = {
       offersHomeVisits: true,
@@ -2033,8 +2098,28 @@ router.get('/services/home-visits', async (req, res) => {
       status: 'active'
     };
 
+    // F-2: `specialization` stays an EXACT match, so no existing caller changes
+    // behaviour. `specializationLike` is the opt-in substring form, needed because
+    // the master is fragmented: 61 active mental-health doctors are spread over 13
+    // strings ("Psychiatry" 26, "Psychiatrist" 15, "Psychologist" 10, "Child
+    // Psychiatry", "Geriatric Psychiatry", …), so an exact 'Psychiatrist' reaches
+    // only 15 of them. Normalising the master is the real fix; this unblocks
+    // callers meanwhile. Comma-separated terms are OR-ed.
     if (specialization) {
       whereClause.specialization = specialization;
+    } else if (specializationLike) {
+      const terms = String(specializationLike)
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 3)   // 3+ chars, so a stray ','  cannot match everything
+        .slice(0, 5);
+      if (terms.length) {
+        whereClause.specialization = {
+          [sequelize.Sequelize.Op.or]: terms.map((t) => ({
+            [sequelize.Sequelize.Op.iLike]: `%${t}%`,
+          })),
+        };
+      }
     }
 
     const doctors = await doctorModel.findAll({

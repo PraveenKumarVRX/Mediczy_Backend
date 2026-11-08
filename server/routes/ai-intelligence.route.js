@@ -17,6 +17,7 @@ import drugInteractionChecker from '../services/ai-drug-interaction.service.js';
 import insuranceBotService from '../services/ai-insurance-bot.service.js';
 import emergencyTriageService from '../services/ai-emergency-triage.service.js';
 import { requirePatientRecordAccess } from '../utils/patient-access.js';
+import { normalizeRiskScoreRow } from '../utils/riskScoreNormalizer.js';
 
 const router = Router();
 
@@ -220,7 +221,10 @@ router.get('/risk-score/me', requireAuth, async (req, res) => {
       return res.json({ success: true, score: null, message: 'Risk score not yet calculated. Check back in a few hours.' });
     }
 
-    res.json({ success: true, score: rows[0] });
+    // G-9: the raw row carries its scores only inside the `subscores` JSONB,
+    // while the client expects flat fields — every row of the patient's
+    // "Risk Analysis" panel rendered as `--`. Normalised to both shapes.
+    res.json({ success: true, score: normalizeRiskScoreRow(rows[0]) });
   } catch (error) {
     res.status(500).json({ error: 'Failed to retrieve risk score' });
   }
@@ -252,7 +256,7 @@ router.get('/risk-score/:patientId', requireAuth, async (req, res) => {
       return res.json({ success: true, score: null });
     }
 
-    res.json({ success: true, score: rows[0] });
+    res.json({ success: true, score: normalizeRiskScoreRow(rows[0]) });
   } catch (error) {
     res.status(500).json({ error: 'Failed to retrieve risk score' });
   }

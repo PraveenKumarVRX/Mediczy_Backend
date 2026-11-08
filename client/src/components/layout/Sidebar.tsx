@@ -46,6 +46,7 @@ const patientSections: SidebarSection[] = [
       { icon: Brain,        label: "My Health Score",     path: "/health-intelligence" },
       { icon: ShieldCheck,  label: "Risk Check",          path: "/health-risk-assessment" },
       { icon: BookHeart,    label: "Health Diary",        path: "/health-diary" },
+      { icon: Brain,        label: "Mind & Mood",         path: "/mind-wellness" },
       { icon: Activity,     label: "My Vitals",           path: "/patient/vital-reports" },
       { icon: Watch,        label: "My Wearables",        path: "/patient/watch-analytics" },
       { icon: Target,       label: "My Programs",          path: "/my-programs" },

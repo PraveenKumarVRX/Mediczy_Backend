@@ -119,12 +119,12 @@ animation, which is ~100 lines of CSS keyframes to author fresh and avoids the l
 | G-4 | No crisis pathway on any patient surface; the detector exists but nothing calls it from mood/journal input | `ai-emergency-triage.service.js:40` | 3 |
 | G-5 | `/api/programs` is not treated as PHI by the audit middleware | `audit.middleware.js:16` | 1 |
 | G-6 | `program_enrollments.user_id` is `INTEGER NOT NULL` with **no** foreign key to `users` | migration source | 1 (note only) |
-| G-7 | Client writes mood into `data.moodScore` JSONB; the dedicated `mood` SMALLINT column the API accepts stays null, so trend queries must parse JSONB | `HealthDiary.tsx:377` vs `health-diary.route.js:169-197` | 2 |
+| ~~G-7~~ | ✅ FIXED in the Mind & Mood page, which populates the `mood` column | `HealthDiary.tsx:377` vs `health-diary.route.js:169-197` | 2 |
 | G-8 | Confidentiality boundary between the mental-health lane and HR aggregation is undefined | `wellness_metric_events.corporate_id` + `/corporate/wellness/analytics` | 1 (code), 3 (test) |
-| **G-9** | **The patient "Risk Analysis" panel shows `--` on all five rows** — the client type declares flat fields that the API never returns (they live in `subscores` JSONB), and `Respiratory` is never computed | `ai-brain-intelligence.sql:262-281` vs `aiHealthServices.ts:20-35`; §9a | 2 (quick win) |
-| **G-10** | **`mental_health` sub-score is a hardcoded `7.0`** — identical for all 22 risk rows and all 44,179 HIS rows | `ai-health-risk-cron.service.js:248`; §9a | 2 (replace with real instrument data) |
-| **F-1** | **`consultationType=online` filters on `isOnline` (presence), not capability → returns 0 of 61 capable specialists; likely platform-wide** | `doctor.enhanced.route.js:346-351`; §10a | 3 (blocks the booking CTA) |
-| **F-2** | Specialization strings fragmented across 13 variants; exact `'Psychiatrist'` reaches only 15 of 61 | §10a | 3 |
+| ~~**G-9**~~ | ✅ FIXED — **the panel showed `--` on all five rows** — the client type declares flat fields that the API never returns (they live in `subscores` JSONB), and `Respiratory` is never computed | `ai-brain-intelligence.sql:262-281` vs `aiHealthServices.ts:20-35`; §9a | 2 (quick win) |
+| ~~**G-10**~~ | ✅ FIXED — **sub-score was a hardcoded `7.0`** — identical for all 22 risk rows and all 44,179 HIS rows | `ai-health-risk-cron.service.js:248`; §9a | 2 (replace with real instrument data) |
+| ~~**F-1**~~ | ✅ FIXED + DEPLOYED — all three consultation-type filters tested the wrong signal | `doctor.enhanced.route.js:346-351`; §10a | 3 (blocks the booking CTA) |
+| ~~**F-2**~~ | ✅ FIXED — fragmented across 13 variants; exact `'Psychiatrist'` reached only 15 of 61 | §10a | 3 |
 
 ---
 
@@ -486,7 +486,18 @@ every predicate executed through the real Sequelize + `literal()` path against p
 mental-health specialists 61 online / 60 walk-in); 4 adjacent doctor/audit suites still pass.
 **Outstanding: `pm2 reload` (gated) and a live re-run of the table above.**
 
-### F-2 — specialization strings are fragmented 🟠 (open — Phase 3)
+### F-2 — ✅ FIXED 2026-11-08
+
+`specialization` keeps its **exact** match, so no existing caller changes behaviour
+(`Cardiology` still returns 29). A new opt-in `specializationLike` parameter does a
+comma-separated OR of substring matches, with terms under 3 characters dropped so a degenerate
+value applies **no** filter rather than matching everything.
+
+Verified through the real Sequelize path against production: exact `'Psychiatrist'` → 15,
+`specializationLike=psychiatr,psycholog` → **61**, i.e. 46 more specialists now reachable; combined
+with the F-1 capability filter, 61 online and 61 walk-in. Normalising the specialization master
+remains the proper long-term fix and is still out of scope.
+
 
 The 61 doctors are spread across **13 distinct specialization strings**:
 
@@ -501,14 +512,10 @@ The 61 doctors are spread across **13 distinct specialization strings**:
 ```
 
 An exact match on `'Psychiatrist'` — the string [appointmentIntent.js:65-66](../../server/utils/appointmentIntent.js#L65-L66)
-maps to — returns **15 of 61**, missing the largest bucket (`Psychiatry`, 26) entirely. Exact
-`'Psychologist'` returns 10 of 13 psychology-ish records.
+maps to — returned **15 of 61**, missing the largest bucket (`Psychiatry`, 26) entirely. Exact
+`'Psychologist'` returned 10 of the 13 psychology-ish records.
 
-**Fix:** the CTA queries by pattern (`ILIKE '%psychiatr%' OR ILIKE '%psycholog%'` → 61) rather than an
-exact string. Normalising the specialization master is the better long-term fix but is out of scope
-here.
-
-### Mechanism (once F-1 and F-2 are fixed)
+### Mechanism
 
 ```
 GET /api/doctors/available?specialization=Psychiatrist&consultationType=online
@@ -583,12 +590,65 @@ Deliberate omissions, each load-bearing:
 
 ## 12. Phases 2–4
 
-### Phase 2 — Patient dashboard UI + dashboard-tile repair *(2–3 days)*
+### Phase 2 — Patient dashboard UI + dashboard-tile repair — ✅ BUILT 2026-11-08
 
-**Also fixes G-9 and G-10 in the same release (RK-10):** map `subscores` onto the client contract so
-the "Risk Analysis" panel stops showing `--`, drop the never-computed `Respiratory` row, and feed
-`mental_health` from the Phase 1 instruments where the patient has taken one — omitting the row
-rather than showing a placeholder where they have not.
+| Deliverable | File |
+|---|---|
+| Mind & Mood page | [MindWellness.tsx](../../client/src/pages/patient/MindWellness.tsx) at `/mind-wellness` |
+| Route | `routes/index.tsx` (lazy import + one `<Route>`) |
+| Nav | `Sidebar.tsx` — "Mind & Mood" under **My Health**, after Health Diary |
+| G-9 server fix | [riskScoreNormalizer.js](../../server/utils/riskScoreNormalizer.js), applied in both `/risk-score` handlers |
+| G-9 client fix | `aiHealthServices.ts` (`HealthRiskScore` nullable, no `respiratory_risk`), `SmartHealthDashboard.tsx` |
+| G-10 | [mentalHealthSubscore.js](../../server/utils/mentalHealthSubscore.js) + `calcMentalHealthScore()` in `ai-health-risk-cron.service.js` |
+| Catalogue polish | `MyPrograms.tsx` — `mental_health` label, Brain/Wind/Moon icons, plus two pre-existing `ProgramIcon` type errors fixed |
+
+**Page contents:** daily mood check-in (writes through `/health-diary` with `isPrivate: true` and
+populates the `mood` column, closing G-7 — not a second mood store, per AD-4); PHQ-9 and GAD-7
+questionnaires served from the API so the client never hard-codes an item; result card with raw
+score, published band and the API's own disclaimer; a check-in trend list; a guided breathing
+exercise (hand-written, no vendored library — the licence-free route past Breathly); and a
+"Consult a specialist" panel wired to F-1 + F-2 with online/in-person toggle, honouring
+`feeConfirmed` so no placeholder ₹500 is ever shown as a price.
+
+**Crisis card brought forward from Phase 3.** Phase 1 already returns `crisis: true` on PHQ-9 item 9,
+so shipping the questionnaire without surfacing help would mean detecting suicidality and saying
+nothing. The page shows a non-dismissible card with Tele-MANAS 14416 and KIRAN 1800-599-0019 (both
+still to be re-verified against the current MoHFW listing before release) plus a route to a
+specialist. The full Phase 3 work — the shared detector extracted from `ai-emergency-triage`, diary
+free-text scanning, and the lane-boundary tests — is still outstanding.
+
+#### G-10 exposed a worse bug, now fixed: the risk score rewarded poor habits 🔴
+
+Replacing the hardcoded `mental_health = 7.0` was unsafe on its own. The overall-risk loop was:
+
+```js
+overall += (subscores[key] || 5) * Math.abs(weight);   // weights were NEGATIVE for 3 of 6
+```
+
+`Math.abs()` discarded the sign on the three "higher is better" subscores, so **good medication
+adherence, a healthy lifestyle and good mental health all increased computed risk.** It went
+unnoticed because `mental_health` was a constant and the other two rarely vary — but with a real
+mental-health subscore, severe depression (a low score) would have made a patient look *healthier*.
+
+Measured on production data before changing anything:
+
+| | old formula | new formula |
+|---|---|---|
+| Same disease risk, **healthy** habits | 4.80 → `moderate` | **1.30 → `low`** |
+| Same disease risk, **poor** habits | 1.65 → `low` | **4.45 → `moderate`** |
+
+All **22 of 22** stored `overall_score` values reproduce exactly from the old formula, confirming it
+is what ran in production rather than assuming it. **21 of 22 rows change risk tier** once the cron
+recomputes (20 `moderate → low`, 1 `critical → high`), so most patients were being over-triaged.
+
+Now inverted explicitly, matching the established `(10 - x) * weight` form in
+`ai-his-score.service.js`, and an absent subscore is **excluded with the remaining weights
+renormalised** rather than silently defaulted to 5. The risk model already runs under
+`ai-quality-gates` + interpretability, so this stays inside existing governance.
+
+**`mental_health` is now real:** latest PHQ-9/GAD-7 band within 6 months (worse of the two, since
+under-stating is the more harmful error), else a mood-diary average over 30 days requiring **at least
+3 entries**, else absent. Never a constant, and `null` is a meaningful answer.
 
 
 - `client/src/pages/patient/MindWellness.tsx`, route `/mind-wellness` in `client/src/routes/index.tsx`.
@@ -690,8 +750,9 @@ files onto `main`.
 | RK-3 | Mental-health data reaches an HR aggregate | Low | **Severe** | P-2 structural (no `corporate_id`, no join path) + negative test |
 | RK-4 | Tier A scope creep into Tier B during build | Medium | High | AD-7; §6 conditions are acceptance criteria; no model in Phase 1–3 |
 | ~~RK-5~~ | ~~`mental_health_score` is a live ungoverned Class IIb output~~ | — | — | **CLOSED by PF-4: it is a hardcoded constant, not a model — no SaMD exposure.** Replaced by G-9/G-10 (data integrity, not governance) |
-| RK-10 | Shipping a Mind & Mood page while the dashboard still shows "Mental Health: `--`" | High if G-9 unfixed | Medium | Fix G-9/G-10 in Phase 2, in the same release |
-| RK-11 | Fixing F-1 changes doctor-search behaviour for **every** specialty, not just mental health | Medium | High | Treat F-1 as its own change with its own verification pass across specialties; do not bundle it silently into Phase 3 |
+| ~~RK-10~~ | ~~Mind & Mood shipping beside a "Mental Health: --" tile~~ | — | — | **CLOSED: G-9 and G-10 fixed in the same change** |
+| ~~RK-11~~ | ~~F-1 changes doctor search for every specialty~~ | — | — | **CLOSED: shipped as its own commit with a production verification pass; measured live** |
+| **RK-12** | The risk-direction fix moves **21 of 22** patients' `risk_level` on the next cron run (mostly `moderate -> low`), which also changes `recommendations` and any downstream notification | Certain | **High** | Intended — the old direction was inverted. Flagged to the platform owner; the model is already under `ai-quality-gates`, which logs the shift |
 | RK-6 | New `GET` route shadowed by the `:slug` catch-all | Medium | Medium | R-3 ordering is a tested acceptance criterion |
 | RK-7 | Crisis helpline numbers stale or wrong | Low | **Severe** | Re-verify against the current MoHFW listing before release; make them config, not literals |
 | RK-8 | Instrument licensing — PHQ-9/GAD-7 are free for clinical use; PSS-10/ISI terms need checking | Medium | Medium | Confirm each instrument's licence before shipping it; drop any that is not clearly free to use |
@@ -705,7 +766,7 @@ files onto `main`.
 |---|---|---|
 | ~~**D-1**~~ | ~~Run the Phase 0 preflight~~ | **RESOLVED 2026-11-08 — all four gates answered (§9). Phase 1 is unblocked** |
 | ~~**D-7**~~ | ~~Fix F-1 here or separately?~~ | **RESOLVED: fixed first, as its own change, before Phase 1 (§10a). It turned out to affect all three consultation types, not just online** |
-| **D-8** | For G-10, should `mental_health` be computed from the new instruments, or should the sub-score be removed until enough patients use them? | Compute it from instruments where available; omit the row (not show `--`) where there is no data |
+| ~~**D-8**~~ | ~~Compute `mental_health` or remove it?~~ | **RESOLVED in build: computed from PHQ-9/GAD-7, else a 3+ entry mood-diary average, else absent and the row is omitted** |
 | **D-2** | Does the mental-health module require its own explicit consent step, separate from general platform consent? | Yes — add a one-time consent gate before the first instrument |
 | **D-3** | Retention period for instrument responses | Keep indefinitely as part of the patient record, patient-deletable on request |
 | ~~**D-4**~~ | ~~Are Psychiatrist/Psychologist doctors bookable?~~ | **RESOLVED 2026-11-08: yes, online and offline. `coach_type: 'hybrid'`; live booking CTA across both modes (§10a)** |
@@ -720,8 +781,9 @@ files onto `main`.
 Phase 0  Preflight gates PF-1..PF-4                    ✅ DONE      2026-11-08
 F-1      Consultation-type filters (all 3 types)       ✅ DEPLOYED  2026-11-08, verified live
 Phase 1  Migration + instruments + API + audit + seed  ✅ DEPLOYED  2026-11-08, verified on prod
-Phase 2  Patient dashboard UI (/mind-wellness) + G-9/G-10   2–3 d   ← next
-Phase 3  Crisis pathway + human leg + lane-boundary tests   2–3 d   (needs F-2)
+F-2      Opt-in substring specialization match         ✅ BUILT     2026-11-08, verified on prod
+Phase 2  Mind & Mood page + G-9 + G-10 + risk-direction ✅ BUILT     2026-11-08, needs reload + build
+Phase 3  Shared crisis detector + lane-boundary tests        1–2 d   ← next (crisis CARD already shipped)
 Phase 4  AI coach (Tier B)                   DEFERRED — needs governance sign-off
 ```
 

@@ -225,31 +225,46 @@ const SmartHealthDashboard: React.FC = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="px-4 pb-4 space-y-3">
+                  {/* G-9: subscores are on a 0-10 scale, and a row with no data
+                      is omitted rather than shown as `--` with an empty bar.
+                      'Respiratory' is gone because nothing computes it. */}
                   {[
-                    { label: 'Cardiovascular', value: riskScore.cardiovascular_risk, icon: Heart, color: 'bg-red-500' },
-                    { label: 'Diabetes', value: riskScore.diabetes_risk, icon: Zap, color: 'bg-amber-500' },
-                    { label: 'Respiratory', value: riskScore.respiratory_risk, icon: Activity, color: 'bg-blue-500' },
-                    { label: 'Mental Health', value: riskScore.mental_health_score, icon: Brain, color: 'bg-purple-500' },
-                    { label: 'Lifestyle', value: riskScore.lifestyle_score, icon: Dumbbell, color: 'bg-green-500' },
-                  ].map((metric) => (
-                    <div key={metric.label} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                          <metric.icon className="h-3.5 w-3.5" />
-                          {metric.label}
-                        </span>
-                        <span className="font-semibold">{metric.value ?? '--'}</span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700">
-                        <motion.div
-                          className={`h-full rounded-full ${metric.color}`}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(metric.value ?? 0, 100)}%` }}
-                          transition={{ duration: 1, delay: 0.2 }}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    { label: 'Cardiovascular', value: riskScore.cardiovascular_risk, icon: Heart, color: 'bg-red-500', higherIsBetter: false },
+                    { label: 'Diabetes', value: riskScore.diabetes_risk, icon: Zap, color: 'bg-amber-500', higherIsBetter: false },
+                    { label: 'Blood Pressure', value: riskScore.hypertension_risk, icon: Activity, color: 'bg-blue-500', higherIsBetter: false },
+                    { label: 'Mental Wellbeing', value: riskScore.mental_health_score, icon: Brain, color: 'bg-purple-500', higherIsBetter: true },
+                    { label: 'Lifestyle', value: riskScore.lifestyle_score, icon: Dumbbell, color: 'bg-green-500', higherIsBetter: true },
+                    { label: 'Medication Adherence', value: riskScore.adherence_score, icon: Pill, color: 'bg-teal-500', higherIsBetter: true },
+                  ]
+                    .filter((metric) => typeof metric.value === 'number')
+                    .map((metric) => {
+                      const value = metric.value as number;
+                      const pct = Math.max(0, Math.min(100, (value / 10) * 100));
+                      return (
+                        <div key={metric.label} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                              <metric.icon className="h-3.5 w-3.5" />
+                              {metric.label}
+                            </span>
+                            <span className="font-semibold">
+                              {value.toFixed(1)}
+                              <span className="ml-1 text-xs font-normal text-slate-400">
+                                /10 {metric.higherIsBetter ? '· higher is better' : '· lower is better'}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700">
+                            <motion.div
+                              className={`h-full rounded-full ${metric.color}`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${pct}%` }}
+                              transition={{ duration: 1, delay: 0.2 }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                 </CardContent>
               </Card>
             )}

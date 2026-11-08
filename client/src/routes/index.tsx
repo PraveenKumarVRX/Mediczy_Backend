@@ -87,6 +87,7 @@ const MedCoreWorkbench      = lazy(() => import("@/pages/MedCoreWorkbench"));
 const UserHealthRiskAssessment = lazy(() => import("@/pages/UserHealthRiskAssessment"));
 const OrderTasks            = lazy(() => import("@/pages/OrderTasks"));
 const MyPrograms            = lazy(() => import("@/pages/MyPrograms"));
+const MindWellness          = lazy(() => import("@/pages/patient/MindWellness"));
 const ProgramDetail         = lazy(() => import("@/pages/ProgramDetail"));
 const ProgramJourney        = lazy(() => import("@/pages/ProgramJourney"));
 
@@ -2135,6 +2136,7 @@ const AppRoutes = () => {
         <Route path="/my-prescriptions"      element={<MyPrescriptions />} />
         <Route path="/my-plans"              element={<MainLayout><MyPlans /></MainLayout>} />
         <Route path="/my-programs"           element={<MyPrograms />} />
+        <Route path="/mind-wellness"         element={<MindWellness />} />
         <Route path="/programs/:slug"        element={<ProgramDetail />} />
         <Route path="/programs/journey/:enrollmentId" element={<ProgramJourney />} />
         <Route path="/choose-plan"           element={<ChoosePlan />} />

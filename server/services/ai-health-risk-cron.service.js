@@ -22,6 +22,7 @@ import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import interpretabilityService from './ai-interpretability.service.js';
 import qualityGates from './ai-quality-gates.service.js';
 import { processBatchesDirect } from './patient-risk-queue.service.js';
+import { resolveMentalHealthSubscore } from '../utils/mentalHealthSubscore.js';
 
 class HealthRiskScoreCron {
   constructor() {
@@ -244,25 +245,53 @@ class HealthRiskScoreCron {
     // e. Lifestyle Score (10 = healthy)
     subscores.lifestyle = await this.calcLifestyleScore(patient.patient_id);
 
-    // f. Mental Health (10 = good)
-    subscores.mental_health = 7.0; // Baseline — enhanced when mood tracking available
+    // f. Mental Health (10 = good). MED-MIND-001 G-10: this was the literal 7.0
+    // for every patient on the platform while being shown to them as a score.
+    // Now derived from their own PHQ-9/GAD-7 results, falling back to their mood
+    // diary. Absent (not 7, not 5) when they have neither — see the weighting below.
+    const mentalHealth = await this.calcMentalHealthScore(patient.patient_id);
+    if (mentalHealth) {
+      subscores.mental_health = mentalHealth.value;
+      dataSources.mental_health = mentalHealth.source;
+    }
 
-    // Overall score: weighted average (lower = healthier)
-    const weights = {
+    // Overall risk score, 0-10 where HIGHER = more risk.
+    //
+    // MED-MIND-001: the previous loop was `overall += (subscores[key] || 5) *
+    // Math.abs(weight)` over weights that were negative for the three
+    // "higher = better" subscores. Math.abs() discarded that sign, so good
+    // medication adherence, a healthy lifestyle and good mental health all
+    // INCREASED the computed risk. It went unnoticed because mental_health was a
+    // constant and the other two rarely vary much — but with a real
+    // mental_health subscore it would have meant severe depression (low score)
+    // making a patient look HEALTHIER. Inverted explicitly here, matching the
+    // established `(10 - x) * weight` form in ai-his-score.service.js.
+    //
+    // A subscore that is absent is EXCLUDED and the remaining weights are
+    // renormalised, rather than silently defaulted to 5.
+    const WEIGHTS = {
       cardiovascular: 0.25,
       diabetes: 0.20,
       hypertension: 0.20,
-      medication_adherence: -0.15, // Negative because high = good
-      lifestyle: -0.10,            // Negative because high = good  
-      mental_health: -0.10         // Negative because high = good
+      medication_adherence: 0.15,
+      lifestyle: 0.10,
+      mental_health: 0.10,
     };
+    // Subscores where a HIGH value is good, so risk = 10 - value.
+    const HIGHER_IS_BETTER = new Set(['medication_adherence', 'lifestyle', 'mental_health']);
 
-    let overall = 0;
-    for (const [key, weight] of Object.entries(weights)) {
-      overall += (subscores[key] || 5) * Math.abs(weight);
+    let weighted = 0;
+    let weightUsed = 0;
+    for (const [key, weight] of Object.entries(WEIGHTS)) {
+      const raw = subscores[key];
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) continue; // absent -> excluded
+      const asRisk = HIGHER_IS_BETTER.has(key) ? (10 - raw) : raw;
+      weighted += asRisk * weight;
+      weightUsed += weight;
     }
-    // Normalize to 0-10 scale
-    overall = Math.max(0, Math.min(10, overall));
+    // Renormalise over the weights actually used; 5.0 only when nothing is known.
+    let overall = weightUsed > 0 ? weighted / weightUsed : 5.0;
+    overall = Math.max(0, Math.min(10, Math.round(overall * 100) / 100));
 
     // Risk factors identification
     const riskFactors = [];
@@ -271,6 +300,11 @@ class HealthRiskScoreCron {
     if (subscores.hypertension > 6) riskFactors.push('Hypertension risk');
     if (subscores.medication_adherence < 5) riskFactors.push('Low medication adherence');
     if (subscores.lifestyle < 4) riskFactors.push('Lifestyle modifications recommended');
+    // Worded as an observation of the patient's own screening result, never as a
+    // diagnosis — the instruments are Tier A, non-diagnostic (MED-MIND-001 §6).
+    if (typeof subscores.mental_health === 'number' && subscores.mental_health <= 5) {
+      riskFactors.push('Recent mental wellness check-in suggests speaking to a professional');
+    }
     if (patient.chronicConditions?.length > 0) {
       riskFactors.push(`Chronic conditions: ${patient.chronicConditions.join(', ')}`);
     }
@@ -459,6 +493,63 @@ class HealthRiskScoreCron {
   /**
    * Lifestyle score from wellness logs (higher = healthier)
    */
+  /**
+   * MED-MIND-001 G-10 — mental-health subscore from the patient's own data.
+   *
+   * Prefers a validated instrument result (PHQ-9 / GAD-7) from the last 6
+   * months; falls back to their mood diary over the last 30 days. Returns null
+   * when neither exists, so the caller omits the subscore instead of inventing
+   * one. Every failure path returns null rather than a number: a missing table
+   * or a query error must never be reported to a patient as a score.
+   *
+   * Note the patient_id -> user_id hop: program_enrollments is keyed by user_id
+   * and health_diary by userId, while this service works in patient_id.
+   */
+  async calcMentalHealthScore(patientId) {
+    const db = pool;
+    let userId = null;
+    try {
+      const { rows } = await db.query(`SELECT "userId" FROM patients WHERE id = $1`, [patientId]);
+      userId = rows[0]?.userId ?? null;
+    } catch { return null; }
+    if (!userId) return null;
+
+    const instrumentResults = [];
+    try {
+      // Latest result per instrument for this user, across all their enrollments.
+      const { rows } = await db.query(`
+        SELECT DISTINCT ON (r.instrument_code)
+               r.instrument_code, r.severity_band, r.administered_at
+          FROM program_assessment_responses r
+          JOIN program_enrollments e ON e.id = r.enrollment_id
+         WHERE e.user_id = $1
+           AND r.administered_at > NOW() - INTERVAL '6 months'
+           AND r.severity_band IS NOT NULL
+         ORDER BY r.instrument_code, r.administered_at DESC
+      `, [userId]);
+      for (const r of rows) {
+        instrumentResults.push({ instrumentCode: r.instrument_code, band: r.severity_band });
+      }
+    } catch { /* table absent or unreadable — fall through to the diary */ }
+
+    let moodAverage;
+    if (!instrumentResults.length) {
+      try {
+        const { rows } = await db.query(`
+          SELECT AVG(mood)::numeric AS avg_mood, COUNT(mood)::int AS n
+            FROM health_diary
+           WHERE "userId" = $1
+             AND mood IS NOT NULL
+             AND "entryDate" > NOW() - INTERVAL '30 days'
+        `, [userId]);
+        // Require at least 3 entries: one bad day is not a mental-health score.
+        if (rows[0] && rows[0].n >= 3) moodAverage = Number(rows[0].avg_mood);
+      } catch { /* ignore */ }
+    }
+
+    return resolveMentalHealthSubscore({ instrumentResults, moodAverage });
+  }
+
   async calcLifestyleScore(patientId) {
     try {
       const db = pool;
