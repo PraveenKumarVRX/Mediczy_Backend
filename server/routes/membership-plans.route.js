@@ -1,6 +1,7 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import membershipService from '../services/membership.service.js';
+import paymentGateway from '../services/payment-gateway.service.js';
 import { PLAN_TYPES } from '../config/membership-plans.config.js';
 import pool from '../db/pgPool.js';
 import puppeteer from 'puppeteer';
@@ -171,6 +172,86 @@ router.post('/validate-referral', async (req, res) => {
 });
 
 /**
+ * W-PLAN-2 helpers — resolve what a plan actually costs for a billing cycle.
+ * The model may expose either camelCase or the raw snake_case column.
+ */
+const planAmountFor = (plan, billingCycle) => {
+  const pick = (...keys) => {
+    for (const k of keys) {
+      const v = plan?.[k] ?? (typeof plan?.get === 'function' ? plan.get(k) : undefined);
+      if (v !== null && v !== undefined && v !== '') return Number(v);
+    }
+    return 0;
+  };
+  const monthly = pick('price', 'monthlyPrice', 'monthly_price') || 0;
+  const annual = pick('annualPrice', 'annual_price') || 0;
+  return String(billingCycle).toUpperCase() === 'ANNUAL' ? (annual || monthly * 12) : monthly;
+};
+
+const planCurrency = (plan) => plan?.currency || (typeof plan?.get === 'function' ? plan.get('currency') : null) || 'INR';
+
+/**
+ * POST /api/membership-plans/plans/:slug/create-order
+ * W-PLAN-2: open a Razorpay order for a paid plan so the client can actually pay.
+ * Previously there was no way to buy a paid plan — /enroll just demanded a
+ * paymentId that nothing issued (and nothing verified).
+ */
+router.post('/plans/:slug/create-order', authUser, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const billingCycle = String(req.body?.billingCycle || 'MONTHLY').toUpperCase();
+
+    let plan;
+    try {
+      plan = await membershipService.getPlanBySlug(slug);
+    } catch {
+      return res.status(404).json({ success: false, message: 'Plan not available', code: 'PLAN_NOT_FOUND' });
+    }
+
+    const amount = planAmountFor(plan, billingCycle);
+    if (!(amount > 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'This plan is free — no payment is needed.',
+        code: 'PLAN_IS_FREE'
+      });
+    }
+
+    const order = await paymentGateway.createRazorpayOrder({
+      amount,
+      currency: planCurrency(plan),
+      receipt: paymentGateway.generateOrderReceipt('PLAN'),
+      notes: {
+        purpose: 'membership_plan',
+        planSlug: slug,
+        billingCycle,
+        userId: req.user.id
+      }
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        orderId: order.orderId,
+        amount: order.amount,
+        currency: order.currency,
+        keyId: process.env.RAZORPAY_KEY_ID || null,
+        planSlug: slug,
+        planName: plan.name,
+        billingCycle
+      }
+    });
+  } catch (error) {
+    console.error('[membership-plans] create-order failed:', error?.message);
+    return res.status(502).json({
+      success: false,
+      message: 'Could not start the payment. Please try again in a moment.',
+      code: 'PAYMENT_INIT_FAILED'
+    });
+  }
+});
+
+/**
  * POST /api/membership-plans/enroll
  * Enroll user in a membership plan
  */
@@ -181,7 +262,10 @@ router.post('/enroll', authUser, async (req, res) => {
       referralCode,
       billingCycle,
       paymentId,
-      paymentMethod
+      paymentMethod,
+      razorpay_order_id: razorpayOrderId,
+      razorpay_payment_id: razorpayPaymentId,
+      razorpay_signature: razorpaySignature
     } = req.body;
 
     if (!planSlug) {
@@ -191,10 +275,69 @@ router.post('/enroll', authUser, async (req, res) => {
       });
     }
 
+    const cycle = String(billingCycle || 'MONTHLY').toUpperCase();
+
+    // W-PLAN-2 / security: a paid plan may only be activated against a Razorpay
+    // payment whose signature we verify and whose captured amount covers the plan
+    // price. Previously `paymentId` was accepted verbatim and never checked, so any
+    // string would activate a paid plan for free.
+    let verifiedPaymentId = null;
+    let plan;
+    try {
+      plan = await membershipService.getPlanBySlug(planSlug);
+    } catch {
+      return res.status(404).json({ success: false, message: 'Plan not available', code: 'PLAN_NOT_FOUND' });
+    }
+
+    const expectedAmount = planAmountFor(plan, cycle);
+
+    if (expectedAmount > 0) {
+      const payId = razorpayPaymentId || paymentId;
+      if (!razorpayOrderId || !payId || !razorpaySignature) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please complete payment to activate this plan.',
+          code: 'PAYMENT_REQUIRED',
+          action: 'Start the payment for this plan, then retry'
+        });
+      }
+
+      if (!paymentGateway.verifyRazorpaySignature(razorpayOrderId, payId, razorpaySignature)) {
+        console.warn(`[membership-plans] signature mismatch for user ${req.user.id}, order ${razorpayOrderId}`);
+        return res.status(400).json({
+          success: false,
+          message: 'We could not verify that payment. Please try again.',
+          code: 'PAYMENT_VERIFICATION_FAILED'
+        });
+      }
+
+      const fetched = await paymentGateway.fetchRazorpayPayment(payId).catch(() => null);
+      const payment = fetched?.payment;
+      if (!payment || !['captured', 'authorized'].includes(String(payment.status))) {
+        return res.status(400).json({
+          success: false,
+          message: 'That payment has not completed yet. Please try again.',
+          code: 'PAYMENT_NOT_COMPLETED'
+        });
+      }
+
+      // Compare in paise to avoid float drift.
+      if (Math.round(Number(payment.amount) * 100) < Math.round(expectedAmount * 100)) {
+        console.warn(`[membership-plans] amount mismatch user ${req.user.id}: paid ${payment.amount}, expected ${expectedAmount}`);
+        return res.status(400).json({
+          success: false,
+          message: 'The payment amount does not match this plan.',
+          code: 'PAYMENT_AMOUNT_MISMATCH'
+        });
+      }
+
+      verifiedPaymentId = payment.id;
+    }
+
     const subscription = await membershipService.enrollUser(req.user.id, planSlug, {
       referralCode,
-      billingCycle: billingCycle || 'MONTHLY',
-      paymentId,
+      billingCycle: cycle,
+      paymentId: verifiedPaymentId,
       paymentMethod
     });
 
