@@ -293,8 +293,24 @@ router.get('/available', [
       whereClause.specialization = specialization;
     }
 
+    // D-1: there is no "city" column on doctors — the city lives in
+    // clinicAddress_json->>'city' (and inside the legacy clinicAddress JSON text).
+    // Filtering on a non-existent column made every ?city= request fail with
+    // "Failed to fetch doctors". Match the structured city first, then fall back
+    // to the text blob so legacy rows still resolve.
     if (city) {
-      whereClause.city = city;
+      const cityValue = String(city).trim();
+      if (cityValue) {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        const cityExact = sequelize.escape(cityValue);
+        const cityLike = sequelize.escape(`%${cityValue}%`);
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(`(
+          COALESCE("clinicAddress_json"->>'city', '') ILIKE ${cityExact}
+          OR COALESCE("clinicAddress", '') ILIKE ${cityLike}
+        )`));
+      }
     }
 
     if (isVerified !== undefined) {
@@ -502,8 +518,24 @@ router.get('/', [
       whereClause.specialization = specialization;
     }
 
+    // D-1: there is no "city" column on doctors — the city lives in
+    // clinicAddress_json->>'city' (and inside the legacy clinicAddress JSON text).
+    // Filtering on a non-existent column made every ?city= request fail with
+    // "Failed to fetch doctors". Match the structured city first, then fall back
+    // to the text blob so legacy rows still resolve.
     if (city) {
-      whereClause.city = city;
+      const cityValue = String(city).trim();
+      if (cityValue) {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        const cityExact = sequelize.escape(cityValue);
+        const cityLike = sequelize.escape(`%${cityValue}%`);
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(`(
+          COALESCE("clinicAddress_json"->>'city', '') ILIKE ${cityExact}
+          OR COALESCE("clinicAddress", '') ILIKE ${cityLike}
+        )`));
+      }
     }
 
     if (isVerified !== undefined) {
