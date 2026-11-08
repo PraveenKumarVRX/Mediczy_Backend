@@ -1,8 +1,10 @@
 # App-store review access — Play Console & App Store Connect
 
 **Audience:** whoever fills in the store listing and presses Submit.
-**Status (2026-11-08):** reviewer account created; the review origin is **not yet bound** (one
-command, below); the app itself is **not yet submittable** — see [Blockers](#blockers).
+**Status (2026-11-08):** reviewer account created; the patient app now has real functionality
+past login and bundles for Android; the review origin is **not yet bound** (one command, §3) and
+the Play **Data safety** form and **Health apps declaration** are still owed. Nothing has been
+rendered on a device yet. See [§4 Blockers](#4-blockers) and [§5](#5-what-was-verified-and-what-was-not).
 
 ---
 
@@ -24,7 +26,7 @@ recorded as "we could not access the app" — a rejection, not a request for mor
 | Field | Value |
 |---|---|
 | Username | `play.reviewer@mysmarthealth.in` |
-| Password | not recorded here — see [§5](#5-getting-or-rotating-the-password) |
+| Password | not recorded here — see [§7](#7-getting-or-rotating-the-password) |
 | Organisation server URL | `https://demo.mediqzy.com` (the app's first screen asks for this — **reviewers must be given it**) |
 | Backing record | `users` id 7639, uid `UE7M5J`, `role = 'patient'`, `organization_id = 11` |
 | Organisation | tenant 11, *Smart Hospital*, flagged `metadata.demo = 'true'` |
@@ -90,19 +92,67 @@ Rollback: `npm run store:review-origin:ssm -- --remove`.
 
 ## 4. Blockers
 
-The reviewer account is necessary but **not** sufficient. As of 2026-11-08:
+The reviewer account is necessary but not sufficient. State as of 2026-11-08:
 
-| # | Blocker | Severity |
+| # | Blocker | Status |
 |---|---|---|
-| 1 | **The app has no functionality past login.** `mobile/App.tsx` is a server-address field, an email/password form, and the text "Signed in successfully." There is no navigation, no appointments, no records, no booking. `src/screens/LiveKitVideoCallScreen.js` is never imported. | **Blocks submission.** Google rejects this under *Minimum Functionality* ("little to no functionality"). Repeated rejections escalate to account-level enforcement. |
-| 2 | Review origin not bound → discovery returns 503 on every host, so the reviewer cannot reach a login form. | Blocks review; one command (§3). |
-| 3 | Play **Data safety** form and the **Health apps declaration** are required for a health app handling personal and health data, and must match what the app actually transmits. | Blocks submission. |
-| 4 | Patient login is throttled to **5 attempts / 15 min per email**, in-process (`controller/unified-patient.controller.js`). A reviewer who signs out and back in a few times can lock themselves out for 15 minutes and report the app as broken. | Should fix before submitting. |
+| 1 | **The app had no functionality past login** — a server-address field, a login form, and the text "Signed in successfully." Google rejects that under *Minimum Functionality*, and repeated rejections escalate to account-level enforcement. | **Fixed.** The patient app now has five tabs over live API data: home summary, appointments, a doctor/day/slot booking flow that writes a real appointment, prescriptions and reports, vitals and checkups, and a profile with sign-out and account deletion. See [§6](#6-what-the-app-does-now). |
+| 2 | **The app could not be bundled at all**, on any platform: `react-native-reanimated@4.3.0` requires the peer `react-native-worklets`, which was never installed, so its Babel plugin threw before Metro read a single module. Nothing imported reanimated. | **Fixed** by dropping that dependency. `npx expo export --platform android` now produces a 2.27 MB Hermes bundle. |
+| 3 | Patient login counted **every** attempt against 5 per 15 minutes per email and cleared only when the window expired, so five *correct* logins locked out the sixth. | **Fixed** in `controller/unified-patient.controller.js`: failures count, success clears. Covered by `__tests__/patient-login-throttle.test.js`. |
+| 4 | **Review origin not bound** → `/api/mobile/discovery` answers 503 on every host, so the reviewer never reaches a login form. | **Open.** One command, §3. |
+| 5 | Play **Data safety** form and the **Health apps declaration**, which must match what the app actually transmits. | **Open**, but answerable: the field-by-field answers are in [PLAY_DATA_SAFETY_AND_HEALTH_DECLARATION.md](PLAY_DATA_SAFETY_AND_HEALTH_DECLARATION.md). Submitting them is a Play Console task. |
 
-Fix 1 before anything else: it is the submission, not a detail of it. Items 2–4 are cheap and
-can be done in any order once there is an app worth reviewing.
+`mobile/src/screens/LiveKitVideoCallScreen.js` is still dead code: nothing imports it, and the
+`@livekit/react-native` and `livekit-client` packages it needs are not in `mobile/package.json`.
+It is harmless while unreferenced — Metro never resolves it — but importing it will break the
+build until those packages are added.
 
-## 5. Getting or rotating the password
+## 5. What was verified, and what was not
+
+Verified: the module graph bundles for Android (Metro + Hermes); `tsc --noEmit` is clean;
+`npm run test:connection` passes 12/12, including the new session-resume and query-string cases;
+the server suites for the changed code pass (`patient-login-throttle`, `account-erasure-guard`,
+`review-mobile-origin`, `mobile-discovery`, the appointment suites). Every API path the app calls
+was first exercised against the live server with the reviewer's own token and returns 200.
+
+**Not** verified: the app has not been rendered on a device or emulator. Expo's web target would
+need `react-dom` and `react-native-web`, which are not installed, and there is no emulator on
+this host. Layout, navigation feel and the booking flow end to end still need one pass on a real
+device before submitting.
+
+## 6. What the app does now
+
+| Tab | What a reviewer sees | Server endpoints |
+|---|---|---|
+| Home | Name, organisation, counts of upcoming visits / prescriptions / unread alerts, the next appointment, recent notifications | `/api/patient/profile`, `/api/patient/appointments`, `/api/prescriptions/patient`, `/api/notifications` |
+| Visits | Upcoming and past appointments with doctor, specialty, date, time, type and status | `/api/patient/appointments` |
+| Booking | Doctor search over the live directory, a 14-day picker, video or in-person, the doctor's actually-free slots, optional reason, then a real booking | `/api/doctors`, `/api/doctors/available-slots/:id?date=`, `POST /api/appointments` |
+| Records | Prescriptions with diagnosis, medicines, dosage and advice; reports with type, date and an Open button | `/api/prescriptions/patient`, `/api/patient/reports` |
+| Health | Latest vitals and history, booked checkups, available packages | `/api/health-data/vitals`, `/api/health-checkups/bookings`, `/api/health-checkups/packages` |
+| Profile | Profile and organisation details, sign out, change organisation, and account deletion behind a typed confirmation | `/api/patient/profile`, `POST /api/users/data/erasure` |
+
+Every one of those paths is inside the `patient` allow-list in
+`server/middleware/ringFencing.js`. A path outside that list answers 403 for a patient however
+correct the route is, so a new screen needs its endpoint added there too.
+
+**The reviewer's own account shows empty states**, by design: tenant 11 holds no patient records,
+so Records, Health and Visits each render their empty state until the reviewer books something.
+The doctor directory is live, so booking is the path that shows the app working. If a populated
+walkthrough is wanted, seed obviously synthetic records against the reviewer account — never real
+ones.
+
+### Account deletion
+
+Play requires an in-app deletion path for any app that can create accounts, and this app can.
+Profile → Delete account requires the word DELETE to be typed, then calls
+`POST /api/users/data/erasure`, which erases immediately. Two guards were added with it: the
+request must carry `confirm: "ERASE"`, and accounts flagged `metadata.doNotDelete` are refused
+with `account_protected`. **The reviewer account is flagged**, so a reviewer who taps through the
+deletion flow gets a clear "managed account" message instead of destroying the credentials every
+future review depends on. If a reviewer queries that, the answer is that the account is
+organisation-managed; an ordinary patient account deletes for real.
+
+## 7. Getting or rotating the password
 
 The password is deliberately **not** stored in this repository — that is the mistake
 `docs/testing/TEST_CREDENTIALS.md` makes, and it is why those credentials are unusable for
@@ -126,7 +176,7 @@ npm run store:reviewer-account:ssm -- --clinic 7 --force
 PLAY_REVIEWER_PASSWORD='...' npm run store:reviewer-account:ssm
 ```
 
-## 6. Verifying before you submit
+## 8. Verifying before you submit
 
 ```bash
 # 1. discovery answers on the review origin

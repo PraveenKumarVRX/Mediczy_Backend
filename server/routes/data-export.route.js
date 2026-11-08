@@ -59,11 +59,46 @@ router.get('/export/:requestId/download', authUser, async (req, res) => {
   }
 });
 
-// Request data erasure (DPDPA §14)
+/**
+ * Request data erasure (DPDPA §14).
+ *
+ * This executes immediately and cannot be undone, so it takes two guards that
+ * it did not have when it was unreachable from any client:
+ *
+ *  1. An explicit `confirm: 'ERASE'` body. A single unconfirmed POST used to be
+ *     enough to destroy an account's data; the mobile app's "Delete account"
+ *     flow is the first caller and sends this after a typed confirmation.
+ *  2. A refusal for service accounts flagged `metadata.doNotDelete`. The
+ *     app-store reviewer login is a patient account like any other, so without
+ *     this a reviewer tapping Delete account would erase the credentials every
+ *     future store review depends on.
+ */
 router.post('/erasure', authUser, async (req, res) => {
   try {
     const userId = req.user.id;
     const orgId  = req.user.organization_id;
+
+    if (req.body?.confirm !== 'ERASE') {
+      return res.status(400).json({
+        success: false,
+        code: 'erasure_not_confirmed',
+        message: 'Send confirm: "ERASE" to erase this account. This cannot be undone.',
+      });
+    }
+
+    const { rows: guard } = await pgPool().query(
+      `SELECT metadata FROM users WHERE id = $1`,
+      [userId]
+    );
+    const metadata = guard[0]?.metadata || {};
+    if (metadata.doNotDelete === true || metadata.purpose === 'app-store-review') {
+      return res.status(403).json({
+        success: false,
+        code: 'account_protected',
+        message: 'This is a managed account and cannot be deleted from the app. Contact your organisation administrator.',
+      });
+    }
+
     const { rows } = await pgPool().query(
       `INSERT INTO data_deletion_requests (user_id, organization_id, request_type)
        VALUES ($1, $2, 'erasure') RETURNING id, deadline_at`,

@@ -3,6 +3,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { Op } from 'sequelize';
 import healthDiaryService from '../services/health-diary.service.js';
 import { validateBody, validateQuery } from '../validationSchemas/validateRequest.middleware.js';
+import { handleValidationErrors } from '../middleware/validation.js';
 import {
   createAppointmentSchema,
   rescheduleAppointmentSchema,
@@ -237,6 +238,11 @@ router.get(
   [
     param('id').isInt().withMessage('Valid appointment ID is required')
   ],
+  // The validator above was declared but never enforced: getAppointmentById
+  // does not call validationResult(), so a non-numeric id reached the query and
+  // returned 500 with the raw Postgres text ('invalid input syntax for type
+  // integer: "patient"'), leaking the column type. Reject it here instead.
+  handleValidationErrors,
   getAppointmentById
 );
 

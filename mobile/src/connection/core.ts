@@ -52,7 +52,10 @@ export class ConnectionManager {
   }
   private tokenKey(c: Connection) { return `mobile.session.v1.${Array.from(JSON.stringify([this.appId, this.product, c.origin, c.discovery.deploymentId])).map(c => c.charCodeAt(0).toString(16).padStart(4, '0')).join('')}`; }
   private async send(origin: string, path: string, init: RequestInit = {}, generation = this.generation) {
-    if (!/^\/api\/[a-zA-Z0-9/_-]+$/.test(path)) throw new Error('Only relative API paths are allowed.');
+    // The path charset deliberately excludes '.', so '/api/../admin' cannot be
+    // built; a query string is allowed after it but may not contain '/', '?' or
+    // '#', so it can never reintroduce a path segment or a fragment.
+    if (!/^\/api\/[a-zA-Z0-9/_-]+(\?[A-Za-z0-9_=&%.,:+-]*)?$/.test(path)) throw new Error('Only relative API paths are allowed.');
     const controller = new AbortController(); this.controllers.add(controller);
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
@@ -111,6 +114,52 @@ export class ConnectionManager {
       headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }, generation);
+  }
+  get signedIn() { return this.token !== null; }
+  /**
+   * Re-attach the stored session to the *already re-discovered* connection, so
+   * a returning user is not sent back to the login form on every launch.
+   *
+   * This runs after connect(), never instead of it: the origin has been
+   * re-discovered and its deploymentId matched before any token is used, which
+   * is the property restore() is careful to preserve. `verifyPath` is called
+   * with the token to confirm the server still accepts it — tokens are
+   * short-lived, so an expired one must land the user on the login form rather
+   * than inside a broken session.
+   */
+  async resumeSession(verifyPath?: string) {
+    const connection = this.active;
+    const generation = this.generation;
+    if (!connection) return false;
+    let token: string | null = null;
+    try { token = await this.secure.getItem(this.tokenKey(connection)); } catch { return false; }
+    if (!token || generation !== this.generation) return false;
+    this.token = token;
+    if (verifyPath) {
+      try {
+        await this.send(connection.origin, verifyPath, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        }, generation);
+      } catch {
+        if (generation !== this.generation) return false;
+        this.token = null;
+        await this.persist(() => this.secure.removeItem(this.tokenKey(connection)));
+        return false;
+      }
+    }
+    if (generation !== this.generation) return false;
+    this.notify();
+    return true;
+  }
+  /** Sign out of the account but stay connected to the organisation. */
+  async signOut() {
+    const connection = this.active;
+    this.token = null;
+    this.controllers.forEach(c => c.abort());
+    this.controllers.clear();
+    if (connection) await this.persist(() => this.secure.removeItem(this.tokenKey(connection)));
+    this.notify();
   }
   async login(email: string, password: string) {
     return this.authenticate(email, password);

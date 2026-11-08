@@ -20,27 +20,76 @@ import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
-// Rate limiting for patient login
+/**
+ * Rate limiting for patient login — failed attempts only.
+ *
+ * This counter used to be incremented on every *attempt* and cleared only by
+ * the window expiring, so five correct logins inside 15 minutes locked the
+ * account out of the sixth. That is reachable in normal use: the access token
+ * lives 15 minutes, and a mobile user who signs out and back in, or runs the
+ * app on two devices, hits it with the right password every time. Counting
+ * failures and clearing on success keeps the brute-force guard (five wrong
+ * passwords still locks the window) without punishing the legitimate user.
+ *
+ * The map is per PM2 worker and is pruned on write — an unbounded Map keyed on
+ * an attacker-supplied email string is a slow memory leak otherwise.
+ */
 const loginAttempts = new Map();
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
 const MAX_ATTEMPTS = 5;
+const MAX_TRACKED_IDENTIFIERS = 10000;
 
-const checkRateLimit = (email) => {
-  const now = Date.now();
-  const attempts = loginAttempts.get(email) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW };
+const rateLimitKey = (email) => String(email || '').trim().toLowerCase();
 
-  if (now > attempts.resetTime) {
-    loginAttempts.set(email, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
-    return true;
+const pruneLoginAttempts = (now) => {
+  for (const [key, entry] of loginAttempts) {
+    if (now > entry.resetTime) loginAttempts.delete(key);
   }
+  // Still full of live windows: drop the oldest tracked identifier rather than
+  // growing without bound. Insertion order makes the first key the oldest.
+  while (loginAttempts.size >= MAX_TRACKED_IDENTIFIERS) {
+    const oldest = loginAttempts.keys().next();
+    if (oldest.done) break;
+    loginAttempts.delete(oldest.value);
+  }
+};
 
-  if (attempts.count >= MAX_ATTEMPTS) {
+const isRateLimited = (email) => {
+  const key = rateLimitKey(email);
+  const entry = loginAttempts.get(key);
+  if (!entry) return false;
+  if (Date.now() > entry.resetTime) {
+    loginAttempts.delete(key);
     return false;
   }
+  return entry.count >= MAX_ATTEMPTS;
+};
 
-  attempts.count += 1;
-  loginAttempts.set(email, attempts);
-  return true;
+const registerFailedLogin = (email) => {
+  const now = Date.now();
+  const key = rateLimitKey(email);
+  const entry = loginAttempts.get(key);
+  if (entry && now <= entry.resetTime) {
+    entry.count += 1;
+    loginAttempts.set(key, entry);
+    return;
+  }
+  pruneLoginAttempts(now);
+  loginAttempts.set(key, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+};
+
+const clearFailedLogins = (email) => {
+  loginAttempts.delete(rateLimitKey(email));
+};
+
+export const __loginThrottleTestHooks = {
+  isRateLimited,
+  registerFailedLogin,
+  clearFailedLogins,
+  reset: () => loginAttempts.clear(),
+  size: () => loginAttempts.size,
+  MAX_ATTEMPTS,
+  MAX_TRACKED_IDENTIFIERS,
 };
 
 /**
@@ -244,8 +293,8 @@ export const unifiedPatientLogin = async (req, res) => {
       password
     } = req.body;
 
-    // Rate limiting check
-    if (!checkRateLimit(email)) {
+    // Rate limiting check (failed attempts only — see registerFailedLogin)
+    if (isRateLimited(email)) {
       return res.status(429).json({
         success: false,
         message: 'Too many login attempts. Please try again in 15 minutes.'
@@ -280,6 +329,7 @@ export const unifiedPatientLogin = async (req, res) => {
     });
 
     if (!patient) {
+      registerFailedLogin(email);
       await auditLoginAttempt(req, null, email, false, 'Patient not found');
       return res.status(401).json({
         success: false,
@@ -291,12 +341,15 @@ export const unifiedPatientLogin = async (req, res) => {
     // Verify password
     const isPasswordValid = await patient.verifyPassword(password);
     if (!isPasswordValid) {
+      registerFailedLogin(email);
       await auditLoginAttempt(req, patient.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
+
+    clearFailedLogins(email);
 
     // Generate JWT token
     const token = jwt.sign(
