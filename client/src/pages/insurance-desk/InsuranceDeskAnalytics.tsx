@@ -72,17 +72,19 @@ const InsuranceDeskAnalytics = () => {
   const [trends, setTrends] = useState<{ queries: number; rejections: number; approvals: number }>({ queries: 0, rejections: 0, approvals: 0 });
   const [timeline, setTimeline] = useState<TrendPoint[]>([]);
   const [payerRcm, setPayerRcm] = useState<PayerRcm[]>([]);
+  const [cockpit, setCockpit] = useState<any | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [receivablesRes, agingRes, tatRes, trendsRes, payerRcmRes] = await Promise.all([
+      const [receivablesRes, agingRes, tatRes, trendsRes, payerRcmRes, cockpitRes] = await Promise.all([
         api.get('/hospital/insurance/revenue/receivables'),
         api.get('/hospital/insurance/reports/claims-aging'),
         api.get('/hospital/insurance/reports/tat'),
         api.get('/hospital/insurance/reports/query-rejection-trends'),
         api.get('/hospital/insurance/rcm/payer-analytics'),
+        api.get('/hospital/insurance/rcm/cockpit').catch(() => null),
       ]);
       setReceivables(receivablesRes.data.receivables || { approvedNotSettled: 0, settled: 0, pending: 0, total: 0 });
       setAgingBuckets(agingRes.data.agingBuckets || []);
@@ -92,6 +94,7 @@ const InsuranceDeskAnalytics = () => {
       setTrends(trendsRes.data.trends || { queries: 0, rejections: 0, approvals: 0 });
       setTimeline(trendsRes.data.timeline || []);
       setPayerRcm(payerRcmRes.data.payers || []);
+      setCockpit(cockpitRes?.data || null);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not load analytics.');
     } finally {
@@ -117,6 +120,56 @@ const InsuranceDeskAnalytics = () => {
         </div>
       ) : (
         <div className="space-y-4">
+          {cockpit?.kpis && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                <StatTile icon={Clock} label="Days in AR" value={`${cockpit.kpis.daysInAr} d`} tone="bg-violet-50 text-violet-600 dark:bg-violet-950 dark:text-violet-300" />
+                <StatTile icon={IndianRupee} label="Outstanding" value={formatCurrency(cockpit.kpis.outstandingAmount)} tone="bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-300" />
+                <StatTile icon={BarChart3} label="Collection" value={formatPercent(cockpit.kpis.collectionRate)} tone="bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300" />
+                <StatTile icon={AlertTriangle} label="Denial Rate" value={formatPercent(cockpit.kpis.denialRate)} tone="bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300" />
+                <StatTile icon={AlertTriangle} label="Est. Leakage" value={formatCurrency(cockpit.kpis.estimatedLeakage)} tone="bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300" />
+                <StatTile icon={ClipboardList} label="Open AR Items" value={String(cockpit.kpis.openArItems || 0)} tone="bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300" />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <ChartCard title="AR Aging (outstanding by bucket)">
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={Object.entries(cockpit.agingBuckets || {}).map(([bucket, amount]) => ({ bucket, amount: Number(amount) }))} barGap={2}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.4} />
+                      <XAxis dataKey="bucket" fontSize={12} tickLine={false} axisLine={false} />
+                      <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v: number) => formatCurrency(v)} width={70} />
+                      <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                      <Bar dataKey="amount" name="Outstanding" fill={SEQUENTIAL_BLUE} radius={[4, 4, 0, 0]} maxBarSize={48} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+
+                <ChartCard title="Denial Pareto (top reasons by amount)">
+                  {(!cockpit.denialPareto || cockpit.denialPareto.length === 0) ? (
+                    <p className="text-sm text-muted-foreground h-48 flex items-center justify-center">No denials in the period.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow><TableHead>Code</TableHead><TableHead>Reason</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">Denied</TableHead><TableHead className="text-right">Cum %</TableHead></TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {cockpit.denialPareto.map((d: any) => (
+                          <TableRow key={d.code}>
+                            <TableCell className="font-medium">{d.code}</TableCell>
+                            <TableCell className="max-w-[180px] truncate" title={d.code_description || d.sample_reason || ''}>{d.code_description || d.sample_reason || '—'}</TableCell>
+                            <TableCell className="text-right">{d.denial_count}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(Number(d.denied_amount))}</TableCell>
+                            <TableCell className="text-right">{d.cumulativePct}%</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </ChartCard>
+              </div>
+            </>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatTile icon={IndianRupee} label="Approved, Not Settled" value={formatCurrency(receivables.approvedNotSettled)} tone="bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300" />
             <StatTile icon={IndianRupee} label="Settled" value={formatCurrency(receivables.settled)} tone="bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300" />

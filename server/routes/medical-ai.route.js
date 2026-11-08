@@ -1321,31 +1321,42 @@ router.get('/languages', (_req, res) => {
 });
 
 router.get('/health', async (req, res) => {
+  // BUG-03: report the WHOLE Dr. iSHA cascade, not just the SIB primary, so a
+  // monitor/operator can see whether ANY provider can answer (and which are
+  // unconfigured or circuit-open — i.e. is this a key/quota/endpoint problem).
+  let primary = { status: 'unavailable', provider: 'sib-fastapi' };
   try {
-    const sibResponse = await fetch(`${SIB_URL}/health`);
-    if (!sibResponse.ok) {
-      const errorText = await sibResponse.text().catch(() => '');
-      return res.status(503).json({
-        status: 'unavailable',
-        provider: 'sib-fastapi',
-        error: errorText || `HTTP ${sibResponse.status}`,
-        timestamp: new Date().toISOString()
-      });
+    const r = await fetch(`${SIB_URL}/health`, { signal: AbortSignal.timeout(3000) });
+    if (r.ok) {
+      primary = { ...(await r.json().catch(() => ({}))), provider: 'sib-fastapi' };
+    } else {
+      primary.error = (await r.text().catch(() => '')) || `HTTP ${r.status}`;
     }
-
-    const sibHealth = await sibResponse.json();
-    const statusCode = sibHealth.status === 'healthy' ? 200 : 503;
-    res.status(statusCode).json({
-      ...sibHealth,
-      provider: 'sib-fastapi'
-    });
   } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
+    primary.error = error.message;
   }
+
+  let providers = [];
+  try {
+    providers = (llmProvider.listProviders() || []).map((p) => {
+      let circuitOpen = false;
+      try { circuitOpen = llmProvider.isProviderCircuitOpen(p.name); } catch { /* not tracked */ }
+      return { ...p, circuitOpen };
+    });
+  } catch { /* listProviders unavailable */ }
+
+  // Usable if the primary is healthy OR any cascade provider is configured and
+  // its circuit is closed.
+  const usable = primary.status === 'healthy'
+    || providers.some((p) => p.available && !p.circuitOpen);
+
+  res.status(usable ? 200 : 503).json({
+    status: usable ? 'healthy' : 'degraded',
+    usable,
+    primary,
+    providers,
+    timestamp: new Date().toISOString()
+  });
 });
 
 /**

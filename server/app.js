@@ -928,6 +928,12 @@ app.post('/api/doctor/forgot-password', async (req, res) => {
 });
 app.use(cookieParser());
 
+// D-9: honour the Idempotency-Key header the mobile app sends on bookings and
+// orders — replay the first successful response for 24h instead of creating a
+// duplicate booking/charge. No-op without the header; fails open if Redis is down.
+import { idempotency } from './middleware/idempotency.middleware.js';
+app.use(idempotency());
+
 app.use((err, req, res, next) => {
   if (err?.type === 'entity.too.large') {
     return res.status(413).json({
@@ -2103,6 +2109,29 @@ cron.schedule('0 2 * * *', async () => {
     cronTick('hospital_billing_nightly', result);
   } catch (err) {
     cronTickError('hospital_billing_nightly', err.message);
+  }
+});
+
+// ============== AR Follow-up: aging work-items + SLA escalation (01:30) ==============
+import arFollowUpService from './services/ar-follow-up.service.js';
+cron.schedule('30 1 * * *', async () => {
+  // runArEscalation() holds its own cron lease (ar_follow_up_escalation).
+  try {
+    await arFollowUpService.runArEscalation();
+  } catch (err) {
+    cronTickError('ar_follow_up_escalation', err.message);
+  }
+});
+
+// ============== Abandoned checkout expiry: cancel stale unpaid orders (W-ORD-1/2) ==============
+import orderExpiryService from './services/order-expiry.service.js';
+cron.schedule('*/10 * * * *', async () => {
+  // expireAbandonedOrders() holds its own cron lease (order_abandonment_expiry)
+  // and never cancels an order that has a successful or in-flight payment.
+  try {
+    await orderExpiryService.expireAbandonedOrders();
+  } catch (err) {
+    cronTickError('order_abandonment_expiry', err.message);
   }
 });
 

@@ -3,6 +3,7 @@ import { JWT_CONFIG as JWT_SSO_CONFIG } from '../config/auth.config.js';
 import { encrypt as encryptSsoSecret, decrypt as decryptSsoSecret } from '../utils/encryption.js';
 const JWT_SSO_SECRET = JWT_SSO_CONFIG.SECRET;
 import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
+import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
 import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
 import { prepareCorporateSchedule } from '../services/corporate-scheduling.service.js';
@@ -829,7 +830,11 @@ router.get('/health-packages', authCorporate, async (req, res) => {
         // it still shows up in the byType breakdown instead of silently
         // vanishing from every bucket.
         type: ['pre_employment', 'annual'].includes(r.packageDetails.type) ? r.packageDetails.type : 'other',
-        tests: Array.isArray(r.packageDetails.tests) ? r.packageDetails.tests : [],
+        // D-7: a package whose tests are stored as one merged string (e.g.
+        // "2D Echo/Doppler Study Physician Consultation ...") used to collapse to []
+        // here, so HR saw NO tests at all. parseTestList normalises string/array/object
+        // shapes into a proper array, the same way the patient endpoint does.
+        tests: parseTestList(r.packageDetails.tests),
         price: Number(r.packageDetails.cost ?? r.packageDetails.price ?? 0) || null,
         description: r.packageDetails.description || null,
         employeeCount: r.employeeCount,

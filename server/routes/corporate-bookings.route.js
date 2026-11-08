@@ -345,28 +345,34 @@ router.get('/labs', authUser, requireTeamOrAdmin, requireCorporateAccess, async 
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
     const searchTerm = `%${search}%`;
 
+    // DISTINCT ON (normalised name) collapses duplicate/mis-cased lab rows
+    // (e.g. "AGILUS Diagnostics" vs "Agilus Diagnostics") to one suggestion.
     const labs = await postgresSequelize.query(
-      `SELECT
-         l.id,
-         l.name,
-         l.address,
-         l.address->>'city'    AS city,
-         l.address->>'state'   AS state,
-         l.address->>'pinCode' AS "pinCode",
-         l."phoneNumber",
-         l.accreditation
-       FROM corporate_network_assignments cna
-       JOIN labs l ON l.id = cna.partner_id
-       WHERE cna.corporate_id = :corporateId
-         AND cna.partner_type = 'lab'
-         AND (
-           LOWER(l.name) LIKE LOWER(:search)
-           OR LOWER(l.address->>'city') LIKE LOWER(:search)
-           OR LOWER(l.address->>'state') LIKE LOWER(:search)
-           OR LOWER(l.address->>'street') LIKE LOWER(:search)
-         )
-       ORDER BY l.name
-       LIMIT 30`,
+      `SELECT * FROM (
+         SELECT DISTINCT ON (LOWER(TRIM(l.name)))
+           l.id,
+           l.name,
+           l.address,
+           l.address->>'city'    AS city,
+           l.address->>'state'   AS state,
+           l.address->>'pinCode' AS "pinCode",
+           l."phoneNumber",
+           l.accreditation
+         FROM corporate_network_assignments cna
+         JOIN labs l ON l.id = cna.partner_id
+         WHERE cna.corporate_id = :corporateId
+           AND cna.partner_type = 'lab'
+           AND (
+             :search = '%%'
+             OR LOWER(l.name) LIKE LOWER(:search)
+             OR LOWER(l.address->>'city') LIKE LOWER(:search)
+             OR LOWER(l.address->>'state') LIKE LOWER(:search)
+             OR LOWER(l.address->>'street') LIKE LOWER(:search)
+           )
+         ORDER BY LOWER(TRIM(l.name)), l.id
+       ) d
+       ORDER BY d.name
+       LIMIT 50`,
       {
         replacements: { corporateId: parseInt(corporateId), search: searchTerm },
         type: postgresSequelize.QueryTypes.SELECT

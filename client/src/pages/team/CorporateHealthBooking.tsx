@@ -458,27 +458,33 @@ export default function CorporateHealthBooking() {
   // ──────────────────────────────────
   // Lab auto-search (server-side, like employee search)
   // ──────────────────────────────────
+  const fetchLabs = async (val: string) => {
+    setLabsLoading(true);
+    try {
+      const r = await api.get(`/corporate-bookings/labs?corporateId=${corporate?.id}&search=${encodeURIComponent(val)}`);
+      setLabSuggestions(r.data.labs || []);
+      setShowLabSuggestions(true);
+    } catch {
+      setLabSuggestions([]);
+    } finally {
+      setLabsLoading(false);
+    }
+  };
+
   const handleLabSearch = (val: string) => {
     setLabSearch(val);
     setSelectedLab(null);
     if (labSearchTimerRef.current) clearTimeout(labSearchTimerRef.current);
-    if (val.trim().length < 2) {
-      setLabSuggestions([]);
-      setShowLabSuggestions(false);
-      return;
-    }
-    labSearchTimerRef.current = setTimeout(async () => {
-      setLabsLoading(true);
-      try {
-        const r = await api.get(`/corporate-bookings/labs?corporateId=${corporate?.id}&search=${encodeURIComponent(val)}`);
-        setLabSuggestions(r.data.labs || []);
-        setShowLabSuggestions(true);
-      } catch {
-        setLabSuggestions([]);
-      } finally {
-        setLabsLoading(false);
-      }
-    }, 350);
+    // Empty query lists all assigned labs (browse); otherwise debounce the filter.
+    // Skip only a lone 1-char query to avoid noisy fetches.
+    if (val.trim().length === 1) { setShowLabSuggestions(false); return; }
+    labSearchTimerRef.current = setTimeout(() => fetchLabs(val.trim()), val.trim() ? 300 : 0);
+  };
+
+  // Show the corporate's assigned labs as soon as the field is focused.
+  const handleLabFocus = () => {
+    if (labSuggestions.length > 0) { setShowLabSuggestions(true); return; }
+    fetchLabs('');
   };
 
   const selectLab = (lab: Lab) => {
@@ -917,10 +923,10 @@ export default function CorporateHealthBooking() {
                     <div className="relative">
                       <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input
-                        placeholder="Search lab by name, city or state..."
+                        placeholder="Search or browse network labs by name, city or state..."
                         value={labSearch}
                         onChange={e => handleLabSearch(e.target.value)}
-                        onFocus={() => labSuggestions.length > 0 && setShowLabSuggestions(true)}
+                        onFocus={handleLabFocus}
                         className="pl-9"
                         autoComplete="off"
                       />
@@ -956,10 +962,13 @@ export default function CorporateHealthBooking() {
                       </div>
                     )}
 
-                    {showLabSuggestions && labSuggestions.length === 0 && !labsLoading && labSearch.length >= 2 && (
+                    {showLabSuggestions && labSuggestions.length === 0 && !labsLoading && (
                       <div className="absolute z-50 w-full bg-background border rounded-lg shadow mt-1 px-4 py-3">
                         <p className="text-sm text-muted-foreground flex items-center gap-2">
-                          <AlertCircle className="h-4 w-4" /> No labs found for "{labSearch}"
+                          <AlertCircle className="h-4 w-4" />
+                          {labSearch.trim()
+                            ? `No network labs match "${labSearch}"`
+                            : 'No labs are assigned to this corporate yet. Add them under Provider Network.'}
                         </p>
                       </div>
                     )}

@@ -1285,11 +1285,12 @@ router.get('/stats', authUser, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Total spent
+    // Total spent — only money actually captured/succeeded (W-ORD-3)
+    const SUCCESSFUL_PAYMENT = { [Op.in]: ['success', 'captured'] };
     const totalSpent = await Payment.sum('amount', {
       where: {
         userId,
-        status: 'success'
+        status: SUCCESSFUL_PAYMENT
       }
     }) || 0;
 
@@ -1304,9 +1305,10 @@ router.get('/stats', authUser, async (req, res) => {
       raw: true
     });
 
-    // Recent payments
+    // Recent payments — only successful ones, so this can never contradict
+    // totalSpent (W-ORD-3: it showed 4 "payments" while nothing had been paid).
     const recentPayments = await Payment.findAll({
-      where: { userId },
+      where: { userId, status: SUCCESSFUL_PAYMENT },
       order: [['createdAt', 'DESC']],
       limit: 5
     });

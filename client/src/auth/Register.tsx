@@ -38,7 +38,7 @@ interface Corporate {
 }
 
 interface EmployeeInfo {
-  dbId: number;
+  dbId: number | null;
   employeeId: string;
   department: string | null;
   designation: string | null;
@@ -121,6 +121,14 @@ const Register = () => {
   const [validating, setValidating] = useState(false);
   const [employeeInfo, setEmployeeInfo] = useState<EmployeeInfo | null>(null);
   const [employeeValidationError, setEmployeeValidationError] = useState("");
+  // D-11: the roster lookup no longer returns personal details. It only tells us the
+  // ID exists and whether an OTP is required; employeeInfo (and the form) unlocks
+  // only after /register/verify-employee confirms the code.
+  const [employeeLookup, setEmployeeLookup] = useState<{ employeeId: string; corporateName: string; requiresOtp: boolean; maskedEmail?: string } | null>(null);
+  const [employeeOtp, setEmployeeOtp] = useState("");
+  const [employeeOtpSent, setEmployeeOtpSent] = useState(false);
+  const [sendingEmployeeOtp, setSendingEmployeeOtp] = useState(false);
+  const [verifyingEmployee, setVerifyingEmployee] = useState(false);
 
   // ── OTP / registration state ──
   const [showPassword, setShowPassword] = useState(false);
@@ -205,12 +213,32 @@ const Register = () => {
         { corporateId: parseInt(selectedCorporateId), employeeId: employeeIdInput.trim() },
         { skipAuth: true } as any
       );
-      setEmployeeInfo(data.employee);
+      const lookup = {
+        employeeId: data.employee.employeeId,
+        corporateName: data.employee.corporateName,
+        requiresOtp: Boolean(data.requiresOtp),
+        maskedEmail: data.maskedEmail,
+      };
+      setEmployeeLookup(lookup);
+      if (!lookup.requiresOtp) {
+        // No contact on the roster, so there is nothing to verify against — continue
+        // without pre-filled personal details.
+        setEmployeeInfo({
+          dbId: null,
+          employeeId: lookup.employeeId,
+          department: null,
+          designation: null,
+          corporateName: lookup.corporateName,
+          firstName: null,
+          lastName: null,
+        });
+      }
       if (!silent) {
-        toast({ title: "Employee verified", description: `Verified as employee of ${data.employee.corporateName}.` });
+        toast({ title: "Employee ID found", description: lookup.requiresOtp ? `Send a verification code to ${lookup.maskedEmail}.` : `Found at ${lookup.corporateName}.` });
       }
     } catch (error: any) {
       setEmployeeInfo(null);
+      setEmployeeLookup(null);
       setEmployeeValidationError(error?.response?.data?.message || "Employee ID not found.");
       if (!silent) {
         toast({ variant: "destructive", title: "Validation failed", description: error?.response?.data?.message || "Employee ID not found." });
@@ -220,9 +248,46 @@ const Register = () => {
     }
   };
 
+  const handleSendEmployeeOtp = async () => {
+    setSendingEmployeeOtp(true);
+    try {
+      const { data } = await api.post(
+        "/users/register/send-employee-otp",
+        { corporateId: parseInt(selectedCorporateId), employeeId: employeeIdInput.trim() },
+        { skipAuth: true } as any
+      );
+      setEmployeeOtpSent(true);
+      toast({ title: "Code sent", description: data?.message || "Check your registered email." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Could not send code", description: error?.response?.data?.message || "Please try again." });
+    } finally {
+      setSendingEmployeeOtp(false);
+    }
+  };
+
+  const handleVerifyEmployee = async () => {
+    setVerifyingEmployee(true);
+    try {
+      const { data } = await api.post(
+        "/users/register/verify-employee",
+        { corporateId: parseInt(selectedCorporateId), employeeId: employeeIdInput.trim(), code: employeeOtp.trim() },
+        { skipAuth: true } as any
+      );
+      setEmployeeInfo(data.employee);
+      toast({ title: "Employee verified", description: `Verified as employee of ${data.employee.corporateName}.` });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Verification failed", description: error?.response?.data?.message || "That code is incorrect or has expired." });
+    } finally {
+      setVerifyingEmployee(false);
+    }
+  };
+
   useEffect(() => {
     if (memberType !== "corporate" || !selectedCorporateId || employeeIdInput.trim().length < 2) {
       setEmployeeInfo(null);
+      setEmployeeLookup(null);
+      setEmployeeOtp("");
+      setEmployeeOtpSent(false);
       setEmployeeValidationError("");
       return;
     }
@@ -514,14 +579,23 @@ const Register = () => {
                   onChange={(e) => {
                     setEmployeeIdInput(e.target.value);
                     setEmployeeInfo(null);
+                    setEmployeeLookup(null);
+                    setEmployeeOtp("");
+                    setEmployeeOtpSent(false);
                   }}
                   onKeyDown={(e) => e.key === "Enter" && handleValidateEmployee()}
                 />
-                {validating && <p className="text-xs text-muted-foreground">Validating employee ID...</p>}
+                {validating && <p className="text-xs text-muted-foreground">Checking employee ID...</p>}
                 {!validating && employeeInfo && (
                   <p className="flex items-center gap-1 text-xs font-medium text-green-600">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     Employee ID verified
+                  </p>
+                )}
+                {!validating && !employeeInfo && employeeLookup?.requiresOtp && (
+                  <p className="text-xs text-muted-foreground">
+                    Found at <strong>{employeeLookup.corporateName}</strong>. For your security we'll send a
+                    code to <strong>{employeeLookup.maskedEmail}</strong> before showing your details.
                   </p>
                 )}
                 {!validating && employeeValidationError && (
@@ -529,18 +603,60 @@ const Register = () => {
                 )}
               </div>
 
-              <Button
-                type="button"
-                className="w-full"
-                onClick={() => handleValidateEmployee()}
-                disabled={validating || !selectedCorporateId || !employeeIdInput.trim()}
-              >
-                {validating ? (
-                  <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Validating...</span>
-                ) : (
-                  "Validate Employee ID"
-                )}
-              </Button>
+              {/* D-11: details stay hidden until the code sent to the rostered contact is confirmed. */}
+              {!employeeInfo && employeeLookup?.requiresOtp && (
+                <div className="space-y-2">
+                  {employeeOtpSent && (
+                    <Input
+                      placeholder="Enter the 6-digit code"
+                      inputMode="numeric"
+                      value={employeeOtp}
+                      onChange={(e) => setEmployeeOtp(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && employeeOtp.trim() && handleVerifyEmployee()}
+                    />
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={employeeOtpSent ? "outline" : "default"}
+                      className="flex-1"
+                      onClick={handleSendEmployeeOtp}
+                      disabled={sendingEmployeeOtp}
+                    >
+                      {sendingEmployeeOtp ? (
+                        <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Sending...</span>
+                      ) : employeeOtpSent ? "Resend code" : "Send verification code"}
+                    </Button>
+                    {employeeOtpSent && (
+                      <Button
+                        type="button"
+                        className="flex-1"
+                        onClick={handleVerifyEmployee}
+                        disabled={verifyingEmployee || !employeeOtp.trim()}
+                      >
+                        {verifyingEmployee ? (
+                          <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Verifying...</span>
+                        ) : "Verify & continue"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {!employeeLookup?.requiresOtp && (
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => handleValidateEmployee()}
+                  disabled={validating || !selectedCorporateId || !employeeIdInput.trim()}
+                >
+                  {validating ? (
+                    <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Checking...</span>
+                  ) : (
+                    "Validate Employee ID"
+                  )}
+                </Button>
+              )}
             </div>
           )}
 

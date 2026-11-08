@@ -42,7 +42,6 @@ const formatCurrency = (amount?: number | null) =>
 
 const emptyClaimForm = { policyNumber: '', insuranceProvider: '', claimAmount: '', diagnosis: '', ward: '', claimType: 'cashless', schemeName: '' };
 const DOC_TYPES = ['discharge_summary', 'bills', 'investigation_reports', 'prescription'];
-const SCHEME_NAMES = ['CGHS', 'RGHS', 'Ayushman Bharat', 'ECHS', 'Other'];
 
 const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
   open: boolean;
@@ -66,6 +65,19 @@ const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
   const [createError, setCreateError] = useState<string | null>(null);
   const [claimId, setClaimId] = useState<number | null>(null);
   const [claimNumber, setClaimNumber] = useState<string | null>(null);
+  // Government-scheme claims must be backed by an approved scheme pre-auth.
+  const [preauths, setPreauths] = useState<any[]>([]);
+  const [selectedPreauthId, setSelectedPreauthId] = useState<string>('');
+  const [loadingPreauths, setLoadingPreauths] = useState(false);
+
+  const loadClaimablePreauths = async () => {
+    setLoadingPreauths(true);
+    try {
+      const { data } = await api.get('/hospital/insurance/rcm/scheme-preauths', { params: { limit: 200 } });
+      setPreauths((data.preauths || []).filter((p: any) => ['approved', 'bed_blocked'].includes(p.status) && !p.claim_id));
+    } catch { setPreauths([]); }
+    finally { setLoadingPreauths(false); }
+  };
 
   // Step 3 — documents
   const [docType, setDocType] = useState(DOC_TYPES[0]);
@@ -84,6 +96,7 @@ const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
     setStep(1);
     setSearchType('uhid'); setSearchTerm(''); setSearchError(null); setPatient(null);
     setClaimForm(emptyClaimForm); setBillingImported(null); setCreateError(null); setClaimId(null); setClaimNumber(null);
+    setSelectedPreauthId(''); setPreauths([]);
     setUploadError(null); setUploadedDocs([]);
     setValidation(null); setSubmitError(null); setSubmitted(false);
   };
@@ -134,6 +147,10 @@ const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
       setCreateError('Policy number and a valid claim amount are required.');
       return;
     }
+    if (claimForm.claimType === 'government_scheme' && !selectedPreauthId) {
+      setCreateError('Select an approved scheme pre-authorisation for a government-scheme claim.');
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     try {
@@ -144,6 +161,7 @@ const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
         claimAmount,
         claimType: claimForm.claimType,
         schemeName: claimForm.claimType === 'government_scheme' ? (claimForm.schemeName || undefined) : undefined,
+        schemePreauthId: claimForm.claimType === 'government_scheme' ? Number(selectedPreauthId) : undefined,
         diagnosis: claimForm.diagnosis.trim() || undefined,
         hospitalizationDetails: { ward: claimForm.ward.trim() || 'General', diagnosis: claimForm.diagnosis.trim() || undefined },
       });
@@ -261,7 +279,11 @@ const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Claim Type</Label>
-                    <Select value={claimForm.claimType} onValueChange={(v) => setClaimForm((c) => ({ ...c, claimType: v }))}>
+                    <Select value={claimForm.claimType} onValueChange={(v) => {
+                      setClaimForm((c) => ({ ...c, claimType: v, schemeName: '' }));
+                      setSelectedPreauthId('');
+                      if (v === 'government_scheme') loadClaimablePreauths();
+                    }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="cashless">Cashless</SelectItem>
@@ -273,13 +295,24 @@ const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
                   </div>
                   {claimForm.claimType === 'government_scheme' ? (
                     <div>
-                      <Label>Scheme</Label>
-                      <Select value={claimForm.schemeName} onValueChange={(v) => setClaimForm((c) => ({ ...c, schemeName: v }))}>
-                        <SelectTrigger><SelectValue placeholder="Select scheme" /></SelectTrigger>
+                      <Label>Approved Pre-auth</Label>
+                      <Select value={selectedPreauthId} onValueChange={(v) => {
+                        setSelectedPreauthId(v);
+                        const p = preauths.find((x) => String(x.id) === v);
+                        if (p) setClaimForm((c) => ({ ...c, schemeName: p.scheme }));
+                      }}>
+                        <SelectTrigger><SelectValue placeholder={loadingPreauths ? 'Loading…' : (preauths.length ? 'Select pre-auth' : 'No approved pre-auths')} /></SelectTrigger>
                         <SelectContent>
-                          {SCHEME_NAMES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          {preauths.map((p) => (
+                            <SelectItem key={p.id} value={String(p.id)}>
+                              {p.scheme}{p.package_code ? ` · ${p.package_code}` : ''}{p.beneficiary_id ? ` · ${p.beneficiary_id}` : ''}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
+                      {!loadingPreauths && preauths.length === 0 && (
+                        <p className="text-xs text-amber-600 mt-1">Create &amp; approve a pre-auth under Scheme Packages first.</p>
+                      )}
                     </div>
                   ) : (
                     <div>

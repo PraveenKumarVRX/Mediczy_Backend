@@ -220,27 +220,24 @@ const Doctor = sequelize.define('Doctor', {
   // Weekly Availability as JSONB (new format for appointment booking)
   weeklyAvailability: {
     type: DataTypes.JSONB,
-    defaultValue: {
-      monday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
-      tuesday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
-      wednesday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
-      thursday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
-      friday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
-      saturday: { isAvailable: false, slots: [] },
-      sunday: { isAvailable: false, slots: [] }
-    },
-    comment: 'Weekly availability schedule with time slots for appointment booking'
+    // D-3: this used to default to Mon–Fri 09:00–17:00, which presented invented
+    // consulting hours for doctors who had never set a schedule. A new doctor now
+    // starts with no availability and must configure it before slots are offered.
+    defaultValue: {},
+    comment: 'Weekly availability schedule with time slots for appointment booking (no fabricated defaults)'
   },
 
   // Consultation Types and Fees as JSONB
   consultationTypes: {
     type: DataTypes.JSONB,
-    defaultValue: {
-      online: { available: true, fee: 500 },
-      walkIn: { available: true, fee: 600 },
-      homeVisit: { available: false, fee: 1000 }
-    },
-    comment: 'Consultation types offered and their respective fees'
+    // D-3/D-4: this used to default to online ₹500 / walkIn ₹600 / homeVisit ₹1000.
+    // That placeholder was materialised into 1117 of 1118 rows, so patients were
+    // quoted an invented price for doctors who never set one. A new doctor now
+    // starts with no fees; the fee must be configured before it can be charged
+    // (createAppointment already refuses to book when no price can be confirmed).
+    // Existing rows are untouched — their provenance is exposed as feeSource.
+    defaultValue: {},
+    comment: 'Consultation types offered and their respective fees (no fabricated defaults)'
   },
 
   // Practice Locations as JSONB Array

@@ -948,7 +948,9 @@ router.get('/my-appointments', authUser, [
     rlsTransaction = await postgresSequelize.transaction();
     await req.setSequelizeRlsContext?.(rlsTransaction);
     let userAppointments = await Appointment.findAll({
-      where: { userId: req.user.id },
+      // W-SEP-1: Individual view only — exclude corporate-context bookings
+      // (corporate_tenant_id is set only for employer-context appointments).
+      where: { userId: req.user.id, corporate_tenant_id: null },
       order: [
         ['appointmentDate', 'ASC'],
         ['appointmentTime', 'ASC']

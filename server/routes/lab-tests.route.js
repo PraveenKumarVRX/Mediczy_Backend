@@ -61,7 +61,11 @@ router.get('/catalog', async (req, res) => {
     const safeLimit  = Math.min(parseInt(limit)  || 50,  200);
     const safeOffset = Math.max(parseInt(offset) || 0,   0);
 
-    const conditions = ["status = 'active'"];
+    // BUG-04 / W-LAB-2: never surface a test the user can't actually price. Hide
+    // catalogue rows without a confirmed, finite, non-negative price so they can't
+    // be selected and then fail at checkout with "Pricing unavailable". The booking
+    // endpoint remains the authoritative price source (recomputed from this table).
+    const conditions = ["status = 'active'", "price IS NOT NULL", "price::numeric >= 0"];
     const values = [];
 
     if (q.trim()) {

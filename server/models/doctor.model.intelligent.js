@@ -422,18 +422,13 @@ const doctorModel = {
 	      }
 	    }
 
-	    // If no slots are configured, generate default slots
-	    if (!skipDefaultSlots && (!rawSlots || rawSlots.length === 0)) {
-	      rawSlots = [];
-	      for (let hour = 9; hour < 17; hour++) {
-	        for (let minute of [0, 30]) {
-	          rawSlots.push({
-	            time: `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`,
-	            available: true
-	          });
-	        }
-	      }
-	    }
+	    // D-3: this used to invent a 09:00-17:00 grid whenever a doctor had no
+	    // schedule configured, presenting consulting hours the doctor never set and
+	    // letting patients book them. A doctor with no configured availability now
+	    // simply has no slots; GET /doctors/:id/slots answers with the next
+	    // available date instead (BUG-02). skipDefaultSlots is retained above so an
+	    // explicit day-off still short-circuits before any slot expansion.
+	    if (!Array.isArray(rawSlots)) rawSlots = [];
 
     const appointments = await Appointment.findAll({
       where: {

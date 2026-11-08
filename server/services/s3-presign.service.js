@@ -3,34 +3,46 @@ import path from 'path';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const s3Region = process.env.S3_REGION || process.env.AWS_REGION || 'us-east-1';
+const s3Region0 = process.env.S3_REGION || process.env.AWS_REGION || 'us-east-1';
 
-// Uploads are routed to the PACS MinIO (minio-pacs.mediqzy.com): the default minio.mediqzy.com
-// endpoint is unreachable (Cloudflare 530 / origin disk-fill outage), while PACS is healthy and
-// publicly reachable, so this fixes both server-side access and client presigned downloads.
-// Reversible via UPLOADS_MINIO_BACKEND=default. Falls back to the default MINIO_* config if PACS
-// is not configured.
-const usePacsUploads = (process.env.UPLOADS_MINIO_BACKEND || 'pacs').toLowerCase() === 'pacs'
+// Web-upload storage backend precedence:
+//   1. UPLOADS_S3_* — a dedicated S3-compatible store (e.g. iDrive e2). Uses its OWN env vars so
+//      it never clobbers MINIO_* (the live local MinIO) or the PACS config; its presigned URLs are
+//      browser-reachable with no Cloudflare-tunnel dependency.
+//   2. PACS MinIO (legacy) when UPLOADS_MINIO_BACKEND=pacs and a PACS endpoint is set.
+//   3. The default MINIO_* endpoint.
+//   4. Native AWS S3 (no endpoint).
+const useUploadsS3 = !!process.env.UPLOADS_S3_ENDPOINT;
+const usePacsUploads = !useUploadsS3
+  && (process.env.UPLOADS_MINIO_BACKEND || 'pacs').toLowerCase() === 'pacs'
   && !!process.env.PACS_ARCHIVE_MINIO_ENDPOINT;
 
-const s3Bucket = usePacsUploads
-  ? (process.env.PACS_ARCHIVE_MINIO_BUCKET || process.env.S3_UPLOADS_BUCKET)
-  : process.env.S3_UPLOADS_BUCKET;
+const s3Region = useUploadsS3 ? (process.env.UPLOADS_S3_REGION || s3Region0) : s3Region0;
+
+const s3Bucket = useUploadsS3
+  ? (process.env.UPLOADS_S3_BUCKET || process.env.S3_UPLOADS_BUCKET)
+  : usePacsUploads
+    ? (process.env.PACS_ARCHIVE_MINIO_BUCKET || process.env.S3_UPLOADS_BUCKET)
+    : process.env.S3_UPLOADS_BUCKET;
 const s3RecordingsBucket = process.env.S3_RECORDINGS_BUCKET || s3Bucket;
 const s3PublicBaseUrl = process.env.S3_PUBLIC_BASE_URL;
 const presignExpiresIn = Number(process.env.S3_PRESIGN_EXPIRES || 300);
-const minioEndpoint = usePacsUploads ? process.env.PACS_ARCHIVE_MINIO_ENDPOINT : process.env.MINIO_ENDPOINT;
+const minioEndpoint = useUploadsS3
+  ? process.env.UPLOADS_S3_ENDPOINT
+  : usePacsUploads ? process.env.PACS_ARCHIVE_MINIO_ENDPOINT : process.env.MINIO_ENDPOINT;
 // Public-facing URL (may differ from internal endpoint for localhost setups)
 const minioPublicUrl = process.env.MINIO_PUBLIC_URL || minioEndpoint;
 
-// Build S3Client config — adds MinIO endpoint + path-style if an endpoint is set
+// Build S3Client config — adds the endpoint + path-style when a custom endpoint is set
 const s3Config = { region: usePacsUploads ? (process.env.PACS_ARCHIVE_MINIO_REGION || s3Region) : s3Region };
 if (minioEndpoint) {
   s3Config.endpoint = minioEndpoint;
   s3Config.forcePathStyle = true;
-  s3Config.credentials = usePacsUploads
-    ? { accessKeyId: process.env.PACS_ARCHIVE_MINIO_ACCESS_KEY, secretAccessKey: process.env.PACS_ARCHIVE_MINIO_SECRET_KEY }
-    : { accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin', secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin' };
+  s3Config.credentials = useUploadsS3
+    ? { accessKeyId: process.env.UPLOADS_S3_ACCESS_KEY, secretAccessKey: process.env.UPLOADS_S3_SECRET_KEY }
+    : usePacsUploads
+      ? { accessKeyId: process.env.PACS_ARCHIVE_MINIO_ACCESS_KEY, secretAccessKey: process.env.PACS_ARCHIVE_MINIO_SECRET_KEY }
+      : { accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin', secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin' };
 }
 
 const s3Client = new S3Client(s3Config);

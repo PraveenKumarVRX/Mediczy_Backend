@@ -406,7 +406,11 @@ export const createAppointment = async (req, res) => {
         paymentAmount: consultationFee,
         symptoms: normalizedSymptoms,
         reason,
-        status: 'scheduled',
+        // W-DOC-1: do not confirm a paid consultation before payment. Only a paid
+        // fee (incl. ₹0 / free review) or a recorded employer-cover decision
+        // (corporate_tenant_id) confirms the slot; otherwise hold it as 'pending'
+        // (payment-pending) until updatePaymentStatus promotes it to 'confirmed'.
+        status: (paymentStatus === 'paid' || corporateTenantId) ? 'scheduled' : 'pending',
         paymentStatus,
         organization_id: organizationId,
         organization_type: organizationType,
@@ -716,7 +720,7 @@ export const createAppointment = async (req, res) => {
         },
         data: {
           appointmentId: appointment.id,
-          status: 'scheduled',
+          status: appointment.status,
           doctorId: appointment.doctorId
         },
         channels: ['in-app', 'email'],
@@ -877,6 +881,12 @@ export const getUserAppointments = async (req, res) => {
     const { status, upcoming, past, consultationType } = req.query;
 
     const whereClause = { userId };
+
+    // W-SEP-1: this is the Individual view (the corporate-employee view uses the
+    // separate /corporate/my-appointments). Exclude appointments booked in the
+    // corporate context (corporate_tenant_id is set only for employer-context
+    // bookings) so employer activity never leaks into the personal view.
+    whereClause.corporate_tenant_id = { [Op.is]: null };
 
     // Filter by status if provided (supports comma-separated values)
     if (status) {
@@ -1275,8 +1285,9 @@ export const updatePaymentStatus = async (req, res) => {
         transactionId
       }, { transaction: rlsTransaction });
 
-      // If payment is successful, confirm the appointment
-      if (paymentStatus === 'paid' && appointment.status === 'scheduled') {
+      // If payment is successful, confirm the appointment. Accept the new
+      // payment-pending hold ('pending') as well as a legacy 'scheduled' row.
+      if (paymentStatus === 'paid' && ['pending', 'scheduled'].includes(appointment.status)) {
         await appointment.update({ status: 'confirmed' }, { transaction: rlsTransaction });
       }
 
