@@ -18,11 +18,126 @@ const obj = (v) => {
 export const TEST_SAMPLE_TYPES =
   'sodium fluoride plasma|sodium citrate whole blood|edta whole blood|whole blood|serum|plasma|edta|urine|stool';
 
+/**
+ * Procedures and examinations that appear in Indian AHC packages without a
+ * sample type, so the sample-type splitter cannot end an entry on them. These
+ * are standard, universally-written names — the vocabulary decides only where
+ * one name *ends* inside text that already contains it, and never adds a test
+ * that is not literally present in the source string.
+ *
+ * Longest first: "2D Echo/Doppler Study" must win over "2D Echo".
+ */
+export const PROCEDURE_VOCABULARY = [
+  'Urine Routine and Microscopy',
+  'Erythrocyte Sedimentation Rate (ESR)',
+  'Glycosylated Hemoglobin (HbA1C)',
+  'Complete Blood Count (CBC)',
+  'Liver Function Test (LFT)',
+  'USG (abdomen and Pelvis)',
+  'BP and weight with BMI',
+  'Tread Mill Test (TMT)',
+  'Treadmill Test (TMT)',
+  '2D Echo/Doppler Study',
+  'Physician Consultation',
+  'Physical Examination',
+  'Glucose Fasting (FBS)',
+  'Chest X-Ray (PA view)',
+  'Pulmonary Function Test',
+  'Audiometry',
+  'Spirometry',
+  'Thyroid Profile',
+  'Lipid Profile',
+  'Vitamin B12',
+  'Uric Acid',
+  'Free T4',
+  'Free T3',
+  '2D Echo',
+  'ECG',
+  'TMT',
+  'USG',
+];
+
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Split a run of concatenated test names using names that already occur in it.
+ *
+ * The sample-type splitter ends an entry at "…, Serum", so a run of procedures
+ * that carry no sample ("2D Echo/Doppler Study Physician Consultation Tread
+ * Mill Test (TMT)") stays glued together as one unreadable item. This breaks
+ * such a run on vocabulary matches only.
+ *
+ * It is deliberately lossless: every character of the input ends up in exactly
+ * one returned part, so no test can be dropped and none can be conjured. Text
+ * between matches is returned as its own part rather than discarded, and parts
+ * the vocabulary did not recognise are flagged `inferred: false` so a reviewer
+ * can see what was never understood instead of it disappearing.
+ */
+export function splitKnownTestNames(text, vocabulary = PROCEDURE_VOCABULARY) {
+  const source = String(text || '');
+  if (!source.trim()) return [];
+
+  const ordered = [...vocabulary].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(ordered.map(escapeRegExp).join('|'), 'gi');
+
+  const parts = [];
+  let cursor = 0;
+  for (const match of source.matchAll(pattern)) {
+    const start = match.index;
+    if (start > cursor) {
+      const between = source.slice(cursor, start);
+      if (between.trim()) parts.push({ text: between, inferred: false });
+    }
+    parts.push({ text: match[0], inferred: true });
+    cursor = start + match[0].length;
+  }
+  if (cursor < source.length) {
+    const tail = source.slice(cursor);
+    if (tail.trim()) parts.push({ text: tail, inferred: false });
+  }
+
+  // Nothing recognised: hand the text back whole rather than pretend.
+  if (!parts.some((p) => p.inferred)) return [{ text: source, inferred: false }];
+  return parts;
+}
+
 export const parseTestList = (raw) => {
   const out = [];
+  const tidy = (s) => String(s || '').replace(/\s+/g, ' ').replace(/^[\s,;]+|[\s,;]+$/g, '').trim();
+  const isNoise = (s) => !s || /^(sl\.?\s*no|tests?)$/i.test(s);
+  /** A fragment that qualifies the test before it, rather than naming a new one. */
+  const isQualifier = (s) => /^[\s]*[(,]/.test(s)
+    || new RegExp(`^[\\s,.]*(?:${TEST_SAMPLE_TYPES})[\\s,.]*$`, 'i').test(s);
+
   const push = (name) => {
-    const n = String(name || '').replace(/\s+/g, ' ').trim();
-    if (n && !/^(sl\.?\s*no|tests?)$/i.test(n)) out.push({ name: n });
+    const n = tidy(name);
+    if (isNoise(n)) return;
+
+    // The sample-type splitter ends an entry at "…, Serum", so a run of
+    // procedures carrying no sample ("2D Echo/Doppler Study Physician
+    // Consultation Tread Mill Test (TMT)") survives as one unreadable item.
+    // Break it on names the text already contains; losslessly, so nothing is
+    // dropped and nothing is conjured.
+    if (n.length > 40) {
+      const parts = splitKnownTestNames(n);
+      if (parts.filter((p) => p.inferred).length > 1) {
+        for (const part of parts) {
+          const text = tidy(part.text);
+          if (isNoise(text)) continue;
+          // "(BP, HT, WT, BMI)" or ", Serum" belongs to the test before it.
+          if (!part.inferred && out.length && isQualifier(part.text)) {
+            // Keep the comma that separated a test from its sample type:
+            // "Uric Acid, Serum", not "Uric Acid Serum".
+            const joiner = /^\s*,/.test(part.text) ? ', ' : ' ';
+            out[out.length - 1].name = tidy(`${out[out.length - 1].name}${joiner}${text}`);
+            continue;
+          }
+          out.push(part.inferred ? { name: text } : { name: text, unrecognised: true });
+        }
+        return;
+      }
+    }
+    out.push({ name: n });
   };
   for (const item of arr(raw)) {
     if (item && typeof item === 'object') { out.push(item); continue; }
@@ -33,9 +148,13 @@ export const parseTestList = (raw) => {
         push(part.replace(/\s*\d{1,3}\s*$/, '').replace(/^\s*\d{1,3}[.)]?\s*/, '')));
       continue;
     }
-    const sampleHits = (s.match(new RegExp(`\\b(?:${TEST_SAMPLE_TYPES})\\b`, 'gi')) || []).length;
+    // A sample type ends an entry — unless it opens a test name that merely
+    // starts with one. "Urine Routine and Microscopy" is a test, not a urine
+    // sample, and splitting on its first word tore it in half.
+    const SAMPLE_TERMINATOR = `\\b(?:${TEST_SAMPLE_TYPES})\\b(?!\\s+(?:Routine|Culture|Analysis|Examination|Microscopy))`;
+    const sampleHits = (s.match(new RegExp(SAMPLE_TERMINATOR, 'gi')) || []).length;
     if (s.length > 100 && sampleHits >= 2) {
-      const splitter = new RegExp(`(.*?\\b(?:${TEST_SAMPLE_TYPES})\\b),?\\s*`, 'i');
+      const splitter = new RegExp(`(.*?${SAMPLE_TERMINATOR}),?\\s*`, 'i');
       let rest = s, guard = 0;
       while (rest.trim() && guard++ < 80) {
         const m = rest.match(splitter);

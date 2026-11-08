@@ -57,7 +57,15 @@ jest.unstable_mockModule('../services/payment.service.js', () => ({
 jest.unstable_mockModule('../services/notification.service.js', () => ({
   default: {
     notifyConsultationStarting: jest.fn()
-  }
+  },
+  // doctor-calling-notification.service.js imports these by name. A mock that
+  // supplies only `default` fails at link time with "does not provide an export
+  // named 'FCMToken'", which took down this whole suite — the real module does
+  // export all four (notification.service.js:1357).
+  Notification: { findAll: jest.fn(), create: jest.fn() },
+  FCMToken: { findAll: jest.fn(), update: jest.fn(), upsert: jest.fn() },
+  notificationService: { notifyConsultationStarting: jest.fn() },
+  sendNotification: jest.fn()
 }));
 
 jest.unstable_mockModule('../services/health-coins.service.js', () => ({

@@ -13,6 +13,7 @@ const { joinAddressParts } = await import('../services/nearby-places.service.js'
 const { publicPlanCatalogue } = await import('../utils/plan-catalogue.js');
 const { packageDisplayName } = await import('../utils/health-package-tests.js');
 const { isPlaceholderPhone, sanitiseContact } = await import('../utils/placeholder-contact.js');
+const { normaliseResetIdentifier } = await import('../routes/user.route.js');
 const cartRouter = (await import('../routes/cart.route.js')).default;
 
 /** Pull a route handler out of the router so it can be called directly. */
@@ -230,5 +231,43 @@ describe('placeholder lab contact details (report row 112)', () => {
       .toEqual({ phone: null, email: null, placeholder: true });
     expect(sanitiseContact({ phone: '+919845098450', email: 'care@lab.com' }))
       .toEqual({ phone: '+919845098450', email: 'care@lab.com', placeholder: false });
+  });
+});
+
+describe('forgot password by mobile (report rows 96, 189)', () => {
+  // The app has one "email or mobile" field and posts whatever was typed as
+  // `email`, so a mobile number was refused with "Enter a valid email" even
+  // though password-reset.service.js looks accounts up by phone.
+  const run = (body) => {
+    const req = { body };
+    normaliseResetIdentifier(req, {}, () => {});
+    return req.body;
+  };
+
+  test('a bare mobile typed into the email field becomes a phone lookup', () => {
+    expect(run({ email: '9884089921' })).toEqual({ phone: '9884089921' });
+  });
+
+  test('a formatted mobile is accepted and normalised', () => {
+    expect(run({ email: '+91 98840 89921' })).toEqual({ phone: '+919884089921' });
+    expect(run({ email: '98840-89921' })).toEqual({ phone: '9884089921' });
+  });
+
+  test('a real email address is left exactly as it was', () => {
+    expect(run({ email: 'user@example.com' })).toEqual({ email: 'user@example.com' });
+  });
+
+  test('a neutral identifier field works for either kind', () => {
+    expect(run({ identifier: '9884089921' }).phone).toBe('9884089921');
+    expect(run({ identifier: 'user@example.com' }).email).toBe('user@example.com');
+  });
+
+  test('an explicit phone is never overwritten', () => {
+    expect(run({ phone: '+919999000088', email: 'user@example.com' }))
+      .toEqual({ phone: '+919999000088', email: 'user@example.com' });
+  });
+
+  test('junk is left for the validator to reject, not silently treated as a phone', () => {
+    expect(run({ email: 'not-an-email' })).toEqual({ email: 'not-an-email' });
   });
 });

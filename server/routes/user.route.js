@@ -2110,7 +2110,31 @@ router.put("/profile", authUser, async (req, res) => {
  * @desc    Request password reset OTP via Email, SMS, and WhatsApp
  * @access  Public
  */
+/**
+ * The shipped mobile app has one "email or mobile" field on Forgot Password
+ * and posts whatever was typed as `email`, so a mobile number was rejected
+ * with "Enter a valid email" even though the service below looks accounts up
+ * by phone perfectly well. Move a value that is plainly a phone number into
+ * `phone` before validation runs, and accept `identifier` for clients that
+ * send a single neutral field.
+ */
+const PHONE_LIKE = /^\+?[0-9][0-9\s().-]{5,}$/;
+
+const normaliseResetIdentifier = (req, _res, next) => {
+  const body = req.body || {};
+  const candidate = body.identifier ?? body.emailOrPhone ?? body.email;
+  if (!body.phone && typeof candidate === 'string' && !candidate.includes('@') && PHONE_LIKE.test(candidate.trim())) {
+    body.phone = candidate.trim().replace(/[\s().-]/g, '');
+    if (body.email === candidate) delete body.email;
+  } else if (!body.email && typeof candidate === 'string' && candidate.includes('@')) {
+    body.email = candidate.trim();
+  }
+  req.body = body;
+  next();
+};
+
 const forgotPasswordValidators = [
+  normaliseResetIdentifier,
   body("email").optional().isEmail().normalizeEmail().withMessage("Must be a valid email"),
   body("phone").optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage("Invalid phone format"),
   body("userType").optional().isIn(['user', 'doctor', 'team']).withMessage("User type must be 'user', 'doctor', or 'team'")
@@ -2843,5 +2867,8 @@ router.delete('/my-insurances/:policyId', authUser, async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to delete policy' });
   }
 });
+
+/** Exported for tests: see the Forgot Password identifier note above. */
+export { normaliseResetIdentifier };
 
 export default router;
