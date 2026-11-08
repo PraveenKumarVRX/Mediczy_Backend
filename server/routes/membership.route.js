@@ -361,11 +361,15 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
     const planType = plan.planType || 'primary';
     const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
 
-    // Paid plans require a Razorpay payment ID — prevent free activation of paid plans
+    // Paid plans require a Razorpay payment ID — prevent free activation of paid plans.
+    // W-PLAN-3: keep the API detail in the server log, not in the patient's face.
     if (planPrice > 0 && !req.body.razorpay_payment_id) {
+      console.warn(`[membership] subscribe blocked for user ${req.user?.id}: plan ${plan.id} costs ${planPrice} but no razorpay_payment_id was supplied (client must complete payment, then enroll with the verified paymentId)`);
       return res.status(400).json({
-        message: 'Payment required. Use POST /api/membership-plans/enroll with a verified paymentId.',
-        code: 'PAYMENT_REQUIRED'
+        success: false,
+        message: 'Please complete payment to activate this plan.',
+        code: 'PAYMENT_REQUIRED',
+        action: 'Complete the payment for this plan to activate it'
       });
     }
     
@@ -376,7 +380,12 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
         include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }]
       });
       if (alreadyActive) {
-        return res.status(400).json({ message: 'You already have an active primary plan. Use upgrade endpoint to switch plans.' });
+        return res.status(400).json({
+          success: false,
+          message: 'You already have an active plan. Switch or upgrade it from Manage Plan.',
+          code: 'PRIMARY_PLAN_ALREADY_ACTIVE',
+          action: 'Upgrade or change your existing plan instead of subscribing again'
+        });
       }
     }
     
@@ -500,7 +509,12 @@ router.post('/redeem-free-coupon', authUser, async (req, res) => {
         include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }]
       });
       if (alreadyActive) {
-        return res.status(400).json({ message: 'You already have an active primary plan. Use upgrade endpoint to switch plans.' });
+        return res.status(400).json({
+          success: false,
+          message: 'You already have an active plan. Switch or upgrade it from Manage Plan.',
+          code: 'PRIMARY_PLAN_ALREADY_ACTIVE',
+          action: 'Upgrade or change your existing plan instead of subscribing again'
+        });
       }
     } else {
       const alreadyHasAddon = await UserPlan.findOne({
