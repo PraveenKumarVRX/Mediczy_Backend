@@ -20,7 +20,7 @@ export default function CommunicationChatPage({portal='admin'}:{portal?:'admin'|
  </>;
  return <Layout>
   <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-xl font-semibold">Communication</h1><Link className="text-sm underline" to={portal==='admin'?`/admin/chat?tenantUid=${encodeURIComponent(tenantUid||'')}&legacy=1`:'/team/chat?legacy=1'}>Previous chat tools</Link></header>
-  <ChannelNavigation active="chat" links={portal==='admin'?{chat:`/admin/chat?tenantUid=${encodeURIComponent(tenantUid||'')}`,email:'/admin/email',sms:'/admin/sms',whatsapp:'/admin/whatsapp',video:'/admin/video',voice:'/admin/voice'}:{chat:'/team/chat',email:'/team/email-inbox',whatsapp:'/team/whatsapp-inbox'}}/>
+  <ChannelNavigation active="chat" links={portal==='admin'?{chat:`/admin/chat?tenantUid=${encodeURIComponent(tenantUid||'')}`,email:'/admin/email',sms:'/admin/sms',whatsapp:'/admin/whatsapp',video:'/admin/video',voice:'/admin/voice'}:{chat:'/team/chat',email:'/team/email-inbox',whatsapp:'/team/omnichannel'}}/>
   <ChatwootWorkspace endpoint={`${endpoint}/chatwoot`} portal={portal} tenantUid={tenantUid} token={localStorage.getItem(`${portal}Token`)}/>
   <ConversationWorkspace key={`${capability.tenantUid}:${capability.userId}:${portal}`} endpoint={endpoint} portal={portal} tenantUid={tenantUid} capability={capability}/>
  </Layout>;

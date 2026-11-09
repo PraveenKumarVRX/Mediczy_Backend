@@ -147,10 +147,9 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Ticket,      label: "Support Tickets",         path: "/team/support-tickets",         permission: "Support Tickets" },
   { icon: Mail,        label: "Email Inbox",             path: "/team/email-inbox" },
   { icon: LayoutTemplate,label:"Welcome Emails",         path: "/team/settings?tab=email-templates", adminOnly: true },
-  { icon: MessageSquare,label:"WhatsApp Inbox",          path: "/team/whatsapp-inbox",          permission: "Chat Dashboard Access" },
   { icon: Instagram,   label: "Social Inbox",            path: "/team/social-inbox",            permission: "Chat Dashboard Access" },
   { icon: Receipt,     label: "Orders & Revenue",        path: "/team/orders-revenue",          permission: "Finance Access" },
-  { icon: MessageSquare,label:"RC Omnichannel",          path: "/team/rc-omnichannel",          permission: "Chat Dashboard Access" },
+  { icon: MessageSquare,label:"Omnichannel Inbox",       path: "/team/omnichannel",             permission: "Chat Dashboard Access" },
   { icon: Pill,        label: "Pharmacies",              path: "/team/pharmacy-management",     permission: "Pharmacy Management" },
   { icon: Heart,       label: "Health Plans",            path: "/team/health-plans",            permission: "Health Plans Access" },
   { icon: ShieldCheck, label: "Plan Governance",         path: "/team/plan-governance",         permission: ["Audit Access","Audit Logs"] },
@@ -543,7 +542,7 @@ export function Sidebar() {
 
             {/* Team */}
             {isTeamUser && renderFlatItems(
-              teamSidebarItems.map(i => ({ ...i, ...(['/team/chat','/team/email-inbox','/team/whatsapp-inbox','/team/social-inbox','/team/rc-omnichannel'].includes(i.path)?{category:'Communication',label:i.path==='/team/chat'?'Chat':i.path==='/team/rc-omnichannel'?'Omnichannel workspace':i.label}:{}) })),
+              teamSidebarItems.map(i => ({ ...i, ...(['/team/chat','/team/email-inbox','/team/social-inbox','/team/omnichannel'].includes(i.path)?{category:'Communication',label:i.path==='/team/chat'?'Chat':i.label}:{}) })),
               [{ label: "Management" }, { label: "Operations" }, { label: "Support" }]
             )}
           </div>

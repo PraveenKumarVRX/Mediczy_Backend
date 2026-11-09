@@ -5,7 +5,7 @@ import ChannelNavigation from './ChannelNavigation';
 afterEach(cleanup);
 describe('channel navigation', () => {
   it('keeps Team links in its portal without admin fallback', () => {
-    render(<MemoryRouter><ChannelNavigation active="chat" links={{ chat: '/team/chat', email: '/team/email-inbox', whatsapp: '/team/whatsapp-inbox' }} /></MemoryRouter>);
+    render(<MemoryRouter><ChannelNavigation active="chat" links={{ chat: '/team/chat', email: '/team/email-inbox', whatsapp: '/team/omnichannel' }} /></MemoryRouter>);
     expect(screen.getByRole('link', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getAllByRole('link').every(link => link.getAttribute('href')?.startsWith('/team/'))).toBe(true);
     expect(screen.getByText('SMS').getAttribute('aria-disabled')).toBe('true');

@@ -15,17 +15,6 @@ import omnichannelChatService, { SupportChatUnavailableError } from '../services
 import userModel from '../models/user.model.intelligent.js';
 import sharedPool from '../db/pgPool.js';
 
-// Middleware that requires a valid JWT AND a team/admin role.
-// Applied to all /inbox/* routes (support agents only).
-const authInbox = [
-  authUser,
-  (req, res, next) => {
-    const role = req.userRole;
-    if (role === 'team' || role === 'admin') return next();
-    return res.status(403).json({ success: false, message: 'Support team access required' });
-  }
-];
-
 const router = express.Router();
 
 /**
@@ -466,47 +455,20 @@ router.get('/agents', async (req, res) => {
 });
 
 // ============================================================================
-// WHATSAPP INBOX (WATI-like)
+// REMOVED: the RocketChat agent console
 // ============================================================================
-// SUPPORT AGENT INBOX
-// ============================================================================
-// This console was built directly on RocketChat's REST API: livechat rooms and visitors, channel
-// history, canned responses, message templates, broadcast, tags, delivery receipts. RocketChat was
-// retired on 2026-10-04 and Chatwoot models these differently (it has its own agent UI at
-// https://chat.mediqzy.com, plus conversations/labels/canned responses under a different API), so
-// there is no faithful one-to-one port. Rather than leave calls to a host that no longer exists,
-// the paths are kept and report unavailable, so the agent UI gets a clear 503 with a reason
-// instead of a timeout. Replacing this console is deliberate follow-up work; see
-// docs/integrations/ROCKETCHAT_RETIREMENT.md.
-
-const AGENT_CONSOLE_ROUTES = [
-  ['get',    '/inbox/conversations'],
-  ['get',    '/inbox/rooms/:roomId/messages'],
-  ['post',   '/inbox/rooms/:roomId/send'],
-  ['post',   '/inbox/rooms/:roomId/close'],
-  ['post',   '/inbox/rooms/:roomId/note'],
-  ['get',    '/inbox/canned-responses'],
-  ['post',   '/inbox/canned-responses'],
-  ['delete', '/inbox/canned-responses/:id'],
-  ['get',    '/inbox/templates'],
-  ['post',   '/inbox/broadcast'],
-  ['put',    '/inbox/rooms/:roomId/tags'],
-  ['get',    '/inbox/rooms/:roomId/profile'],
-  ['post',   '/inbox/rooms/:roomId/send-media'],
-  ['get',    '/inbox/rooms/:roomId/delivery'],
-];
-
-for (const [method, path] of AGENT_CONSOLE_ROUTES) {
-  router[method](path, ...authInbox, (_req, res) => {
-    return res.status(503).json({
-      success: false,
-      code: 'AGENT_CONSOLE_NOT_MIGRATED',
-      message: 'The in-app agent console was retired with RocketChat. Use Chatwoot for agent replies.',
-      provider: 'chatwoot',
-      agentWorkspaceUrl: process.env.CHATWOOT_URL || 'https://chat.mediqzy.com',
-    });
-  });
-}
+//
+// This console was built directly on RocketChat's REST API -- livechat rooms and
+// visitors, channel history, canned responses, message templates, broadcast,
+// tags, delivery receipts. RocketChat was retired on 2026-10-04.
+//
+// For a year after that the fourteen paths were kept as deliberate 503s
+// (AGENT_CONSOLE_NOT_MIGRATED) so the agent UI would get a reason rather than a
+// timeout. Nothing was ever built behind them, and the Team sidebar went on
+// advertising "WhatsApp Inbox" as a working feature while every action failed.
+// A menu item that cannot succeed is worse than an absent one, so the routes
+// and the page are gone; agents reply in Chatwoot, which is where inbound
+// WhatsApp actually arrives (services/chatwoot-bridge.service.js).
 
 /**
  * GET /api/support/whatsapp-contacts

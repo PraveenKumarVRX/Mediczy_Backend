@@ -319,7 +319,6 @@ const TeamTools              = lazy(() => import("@/pages/team/TeamTools"));
 const TeamPharmacyEdit       = lazy(() => import("@/pages/team/TeamPharmacyEdit"));
 const WhatsAppCommunication  = lazy(() => import("@/pages/team/WhatsAppCommunication"));
 const WhatsAppTemplates      = lazy(() => import("@/pages/team/WhatsAppTemplates"));
-const WhatsAppInbox          = lazy(() => import("@/pages/team/WhatsAppInbox"));
 const ChatwootOmnichannel   = lazy(() => import("@/pages/team/ChatwootOmnichannel"));
 const TeamCorporateManagement  = lazy(() => import("@/pages/team/TeamCorporateManagement"));
 const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealthBooking"));
@@ -1553,15 +1552,18 @@ const AppRoutes = () => {
         <Route path="/team/whatsapp-templates"
           element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppTemplates /></TeamGuard>} />
         <Route path="/team/whatsapp-inbox"
-          element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppInbox /></TeamGuard>} />
+          element={<Navigate to="/team/omnichannel" replace />} />
         <Route path="/team/social-inbox"
           element={<TeamGuard permission="Chat Dashboard Access"><TeamSocialInbox /></TeamGuard>} />
         <Route path="/team/fitness-certificates"
           element={<TeamGuard permission="Doctor Management"><TeamFitnessCertificates /></TeamGuard>} />
         <Route path="/team/orders-revenue"
           element={<TeamGuard permission="Finance Access"><TeamOrdersRevenue /></TeamGuard>} />
-        <Route path="/team/rc-omnichannel"
+        <Route path="/team/omnichannel"
           element={<TeamGuard permission="Chat Dashboard Access"><ChatwootOmnichannel /></TeamGuard>} />
+        {/* "rc" was RocketChat, retired 2026-10-04. */}
+        <Route path="/team/rc-omnichannel"
+          element={<Navigate to="/team/omnichannel" replace />} />
         <Route path="/team/chat-analytics"
           element={<TeamGuard permission="Chat Dashboard Access"><TeamChatAnalyticsPage /></TeamGuard>} />
         <Route path="/team/support-tickets"

@@ -1385,8 +1385,9 @@ app.use('/api/auth', oauthRouter);
 app.use('/api/auth/doctor', doctorOAuthRouter);
 app.use('/api/auth', authLoginRouter);
 
-// OAuth Server Routes (Rocket.Chat SSO - standard OAuth endpoints)
-app.use('/oauth', oauthRouter);
+// The /oauth mount is gone: it exposed this app as an OAuth authorization
+// server for Rocket.Chat SSO, which was retired on 2026-10-04. The patient
+// social login that shares this router is served from /api/auth above.
 
 // API v1 - Multi-tenant Wellness Platform (OIDC-based authentication)
 app.use('/v1', apiV1Router);

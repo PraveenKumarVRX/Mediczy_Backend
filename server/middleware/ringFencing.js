@@ -893,8 +893,6 @@ const PUBLIC_ENDPOINTS = [
   // token).
   '/api/auth/refresh',
   '/api/ngo/login',
-  '/api/oauth',
-  '/oauth',  // OAuth 2.0 SSO endpoints (Rocket.Chat integration)
   '/api/otp',
   '/api/masterdata', // Public read-only provider data (hospitals, labs, clinics)
   '/api/medical-ai/health', // Medical AI health check (public monitoring)
