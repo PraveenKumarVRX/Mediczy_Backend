@@ -27,6 +27,21 @@ it('persists the employee inbox notification and marker in one RLS transaction b
   expect(delivery).toHaveBeenCalledTimes(1);
 });
 
+it('ties the reminder to its appointment so it cannot outlive it as a phantom', async () => {
+  const transaction = {};
+  const database = { QueryTypes:{SELECT:'SELECT'}, query: jest.fn()
+    .mockResolvedValueOnce([appointment]).mockResolvedValueOnce([{id:8}]).mockResolvedValueOnce([{id:7}]),
+    transaction: async fn => fn(transaction) };
+  await sendPreferenceReminders({ database, setContext: jest.fn(),
+    preferencesFor: async () => ({ reminderMinutesBefore: 60 }), now });
+  const [sql, opts] = database.query.mock.calls[1];
+  expect(sql).toMatch(/INSERT INTO notifications/);
+  // Without a `data` payload the row named no appointment, so a reminder for a
+  // deleted appointment could not be told from a live one.
+  expect(sql).toMatch(/\bdata\b/);
+  expect(JSON.parse(opts.replacements.data)).toEqual({ appointmentId: 7, reminderMinutesBefore: 60 });
+});
+
 it('does not mislabel a late catch-up as the configured lead time', () => {
   const late = Date.parse('2026-10-21T12:59:00Z');
   expect(preferenceReminderDecision(appointment, {reminderMinutesBefore:30}, late)).toBeNull();
