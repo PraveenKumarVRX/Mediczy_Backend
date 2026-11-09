@@ -503,10 +503,17 @@ router.get('/benefits', authUser, async (req, res) => {
   try {
     const corp = await getUserCorporate(req.user.id);
     if (!corp) {
+      // Same keys as the corporate response below. An individual member used
+      // to get `healthCheckups: undefined` here, so a client that maps over it
+      // breaks on exactly the screen (Benefits & Plans) where QA reported
+      // empty values.
       return res.json({
         success: true,
         isCorporateEmployee: false,
-        plans: []
+        corporateId: null,
+        corporateName: null,
+        plans: [],
+        healthCheckups: []
       });
     }
 
@@ -655,9 +662,12 @@ router.get('/claims', authUser, async (req, res) => {
   try {
     const corp = await getUserCorporate(req.user.id);
     if (!corp) {
+      // Same keys as the corporate response below, for the same reason.
       return res.json({
         success: true,
         isCorporateEmployee: false,
+        corporateId: null,
+        corporateName: null,
         claims: []
       });
     }
