@@ -28,6 +28,32 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("sib.retrieval.unified_rag")
 
+# ── Process-wide S-PubMedBert cache ──────────────────────────────────────────
+# One encoder per process, loaded on first use. The lock makes concurrent first
+# requests wait for a single load instead of each building their own copy.
+_PUBMED_MODEL = None
+_PUBMED_MODEL_LOCK = asyncio.Lock()
+
+
+async def _get_pubmed_model():
+    """The shared S-PubMedBert-MS-MARCO encoder, or None if it cannot load."""
+    global _PUBMED_MODEL
+    if _PUBMED_MODEL is not None:
+        return _PUBMED_MODEL
+    async with _PUBMED_MODEL_LOCK:
+        if _PUBMED_MODEL is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                _PUBMED_MODEL = await asyncio.to_thread(
+                    SentenceTransformer, "pritamdeka/S-PubMedBert-MS-MARCO"
+                )
+                logger.info("S-PubMedBert loaded once for this process")
+            except Exception as exc:
+                logger.error("S-PubMedBert could not be loaded: %s", exc)
+                return None
+    return _PUBMED_MODEL
+
+
 MIN_SCORE = 0.25  # discard chunks below this cosine similarity
 
 
@@ -71,11 +97,16 @@ class UnifiedRAGRetriever:
             sib_app_mod = sys.modules.get("sib_app") or sys.modules.get("__main__")
             _get_embed = getattr(sib_app_mod, "_get_embed_model", None)
             if _get_embed is None:
-                # Cold import when running outside sib_app context
-                from sentence_transformers import SentenceTransformer
-                _model = SentenceTransformer("pritamdeka/S-PubMedBert-MS-MARCO")
+                # The service runs `uvicorn app:app`, so the module is `app` and
+                # `__main__` is uvicorn's CLI — this lookup never resolved, and
+                # the old fallback built a fresh ~400 MB SentenceTransformer on
+                # EVERY question. RSS grew ~350 MB per request and PM2 killed
+                # the process at its 2 GB ceiling after three. Load once.
+                model = await _get_pubmed_model()
+                if model is None:
+                    return None
                 vec = await asyncio.to_thread(
-                    _model.encode, [query],
+                    model.encode, [query],
                     convert_to_numpy=True, show_progress_bar=False
                 )
             else:
