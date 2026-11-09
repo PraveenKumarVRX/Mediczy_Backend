@@ -22,7 +22,12 @@ import userModel, { generateAuthTokenForUser } from '../models/user.model.intell
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { issueRefreshToken } from '../services/auth-token.service.js';
 import { setAuthCookies } from '../config/cookies.config.js';
-import { verifyAppleIdentityToken, AppleSignInError } from '../services/apple-signin.service.js';
+import {
+  verifyAppleIdentityToken,
+  AppleSignInError,
+  exchangeAppleAuthorizationCode,
+} from '../services/apple-signin.service.js';
+import { rememberAppleRefreshToken } from '../services/apple-token-store.service.js';
 
 /** The user object POST /users/login returns, so clients need no second shape. */
 const loginUserPayload = (user) => ({
@@ -141,6 +146,31 @@ export async function signInWithApple(req, res) {
           signupSource: 'apple',
         },
       });
+    }
+
+    // Trade Apple's one-time authorization code for a refresh token, so that
+    // deleting this account can revoke the grant (guideline 5.1.1(v)). Sign-in
+    // is the ONLY moment this is possible — Apple expires the code in minutes —
+    // so there is no "do it later at deletion time" option.
+    //
+    // Never allowed to fail the sign-in: the identity token is already verified
+    // and the user is authenticated. If this does not happen (no code sent, no
+    // Sign in with Apple key configured, Apple unreachable) deletion degrades to
+    // "nothing to revoke", which is the pre-existing behaviour.
+    if (authorizationCode) {
+      try {
+        const { refreshToken: appleRefreshToken, reason } =
+          await exchangeAppleAuthorizationCode({ code: authorizationCode });
+        if (appleRefreshToken) {
+          await rememberAppleRefreshToken(user.id, appleRefreshToken);
+        } else if (reason && reason !== 'apple_signin_key_not_configured') {
+          // The unconfigured case is the expected steady state until the key is
+          // issued; anything else is worth seeing in the log.
+          console.warn(`[apple-signin] no refresh token stored for user ${user.id}: ${reason}`);
+        }
+      } catch (error) {
+        console.error('[apple-signin] refresh-token capture failed:', error.message);
+      }
     }
 
     const token = generateAuthTokenForUser(user);

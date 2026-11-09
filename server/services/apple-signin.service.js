@@ -124,6 +124,73 @@ export async function verifyAppleIdentityToken(identityToken, rawNonce) {
 }
 
 /**
+ * Is a "Sign in with Apple" key configured? This is NOT the APNs key — it is a
+ * separate key from the developer portal. Without it we can neither exchange an
+ * authorization code nor revoke a token, so both callers check this first and
+ * degrade quietly instead of failing the operation they are attached to.
+ */
+export function appleServerKeyConfigured() {
+  return Boolean(process.env.APPLE_TEAM_ID && process.env.APPLE_KEY_ID && process.env.APPLE_PRIVATE_KEY);
+}
+
+/**
+ * The ES256 client secret Apple's token endpoints require in place of a static
+ * secret. Short-lived on purpose (Apple caps it at 6 months; 5 minutes is all a
+ * single request needs).
+ */
+async function appleClientSecret() {
+  const { SignJWT, importPKCS8 } = await import('jose');
+  const key = await importPKCS8(String(process.env.APPLE_PRIVATE_KEY).replace(/\\n/g, '\n'), 'ES256');
+  return new SignJWT({ sub: allowedAudiences()[0] })
+    .setProtectedHeader({ alg: 'ES256', kid: process.env.APPLE_KEY_ID })
+    .setIssuer(process.env.APPLE_TEAM_ID)
+    .setAudience(APPLE_ISSUER)
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .sign(key);
+}
+
+/**
+ * Exchange the one-time `authorizationCode` the app receives from Apple for a
+ * durable refresh token.
+ *
+ * This exists only so that deletion can revoke later. The authorization code
+ * itself is useless at deletion time — Apple expires it in about five minutes —
+ * so if we do not trade it for a refresh token *during sign-in*, there is
+ * nothing left to revoke when the user asks to be forgotten, and guideline
+ * 5.1.1(v) cannot be met. Never throws: sign-in must not fail because Apple is
+ * unreachable or the key is missing.
+ */
+export async function exchangeAppleAuthorizationCode({ code } = {}) {
+  if (!code) return { refreshToken: null, reason: 'no_code_supplied' };
+  if (!appleServerKeyConfigured()) {
+    return { refreshToken: null, reason: 'apple_signin_key_not_configured' };
+  }
+
+  try {
+    const body = new URLSearchParams({
+      client_id: allowedAudiences()[0],
+      client_secret: await appleClientSecret(),
+      code,
+      grant_type: 'authorization_code',
+    });
+    const response = await fetch(`${APPLE_ISSUER}/auth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    if (!response.ok) return { refreshToken: null, reason: `apple_responded_${response.status}` };
+    const json = await response.json().catch(() => ({}));
+    return json?.refresh_token
+      ? { refreshToken: json.refresh_token }
+      : { refreshToken: null, reason: 'no_refresh_token_in_response' };
+  } catch (error) {
+    console.error('[apple-signin] code exchange failed:', error.message);
+    return { refreshToken: null, reason: 'exchange_request_failed' };
+  }
+}
+
+/**
  * Revoke a user's Apple token — App Store guideline 5.1.1(v) requires this
  * when the account is deleted. Needs a "Sign in with Apple" key from the
  * developer portal (APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY); it is NOT
@@ -131,26 +198,15 @@ export async function verifyAppleIdentityToken(identityToken, rawNonce) {
  * account deletion is never blocked by Apple being unreachable.
  */
 export async function revokeAppleToken({ token, tokenTypeHint = 'refresh_token' } = {}) {
-  const teamId = process.env.APPLE_TEAM_ID;
-  const keyId = process.env.APPLE_KEY_ID;
-  const privateKey = process.env.APPLE_PRIVATE_KEY;
   const clientId = allowedAudiences()[0];
 
   if (!token) return { revoked: false, reason: 'no_token_supplied' };
-  if (!teamId || !keyId || !privateKey) {
+  if (!appleServerKeyConfigured()) {
     return { revoked: false, reason: 'apple_signin_key_not_configured' };
   }
 
   try {
-    const { SignJWT, importPKCS8 } = await import('jose');
-    const key = await importPKCS8(privateKey.replace(/\\n/g, '\n'), 'ES256');
-    const clientSecret = await new SignJWT({ sub: clientId })
-      .setProtectedHeader({ alg: 'ES256', kid: keyId })
-      .setIssuer(teamId)
-      .setAudience(APPLE_ISSUER)
-      .setIssuedAt()
-      .setExpirationTime('5m')
-      .sign(key);
+    const clientSecret = await appleClientSecret();
 
     const body = new URLSearchParams({
       client_id: clientId,
@@ -173,4 +229,12 @@ export async function revokeAppleToken({ token, tokenTypeHint = 'refresh_token' 
   }
 }
 
-export default { verifyAppleIdentityToken, revokeAppleToken, hashNonce, isPrivateRelayEmail, allowedAudiences };
+export default {
+  verifyAppleIdentityToken,
+  revokeAppleToken,
+  exchangeAppleAuthorizationCode,
+  appleServerKeyConfigured,
+  hashNonce,
+  isPrivateRelayEmail,
+  allowedAudiences,
+};

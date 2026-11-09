@@ -4,13 +4,24 @@ import Consent from '../models/consent.model.intelligent.js';
 import User from '../models/user.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
-import { 
-  auditConsent, 
-  auditDataExport, 
-  auditDataDeletion 
+import {
+  auditConsent,
+  auditDataExport,
+  auditDataDeletion
 } from '../middleware/audit.middleware.js';
+import { revokeAppleToken } from '../services/apple-signin.service.js';
+import { getAppleRefreshToken, markAppleTokenRevoked } from '../services/apple-token-store.service.js';
 
 const router = express.Router();
+
+/** metadata is jsonb but arrives as a string on some driver paths. */
+const readUserMetadata = (user) => {
+  let meta = user?.metadata;
+  if (typeof meta === 'string') {
+    try { meta = JSON.parse(meta); } catch { meta = {}; }
+  }
+  return meta && typeof meta === 'object' ? meta : {};
+};
 
 /**
  * GDPR & DPDP Privacy Compliance Routes
@@ -254,11 +265,26 @@ router.delete('/delete-account', authUser, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid password' });
+    // Re-authenticate with the password — but only if the account HAS one.
+    //
+    // An account created through Sign in with Apple (or Google/Facebook) never
+    // gets a password, and comparePassword() returns false for a null hash. So
+    // requiring one here meant a social-only user was answered "Invalid
+    // password" for a password they were never issued, and could not delete
+    // their account at all — the very thing App Store guideline 5.1.1(v)
+    // requires be possible in-app, and a rejection risk for the iOS build.
+    //
+    // They are already authenticated: authUser verified their JWT, and the
+    // "DELETE MY ACCOUNT" confirmation above is the deliberate-intent step.
+    // Password holders still have to prove it, so this weakens nothing.
+    const hasPassword = Boolean(user.password);
+    if (hasPassword) {
+      const isPasswordValid = await user.comparePassword(password);
+      if (!isPasswordValid) {
+        return res.status(401).json({ error: 'Invalid password' });
+      }
     }
-    
+
     // SOFT DELETE: Anonymize data instead of hard delete
     // This maintains audit trails and complies with HIPAA retention requirements
     
@@ -293,16 +319,42 @@ router.delete('/delete-account', authUser, async (req, res) => {
       );
     }
     
+    // Revoke the Sign in with Apple grant — App Store guideline 5.1.1(v)
+    // requires that deleting the account also ends Apple's authorisation, not
+    // just ours. Best-effort by design: revokeAppleToken() answers
+    // {revoked:false, reason} instead of throwing, and the outcome is recorded
+    // rather than retried, so an unreachable Apple (or a missing Sign in with
+    // Apple key) can never block a user's right to erasure.
+    let appleRevocation = null;
+    try {
+      const appleId = readUserMetadata(user).appleId;
+      if (appleId) {
+        const appleRefreshToken = await getAppleRefreshToken(userId);
+        appleRevocation = await revokeAppleToken({ token: appleRefreshToken });
+        await markAppleTokenRevoked(userId, appleRevocation);
+        if (!appleRevocation.revoked) {
+          console.warn(`[privacy] Apple grant not revoked for deleted user ${userId}: ${appleRevocation.reason}`);
+        }
+      }
+    } catch (appleError) {
+      console.error('[privacy] Apple revocation step failed:', appleError.message);
+      appleRevocation = { revoked: false, reason: 'revocation_step_failed' };
+    }
+
     // Audit the deletion
     await auditDataDeletion(req, userId);
-    
+
     // TODO: Anonymize related data (appointments, health records, etc.)
     // Keep only what's legally required for audit trails
-    
+
     res.json({
       success: true,
       message: 'Account deleted successfully',
-      note: 'Some data may be retained for legal compliance (HIPAA 6-year retention)'
+      note: 'Some data may be retained for legal compliance (HIPAA 6-year retention)',
+      // Additive, and only present for an Apple-linked account. The deletion
+      // itself has already succeeded either way — this reports whether Apple's
+      // side was also ended, which is what 5.1.1(v) asks us to attempt.
+      ...(appleRevocation ? { appleRevocation } : {})
     });
   } catch (error) {
     console.error('Error deleting account:', error);
