@@ -73,17 +73,40 @@ const itemAnswersTo = (item, identifier) => {
     .some((candidate) => candidate !== null && candidate !== undefined && String(candidate).toLowerCase() === wanted);
 };
 
-/** Replace each item's price with the catalogue price. Returns { items, dropped }. */
+/**
+ * Replace each item's price with the catalogue price, and collapse items that
+ * resolve to the SAME catalogue row into one line. Returns { items, dropped, merged }.
+ *
+ * The collapse belongs here rather than only in POST /add, because /add is not
+ * the path the app uses: it keeps a local cart and pushes the whole array to
+ * POST /sync, which used to reprice each entry and store them all. One CBC
+ * chosen twice therefore came back as two ₹299 lines totalling ₹598 for a
+ * single test (mobile 1.3.0 QA row 113). Collapsing inside repriceItems also
+ * means GET /api/cart heals a cart that already holds duplicates.
+ */
 async function repriceItems(rawItems) {
   const source = Array.isArray(rawItems) ? rawItems : [];
   const map = await catalogueByIdentifier(source.map(itemIdentifier));
   const items = [];
   const dropped = [];
+  const merged = [];
+  // catalogue test_id -> index in `items`, so a second arrival adds quantity.
+  const seen = new Map();
 
   for (const item of source) {
     const test = item?.test || item;
     const row = map.get(String(itemIdentifier(item) ?? '').toLowerCase());
     if (!row) { dropped.push(itemIdentifier(item)); continue; }
+
+    const dedupeKey = String(row.test_id).toLowerCase();
+    const alreadyAt = seen.get(dedupeKey);
+    if (alreadyAt !== undefined) {
+      items[alreadyAt].quantity += Math.max(1, Number(item?.quantity) || 1);
+      merged.push(row.test_id);
+      continue;
+    }
+
+    seen.set(dedupeKey, items.length);
     items.push({
       ...item,
       quantity: Math.max(1, Number(item?.quantity) || 1),
@@ -104,7 +127,7 @@ async function repriceItems(rawItems) {
       },
     });
   }
-  return { items, dropped };
+  return { items, dropped, merged };
 }
 
 /** Total from server-priced items (Number, not parseInt — decimals were being mangled). */
@@ -120,7 +143,7 @@ router.get('/', authUser, async (req, res) => {
   try {
     const userId = req.user.id;
     const cart = getCart(userId);
-    const { items, dropped } = await repriceItems(cart.items);
+    const { items, dropped, merged } = await repriceItems(cart.items);
 
     cart.items = items;
     cart.updatedAt = new Date();
@@ -132,6 +155,7 @@ router.get('/', authUser, async (req, res) => {
       total: cartTotal(items),
       itemCount: items.length,
       ...(dropped.length ? { removedUnavailable: dropped } : {}),
+      ...(merged.length ? { mergedDuplicates: merged } : {}),
       updatedAt: cart.updatedAt,
     });
   } catch (error) {
@@ -288,7 +312,7 @@ router.post('/sync', authUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Items must be an array' });
     }
 
-    const { items: priced, dropped } = await repriceItems(items);
+    const { items: priced, dropped, merged } = await repriceItems(items);
     const cart = { items: priced, updatedAt: new Date() };
     cartStore.set(userId, cart);
 
@@ -299,6 +323,9 @@ router.post('/sync', authUser, async (req, res) => {
       itemCount: cart.items.length,
       total: cartTotal(cart.items),
       ...(dropped.length ? { removedUnavailable: dropped } : {}),
+      // The client sent more lines than came back: say so explicitly, so a
+      // smaller cart reads as "duplicates merged" rather than a failed save.
+      ...(merged.length ? { mergedDuplicates: merged } : {}),
     });
   } catch (error) {
     console.error('Error syncing cart:', error);

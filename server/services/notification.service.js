@@ -16,6 +16,26 @@ import whatsappProductionService from './whatsapp-production.service.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 import { doctorDisplayName, renderNotificationTemplate } from '../utils/doctor-name.js';
 
+/**
+ * A notification that names an appointment which no longer exists is a phantom:
+ * it announces a consultation the user cannot open, and its deep link leads to
+ * a missing appointment. Every one of the 1,974 notifications carrying an
+ * `appointmentId` was orphaned — the app offered "Dr Shiva Kumar is calling"
+ * and 4 Nov appointment reminders that no search could find, because the
+ * appointment rows were gone (mobile 1.3.0 QA row 154).
+ *
+ * Filtered on read rather than deleted: the rows are a record of what was sent,
+ * and the appointments may yet be restored. `jsonb_exists` is used in place of
+ * the `?` operator, which a bound query would read as a placeholder. `data` is
+ * left unqualified on purpose — `appointments` has no column of that name, so
+ * the reference cannot bind to the subquery and does not depend on the alias
+ * Sequelize chooses.
+ */
+const APPOINTMENT_STILL_EXISTS = `(
+  NOT jsonb_exists(data, 'appointmentId')
+  OR (data->>'appointmentId') IN (SELECT id::text FROM appointments)
+)`;
+
 const visibleNotifications = () => ({
   [Op.and]: [
     { [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }] },
@@ -23,6 +43,7 @@ const visibleNotifications = () => ({
       { [Op.and]: [{ title: { [Op.notILike]: '%is calling%' } }, { message: { [Op.notILike]: '%Tap to join%' } }] },
       { createdAt: { [Op.gte]: new Date(Date.now() - 15 * 60000) } },
     ] },
+    postgresSequelize.literal(APPOINTMENT_STILL_EXISTS),
   ],
 });
 

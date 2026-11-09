@@ -44,13 +44,60 @@ router.post('/checkout/:orderId/complete', authUser, async (req, res) => {
 });
 
 /**
+ * Health-condition tiles -> the catalogue terms that actually identify their
+ * tests.
+ *
+ * `api_lab_tests.category` holds LAB DISCIPLINES (Biochemistry, Endocrinology,
+ * Radiology, …), but the apps browse by CONDITION ("Diabetes", "Thyroid",
+ * "Heart"). An exact category match therefore returned 0 rows for every
+ * condition tile — the Diabetes tile showed nothing and the app fell back to a
+ * keyword search, which is why its cards were headed "Tests matching glucose"
+ * (mobile 1.3.0 QA rows 132/164). Nothing in the catalogue carries a condition,
+ * so the mapping lives here; an unlisted term still falls through to a plain
+ * text match rather than returning an empty list.
+ */
+const CONDITION_TERMS = {
+  diabetes:     ['glucose', 'sugar', 'hba1c', 'glycated', 'insulin', 'diabet', 'c-peptide', 'fructosamine'],
+  thyroid:      ['thyroid', 'tsh', 't3', 't4', 'thyroglobulin', 'anti-tpo'],
+  heart:        ['cardiac', 'cardiology', 'lipid', 'cholesterol', 'triglyceride', 'troponin', 'ecg', 'echo', 'homocysteine', 'apolipoprotein'],
+  cardiac:      ['cardiac', 'cardiology', 'lipid', 'cholesterol', 'triglyceride', 'troponin', 'ecg', 'echo'],
+  kidney:       ['kidney', 'renal', 'kft', 'creatinine', 'urea', 'egfr', 'uric acid', 'urine'],
+  // 'alt'/'ast' are deliberately absent: as substrings they match "He(alt)h"
+  // and "F(ast)ing", which pulled Beta HCG and every health package into the
+  // liver list. 'sgpt'/'sgot' name the same two enzymes unambiguously.
+  // 'serum albumin', not bare 'albumin', which also matched Urine Microalbumin.
+  liver:        ['liver', 'hepatic', 'lft', 'bilirubin', 'sgot', 'sgpt', 'serum albumin', 'globulin', 'alkaline phosphatase'],
+  anemia:       ['anemia', 'anaemia', 'haemoglobin', 'hemoglobin', 'iron', 'ferritin', 'b12', 'folate', 'cbc', 'blood count'],
+  vitamin:      ['vitamin', 'b12', 'folate', 'calcium', 'magnesium'],
+  bone:         ['bone', 'calcium', 'vitamin d', 'phosphorus', 'alkaline phosphatase', 'parathyroid'],
+  fever:        ['fever', 'malaria', 'dengue', 'typhoid', 'widal', 'culture', 'crp', 'esr', 'blood count'],
+  infection:    ['culture', 'crp', 'esr', 'procalcitonin', 'microbiology', 'sensitivity'],
+  allergy:      ['allergy', 'allergen', 'ige', 'immunology', 'eosinophil'],
+  cancer:       ['oncology', 'tumour', 'tumor', 'marker', 'psa', 'cea', 'ca-125', 'afp'],
+  women:        ['pregnancy', 'beta hcg', 'prolactin', 'oestrogen', 'estrogen', 'progesterone', 'amh', 'pap'],
+  pregnancy:    ['pregnancy', 'beta hcg', 'hcg', 'antenatal'],
+  'full body':  ['package', 'profile', 'panel', 'health check'],
+  'health package': ['package', 'profile', 'panel', 'health check'],
+};
+
+/** The terms to search for a condition tile, or null if it is a real category. */
+const conditionTerms = (term) => {
+  const key = String(term || '').trim().toLowerCase();
+  if (!key) return null;
+  if (CONDITION_TERMS[key]) return CONDITION_TERMS[key];
+  // Tolerate "Diabetes Tests", "Heart Care", "Thyroid Profile" and the like.
+  const hit = Object.keys(CONDITION_TERMS).find((k) => key.includes(k));
+  return hit ? CONDITION_TERMS[hit] : [key];
+};
+
+/**
  * GET /api/lab-tests/catalog
  * Browse the lab test catalog with optional search & filter.
  * Public — no auth required.
  *
  * Query params:
  *   q          (string)  — partial name / code search
- *   category   (string)  — exact category filter
+ *   category   (string)  — a catalogue category, or a health condition
  *   test_type  (string)  — maps to test code prefix (e.g. blood_test, radiology)
  *   limit      (int)     — default 50, max 200
  *   offset     (int)     — default 0
@@ -73,9 +120,29 @@ router.get('/catalog', async (req, res) => {
       conditions.push(`(name ILIKE $${values.length} OR test_code ILIKE $${values.length} OR description ILIKE $${values.length})`);
     }
 
+    // A real catalogue category filters exactly; anything else is treated as a
+    // health condition and matched against the test's own text, so a condition
+    // tile returns its tests instead of an empty list.
+    let categoryMode = null;
     if (category.trim()) {
-      values.push(category.trim());
-      conditions.push(`LOWER(category) = LOWER($${values.length})`);
+      const wanted = category.trim();
+      const known = await pool.query(
+        `SELECT 1 FROM api_lab_tests WHERE status = 'active' AND LOWER(category) = LOWER($1) LIMIT 1`,
+        [wanted]
+      );
+      if (known.rowCount) {
+        values.push(wanted);
+        conditions.push(`LOWER(category) = LOWER($${values.length})`);
+        categoryMode = 'category';
+      } else {
+        const terms = conditionTerms(wanted);
+        const likes = terms.map((t) => {
+          values.push(`%${t}%`);
+          return `(name ILIKE $${values.length} OR test_code ILIKE $${values.length} OR description ILIKE $${values.length} OR category ILIKE $${values.length})`;
+        });
+        conditions.push(`(${likes.join(' OR ')})`);
+        categoryMode = 'condition';
+      }
     }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -113,6 +180,12 @@ router.get('/catalog', async (req, res) => {
         offset: safeOffset,
       },
       categories: catRows.rows.map(r => r.category),
+      // 'category' = an exact discipline match, 'condition' = resolved from a
+      // health-condition tile, so the client can caption the list correctly
+      // instead of guessing ("Tests matching glucose").
+      ...(categoryMode ? { matchedBy: categoryMode } : {}),
+      // Aliased so the list can be shown under the condition the user tapped.
+      ...(categoryMode === 'condition' ? { conditionQuery: category.trim() } : {}),
     });
   } catch (err) {
     console.error('❌ Lab catalog error:', err);

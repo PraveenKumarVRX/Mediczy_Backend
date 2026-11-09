@@ -267,7 +267,40 @@ function ageOnDate(dateOfBirth, referenceDate = new Date()) {
 
 function normaliseGender(value) {
   const gender = String(value || '').trim().toLowerCase();
-  return ['male', 'female', 'other'].includes(gender) ? gender : null;
+  if (['male', 'female', 'other'].includes(gender)) return gender;
+  // The apps' pickers send these spellings; treat them as the same answer
+  // rather than as "no answer".
+  if (['m', 'man', 'boy'].includes(gender)) return 'male';
+  if (['f', 'w', 'woman', 'girl'].includes(gender)) return 'female';
+  if (['transgender', 'non-binary', 'nonbinary', 'prefer not to say', 'other/prefer not to say'].includes(gender)) return 'other';
+  return null;
+}
+
+/**
+ * The first usable value for any of `keys` inside the assessment's own
+ * `responses` object.
+ *
+ * The mobile assessment asks age and gender as questions (Q1/Q2) and returns
+ * them inside `responses`, not as top-level fields. Reading only the top level
+ * meant an account with no profile gender was shown a score and then told to
+ * "add your gender to your profile" — about the very question it had just
+ * answered (mobile 1.3.0 QA row 138). The profile still takes precedence; this
+ * is only consulted when the profile has nothing to offer.
+ */
+function fromResponses(responses, keys) {
+  if (!responses || typeof responses !== 'object') return null;
+  for (const key of keys) {
+    const value = responses[key];
+    if (value === null || value === undefined || value === '') continue;
+    // A question may be stored as { value } / { answer } rather than a scalar.
+    if (typeof value === 'object') {
+      const inner = value.value ?? value.answer ?? value.selected;
+      if (inner !== null && inner !== undefined && inner !== '') return inner;
+      continue;
+    }
+    return value;
+  }
+  return null;
 }
 
 /**
@@ -339,8 +372,20 @@ router.post('/save', authUser, async (req, res) => {
     }).catch(() => null);
     const profileAge = ageOnDate(accountProfile?.dateOfBirth);
     const profileGender = normaliseGender(accountProfile?.gender);
-    const submittedGender = normaliseGender(gender);
-    const assessmentAge = profileAge ?? parseInt(age, 10);
+
+    // Top-level field first, then the answer given inside this assessment.
+    const submittedGender = normaliseGender(gender)
+      ?? normaliseGender(fromResponses(responses, ['gender', 'sex', 'q2', 'gender_identity', 'basic_gender']));
+    const submittedAge = (() => {
+      const direct = parseInt(age, 10);
+      if (Number.isFinite(direct) && direct > 0) return direct;
+      const answered = parseInt(fromResponses(responses, ['age', 'q1', 'age_years', 'basic_age']), 10);
+      if (Number.isFinite(answered) && answered > 0) return answered;
+      // Some clients answer with a date of birth instead of an age.
+      return ageOnDate(fromResponses(responses, ['dateOfBirth', 'dob', 'date_of_birth']));
+    })();
+
+    const assessmentAge = profileAge ?? submittedAge;
     const assessmentGender = profileGender ?? submittedGender;
 
     // Height and weight refine the score through BMI, but they are not required
@@ -367,7 +412,7 @@ router.post('/save', authUser, async (req, res) => {
       return res.status(400).json({
         success: false,
         code: 'missing_demographics',
-        message: `Add your ${missing.join(' and ')} to your profile to save a health assessment.`,
+        message: `Answer the ${missing.join(' and ')} question${missing.length > 1 ? 's' : ''}, or add ${missing.length > 1 ? 'them' : 'it'} to your profile, to save a health assessment.`,
         missingFields: missing
       });
     }
