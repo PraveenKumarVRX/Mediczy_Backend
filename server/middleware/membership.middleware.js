@@ -12,7 +12,16 @@ const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
 
 const isMembershipRenewalExemptUser = (user) => {
   const email = String(user?.email || '').trim().toLowerCase();
-  return MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(email);
+  if (MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(email)) return true;
+
+  // Managed service accounts are not customers and never hold a membership, so
+  // the nightly sync in syncAllUsersStatus() flipped them to 'inactive' — and
+  // because patient login requires status='active', the account simply stopped
+  // working. That is how the app-store reviewer login died overnight, which
+  // would have been read by the store as 'we could not access the app'.
+  // Same flags the erasure guard uses (routes/data-export.route.js).
+  const metadata = user?.metadata || {};
+  return metadata.doNotDelete === true || metadata.purpose === 'app-store-review';
 };
 
 // A corporate employee's care is funded by the employer's active corporate
@@ -286,7 +295,7 @@ export const syncUserStatusWithMembership = async (userId) => {
     const userModel = await import('../models/user.model.intelligent.js');
     const currentUser = await userModel.default.findOne({
       where: { id: userId },
-      attributes: ['status', 'email']
+      attributes: ['status', 'email', 'metadata']
     });
 
     if (isMembershipRenewalExemptUser(currentUser)) {
@@ -330,7 +339,7 @@ export const syncUserStatusWithMembership = async (userId) => {
       // Has valid membership - ensure active
       const previousStatus = await userModel.default.findOne({
         where: { id: userId },
-        attributes: ['status', 'email']
+        attributes: ['status', 'email', 'metadata']
       });
       await userModel.default.update(
         { status: 'active' },
@@ -361,7 +370,7 @@ export const syncUserStatusWithMembership = async (userId) => {
       // No valid membership - set inactive
       const previousStatus = await userModel.default.findOne({
         where: { id: userId },
-        attributes: ['status', 'email']
+        attributes: ['status', 'email', 'metadata']
       });
       await userModel.default.update(
         { status: 'inactive' },

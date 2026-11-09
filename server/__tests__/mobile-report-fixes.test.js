@@ -313,3 +313,43 @@ describe('teleconsult entitlement (report row 169 / D-23)', () => {
     expect(usedTeleconsults(plan(10, { general: 'two', cardiology: null, derm: 3 }))).toBe(3);
   });
 });
+
+describe('managed service accounts survive the nightly membership sync', () => {
+  // syncAllUsersStatus() sets users.status from whether the account holds a
+  // paid membership, and patient login requires status='active'. The app-store
+  // reviewer account holds no membership, so it was deactivated at 02:00 and
+  // stopped being able to log in — which a store reviewer reads as "we could
+  // not access the app". The exemption is email-based; service accounts are
+  // now recognised by the same flags the erasure guard uses.
+  const EXEMPT_EMAILS = new Set(['user@mediczy.com']);
+  const isExempt = (user) => {
+    const email = String(user?.email || '').trim().toLowerCase();
+    if (EXEMPT_EMAILS.has(email)) return true;
+    const metadata = user?.metadata || {};
+    return metadata.doNotDelete === true || metadata.purpose === 'app-store-review';
+  };
+
+  test('the app-store reviewer account is exempt by its purpose flag', () => {
+    expect(isExempt({ email: 'play.reviewer@mysmarthealth.in', metadata: { purpose: 'app-store-review', doNotDelete: true } })).toBe(true);
+  });
+
+  test('doNotDelete alone is enough', () => {
+    expect(isExempt({ email: 'svc@example.com', metadata: { doNotDelete: true } })).toBe(true);
+  });
+
+  test('the existing email allow-list still works', () => {
+    expect(isExempt({ email: 'user@mediczy.com' })).toBe(true);
+    expect(isExempt({ email: 'USER@MEDICZY.COM  ' })).toBe(true);
+  });
+
+  test('an ordinary patient is NOT exempted — the membership policy still applies', () => {
+    expect(isExempt({ email: 'patient@example.com', metadata: {} })).toBe(false);
+    expect(isExempt({ email: 'patient@example.com' })).toBe(false);
+    expect(isExempt(null)).toBe(false);
+  });
+
+  test('a truthy-but-not-true doNotDelete does not grant exemption', () => {
+    // Guards against a stray string flipping an account to permanent.
+    expect(isExempt({ email: 'x@example.com', metadata: { doNotDelete: 'false' } })).toBe(false);
+  });
+});
