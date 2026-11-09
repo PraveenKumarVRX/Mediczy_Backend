@@ -74,6 +74,19 @@ const itemAnswersTo = (item, identifier) => {
 };
 
 /**
+ * A diagnostic test is ordered once per booking, so every cart line is a single
+ * unit.
+ *
+ * prepareLabCheckout (patient-lab-checkout.service.js) reduces the selection to
+ * `[...new Set(testIds)]` and prices each distinct test exactly once; it never
+ * reads a quantity. A cart that counted the same CBC twice therefore showed
+ * ₹598 for a booking that would be billed ₹299 — the very cart-vs-catalogue
+ * disagreement this file's header says it exists to prevent. Keeping the line
+ * at one unit makes the displayed total the total that will actually be charged.
+ */
+const LAB_TEST_QUANTITY = 1;
+
+/**
  * Replace each item's price with the catalogue price, and collapse items that
  * resolve to the SAME catalogue row into one line. Returns { items, dropped, merged }.
  *
@@ -101,7 +114,7 @@ async function repriceItems(rawItems) {
     const dedupeKey = String(row.test_id).toLowerCase();
     const alreadyAt = seen.get(dedupeKey);
     if (alreadyAt !== undefined) {
-      items[alreadyAt].quantity += Math.max(1, Number(item?.quantity) || 1);
+      // Not accumulated into a quantity: see LAB_TEST_QUANTITY below.
       merged.push(row.test_id);
       continue;
     }
@@ -109,7 +122,7 @@ async function repriceItems(rawItems) {
     seen.set(dedupeKey, items.length);
     items.push({
       ...item,
-      quantity: Math.max(1, Number(item?.quantity) || 1),
+      quantity: LAB_TEST_QUANTITY,
       test: {
         ...test,
         id: test?.id ?? row.test_id,
@@ -199,10 +212,9 @@ router.post('/add', authUser, async (req, res) => {
     });
 
     if (existingIndex >= 0) {
-      cart.items[existingIndex] = {
-        ...pricedItem,
-        quantity: (Number(cart.items[existingIndex].quantity) || 1) + quantity,
-      };
+      // Adding a test already in the cart re-prices that line; it does not
+      // stack, because checkout bills the test once (see LAB_TEST_QUANTITY).
+      cart.items[existingIndex] = { ...pricedItem, quantity: LAB_TEST_QUANTITY };
     } else {
       cart.items.push(pricedItem);
     }
@@ -264,7 +276,10 @@ router.put('/update/:testId', authUser, async (req, res) => {
     const cart = getCart(userId);
     const itemIndex = cart.items.findIndex((item) => itemAnswersTo(item, testId));
     if (itemIndex >= 0) {
-      cart.items[itemIndex].quantity = quantity;
+      // Clamped, not stored as sent: a quantity above one would price a cart
+      // that checkout bills once (see LAB_TEST_QUANTITY). Accepted rather than
+      // rejected so an older client's "set quantity" still succeeds.
+      cart.items[itemIndex].quantity = LAB_TEST_QUANTITY;
       cart.updatedAt = new Date();
       cartStore.set(userId, cart);
     }
