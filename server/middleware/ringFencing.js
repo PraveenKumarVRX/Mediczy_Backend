@@ -746,6 +746,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/auth/doctor/facebook', // Facebook OAuth2 initiation (doctor)
   '/api/auth/doctor/facebook/callback', // Facebook OAuth2 callback (doctor)
   '/api/users/login',
+  '/api/users/login/apple', // Sign in with Apple — pre-auth, like /users/login
   '/api/users/register',
   '/api/users/login/send-otp',
   '/api/users/login/verify-otp',

@@ -11,6 +11,7 @@ import {
   updateUserStatus,
 } from "../controller/user.controller.js";
 import { authUser } from "../middleware/auth.middleware.js";
+import { signInWithApple } from "../controller/apple-auth.controller.js";
 import userModel, { generateAuthTokenForUser } from "../models/user.model.intelligent.js";
 import doctorModel from "../models/doctor.model.intelligent.js";
 import passwordResetService from "../services/password-reset.service.js";
@@ -1294,6 +1295,38 @@ router.post(
     body("password").notEmpty().withMessage("Password is required"),
   ],
   signInUser
+);
+
+/** Reject a malformed Apple request before any token work is attempted. */
+const handleAppleValidation = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, code: 'invalid_request', errors: errors.array() });
+  }
+  return next();
+};
+
+/**
+ * POST /api/users/login/apple
+ *
+ * Sign in with Apple. Public, like /users/login. Apple requires this because
+ * the app offers Google sign-in (App Store guideline 4.8). Request validation
+ * is deliberately thin: everything that matters is inside the identity token
+ * and is checked cryptographically by the controller, not here.
+ * Contract: docs/api/SIGN_IN_WITH_APPLE_BACKEND_CONTRACT.md
+ */
+router.post(
+  '/login/apple',
+  [
+    body('identityToken').isString().notEmpty().withMessage('identityToken is required'),
+    body('nonce').optional().isString(),
+    body('authorizationCode').optional().isString(),
+    body('email').optional().isString(),
+    body('user').optional().isString(),
+    body('fullName').optional().isObject(),
+  ],
+  handleAppleValidation,
+  signInWithApple
 );
 
 /**
