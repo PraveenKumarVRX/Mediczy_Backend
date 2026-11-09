@@ -99,3 +99,50 @@ describe('membership sync: who stays active', () => {
     expect(planFindOne).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The roster join, pinned at the SQL level.
+ *
+ * `activeCorporateEmployee` once INNER JOINed corporate_employees on top of the
+ * employee association. corporate_employees is the HR roster and is populated
+ * inconsistently: Equitas Bank Ltd had 3,840 active employee associations and
+ * zero roster rows, so every one of its employees failed the check and the
+ * nightly sync flipped 3,839 of them to 'inactive' — locked out of login
+ * entirely. Across all corporates the inner join denied 3,858 of 5,489 real
+ * employees.
+ *
+ * The roster must therefore only ever EXCLUDE (HR explicitly marked the
+ * employee inactive), never be required to include. These assert the query
+ * shape because that is precisely what regressed; the mock above cannot
+ * exercise join semantics.
+ */
+describe('the corporate roster is consulted only to exclude', () => {
+  const rosterQuery = async () => {
+    planFindOne.mockResolvedValue(null);
+    sequelizeQuery.mockReset().mockResolvedValue([]);
+    await syncUserStatusWithMembership(1234);
+    expect(sequelizeQuery).toHaveBeenCalled();
+    return String(sequelizeQuery.mock.calls[0][0]);
+  };
+
+  test('corporate_employees is LEFT JOINed, never INNER JOINed', async () => {
+    const sql = await rosterQuery();
+    expect(sql).toMatch(/LEFT JOIN\s+corporate_employees/i);
+    expect(sql).not.toMatch(/(?<!LEFT )\bJOIN\s+corporate_employees/i);
+  });
+
+  test('a corporate with no roster row still counts as sponsored', async () => {
+    // COALESCE(ce."isActive", true) is what makes a missing roster row pass.
+    const sql = await rosterQuery();
+    expect(sql).toMatch(/COALESCE\(\s*ce\."isActive"\s*,\s*true\s*\)\s*=\s*true/i);
+  });
+
+  test('the employee association is still the required signal', async () => {
+    const sql = await rosterQuery();
+    expect(sql).toMatch(/ua\."entityType"\s*=\s*'corporate'/i);
+    expect(sql).toMatch(/ua\.role\s*=\s*'employee'/i);
+    expect(sql).toMatch(/ua\.status\s*=\s*'active'/i);
+    // ...against a corporate that is itself active.
+    expect(sql).toMatch(/LOWER\(c\.status\)\s*=\s*'active'/i);
+  });
+});

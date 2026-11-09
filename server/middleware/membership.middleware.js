@@ -25,21 +25,37 @@ const isMembershipRenewalExemptUser = (user) => {
 };
 
 // A corporate employee's care is funded by the employer's active corporate
-// relationship, not by an individual Mediczy membership. Require both the
-// authoritative employee association and an active roster record so a stale
-// association can never be used to bypass the individual membership policy.
+// relationship, not by an individual Mediczy membership.
+//
+// The authoritative signal is the employee association in user_associations:
+// role='employee' + status='active' against an active corporate. An earlier
+// version ALSO required a matching corporate_employees row, on the reasoning
+// that a stale association should not bypass the individual membership policy.
+// That inner join turned out to deny 3,858 real employees, because
+// corporate_employees is the HR roster and is populated inconsistently --
+// Equitas Bank Ltd had 3,840 active employee associations and ZERO roster
+// rows, so its entire workforce failed this check and the nightly sync then
+// flipped 3,839 of them to 'inactive', locking them out of login outright.
+//
+// So the roster is now consulted only to EXCLUDE: if HR has explicitly marked
+// the employee inactive on the roster, they are not sponsored. A corporate
+// whose roster was never imported no longer loses access, while an
+// HR-deactivated employee is still denied, which was the original intent.
+// An exited employee's association is itself set non-active, which this
+// already gates on.
 const activeCorporateEmployee = async (userId) => {
   if (!userId) return false;
   const [row] = await postgresSequelize.query(
     `SELECT 1
        FROM user_associations ua
        JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
-       JOIN corporate_employees ce ON ce."userId" = ua."userId"
-          AND ce.corporate_id = ua."entityId" AND ce."isActive" = true
+       LEFT JOIN corporate_employees ce ON ce."userId" = ua."userId"
+          AND ce.corporate_id = ua."entityId"
       WHERE ua."userId" = :userId
         AND ua."entityType" = 'corporate'
         AND ua.role = 'employee'
         AND ua.status = 'active'
+        AND COALESCE(ce."isActive", true) = true
       LIMIT 1`,
     { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
   );
