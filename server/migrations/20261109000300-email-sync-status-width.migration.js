@@ -17,17 +17,22 @@
  */
 import pool from '../db/pgPool.js';
 
-export async function up() {
-  await pool.query(`
+/**
+ * run-one-migration.mjs / migrate-all.mjs pass the transaction client they
+ * opened. Honour it, or the DDL executes on a second pooled connection and the
+ * surrounding BEGIN/COMMIT guards nothing.
+ */
+export async function up(db = pool) {
+  await db.query(`
     ALTER TABLE email_settings
       ALTER COLUMN last_sync_status TYPE VARCHAR(255),
       ALTER COLUMN test_result      TYPE VARCHAR(255);
   `);
 }
 
-export async function down() {
+export async function down(db = pool) {
   // Truncate first: narrowing a column with longer values in it would fail.
-  await pool.query(`
+  await db.query(`
     UPDATE email_settings
        SET last_sync_status = LEFT(last_sync_status, 50),
            test_result      = LEFT(test_result, 50);
