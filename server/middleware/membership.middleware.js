@@ -335,7 +335,16 @@ export const syncUserStatusWithMembership = async (userId) => {
       }
     });
 
-    if (activePlan) {
+    // A corporate employee's membership is their employer's corporate plan, not
+    // an individual UserPlan. validateMembership() has always understood this
+    // ('funded by the employer's active corporate relationship'), but this sync
+    // looked only at user_plans — so 864 funded employees were flipped to
+    // 'inactive' overnight and could no longer log in at all, because patient
+    // login requires status='active'. Same authoritative test as the middleware:
+    // an active association AND an active roster row AND an active corporate.
+    const corporateFunded = activePlan ? false : await activeCorporateEmployee(userId);
+
+    if (activePlan || corporateFunded) {
       // Has valid membership - ensure active
       const previousStatus = await userModel.default.findOne({
         where: { id: userId },
@@ -359,13 +368,15 @@ export const syncUserStatusWithMembership = async (userId) => {
             userEmail: previousStatus?.email || null,
             fromStatus: previousStatus?.status || 'unknown',
             toStatus: 'active',
-            reasonCode: 'VALID_MEMBERSHIP',
-            reason: 'Membership sync marked user active',
+            reasonCode: corporateFunded ? 'CORPORATE_PLAN' : 'VALID_MEMBERSHIP',
+            reason: corporateFunded
+              ? 'Membership sync marked user active: funded by employer corporate plan'
+              : 'Membership sync marked user active',
             source: 'syncUserStatusWithMembership',
           }
         );
       }
-      return { success: true, status: 'active', hasActivePlan: true };
+      return { success: true, status: 'active', hasActivePlan: true, corporateFunded };
     } else {
       // No valid membership - set inactive
       const previousStatus = await userModel.default.findOne({
