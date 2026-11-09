@@ -411,7 +411,16 @@ router.get('/my/current', authUser, async (req,res) => {
     const corporate = await loadActiveCorporateLink(req.user.id);
 
     if (!userPlan) {
-      return res.json({ userPlan: null, plan: null, corporate });
+      // Same keys as the has-a-plan response. A member without a plan is a
+      // normal state, and the client should render "no cover" from real zeros
+      // rather than crash on an undefined it never expected.
+      return res.json({
+        userPlan: null,
+        plan: null,
+        coverage: summariseCoverage({}),
+        utilisation: summariseUtilisation({}, {}),
+        corporate,
+      });
     }
 
     const planObj = userPlan.toJSON();

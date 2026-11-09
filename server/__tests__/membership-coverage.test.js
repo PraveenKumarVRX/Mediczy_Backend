@@ -90,3 +90,20 @@ describe('summariseUtilisation', () => {
     expect(summariseUtilisation()).toMatchObject({ teleconsultsUsed: 0, teleconsultsRemaining: 0 });
   });
 });
+
+describe('response shape is the same with and without a plan', () => {
+  // The no-plan early return originally omitted the new keys, so a member
+  // without a plan got `undefined` where the has-a-plan path returns objects.
+  test('a member with no plan still gets zeroed coverage, not undefined', () => {
+    const coverage = summariseCoverage({});
+    const utilisation = summariseUtilisation({}, {});
+    expect(coverage).toMatchObject({ totalCoverageINR: 0, benefits: [] });
+    expect(utilisation).toMatchObject({ utilisedINR: 0, teleconsultsUsed: 0, teleconsultsRemaining: 0 });
+  });
+
+  test('both objects carry the same keys either way', () => {
+    const withPlan = summariseCoverage({ pharmacy: { limitINR: 500 } });
+    const without = summariseCoverage({});
+    expect(Object.keys(without).sort()).toEqual(Object.keys(withPlan).sort());
+  });
+});
