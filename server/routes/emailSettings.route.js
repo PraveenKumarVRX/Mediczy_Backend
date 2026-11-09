@@ -1,9 +1,69 @@
 import express from 'express';
 import { Op } from 'sequelize';
+import nodemailer from 'nodemailer';
+import Imap from 'imap';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import EmailSettings from '../models/emailSettings.model.js';
 
 const router = express.Router();
+
+/** Provider fallbacks, matching the sync worker's table. */
+const PROVIDER_IMAP_DEFAULTS = {
+  'zoho-pro': { host: 'imappro.zoho.in', port: 993 },
+  'zoho':     { host: 'imap.zoho.in',    port: 993 },
+  'gmail':    { host: 'imap.gmail.com',  port: 993 },
+  'outlook':  { host: 'outlook.office365.com', port: 993 },
+  'custom':   { host: 'imap.zoho.in',    port: 993 },
+};
+
+const TEST_TIMEOUT_MS = 15000;
+
+/**
+ * Actually open an IMAP session and select INBOX.
+ *
+ * Selecting the mailbox matters: Zoho accepts the TCP/TLS connection and only
+ * then refuses with "You are yet to enable IMAP for your account", so a test
+ * that stops at connect still reports a mailbox that can never sync as healthy.
+ */
+function probeImap({ host, port, secure, username, password }) {
+  return new Promise((resolve) => {
+    const imap = new Imap({
+      user: username, password, host, port, tls: secure !== false,
+      tlsOptions: { servername: host },
+      authTimeout: TEST_TIMEOUT_MS, connTimeout: TEST_TIMEOUT_MS,
+    });
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      try { imap.end(); } catch { /* already closed */ }
+      resolve(result);
+    };
+    imap.once('ready', () => imap.openBox('INBOX', true, (err, box) => finish(
+      err ? { connected: false, status: `INBOX not selectable: ${err.message}` }
+          : { connected: true, status: `ready (INBOX: ${box?.messages?.total ?? 0} messages)` }
+    )));
+    imap.once('error', (e) => finish({ connected: false, status: String(e?.message || e) }));
+    setTimeout(() => finish({ connected: false, status: `no response within ${TEST_TIMEOUT_MS / 1000}s` }), TEST_TIMEOUT_MS + 1000);
+    try { imap.connect(); } catch (e) { finish({ connected: false, status: e.message }); }
+  });
+}
+
+/** Authenticate against SMTP via nodemailer's verify(). */
+async function probeSmtp({ host, port, secure, username, password }) {
+  try {
+    const transporter = nodemailer.createTransport({
+      host, port, secure: secure !== false,
+      auth: { user: username, pass: password },
+      connectionTimeout: TEST_TIMEOUT_MS, greetingTimeout: TEST_TIMEOUT_MS, socketTimeout: TEST_TIMEOUT_MS,
+    });
+    await transporter.verify();
+    try { transporter.close(); } catch { /* best effort */ }
+    return { connected: true, status: 'ready (authenticated)' };
+  } catch (e) {
+    return { connected: false, status: String(e?.message || e) };
+  }
+}
 
 /**
  * ============================================================================
@@ -317,33 +377,55 @@ router.post('/:settingsId/test', async (req, res) => {
       });
     }
 
-    // Simulate test (in production, actually test SMTP/IMAP connections)
+    // A real connection test.
+    //
+    // This used to set smtpConnected/imapConnected to true whenever the host,
+    // port and username FIELDS were non-empty, label it "ready (validation
+    // only)" and store testResult:'success'. It never opened a socket, so the
+    // screen reported a healthy mailbox for a configuration that could not sync
+    // at all -- hello@mysmarthealth.in has IMAP disabled at the provider and
+    // still tested green. A test that cannot fail is worse than no test,
+    // because it is believed.
     const testResult = {
       smtpConnected: false,
       imapConnected: false,
       errors: []
     };
 
-    try {
-      // Test SMTP connection
-      if (settings.smtpHost && settings.smtpPort && settings.smtpUsername) {
-        // Simple validation - in production use nodemailer to verify
-        testResult.smtpConnected = true;
-        testResult.smtpStatus = 'ready (validation only)';
-      }
-    } catch (e) {
-      testResult.errors.push(`SMTP: ${e.message}`);
+    const defaults = PROVIDER_IMAP_DEFAULTS[settings.provider] || PROVIDER_IMAP_DEFAULTS.custom;
+    const imapPassword = settings.imapPassword || settings.smtpPassword;
+    const smtpPassword = settings.smtpPassword || settings.imapPassword;
+
+    if (settings.smtpHost && smtpPassword) {
+      const smtp = await probeSmtp({
+        host: settings.smtpHost,
+        port: settings.smtpPort || 465,
+        secure: settings.smtpSecure,
+        username: settings.smtpUsername || settings.email,
+        password: smtpPassword,
+      });
+      testResult.smtpConnected = smtp.connected;
+      testResult.smtpStatus = smtp.status;
+      if (!smtp.connected) testResult.errors.push(`SMTP: ${smtp.status}`);
+    } else {
+      testResult.smtpStatus = 'not configured (host or password missing)';
+      testResult.errors.push('SMTP: not configured');
     }
 
-    try {
-      // Test IMAP connection
-      if (settings.imapHost && settings.imapPort && settings.imapUsername) {
-        // Simple validation - in production use imap library to verify
-        testResult.imapConnected = true;
-        testResult.imapStatus = 'ready (validation only)';
-      }
-    } catch (e) {
-      testResult.errors.push(`IMAP: ${e.message}`);
+    if (imapPassword) {
+      const imap = await probeImap({
+        host: settings.imapHost || defaults.host,
+        port: settings.imapPort || defaults.port,
+        secure: settings.imapSecure,
+        username: settings.imapUsername || settings.email,
+        password: imapPassword,
+      });
+      testResult.imapConnected = imap.connected;
+      testResult.imapStatus = imap.status;
+      if (!imap.connected) testResult.errors.push(`IMAP: ${imap.status}`);
+    } else {
+      testResult.imapStatus = 'not configured (password missing)';
+      testResult.errors.push('IMAP: not configured');
     }
 
     // Update test result in database
@@ -356,7 +438,9 @@ router.post('/:settingsId/test', async (req, res) => {
     res.json({
       success: testResult.smtpConnected && testResult.imapConnected,
       data: testResult,
-      message: testResult.errors.length > 0 ? testResult.errors.join('; ') : 'Configuration test completed'
+      message: testResult.errors.length > 0
+        ? testResult.errors.join('; ')
+        : `Connected: SMTP ${testResult.smtpStatus}; IMAP ${testResult.imapStatus}`
     });
   } catch (error) {
     console.error('Error testing email settings:', error);

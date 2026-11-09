@@ -658,20 +658,26 @@ router.post('/sync', authTeam, async (req, res) => {
       });
     }
 
-    const emailSettings = activeSettings.find((config) => {
+    // Sync EVERY configured mailbox, not just the first one.
+    //
+    // This used to .find() a single settings row and sync that alone, so a team
+    // working a shared inbox (care@) plus a second address saw only whichever
+    // row happened to sort first by isDefault. Pressing Sync appeared to work
+    // while an entire mailbox was never polled.
+    const syncable = activeSettings.filter((config) => {
       const username = config.imapUsername || config.smtpUsername || config.email;
       const password = config.imapPassword || config.smtpPassword;
       return Boolean(username && password);
     });
 
-    if (!emailSettings) {
+    if (syncable.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'Email configuration is incomplete. Please edit and save your SMTP/IMAP settings again.'
       });
     }
 
-    console.log('✅ SYNC: Found email settings, starting sync...');
+    console.log(`✅ SYNC: ${syncable.length} configured mailbox(es), starting sync...`);
     
     const providerImapDefaults = {
       'zoho-pro': { host: 'imappro.zoho.in', port: 993, tls: true },
@@ -681,34 +687,59 @@ router.post('/sync', authTeam, async (req, res) => {
       'custom': { host: 'imap.zoho.in', port: 993, tls: true }
     };
 
-    const providerDefaults = providerImapDefaults[emailSettings.provider] || providerImapDefaults.custom;
+    // Sync emails — manual syncs default to 60 days; caller can pass daysBack
+    const daysBack = Math.min(parseInt(req.body?.daysBack || req.query?.daysBack || 60, 10), 180);
 
-    // Parse stored credentials for IMAP
-    const imapConfig = {
-      email: emailSettings.email,
-      username: emailSettings.imapUsername || emailSettings.smtpUsername || emailSettings.email,
-      password: emailSettings.imapPassword || emailSettings.smtpPassword,
-      host: emailSettings.imapHost || providerDefaults.host,
-      port: emailSettings.imapPort || providerDefaults.port,
-      tls: emailSettings.imapSecure !== false ? true : providerDefaults.tls
-    };
+    const perMailbox = [];
+    let newEmails = 0;
+    let failed = 0;
 
-    if (!imapConfig.username || !imapConfig.password) {
-      return res.status(400).json({
+    for (const config of syncable) {
+      const providerDefaults = providerImapDefaults[config.provider] || providerImapDefaults.custom;
+      const imapConfig = {
+        email: config.email,
+        username: config.imapUsername || config.smtpUsername || config.email,
+        password: config.imapPassword || config.smtpPassword,
+        host: config.imapHost || providerDefaults.host,
+        port: config.imapPort || providerDefaults.port,
+        tls: config.imapSecure !== false ? true : providerDefaults.tls
+      };
+
+      try {
+        const result = await inboundEmailService.scheduledSync(teamMemberId, imapConfig, daysBack);
+        newEmails += result?.newEmails || 0;
+        perMailbox.push({ email: config.email, ok: true, newEmails: result?.newEmails || 0 });
+        try { await config.update({ lastSyncAt: new Date(), lastSyncStatus: `ok: ${result?.newEmails || 0} new` }); } catch { /* status is best-effort */ }
+      } catch (error) {
+        failed += 1;
+        // One unreachable mailbox must not hide the others' results, which is what
+        // a single throw out of this handler used to do.
+        perMailbox.push({ email: config.email, ok: false, error: error.message });
+        try { await config.update({ lastSyncAt: new Date(), lastSyncStatus: `error: ${String(error.message || 'unknown')}`.slice(0, 255) }); } catch { /* status is best-effort */ }
+        console.error(`❌ SYNC failed for ${config.email}:`, error.message);
+      }
+    }
+
+    // Every mailbox failed — report it as a failure, with each reason.
+    if (failed === syncable.length) {
+      const imapDisabled = perMailbox.some((m) => /enable imap/i.test(m.error || ''));
+      return res.status(imapDisabled ? 400 : 500).json({
         success: false,
-        message: 'Email configuration is incomplete. Please edit and save your SMTP/IMAP settings again.'
+        ...(imapDisabled ? { code: 'IMAP_DISABLED' } : {}),
+        data: { newEmails: 0, mailboxes: perMailbox },
+        message: imapDisabled
+          ? 'IMAP is disabled for this mailbox. Please enable IMAP in Zoho Mail settings or ask your organization admin.'
+          : `Failed to sync ${failed} mailbox(es): ${perMailbox.map((m) => `${m.email}: ${m.error}`).join('; ')}`
       });
     }
 
-    // Sync emails — manual syncs default to 60 days; caller can pass daysBack
-    const daysBack = Math.min(parseInt(req.body?.daysBack || req.query?.daysBack || 60, 10), 180);
-    const result = await inboundEmailService.scheduledSync(teamMemberId, imapConfig, daysBack);
-
-    console.log('✅ SYNC COMPLETE: Synced', result.newEmails, 'emails');
+    console.log(`✅ SYNC COMPLETE: ${newEmails} new emails across ${syncable.length - failed}/${syncable.length} mailbox(es)`);
     res.json({
       success: true,
-      data: result,
-      message: `Successfully synced ${result.newEmails} new emails`
+      data: { newEmails, mailboxes: perMailbox },
+      message: failed
+        ? `Synced ${newEmails} new emails; ${failed} mailbox(es) failed`
+        : `Successfully synced ${newEmails} new emails`
     });
   } catch (error) {
     console.error('❌ Error syncing emails:', error.message);

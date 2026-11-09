@@ -4,6 +4,14 @@ import { Op } from 'sequelize';
 import EmailInbox from '../models/emailInbox.model.js';
 import { aiProcessEmail } from './aiEmailProcessor.service.js';
 import { autoUpdatePortal } from './emailAutoUpdate.service.js';
+
+/**
+ * Autonomous, patient-facing actions driven by email AI (book an appointment,
+ * reply to the sender, send WhatsApp). Default OFF: these are irreversible and
+ * outward-facing, so they are an explicit operational decision, not a
+ * side-effect of switching a mailbox on.
+ */
+const AUTO_ACTIONS_ENABLED = String(process.env.EMAIL_AI_AUTO_ACTIONS_ENABLED || '').toLowerCase() === 'true';
 import { detectEmailIntent, createAutoTicket } from './autoTicketService.js';
 import { processEmailFull } from './emailAutoProcessService.js';
 
@@ -263,16 +271,35 @@ class InboundEmailService {
       console.log(`   Intent: ${aiAnalysis.intent}`);
       console.log(`   Entities: ${JSON.stringify(aiAnalysis.entities)}`);
 
-      // Auto-update portal if applicable
-      if (aiAnalysis.intent !== 'other' && aiAnalysis.confidence > 0.7) {
+      // Auto-update portal — OFF unless explicitly enabled.
+      //
+      // autoUpdatePortal() is not a data-tidying step. On an 'appointment_request'
+      // intent it emails the sender, creates/updates a patient record, books a real
+      // appointment and then sends an email + WhatsApp confirmation; other intents
+      // reply to the sender too. All of that fires off a single LLM intent guess at
+      // confidence > 0.7, with no human in the loop.
+      //
+      // That is far too much reach for an unreviewed classification, and it is also
+      // a backlog hazard: pointing the inbox at an existing mailbox (care@ holds
+      // 4,435 messages) would have replayed months of old mail as new appointments
+      // and sent thousands of people a confirmation for something they never asked
+      // for. Enabling a mailbox must never be the same decision as authorising
+      // autonomous patient-facing writes.
+      //
+      // The AI *analysis* above (summary, intent, sentiment, priority) is unaffected
+      // — it only labels the email for the human reading the inbox, which is the
+      // part that makes triage useful. Only the acting-on-it is gated.
+      if (AUTO_ACTIONS_ENABLED && aiAnalysis.intent !== 'other' && aiAnalysis.confidence > 0.7) {
         const updates = await autoUpdatePortal(email, aiAnalysis);
-        
+
         if (updates.length > 0) {
           await email.update({
             autoUpdatesApplied: updates
           });
           console.log(`✨ Applied ${updates.length} auto-updates for email ${email.id}`);
         }
+      } else if (aiAnalysis.intent !== 'other' && aiAnalysis.confidence > 0.7) {
+        console.log(`[emailAI] auto-actions disabled; not acting on intent '${aiAnalysis.intent}' for email ${email.id} (set EMAIL_AI_AUTO_ACTIONS_ENABLED=true to enable)`);
       }
 
       // Auto-process: create ticket + save health report + update employee email
