@@ -192,6 +192,80 @@ function buildAppliedLimits(plan) {
     },
     healthCheckPackage: coverage.healthCheck?.package ?? null,
     priceINR: Number(plan.discountedPrice != null && plan.discountedPrice !== '0.00' && plan.discountedPrice !== 0 ? plan.discountedPrice : plan.price) || 0,
+    // The itemised picture. The three INR fields above were all this exposed,
+    // and they are 0 on most plans, so Benefits & Plans had nothing to render
+    // and showed dashes for Total Coverage and Utilized. coverageDetails
+    // actually carries discounts, insurance sums, a health-check count and the
+    // teleconsult unit — none of which reached the client.
+    coverage: summariseCoverage(coverage),
+  };
+}
+
+/**
+ * Normalise a plan's coverageDetails into something a client can render.
+ *
+ * Returns itemised benefits plus a total. `totalCoverageINR` sums the monetary
+ * limits only — a discount percentage and a visit count are real benefits but
+ * are not rupees and must not be added into a money total. A plan whose limits
+ * are all zero reports 0, not null: "no monetary cover" is an answer, a dash
+ * is not.
+ */
+function summariseCoverage(coverage = {}) {
+  const num = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const MONETARY = ['pharmacy', 'homeCare', 'ambulance', 'dental', 'labTests', 'optical', 'physiotherapy'];
+
+  const benefits = [];
+  for (const key of MONETARY) {
+    const item = coverage[key];
+    if (!item || typeof item !== 'object') continue;
+    benefits.push({
+      key,
+      limitINR: num(item.limitINR),
+      discountPct: item.discountPct === undefined ? null : num(item.discountPct),
+    });
+  }
+
+  const insurance = coverage.insurance && typeof coverage.insurance === 'object'
+    ? {
+      lifeINR: num(coverage.insurance.life),
+      healthINR: num(coverage.insurance.health),
+      accidentINR: num(coverage.insurance.accident),
+    }
+    : null;
+
+  const insuranceTotal = insurance ? insurance.lifeINR + insurance.healthINR + insurance.accidentINR : 0;
+
+  return {
+    totalCoverageINR: benefits.reduce((sum, b) => sum + b.limitINR, 0) + insuranceTotal,
+    benefits,
+    insurance,
+    healthCheck: coverage.healthCheck
+      ? { count: num(coverage.healthCheck.count), package: coverage.healthCheck.package ?? null }
+      : null,
+    teleconsult: coverage.onlineConsult
+      ? { limit: num(coverage.onlineConsult.limit), unit: coverage.onlineConsult.unit ?? null }
+      : null,
+  };
+}
+
+/**
+ * What the member has actually consumed, so the client can show "Utilized" as
+ * a number rather than a dash. Monetary spend is reported as 0 rather than
+ * guessed: no claims pipeline feeds it yet. Teleconsults are counted because
+ * they genuinely are tracked (usage.teleConsult).
+ */
+function summariseUtilisation(appliedLimits = {}, usage = {}) {
+  const teleconsultsUsed = Object.values(usage?.teleConsult || {})
+    .reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const teleconsultLimit = Number(appliedLimits?.teleConsultLimits?.allSpecialties) || 0;
+  return {
+    utilisedINR: 0,
+    utilisedKnown: false,
+    teleconsultsUsed,
+    teleconsultsRemaining: Math.max(0, teleconsultLimit - teleconsultsUsed),
   };
 }
 
@@ -342,14 +416,23 @@ router.get('/my/current', authUser, async (req,res) => {
 
     const planObj = userPlan.toJSON();
     const associatedPlan = userPlan.plan || userPlan.MembershipPlan;
+    // A subscription rarely snapshots appliedLimits into its own metadata, so
+    // this almost always derives them from the plan itself.
+    const appliedLimits = planObj.metadata?.appliedLimits
+      || (associatedPlan ? buildAppliedLimits(associatedPlan) : {});
+    const usage = planObj.metadata?.usage || {};
     res.json({
       userPlan: {
         ...planObj,
-        appliedLimits: planObj.metadata?.appliedLimits ||
-          (associatedPlan ? buildAppliedLimits(associatedPlan) : {}),
-        usage: planObj.metadata?.usage || {},
+        appliedLimits,
+        usage,
       },
       plan: associatedPlan,
+      // Flat, render-ready figures for Benefits & Plans, which showed "—" for
+      // Total Coverage and Utilized because only three always-zero INR fields
+      // were ever exposed.
+      coverage: appliedLimits.coverage || null,
+      utilisation: summariseUtilisation(appliedLimits, usage),
       corporate
     });
   } catch(e) {
@@ -1181,5 +1264,8 @@ router.post('/usage/benefit', authUser, [
     return res.status(500).json({ message: 'Failed to increment benefit usage', error: e.message });
   }
 });
+
+/** Exported for tests: the Benefits & Plans coverage figures. */
+export { summariseCoverage, summariseUtilisation, buildAppliedLimits };
 
 export default router;
