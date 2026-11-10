@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSecurityPortalData } from './useSecurityPortalData';
+import api from '@/utils/api';
 import ParkingContent from '@/components/parking/ParkingContent';
 import SurveillanceContent from '@/components/surveillance/SurveillanceContent';
 
@@ -457,8 +458,29 @@ export const SecurityGuardDutyPage = () => {
 
 export const SecurityVisitorsPage = () => {
   const { data, loading, error, refresh } = useSecurityPortalData();
-  const visitors = data?.visitors ?? fallbackVisitors;
-  return <PageShell title="Visitor Management" subtitle="Pass issuance, escort tracking, and inside / exited visitor control" actions={<><Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Pass Register</Button><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><UserRoundCheck className="h-4 w-4" />Issue Pass</Button></>}><SecurityDataState loading={loading} error={error} refresh={refresh} /><Card><CardHeader><CardTitle className="text-base">Visitor Pass Console</CardTitle></CardHeader><CardContent><SectionTable headers={['Pass ID', 'Visitor', 'Destination', 'Pass Type', 'Check-in', 'Status']} rows={visitors.map((row) => [row.id, row.visitor, row.patient, row.passType, row.checkIn, <ToneBadge value={row.status} />])} /></CardContent></Card></PageShell>;
+  const [showIssue, setShowIssue] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ visitor: '', destination: '', passType: 'Visitor', escort: '' });
+  const visitors = data?.visitors ?? [];
+  const headers = () => {
+    const token = window.localStorage.getItem('securityToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  const issuePass = async () => {
+    if (!form.visitor.trim() || !form.destination.trim()) return;
+    setSaving(true);
+    try {
+      await api.post('/hospital/staff/security/visitors', { visitor: form.visitor.trim(), destination: form.destination.trim(), passType: form.passType, escort: form.escort.trim() || undefined }, { headers: headers() });
+      setForm({ visitor: '', destination: '', passType: 'Visitor', escort: '' });
+      setShowIssue(false);
+      await refresh();
+    } finally { setSaving(false); }
+  };
+  const checkOut = async (row: { id: string; version?: number }) => {
+    await api.patch(`/hospital/staff/security/visitors/${encodeURIComponent(row.id)}`, { status: 'Exited', expectedVersion: row.version }, { headers: headers() });
+    await refresh();
+  };
+  return <PageShell title="Visitor Management" subtitle="Pass issuance, escort tracking, and inside / exited visitor control" actions={<><Button variant="outline" size="sm" className="gap-1" onClick={() => window.print()}><Download className="h-4 w-4" />Print Register</Button><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={() => setShowIssue((open) => !open)}><UserRoundCheck className="h-4 w-4" />Issue Pass</Button></>}><SecurityDataState loading={loading} error={error} refresh={refresh} />{showIssue && <Card><CardHeader><CardTitle className="text-base">Issue visitor pass</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-4"><Input aria-label="Visitor name" placeholder="Visitor name" value={form.visitor} onChange={(event) => setForm({ ...form, visitor: event.target.value })} /><Input aria-label="Destination" placeholder="Destination / patient location" value={form.destination} onChange={(event) => setForm({ ...form, destination: event.target.value })} /><Input aria-label="Pass type" placeholder="Pass type" value={form.passType} onChange={(event) => setForm({ ...form, passType: event.target.value })} /><div className="flex gap-2"><Input aria-label="Escort" placeholder="Escort (optional)" value={form.escort} onChange={(event) => setForm({ ...form, escort: event.target.value })} /><Button onClick={issuePass} disabled={saving || !form.visitor.trim() || !form.destination.trim()}>{saving ? 'Issuing…' : 'Create'}</Button></div></CardContent></Card>}<Card><CardHeader><CardTitle className="text-base">Visitor Pass Console</CardTitle></CardHeader><CardContent>{!loading && !error && visitors.length === 0 ? <p className="py-6 text-sm text-muted-foreground">No visitor passes have been issued for this hospital.</p> : <SectionTable headers={['Pass ID', 'Visitor', 'Destination', 'Pass Type', 'Check-in', 'Status', '']} rows={visitors.map((row) => [row.id, row.visitor, row.patient, row.passType, row.checkIn, <ToneBadge value={row.status} />, row.status !== 'Exited' ? <Button size="sm" variant="outline" onClick={() => checkOut(row)}>Check out</Button> : null])} />}</CardContent></Card></PageShell>;
 };
 
 export const SecurityStaffLogPage = () => {

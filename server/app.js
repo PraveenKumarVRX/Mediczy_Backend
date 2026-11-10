@@ -2190,6 +2190,13 @@ startParkingOverstayCron();
 import { startSurveillancePurgeCron } from './services/surveillance-purge-cron.service.js';
 startSurveillancePurgeCron();
 
+// ============== Adoption: adherence occurrence delivery (feature-gated) ==============
+import { startMedcoreAdoptionCron } from './services/medcore-adoption-cron.service.js';
+startMedcoreAdoptionCron();
+
+import reportBuilderService from './services/report-builder.service.js';
+reportBuilderService.startScheduledReports().catch((error) => console.error('[reports] schedule restore failed:', error.message));
+
 app.use('/api', (req, res) => res.status(404).json({success:false,code:'not_found',message:'API endpoint not found'}));
 
 // Final catch-all error handler -- must be the last middleware. Anything

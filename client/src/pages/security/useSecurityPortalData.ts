@@ -11,7 +11,7 @@ export interface SecurityPortalData {
   accessLogs: Array<{ time: string; person: string; point: string; direction: string; method: string; result: string }>;
   alerts: Array<{ id: string; alert: string; zone: string; severity: string; owner: string; status: string }>;
   guards: Array<{ name: string; shift: string; post: string; status: string; patrol: string; radio: string }>;
-  visitors: Array<{ id: string; visitor: string; patient: string; passType: string; checkIn: string; status: string }>;
+  visitors: Array<{ id: string; visitor: string; patient: string; passType: string; checkIn: string; status: string; version?: number }>;
   staffLog: Array<{ person: string; department: string; point: string; time: string; result: string }>;
   reports: Array<{ name: string; cadence: string; audience: string; status: string }>;
   settings: Array<{ title: string; text: string }>;

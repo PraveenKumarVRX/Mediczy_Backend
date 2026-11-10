@@ -37,19 +37,34 @@ const URGENCY_BADGE: Record<string, string> = {
 export default function BloodBankDisplay() {
   const [inventory, setInventory] = useState<BloodUnit[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [availability, setAvailability] = useState<'loading' | 'live' | 'unavailable'>('loading');
+  const [unavailableMessage, setUnavailableMessage] = useState('');
+
+  const markUnavailable = useCallback((message: string) => {
+    setInventory([]);
+    setRequisitions([]);
+    setAvailability('unavailable');
+    setUnavailableMessage(message);
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
       const res = await fetch('/api/display/blood-bank');
-      const json = await res.json();
-      if (json.success) {
-        setInventory(json.inventory);
-        if (json.requisitions) setRequisitions(json.requisitions);
-        setLastUpdated(new Date());
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success || json.live !== true) {
+        markUnavailable(json?.message || 'Live blood-bank inventory is unavailable. Do not use this display to make stock decisions.');
+        return;
       }
-    } catch (_) {}
-  }, []);
+      setInventory(Array.isArray(json.inventory) ? json.inventory : []);
+      setRequisitions(Array.isArray(json.requisitions) ? json.requisitions : []);
+      setLastUpdated(new Date());
+      setUnavailableMessage('');
+      setAvailability('live');
+    } catch (_) {
+      markUnavailable('Live blood-bank inventory is unavailable. Do not use this display to make stock decisions.');
+    }
+  }, [markUnavailable]);
 
   useEffect(() => {
     fetchData();
@@ -69,8 +84,15 @@ export default function BloodBankDisplay() {
     <DisplayShell zone="blood-bank" zoneName="Blood Bank Inventory" fullscreen>
       <div className="h-full flex flex-col p-4 gap-4">
 
+        {availability !== 'live' && (
+          <div className="shrink-0 rounded-xl border border-amber-500/70 bg-amber-950/40 p-5 text-center" role="alert" aria-live="assertive">
+            <p className="font-bold text-amber-200">{availability === 'loading' ? 'Loading live blood-bank inventory…' : 'Live blood-bank inventory unavailable'}</p>
+            {availability === 'unavailable' && <p className="mt-2 text-sm text-amber-100">{unavailableMessage}</p>}
+          </div>
+        )}
+
         {/* Alert summary */}
-        {(criticalCount > 0 || lowCount > 0 || expiryCount > 0) && (
+        {availability === 'live' && (criticalCount > 0 || lowCount > 0 || expiryCount > 0) && (
           <div className="flex gap-3 shrink-0">
             {criticalCount > 0 && (
               <div className="flex-1 bg-red-900/60 border border-red-700 rounded-xl p-3 text-center">
@@ -93,8 +115,8 @@ export default function BloodBankDisplay() {
           </div>
         )}
 
-        {/* Inventory grid */}
-        <div className="flex-1 overflow-auto">
+        {/* Inventory grid. Counts are only rendered after a successful canonical source response. */}
+        {availability === 'live' && <div className="flex-1 overflow-auto">
           <table className="w-full text-sm border-collapse">
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-900">
@@ -110,7 +132,7 @@ export default function BloodBankDisplay() {
                   <td className="p-2 text-gray-300 font-medium text-xs whitespace-nowrap">{comp}</td>
                   {BLOOD_GROUPS.map(bg => {
                     const unit = unitMap[`${bg}|${comp}`];
-                    const level = unit?.level ?? 'ok';
+                    const level = unit?.level ?? 'critical';
                     const qty = unit?.units_available ?? 0;
                     return (
                       <td key={bg} className="p-1 text-center">
@@ -125,10 +147,10 @@ export default function BloodBankDisplay() {
               ))}
             </tbody>
           </table>
-        </div>
+        </div>}
 
         {/* Active requisitions */}
-        {requisitions.length > 0 && (
+        {availability === 'live' && requisitions.length > 0 && (
           <div className="shrink-0 bg-gray-800/60 border border-gray-700 rounded-xl p-4">
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Active Requisitions</h3>
             <div className="space-y-2">
@@ -146,7 +168,7 @@ export default function BloodBankDisplay() {
         )}
 
         <p className="text-gray-600 text-xs text-right shrink-0">
-          Updated: {lastUpdated.toLocaleTimeString('en-IN')} · Refreshes every 30 s
+          {lastUpdated ? `Updated: ${lastUpdated.toLocaleTimeString('en-IN')} · Refreshes every 30 s` : 'Waiting for a live inventory response'}
         </p>
       </div>
     </DisplayShell>

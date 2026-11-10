@@ -206,8 +206,8 @@ router.post('/export', verifyAdmin, async (req, res) => {
   try {
     const { reportConfig, format = 'csv' } = req.body;
 
-    if (!['csv', 'excel', 'pdf', 'json'].includes(format)) {
-      return res.status(400).json({ error: 'Invalid format. Supported: csv, excel, pdf, json' });
+    if (!['csv', 'excel', 'json'].includes(format)) {
+      return res.status(400).json({ error: 'Invalid format. Supported: csv, excel, json' });
     }
 
     const report = await reportBuilderService.buildReport({
@@ -280,8 +280,9 @@ router.post('/schedule', verifyAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Invalid cron expression' });
     }
 
-    const result = reportBuilderService.scheduleReport({
+    const result = await reportBuilderService.scheduleReport({
       scheduleId: `SCHED-${name?.replace(/\s+/g, '-') || Date.now()}`,
+      name,
       reportConfig,
       schedule,
       recipients: recipients || [],
@@ -302,7 +303,7 @@ router.post('/schedule', verifyAdmin, async (req, res) => {
  */
 router.get('/scheduled', verifyAdmin, async (req, res) => {
   try {
-    const scheduled = reportBuilderService.getScheduledReports();
+    const scheduled = await reportBuilderService.getScheduledReports();
     res.json({ scheduledReports: scheduled });
   } catch (error) {
     console.error('[Reports] Get scheduled error:', error);
@@ -318,7 +319,7 @@ router.get('/scheduled', verifyAdmin, async (req, res) => {
 router.delete('/scheduled/:scheduleId', verifyAdmin, async (req, res) => {
   try {
     const { scheduleId } = req.params;
-    const result = reportBuilderService.cancelScheduledReport(scheduleId);
+    const result = await reportBuilderService.cancelScheduledReport(scheduleId);
     res.json(result);
   } catch (error) {
     console.error('[Reports] Cancel scheduled error:', error);

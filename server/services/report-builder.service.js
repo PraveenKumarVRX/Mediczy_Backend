@@ -15,6 +15,9 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import cron from 'node-cron';
 import fs from 'fs';
 import path from 'path';
+import ExcelJS from 'exceljs';
+import cronParser from 'cron-parser';
+import { withCronLease } from './cron-lease.service.js';
 
 // Report templates
 const REPORT_TEMPLATES = {
@@ -86,6 +89,55 @@ class ReportBuilderService {
     this.scheduledReports = new Map();
     this.reportsDir = path.join(process.cwd(), 'reports');
     this.ensureReportsDir();
+  }
+
+  nextRunAt(schedule, from = new Date()) {
+    try {
+      return cronParser.parseExpression(schedule, { currentDate: from }).next().toDate();
+    } catch {
+      throw Object.assign(new Error('Invalid cron expression'), { statusCode: 422 });
+    }
+  }
+
+  async registerScheduledReport(record) {
+    const scheduleId = record.schedule_id || record.scheduleId;
+    const schedule = record.cron_schedule || record.schedule;
+    if (this.scheduledReports.has(scheduleId)) this.scheduledReports.get(scheduleId).task.stop();
+    const config = {
+      scheduleId,
+      name: record.name || scheduleId,
+      reportConfig: record.report_config || record.reportConfig,
+      schedule,
+      recipients: record.recipients || [],
+      enabled: record.enabled !== false,
+    };
+    const task = cron.schedule(schedule, async () => {
+      await withCronLease(`report-schedule:${scheduleId}`, async () => {
+        const report = await this.buildReport(config.reportConfig);
+        await this.archiveReport(report, scheduleId);
+        const nextRunAt = this.nextRunAt(schedule);
+        await sequelize.query(`
+          UPDATE scheduled_reports
+          SET last_run_at = NOW(), next_run_at = :nextRunAt, run_count = run_count + 1, updated_at = NOW()
+          WHERE schedule_id = :scheduleId
+        `, { replacements: { scheduleId, nextRunAt } });
+      });
+    });
+    this.scheduledReports.set(scheduleId, { task, config, createdAt: record.created_at || new Date().toISOString() });
+  }
+
+  /** Restore active schedules after a process restart.  The cron lease keeps
+   * multiple app instances from generating the same report. */
+  async startScheduledReports() {
+    const [rows] = await sequelize.query(`
+      SELECT schedule_id, name, report_config, cron_schedule, recipients, enabled, created_at
+      FROM scheduled_reports WHERE enabled = TRUE
+    `).catch(() => [[]]);
+    for (const row of rows) {
+      try { await this.registerScheduledReport(row); }
+      catch (error) { console.error(`[ReportBuilder] Could not restore ${row.schedule_id}:`, error.message); }
+    }
+    return rows.length;
   }
 
   /**
@@ -528,11 +580,9 @@ class ReportBuilderService {
       case 'csv':
         return this.exportToCSV(report, filename);
       case 'excel':
-        return this.exportToExcel(report, filename);
-      case 'pdf':
-        return this.exportToPDF(report, filename);
+        return await this.exportToExcel(report, filename);
       default:
-        return report;
+        throw Object.assign(new Error(`Unsupported report export format: ${format}`), { statusCode: 422 });
     }
   }
 
@@ -567,42 +617,32 @@ class ReportBuilderService {
       filename: `${filename}.csv`,
       filepath,
       size: content.length,
-      downloadUrl: `/api/reports/download/${filename}.csv`
+      downloadUrl: `/api/admin/reports/download/${filename}.csv`
     };
   }
 
-  /**
-   * Export to Excel (simple CSV for now - would use xlsx library in production)
-   */
-  exportToExcel(report, filename) {
-    // For MVP, export as CSV with .xlsx extension
-    // In production, would use xlsx library
-    return this.exportToCSV(report, filename);
-  }
-
-  /**
-   * Export to PDF (placeholder - would use pdfkit in production)
-   */
-  exportToPDF(report, filename) {
-    // Placeholder - would generate actual PDF in production
-    const content = JSON.stringify(report, null, 2);
-    const filepath = path.join(this.reportsDir, `${filename}.json`);
-
-    fs.writeFileSync(filepath, content);
-
-    return {
-      format: 'pdf',
-      filename: `${filename}.pdf`,
-      filepath,
-      note: 'PDF generation placeholder - use pdfkit in production',
-      downloadUrl: `/api/reports/download/${filename}.json`
-    };
+  /** Export a real XLSX workbook; CSV remains a separate explicit format. */
+  async exportToExcel(report, filename) {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mediqzy';
+    workbook.created = new Date();
+    const sheet = workbook.addWorksheet('Report');
+    const data = Array.isArray(report.data) ? report.data : [];
+    const headers = [...new Set(data.flatMap((row) => Object.keys(row || {})))];
+    sheet.columns = headers.map((header) => ({ header, key: header, width: Math.min(48, Math.max(14, header.length + 2)) }));
+    for (const row of data) sheet.addRow(headers.map((header) => row?.[header] ?? null));
+    sheet.getRow(1).font = { bold: true };
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    const filepath = path.join(this.reportsDir, `${filename}.xlsx`);
+    await workbook.xlsx.writeFile(filepath);
+    const size = fs.statSync(filepath).size;
+    return { format: 'excel', filename: `${filename}.xlsx`, filepath, size, downloadUrl: `/api/admin/reports/download/${filename}.xlsx` };
   }
 
   /**
    * Schedule a recurring report
    */
-  scheduleReport(config) {
+  async scheduleReport(config) {
     const {
       scheduleId = `SCHED-${Date.now()}`,
       reportConfig,
@@ -611,46 +651,28 @@ class ReportBuilderService {
       enabled = true
     } = config;
 
-    if (this.scheduledReports.has(scheduleId)) {
-      this.cancelScheduledReport(scheduleId);
-    }
-
-    if (!enabled) {
-      return { scheduleId, status: 'disabled' };
-    }
-
-    const task = cron.schedule(schedule, async () => {
-      try {
-        console.log(`[ReportBuilder] Running scheduled report: ${scheduleId}`);
-        const report = await this.buildReport(reportConfig);
-        
-        // In production, would send email to recipients
-        console.log(`[ReportBuilder] Scheduled report ${scheduleId} completed:`, {
-          reportId: report.reportId,
-          recordCount: report.data?.length || 0,
-          recipients
-        });
-
-        // Save to archive
-        await this.archiveReport(report, scheduleId);
-      } catch (error) {
-        console.error(`[ReportBuilder] Scheduled report ${scheduleId} failed:`, error);
-      }
-    });
-
-    this.scheduledReports.set(scheduleId, {
-      task,
-      config,
-      createdAt: new Date().toISOString()
-    });
+    const nextRunAt = this.nextRunAt(schedule);
+    await sequelize.query(`
+      INSERT INTO scheduled_reports (schedule_id, name, report_config, cron_schedule, recipients, enabled, next_run_at)
+      VALUES (:scheduleId, :name, CAST(:reportConfig AS jsonb), :schedule, CAST(:recipients AS jsonb), :enabled, :nextRunAt)
+      ON CONFLICT (schedule_id) DO UPDATE SET
+        name = EXCLUDED.name, report_config = EXCLUDED.report_config, cron_schedule = EXCLUDED.cron_schedule,
+        recipients = EXCLUDED.recipients, enabled = EXCLUDED.enabled, next_run_at = EXCLUDED.next_run_at, updated_at = NOW()
+      RETURNING *
+    `, { replacements: {
+      scheduleId, name: config.name || scheduleId, reportConfig: JSON.stringify(reportConfig), schedule,
+      recipients: JSON.stringify(recipients), enabled, nextRunAt,
+    } });
+    if (enabled) await this.registerScheduledReport({ schedule_id: scheduleId, name: config.name || scheduleId, report_config: reportConfig, cron_schedule: schedule, recipients, enabled });
+    else if (this.scheduledReports.has(scheduleId)) this.scheduledReports.get(scheduleId).task.stop();
 
     return {
       scheduleId,
       schedule,
       reportConfig,
       recipients,
-      status: 'scheduled',
-      nextRun: this.getNextRunTime(schedule)
+      status: enabled ? 'scheduled' : 'disabled',
+      nextRun: nextRunAt.toISOString()
     };
   }
 
@@ -670,30 +692,28 @@ class ReportBuilderService {
   /**
    * Cancel a scheduled report
    */
-  cancelScheduledReport(scheduleId) {
+  async cancelScheduledReport(scheduleId) {
     const scheduled = this.scheduledReports.get(scheduleId);
     if (scheduled) {
       scheduled.task.stop();
       this.scheduledReports.delete(scheduleId);
-      return { scheduleId, status: 'cancelled' };
     }
-    return { scheduleId, status: 'not_found' };
+    const [updated] = await sequelize.query(`
+      UPDATE scheduled_reports SET enabled = FALSE, updated_at = NOW() WHERE schedule_id = :scheduleId RETURNING schedule_id
+    `, { replacements: { scheduleId } }).catch(() => [[]]);
+    return updated[0] ? { scheduleId, status: 'cancelled' } : { scheduleId, status: 'not_found' };
   }
 
   /**
    * Get all scheduled reports
    */
-  getScheduledReports() {
-    const reports = [];
-    for (const [scheduleId, data] of this.scheduledReports) {
-      reports.push({
-        scheduleId,
-        ...data.config,
-        createdAt: data.createdAt,
-        status: 'active'
-      });
-    }
-    return reports;
+  async getScheduledReports() {
+    const [rows] = await sequelize.query(`
+      SELECT schedule_id AS "scheduleId", name, cron_schedule AS schedule, recipients, enabled,
+             last_run_at AS "lastRunAt", next_run_at AS "nextRunAt", run_count AS "runCount", created_at AS "createdAt"
+      FROM scheduled_reports ORDER BY created_at DESC LIMIT 100
+    `).catch(() => [[]]);
+    return rows.map((row) => ({ ...row, status: row.enabled ? 'active' : 'disabled' }));
   }
 
   /**

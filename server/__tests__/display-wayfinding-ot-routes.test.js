@@ -3,12 +3,18 @@ import request from 'supertest';
 import { jest } from '@jest/globals';
 
 const query = jest.fn();
+const connectPostgres = jest.fn();
+const bloodBankEnsure = jest.fn();
+const bloodBankScopedDb = jest.fn();
 const pushToZone = jest.fn();
 const buildLiveKitJoinData = jest.fn(async (o) => ({ serverUrl: 'wss://lk.test', token: `tok-${o.identity}`, roomName: o.meetingId, opts: o }));
 let hospitalOrg = 3;
 
 jest.unstable_mockModule('../db/pgPool.js', () => ({ default: { query } }));
-jest.unstable_mockModule('../db/postgres.js', () => ({ connectPostgres: jest.fn() }));
+jest.unstable_mockModule('../db/postgres.js', () => ({ connectPostgres }));
+jest.unstable_mockModule('../services/dept-tenant-scope.service.js', () => ({
+  bloodBankScope: { ensure: bloodBankEnsure, scopedDb: bloodBankScopedDb },
+}));
 jest.unstable_mockModule('../models/postgres/appointment.model.postgres.js', () => ({ default: {} }));
 jest.unstable_mockModule('../services/hospital-queue.service.js', () => ({}));
 jest.unstable_mockModule('../services/display-sse-broker.service.js', () => ({
@@ -34,7 +40,50 @@ beforeAll(async () => {
   display.use('/api/display', displayRouter);
 });
 
-beforeEach(() => { query.mockReset(); query.mockResolvedValue({ rows: [] }); pushToZone.mockClear(); buildLiveKitJoinData.mockClear(); hospitalOrg = 3; });
+beforeEach(() => {
+  query.mockReset();
+  query.mockResolvedValue({ rows: [] });
+  connectPostgres.mockReset();
+  connectPostgres.mockResolvedValue({ query });
+  bloodBankEnsure.mockReset();
+  bloodBankEnsure.mockResolvedValue();
+  bloodBankScopedDb.mockReset();
+  bloodBankScopedDb.mockImplementation((raw) => ({ ...raw, release: jest.fn() }));
+  pushToZone.mockClear();
+  buildLiveKitJoinData.mockClear();
+  hospitalOrg = 3;
+});
+
+describe('blood-bank display', () => {
+  it('uses canonical available units and never manufactures inventory', async () => {
+    const db = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ rows: [{ blood_group: 'O+', component: 'RBC', units_available: '3', expiry_alert: true }] })
+        .mockResolvedValueOnce({ rows: [{ req_id: 'REQ-1', blood_group: 'O+', component: 'RBC', units: 1, urgency: 'Emergency', ward: 'ICU', status: 'Pending' }] }),
+    };
+    connectPostgres.mockResolvedValue(db);
+    bloodBankScopedDb.mockReturnValue({ ...db, release: jest.fn() });
+
+    const res = await request(display).get('/api/display/blood-bank');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true, live: true, source: 'blood_bank_units', generated: false });
+    expect(res.body.inventory).toEqual([{ blood_group: 'O+', component: 'RBC', units_available: 3, expiry_alert: true, level: 'low' }]);
+    expect(db.query.mock.calls[0][0]).toContain('FROM blood_bank_units');
+    expect(db.query.mock.calls[0][0]).not.toContain('blood_inventory');
+    expect(bloodBankEnsure).toHaveBeenCalledWith(db);
+    expect(bloodBankScopedDb).toHaveBeenCalledWith(db, 3);
+  });
+
+  it('reports a source failure instead of displaying generated counts', async () => {
+    connectPostgres.mockRejectedValue(new Error('database unavailable'));
+
+    const res = await request(display).get('/api/display/blood-bank');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({ success: false, code: 'blood_inventory_unavailable', live: false, inventory: [], requisitions: [] });
+  });
+});
 
 describe('OT proctoring video', () => {
   it('names the room after the device organization and pushes to the OT zone of that org', async () => {

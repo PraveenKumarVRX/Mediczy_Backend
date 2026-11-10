@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { MODULE_COLORS, getModuleColors } from '@/constants/admin-branding';
 import CRMPage from './CRMPage';
@@ -255,32 +257,81 @@ export const CorporatesManagementPlaceholder = () => (
 );
 
 export const ReportsPage = () => {
-  const handleNewReport = () => {
-    alert('Creating new report... This feature is under development.');
+  type Template = { id: string; name: string; description: string };
+  type Scheduled = { scheduleId: string; name?: string; schedule?: string; cron_schedule?: string; status?: string; nextRun?: string; next_run_at?: string };
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [scheduled, setScheduled] = useState<Scheduled[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [creating, setCreating] = useState<string | null>(null);
+  const [scheduleName, setScheduleName] = useState('');
+  const [scheduleCron, setScheduleCron] = useState('0 8 * * 1');
+  const [scheduleTemplate, setScheduleTemplate] = useState('usage_summary');
+  const [scheduleRecipients, setScheduleRecipients] = useState('');
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const [templateResponse, scheduledResponse] = await Promise.all([
+        api.get('/admin/reports/templates'),
+        api.get('/admin/reports/scheduled'),
+      ]);
+      const available = templateResponse.data?.templates || [];
+      setTemplates(available);
+      setScheduled(scheduledResponse.data?.scheduledReports || []);
+      setScheduleTemplate((current) => current || available[0]?.id || '');
+      setError(null);
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Reports are unavailable.');
+    } finally { setLoading(false); }
   };
 
-  const handleSchedule = () => {
-    alert('Scheduling report... This feature is under development.');
+  useEffect(() => { void refresh(); }, []);
+
+  const build = async (templateId: string) => {
+    setCreating(templateId); setMessage(null);
+    try {
+      const response = await api.post('/admin/reports/build', { templateId, format: 'json' });
+      const report = response.data;
+      setMessage(`${report.template || 'Report'} generated (${report.data?.length || 0} rows).`);
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Report generation failed.');
+    } finally { setCreating(null); }
+  };
+
+  const createSchedule = async () => {
+    if (!scheduleName.trim() || !scheduleCron.trim() || !scheduleTemplate) return;
+    setMessage(null);
+    try {
+      await api.post('/admin/reports/schedule', {
+        name: scheduleName.trim(),
+        schedule: scheduleCron.trim(),
+        reportConfig: { templateId: scheduleTemplate, format: 'json' },
+        recipients: scheduleRecipients.split(',').map((value) => value.trim()).filter(Boolean),
+      });
+      setScheduleName(''); setScheduleRecipients('');
+      setMessage('Schedule saved. Delivery remains subject to the configured report worker.');
+      await refresh();
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Could not save the schedule.');
+    }
   };
 
   return (
-    <AdminPlaceholder 
-      title="Reports & Analytics" 
-      description="Comprehensive business intelligence and reporting"
-      icon={BarChart3}
-      moduleKey="reports"
-      stats={[
-        { label: 'Reports Generated', value: '156', icon: BarChart3 },
-        { label: 'Scheduled Reports', value: '12', icon: Calendar },
-        { label: 'Custom Dashboards', value: '8', icon: CheckCircle },
-        { label: 'Data Sources', value: '15', icon: Shield },
-      ]}
-      actions={[
-        { label: 'New Report', icon: Plus, primary: true, onClick: handleNewReport },
-        { label: 'Schedule', icon: Calendar, onClick: handleSchedule },
-      ]}
-      features={['Custom Dashboards', 'Scheduled Reports', 'Export to Excel/PDF', 'Real-time Analytics']}
-    />
+    <AdminLayout>
+      <div className="space-y-6">
+        <div><h1 className="text-2xl font-bold">Reports & Analytics</h1><p className="text-sm text-muted-foreground">Generate an approved report template or save a recurring schedule.</p></div>
+        {error && <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
+        {message && <p className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700">{message}</p>}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {templates.map((template) => <Card key={template.id}><CardHeader><CardTitle className="text-base">{template.name}</CardTitle><CardDescription>{template.description}</CardDescription></CardHeader><CardContent><Button size="sm" onClick={() => build(template.id)} disabled={creating !== null}>{creating === template.id ? 'Generating…' : 'Generate'}</Button></CardContent></Card>)}
+          {!loading && !templates.length && <p className="text-sm text-muted-foreground">No report templates are available for this account.</p>}
+        </div>
+        <Card><CardHeader><CardTitle className="text-base">Schedule a report</CardTitle><CardDescription>Use a standard five- or six-field cron expression. Recipients are comma-separated.</CardDescription></CardHeader><CardContent className="grid gap-3 md:grid-cols-2"><Input placeholder="Schedule name" value={scheduleName} onChange={(event) => setScheduleName(event.target.value)} /><Input placeholder="Cron expression" value={scheduleCron} onChange={(event) => setScheduleCron(event.target.value)} /><Input placeholder="Template ID" value={scheduleTemplate} onChange={(event) => setScheduleTemplate(event.target.value)} /><Input placeholder="recipient@example.com, …" value={scheduleRecipients} onChange={(event) => setScheduleRecipients(event.target.value)} /><Button className="md:col-span-2 w-fit" onClick={createSchedule} disabled={!scheduleName.trim() || !scheduleCron.trim() || !scheduleTemplate}>Save schedule</Button></CardContent></Card>
+        <Card><CardHeader><CardTitle className="text-base">Saved schedules</CardTitle></CardHeader><CardContent className="space-y-2">{scheduled.map((item) => <div key={item.scheduleId} className="flex items-center justify-between rounded-md border p-3 text-sm"><span>{item.name || item.scheduleId}</span><span className="text-muted-foreground">{item.schedule || item.cron_schedule || 'No cron'} · {item.status || 'scheduled'}</span></div>)}{!loading && !scheduled.length && <p className="text-sm text-muted-foreground">No saved report schedules.</p>}</CardContent></Card>
+      </div>
+    </AdminLayout>
   );
 };
 

@@ -7,6 +7,7 @@ import * as queueService from '../services/hospital-queue.service.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import { listFloors, saveFloor, deleteFloor } from '../services/wayfinding.service.js';
 import { getFloorMap } from '../services/floor-map.service.js';
+import { bloodBankScope } from '../services/dept-tenant-scope.service.js';
 import {
   OT_PROCTOR_ROOM_PREFIX, registerRoom, endRoom, listActiveRooms, checkObserverRoom,
 } from '../services/ot-proctor-rooms.js';
@@ -42,6 +43,80 @@ async function safeQuery(sql, params = []) {
 async function safeQueryOne(sql, params = []) {
   const rows = await safeQuery(sql, params);
   return rows[0] || null;
+}
+
+async function readBloodBankDisplay(organizationId) {
+  let db = null;
+  try {
+    const raw = await connectPostgres();
+    await bloodBankScope.ensure(raw);
+    db = bloodBankScope.scopedDb(raw, organizationId);
+    const [inventoryResult, requisitionResult] = await Promise.all([
+      db.query(`
+        SELECT
+          blood_group,
+          CASE LOWER(component)
+            WHEN 'whole_blood' THEN 'Whole Blood'
+            WHEN 'whole blood' THEN 'Whole Blood'
+            WHEN 'rbc' THEN 'RBC'
+            WHEN 'red_blood_cells' THEN 'RBC'
+            WHEN 'platelets' THEN 'Platelets'
+            WHEN 'ffp' THEN 'FFP'
+            WHEN 'plasma' THEN 'FFP'
+            WHEN 'cryoprecipitate' THEN 'Cryoprecipitate'
+            ELSE INITCAP(REPLACE(component, '_', ' '))
+          END AS component,
+          COUNT(*)::int AS units_available,
+          BOOL_OR(expires_at <= CURRENT_DATE + INTERVAL '7 days') AS expiry_alert
+        FROM blood_bank_units
+        WHERE LOWER(status) = 'available'
+          AND expires_at >= CURRENT_DATE
+        GROUP BY blood_group, component
+        ORDER BY blood_group, component
+      `),
+      db.query(`
+        SELECT
+          requisition_number AS req_id,
+          blood_group,
+          CASE LOWER(component)
+            WHEN 'whole_blood' THEN 'Whole Blood'
+            WHEN 'whole blood' THEN 'Whole Blood'
+            WHEN 'rbc' THEN 'RBC'
+            WHEN 'red_blood_cells' THEN 'RBC'
+            WHEN 'platelets' THEN 'Platelets'
+            WHEN 'ffp' THEN 'FFP'
+            WHEN 'plasma' THEN 'FFP'
+            WHEN 'cryoprecipitate' THEN 'Cryoprecipitate'
+            ELSE INITCAP(REPLACE(component, '_', ' '))
+          END AS component,
+          units_requested AS units,
+          INITCAP(urgency) AS urgency,
+          ward,
+          INITCAP(status) AS status
+        FROM blood_bank_requisitions
+        WHERE LOWER(status) IN ('pending', 'processing', 'approved')
+        ORDER BY created_at ASC
+        LIMIT 20
+      `),
+    ]);
+
+    const inventory = (inventoryResult.rows || []).map((row) => {
+      const units = Number(row.units_available) || 0;
+      return {
+        ...row,
+        units_available: units,
+        level: units === 0 ? 'critical' : units < 5 ? 'low' : 'ok',
+        expiry_alert: row.expiry_alert === true,
+      };
+    });
+
+    return { inventory, requisitions: requisitionResult.rows || [] };
+  } catch (error) {
+    console.error('[display/blood-bank] canonical inventory unavailable:', error.message);
+    return { error };
+  } finally {
+    await db?.release?.();
+  }
 }
 
 async function ensureTables() {
@@ -363,41 +438,27 @@ router.get('/icu-board', async (_req, res) => {
 
 // Blood Bank display
 // GET /api/display/blood-bank
-router.get('/blood-bank', async (_req, res) => {
-  const inventory = await safeQuery(
-    `SELECT blood_group, component, units_available, expiry_alert
-     FROM blood_inventory
-     WHERE active = true
-     ORDER BY blood_group, component`
-  );
-
-  if (inventory.length > 0) {
-    return res.json({ success: true, inventory, live: true });
+router.get('/blood-bank', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
+  const result = await readBloodBankDisplay(req.organizationId);
+  if (result.error) {
+    return res.status(503).json({
+      success: false,
+      code: 'blood_inventory_unavailable',
+      message: 'Live blood-bank inventory is unavailable. Do not use this display to make stock decisions.',
+      inventory: [],
+      requisitions: [],
+      live: false,
+    });
   }
 
-  const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-  const COMPONENTS = ['Whole Blood', 'RBC', 'Platelets', 'FFP', 'Cryoprecipitate'];
-  const demo = [];
-  BLOOD_GROUPS.forEach(bg => {
-    COMPONENTS.forEach(comp => {
-      const units = Math.floor(Math.random() * 20);
-      demo.push({
-        blood_group: bg,
-        component: comp,
-        units_available: units,
-        level: units === 0 ? 'critical' : units < 5 ? 'low' : 'ok',
-        expiry_alert: Math.random() > 0.85,
-      });
-    });
+  return res.json({
+    success: true,
+    inventory: result.inventory,
+    requisitions: result.requisitions,
+    live: true,
+    source: 'blood_bank_units',
+    generated: false,
   });
-
-  const requisitions = [
-    { req_id: 'REQ-001', blood_group: 'O+', component: 'RBC', units: 2, urgency: 'Emergency', ward: 'ICU-02', status: 'Processing' },
-    { req_id: 'REQ-002', blood_group: 'A+', component: 'Platelets', units: 4, urgency: 'Routine', ward: 'Ward 3B', status: 'Ready' },
-    { req_id: 'REQ-003', blood_group: 'B-', component: 'FFP', units: 2, urgency: 'Urgent', ward: 'OT-2', status: 'Pending Cross-match' },
-  ];
-
-  res.json({ success: true, inventory: demo, requisitions, live: false });
 });
 
 // OT Status display

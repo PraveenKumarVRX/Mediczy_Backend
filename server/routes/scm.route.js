@@ -48,6 +48,30 @@ const ensureTables = async (req, res) => {
 
 const actor = (req, fallback = 'SCM') => actorFrom(req.scmUser, fallback);
 
+const requestError = (status, message) => Object.assign(new Error(message), { status });
+
+/**
+ * The request-scoped SCM handle is deliberately not a transaction: it can be
+ * used throughout a request and is released with the response.  State-changing
+ * stock workflows take a separate tenant-bound client so every row lock and
+ * write is committed (or rolled back) together.
+ */
+const withScmTransaction = async (db, work) => {
+  const client = await db.connect();
+  const tx = { query: client.query.bind(client), orgId: db.orgId };
+  try {
+    await tx.query('BEGIN');
+    const result = await work(tx);
+    await tx.query('COMMIT');
+    return result;
+  } catch (error) {
+    try { await tx.query('ROLLBACK'); } catch { /* transaction is already unusable */ }
+    throw error;
+  } finally {
+    await client.release();
+  }
+};
+
 router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, loginScm);
 
 // ─── Overview ────────────────────────────────────────────────────────────────
@@ -303,37 +327,94 @@ router.patch('/orders/:id/approve', authScm, async (req, res) => {
   res.json({ success: true, data: rows[0] });
 });
 
-router.post('/orders/:id/grn', authScm, async (req, res) => {
+router.post('/orders/:id/grn', authScm, scmRbacGuard, async (req, res) => {
   const db = await ensureTables(req, res);
   const { receivedBy, notes, lines = [] } = req.body;
-  const { rows: orders } = await db.query('SELECT * FROM scm_purchase_orders WHERE id = $1', [req.params.id]);
-  const order = orders[0];
-  if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-  if (!['approved', 'partial_receipt'].includes(order.status)) {
-    return res.status(409).json({ success: false, message: `PO status ${order.status} is not receivable` });
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return res.status(400).json({ success: false, message: 'At least one receipt line is required' });
   }
-  const { rows } = await db.query(
-    'INSERT INTO scm_grns (grn_number, order_id, received_by, notes) VALUES ($1,$2,$3,$4) RETURNING *',
-    [`GRN-${Date.now()}`, req.params.id, receivedBy || null, notes || null]
-  );
+  const seenLineIds = new Set();
   for (const line of lines) {
-    await db.query('UPDATE scm_po_lines SET received_quantity = LEAST(quantity, received_quantity + $2) WHERE id = $1', [line.lineId, line.receivedQuantity]);
-    await db.query(
-      'INSERT INTO scm_grn_lines (grn_id, po_line_id, item_id, quantity, batch_number, expiry_date) VALUES ($1,$2,$3,$4,$5,$6)',
-      [rows[0].id, line.lineId, line.itemId || null, line.receivedQuantity, line.batchNumber || null, line.expiryDate || null]
-    );
+    const lineId = Number(line?.lineId);
+    const quantity = Number(line?.receivedQuantity);
+    if (!Number.isInteger(lineId) || lineId <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
+      return res.status(400).json({ success: false, message: 'Each receipt line requires a PO line and a positive received quantity' });
+    }
+    if (seenLineIds.has(lineId)) return res.status(400).json({ success: false, message: 'A PO line may appear only once in a GRN' });
+    seenLineIds.add(lineId);
   }
-  const nextStatus = await unifiedPoStatus(db, order.id);
-  await db.query('UPDATE scm_purchase_orders SET status = $2, updated_at = NOW() WHERE id = $1', [order.id, nextStatus]);
-  await requestOperationsApproval(db, { module: 'scm', entityType: 'grn', entityId: rows[0].id, action: 'post_grn', requestedBy: actor(req, receivedBy || 'Stores') });
-  res.status(201).json({ success: true, data: { ...rows[0], orderStatus: nextStatus } });
+
+  try {
+    const receipt = await withScmTransaction(db, async (tx) => {
+      const { rows: orders } = await tx.query(
+        'SELECT * FROM scm_purchase_orders WHERE id = $1 FOR UPDATE',
+        [req.params.id]
+      );
+      const order = orders[0];
+      if (!order) throw requestError(404, 'Order not found');
+      if (!['approved', 'partial_receipt'].includes(order.status)) {
+        throw requestError(409, `PO status ${order.status} is not receivable`);
+      }
+
+      const { rows: poLines } = await tx.query(
+        'SELECT * FROM scm_po_lines WHERE order_id = $1 AND id = ANY($2::int[]) FOR UPDATE',
+        [order.id, [...seenLineIds]]
+      );
+      if (poLines.length !== lines.length) {
+        throw requestError(400, 'Every receipt line must belong to this purchase order');
+      }
+      const poLineById = new Map(poLines.map((line) => [Number(line.id), line]));
+      for (const receivedLine of lines) {
+        const poLine = poLineById.get(Number(receivedLine.lineId));
+        const quantity = Number(receivedLine.receivedQuantity);
+        const remaining = Number(poLine.quantity) - Number(poLine.received_quantity);
+        if (quantity > remaining) {
+          throw requestError(409, `Receipt exceeds the remaining quantity for PO line ${poLine.id}`);
+        }
+        if (receivedLine.itemId != null && Number(receivedLine.itemId) !== Number(poLine.item_id)) {
+          throw requestError(400, `Item does not match PO line ${poLine.id}`);
+        }
+      }
+
+      const { rows: grns } = await tx.query(
+        'INSERT INTO scm_grns (grn_number, order_id, received_by, notes) VALUES ($1,$2,$3,$4) RETURNING *',
+        [`GRN-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, order.id, receivedBy || null, notes || null]
+      );
+      const grn = grns[0];
+      for (const receivedLine of lines) {
+        const poLine = poLineById.get(Number(receivedLine.lineId));
+        const quantity = Number(receivedLine.receivedQuantity);
+        await tx.query(
+          'UPDATE scm_po_lines SET received_quantity = received_quantity + $2 WHERE id = $1',
+          [poLine.id, quantity]
+        );
+        await tx.query(
+          'INSERT INTO scm_grn_lines (grn_id, po_line_id, item_id, quantity, batch_number, expiry_date) VALUES ($1,$2,$3,$4,$5,$6)',
+          [grn.id, poLine.id, poLine.item_id, quantity, receivedLine.batchNumber || null, receivedLine.expiryDate || null]
+        );
+      }
+      const nextStatus = await unifiedPoStatus(tx, order.id);
+      await tx.query('UPDATE scm_purchase_orders SET status = $2, updated_at = NOW() WHERE id = $1', [order.id, nextStatus]);
+      await requestOperationsApproval(tx, {
+        module: 'scm', entityType: 'grn', entityId: grn.id, action: 'post_grn', requestedBy: actor(req, receivedBy || 'Stores'),
+      });
+      await recordOperationsAudit(tx, {
+        module: 'scm', entityType: 'grn', entityId: grn.id, action: 'grn_created', actor: actor(req, receivedBy || 'Stores'),
+        details: { orderId: order.id, lineCount: lines.length },
+      });
+      return { ...grn, orderStatus: nextStatus };
+    });
+    res.status(201).json({ success: true, data: receipt });
+  } catch (error) {
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Unable to create GRN' });
+  }
 });
 
 router.get('/grns', authScm, async (req, res) => {
   const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT g.*, o.po_number, o.vendor_id, v.name AS vendor_name,
-      EXISTS(SELECT 1 FROM scm_inventory_ledger l WHERE l.reference_type = 'grn' AND l.reference_id = g.id) AS posted
+      EXISTS(SELECT 1 FROM scm_inventory_ledger l WHERE l.grn_line_id IN (SELECT id FROM scm_grn_lines WHERE grn_id = g.id)) AS posted
     FROM scm_grns g
     JOIN scm_purchase_orders o ON o.id = g.order_id
     LEFT JOIN scm_vendors v ON v.id = o.vendor_id
@@ -343,32 +424,47 @@ router.get('/grns', authScm, async (req, res) => {
   res.json({ success: true, data: rows });
 });
 
-router.patch('/grns/:id/post', authScm, async (req, res) => {
+router.patch('/grns/:id/post', authScm, scmRbacGuard, async (req, res) => {
   const db = await ensureTables(req, res);
-  const { rows: grns } = await db.query('SELECT * FROM scm_grns WHERE id = $1', [req.params.id]);
-  if (!grns[0]) return res.status(404).json({ success: false, message: 'GRN not found' });
-  const { rows: existing } = await db.query(
-    `SELECT 1 FROM scm_inventory_ledger WHERE reference_type = 'grn' AND reference_id = $1 LIMIT 1`,
-    [grns[0].id]
-  );
-  if (existing.length) return res.status(409).json({ success: false, message: 'GRN already posted to inventory' });
-  const { rows: approvals } = await db.query(`
-    SELECT id FROM operations_approvals
-    WHERE module='scm' AND entity_type='grn' AND entity_id=$1 AND action='post_grn' AND status='pending'
-    ORDER BY requested_at DESC LIMIT 1
-  `, [req.params.id]);
-  if (approvals[0]) {
-    await decideOperationsApproval(db, { id: approvals[0].id, status: 'approved', decidedBy: actor(req) });
+  try {
+    const result = await withScmTransaction(db, async (tx) => {
+      const { rows: grns } = await tx.query('SELECT * FROM scm_grns WHERE id = $1 FOR UPDATE', [req.params.id]);
+      const grn = grns[0];
+      if (!grn) throw requestError(404, 'GRN not found');
+      const { rows: approvals } = await tx.query(`
+        SELECT status FROM operations_approvals
+        WHERE module='scm' AND entity_type='grn' AND entity_id=$1 AND action='post_grn'
+        ORDER BY requested_at DESC LIMIT 1 FOR UPDATE
+      `, [grn.id]);
+      if (approvals[0]?.status !== 'approved') {
+        throw requestError(409, 'An approved GRN posting authorization is required');
+      }
+      const { rows: lines } = await tx.query('SELECT * FROM scm_grn_lines WHERE grn_id = $1 ORDER BY id FOR UPDATE', [grn.id]);
+      if (lines.length === 0) throw requestError(409, 'GRN has no receipt lines');
+      const { rows: posted } = await tx.query(
+        'SELECT grn_line_id FROM scm_inventory_ledger WHERE grn_line_id = ANY($1::int[]) FOR UPDATE',
+        [lines.map((line) => line.id)]
+      );
+      if (posted.length === lines.length) return { ...grn, posted: true, lineCount: lines.length, idempotent: true };
+      if (posted.length > 0) throw requestError(409, 'GRN has a partial inventory posting and requires reconciliation');
+
+      for (const line of lines) {
+        await tx.query(
+          `INSERT INTO scm_inventory_ledger
+            (item_id, txn_type, quantity_delta, unit_cost, reference_type, reference_id, grn_line_id, batch_number, expiry_date)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [line.item_id, 'grn_receipt', line.quantity, null, 'grn', grn.id, line.id, line.batch_number || null, line.expiry_date || null]
+        );
+      }
+      await recordOperationsAudit(tx, {
+        module: 'scm', entityType: 'grn', entityId: grn.id, action: 'grn_posted', actor: actor(req), details: { lineCount: lines.length },
+      });
+      return { ...grn, posted: true, lineCount: lines.length };
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Unable to post GRN to inventory' });
   }
-  const { rows: lines } = await db.query('SELECT * FROM scm_grn_lines WHERE grn_id = $1', [grns[0].id]);
-  for (const line of lines) {
-    await db.query(
-      'INSERT INTO scm_inventory_ledger (item_id, txn_type, quantity_delta, unit_cost, reference_type, reference_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [line.item_id, 'grn_receipt', line.quantity, null, 'grn', grns[0].id]
-    );
-  }
-  await recordOperationsAudit(db, { module: 'scm', entityType: 'grn', entityId: grns[0].id, action: 'grn_posted', actor: actor(req), details: { lineCount: lines.length } });
-  res.json({ success: true, data: { ...grns[0], posted: true, lineCount: lines.length } });
 });
 
 // ─── AP invoices & payments ──────────────────────────────────────────────────
@@ -772,24 +868,55 @@ router.get('/controlled-substances', authScm, async (req, res) => {
   res.json({ success: true, data: rows });
 });
 
-router.post('/controlled-substances', authScm, async (req, res) => {
+router.post('/controlled-substances', authScm, scmRbacGuard, async (req, res) => {
   const db = await ensureTables(req, res);
   const { itemId, txnType, quantity, witnessName, patientId, referenceType, referenceId, notes } = req.body;
-  if (!itemId || !txnType || quantity == null) return res.status(400).json({ success: false, message: 'itemId, txnType, and quantity are required' });
-  const { rows: bal } = await db.query(
-    'SELECT COALESCE(SUM(quantity_delta),0)::numeric AS balance FROM scm_inventory_ledger WHERE item_id = $1',
-    [itemId]
-  );
-  const balanceAfter = Number(bal[0]?.balance || 0) + Number(quantity);
-  const { rows } = await db.query(`
-    INSERT INTO scm_controlled_substance_logs (item_id, txn_type, quantity, balance_after, witness_name, patient_id, reference_type, reference_id, notes)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *
-  `, [itemId, txnType, quantity, balanceAfter, witnessName || null, patientId || null, referenceType || null, referenceId || null, notes || null]);
-  await db.query(
-    'INSERT INTO scm_inventory_ledger (item_id, txn_type, quantity_delta, reference_type, reference_id, notes) VALUES ($1,$2,$3,$4,$5,$6)',
-    [itemId, 'controlled_substance', quantity, 'controlled_log', rows[0].id, notes || null]
-  );
-  res.status(201).json({ success: true, data: rows[0] });
+  const numericItemId = Number(itemId);
+  const requestedQuantity = Number(quantity);
+  const directions = { receipt: 1, return: 1, dispense: -1, wastage: -1 };
+  if (!Number.isInteger(numericItemId) || !Object.hasOwn(directions, txnType) || !Number.isFinite(requestedQuantity) || requestedQuantity <= 0) {
+    return res.status(400).json({ success: false, message: 'A controlled movement requires an item, a supported direction, and a positive quantity' });
+  }
+  if (!String(witnessName || '').trim() || !String(referenceType || '').trim() || !Number.isInteger(Number(referenceId)) || Number(referenceId) <= 0) {
+    return res.status(400).json({ success: false, message: 'A witness name and a positive source reference are required for every controlled movement' });
+  }
+  if (txnType === 'dispense' && (!Number.isInteger(Number(patientId)) || Number(patientId) <= 0)) {
+    return res.status(400).json({ success: false, message: 'A patient ID is required for a controlled-drug dispense' });
+  }
+
+  try {
+    const controlledLog = await withScmTransaction(db, async (tx) => {
+      // Serialise controlled movements per item.  A balance cannot be checked
+      // and then changed concurrently by two dispensers.
+      await tx.query('SELECT pg_advisory_xact_lock($1::bigint)', [numericItemId]);
+      const { rows: items } = await tx.query('SELECT id, is_controlled FROM scm_items WHERE id = $1 FOR UPDATE', [numericItemId]);
+      if (!items[0]) throw requestError(404, 'Inventory item not found');
+      if (!items[0].is_controlled) throw requestError(409, 'This inventory item is not classified as controlled');
+      const { rows: balances } = await tx.query(
+        'SELECT COALESCE(SUM(quantity_delta),0)::numeric AS balance FROM scm_inventory_ledger WHERE item_id = $1',
+        [numericItemId]
+      );
+      const quantityDelta = directions[txnType] * requestedQuantity;
+      const balanceAfter = Number(balances[0]?.balance || 0) + quantityDelta;
+      if (balanceAfter < 0) throw requestError(409, 'Controlled stock cannot be dispensed below zero');
+      const { rows } = await tx.query(`
+        INSERT INTO scm_controlled_substance_logs (item_id, txn_type, quantity, balance_after, witness_name, patient_id, reference_type, reference_id, notes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *
+      `, [numericItemId, txnType, requestedQuantity, balanceAfter, witnessName.trim(), patientId ? Number(patientId) : null, referenceType.trim(), Number(referenceId), notes || null]);
+      await tx.query(
+        'INSERT INTO scm_inventory_ledger (item_id, txn_type, quantity_delta, reference_type, reference_id, notes) VALUES ($1,$2,$3,$4,$5,$6)',
+        [numericItemId, `controlled_${txnType}`, quantityDelta, 'controlled_log', rows[0].id, notes || null]
+      );
+      await recordOperationsAudit(tx, {
+        module: 'scm', entityType: 'controlled_substance', entityId: rows[0].id, action: `controlled_${txnType}`,
+        actor: actor(req), details: { itemId: numericItemId, quantity: requestedQuantity, referenceType: referenceType.trim(), referenceId: Number(referenceId) },
+      });
+      return rows[0];
+    });
+    res.status(201).json({ success: true, data: controlledLog });
+  } catch (error) {
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Unable to record controlled movement' });
+  }
 });
 
 // ─── PAR locations, implant UDI traceability, spend analytics ────────────────
@@ -906,6 +1033,33 @@ router.get('/approvals', authScm, async (req, res) => {
   const db = await ensureTables(req, res);
   const approvals = await listOperationsApprovals(db, null);
   res.json({ success: true, data: approvals.filter((item) => item.module === 'scm') });
+});
+
+// Approval is deliberately separate from the execution endpoint.  In
+// particular, the stores user who receives a GRN cannot make it available as
+// stock by calling the posting endpoint alone.
+router.patch('/approvals/:id', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables(req, res);
+  const status = req.body?.status;
+  if (!['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ success: false, message: 'status must be approved or rejected' });
+  }
+  const { rows } = await db.query(
+    `SELECT * FROM operations_approvals
+     WHERE id = $1 AND module = 'scm' AND status = 'pending'
+     ORDER BY requested_at DESC LIMIT 1`,
+    [req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Pending SCM approval not found' });
+  const decision = await decideOperationsApproval(db, {
+    id: rows[0].id, status, decidedBy: actor(req), notes: req.body?.notes,
+  });
+  if (!decision) return res.status(409).json({ success: false, message: 'Approval was already decided' });
+  await recordOperationsAudit(db, {
+    module: 'scm', entityType: rows[0].entity_type, entityId: rows[0].entity_id,
+    action: `approval_${status}`, actor: actor(req), details: { approvalId: rows[0].id, action: rows[0].action },
+  });
+  res.json({ success: true, data: decision });
 });
 
 router.get('/audit', authScm, async (req, res) => {

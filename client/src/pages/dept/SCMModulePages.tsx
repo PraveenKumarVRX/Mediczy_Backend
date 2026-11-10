@@ -330,6 +330,10 @@ export const ScmApprovals = () => {
     await api.patch(`/scm/orders/${id}/approve`);
     await Promise.all([refresh(), loadGovernance()]);
   };
+  const decideApproval = async (id: number, status: 'approved' | 'rejected') => {
+    await api.patch(`/scm/approvals/${id}`, { status });
+    await loadGovernance();
+  };
   const pendingOrders = orders.filter((o) => o.status === 'draft' || o.status === 'submitted');
   return (
     <Wrap title="Approvals & Audit">
@@ -352,7 +356,10 @@ export const ScmApprovals = () => {
             {approvals.slice(0, 10).map((a) => (
               <div key={a.id} className="flex justify-between py-1 border-b">
                 <span>{a.action} · {a.entity_type} #{a.entity_id}</span>
-                <Badge>{a.status}</Badge>
+                <span className="flex items-center gap-2">
+                  <Badge>{a.status}</Badge>
+                  {a.status === 'pending' && <Button size="sm" variant="outline" onClick={() => decideApproval(a.id, 'approved')}>Approve</Button>}
+                </span>
               </div>
             ))}
           </CardContent>
@@ -582,6 +589,10 @@ export const ScmOpsControl = () => {
   const [warehouseId, setWarehouseId] = useState('1');
   const [parLevel, setParLevel] = useState('20');
   const [countedQty, setCountedQty] = useState('10');
+  const [controlledWitness, setControlledWitness] = useState('');
+  const [controlledPatientId, setControlledPatientId] = useState('');
+  const [controlledReferenceType, setControlledReferenceType] = useState('');
+  const [controlledReferenceId, setControlledReferenceId] = useState('');
   const logCold = async () => {
     await api.post('/scm/cold-chain', { itemId: Number(itemId), temperatureC: Number(temperature), recordedBy: 'SCM' });
     refreshCold();
@@ -602,7 +613,11 @@ export const ScmOpsControl = () => {
     refreshLoc();
   };
   const logControlled = async () => {
-    await api.post('/scm/controlled-substances', { itemId: Number(itemId), txnType: 'issue', quantity: -1, witnessName: 'Pharmacist' });
+    if (!controlledWitness || !controlledPatientId || !controlledReferenceType || !controlledReferenceId) return;
+    await api.post('/scm/controlled-substances', {
+      itemId: Number(itemId), txnType: 'dispense', quantity: 1, witnessName: controlledWitness,
+      patientId: Number(controlledPatientId), referenceType: controlledReferenceType, referenceId: Number(controlledReferenceId),
+    });
     refreshControlled();
   };
   const runParReorder = async () => {
@@ -626,7 +641,11 @@ export const ScmOpsControl = () => {
             <Input className="w-24" value={countedQty} onChange={(e) => setCountedQty(e.target.value)} />
             <Input className="w-24" value={temperature} onChange={(e) => setTemperature(e.target.value)} />
             <Button variant="outline" onClick={logCold}><Thermometer className="h-4 w-4 mr-2" />Cold Chain</Button>
-            <Button onClick={logControlled}>Controlled Substance</Button>
+            <Input className="w-32" placeholder="Witness" value={controlledWitness} onChange={(e) => setControlledWitness(e.target.value)} />
+            <Input className="w-24" placeholder="Patient ID" value={controlledPatientId} onChange={(e) => setControlledPatientId(e.target.value)} />
+            <Input className="w-36" placeholder="Source type" value={controlledReferenceType} onChange={(e) => setControlledReferenceType(e.target.value)} />
+            <Input className="w-24" placeholder="Source ID" value={controlledReferenceId} onChange={(e) => setControlledReferenceId(e.target.value)} />
+            <Button onClick={logControlled} disabled={!controlledWitness || !controlledPatientId || !controlledReferenceType || !controlledReferenceId}>Controlled Dispense</Button>
           </CardContent>
         </Card>
         <div className="grid md:grid-cols-4 gap-4">

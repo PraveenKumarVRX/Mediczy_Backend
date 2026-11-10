@@ -748,6 +748,17 @@ router.post('/requisitions/:id/issue', authBloodBank, async (req, res) => {
     const reqResult = await client.query(`SELECT * FROM blood_bank_requisitions WHERE id=$1 FOR UPDATE`, [id]);
     const requisition = reqResult.rows[0];
     if (!requisition) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Requisition not found' }); }
+    // This lock is the state-transition guard. Without it, a repeated request
+    // could select a fresh set of available units and overwrite the first
+    // allocation on the requisition.
+    if (requisition.status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        code: 'REQUISITION_NOT_ISSUABLE',
+        message: `Only pending requisitions can be issued (current status: ${requisition.status})`,
+      });
+    }
     const units = await client.query(`
       SELECT id FROM blood_bank_units
       WHERE blood_group=$1 AND component=$2 AND status='available' AND expires_at>=CURRENT_DATE

@@ -33,16 +33,18 @@ export const requireScmPermission = (permission) => (req, res, next) => {
 export const scmPermissionForPath = (method, path) => {
   if (path.includes('/login')) return null;
   if (path.includes('/ai/')) return 'ai';
-  if (path.includes('/orders') && method === 'PATCH') return 'approve_po';
-  if (path.includes('/orders') && method === 'POST') return 'create_po';
+  if (path.includes('/approvals') && method === 'PATCH') return 'approve_po';
   if (path.includes('/grns') && method === 'PATCH') return 'post_grn';
   if (path.includes('/grn')) return 'grn';
+  if (path.includes('/orders') && method === 'PATCH') return 'approve_po';
+  if (path.includes('/orders') && method === 'POST') return 'create_po';
   if (path.includes('/indents') && path.includes('approve')) return 'approve_indent';
   if (path.includes('/indents')) return 'create_indent';
   if (path.includes('/ap/invoices') && method === 'PATCH') return 'approve_invoice';
   if (path.includes('/cycle-counts')) return 'cycle_count';
   if (path.includes('/inventory')) return 'inventory';
-  if (path.includes('/cold-chain') || path.includes('/controlled')) return 'stores';
+  if (path.includes('/cold-chain')) return 'cold_chain';
+  if (path.includes('/controlled')) return 'controlled';
   if (method === 'GET') return 'read';
   return 'create';
 };

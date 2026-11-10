@@ -241,36 +241,30 @@ const getSecurityIncidents = async (organizationId) => {
   }));
 };
 
-const getSecurityVisitors = async () => {
-  if (!(await tableExists('audit_logs'))) {
-    return FALLBACK_VISITORS;
-  }
-  const rows = await safeQuery(
-    `SELECT resource_id, data_fields, changes_after, COALESCE(timestamp, created_at) AS happened_at
-     FROM audit_logs
-     WHERE resource_type = 'security_visitor'
-     ORDER BY COALESCE(timestamp, created_at) DESC
-     LIMIT 40`
-  );
-  if (!rows.length) return FALLBACK_VISITORS;
+const mapSecurityVisitor = (row) => ({
+  id: row.id,
+  visitor: row.visitor_name,
+  patient: row.destination,
+  passType: row.pass_type,
+  checkIn: formatDateLabel(row.check_in_at, 'Now'),
+  status: row.status,
+  destination: row.destination,
+  escort: row.escort || null,
+  version: Number(row.version || 1),
+});
 
-  const seen = new Set();
-  const visitors = [];
-  for (const row of rows) {
-    const payload = { ...parseJson(row.data_fields), ...parseJson(row.changes_after) };
-    const key = row.resource_id || payload.id || payload.visitor;
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    visitors.push({
-      id: key,
-      visitor: payload.visitor || 'Visitor',
-      patient: payload.patient || payload.destination || 'Hospital',
-      passType: payload.passType || 'Visitor',
-      checkIn: payload.checkIn || formatDateLabel(row.happened_at, 'Now'),
-      status: payload.status || 'Inside',
-    });
-  }
-  return visitors.length ? visitors : FALLBACK_VISITORS;
+const getSecurityVisitors = async (organizationId) => {
+  if (!organizationId) return [];
+  if (!(await tableExists('security_visitor_passes'))) return [];
+  const rows = await safeQuery(
+    `SELECT id, visitor_name, destination, pass_type, status, escort, check_in_at, version
+     FROM security_visitor_passes
+     WHERE organization_id = :organizationId
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 100`,
+    { organizationId },
+  );
+  return rows.map(mapSecurityVisitor);
 };
 
 const getSecurityAccessLogs = async () => {
@@ -302,7 +296,7 @@ const buildPortalData = async (req) => {
   const organizationId = getOrgId(req);
   const [incidents, visitors, accessLogs] = await Promise.all([
     getSecurityIncidents(organizationId),
-    getSecurityVisitors(),
+    getSecurityVisitors(organizationId),
     getSecurityAccessLogs(),
   ]);
 
@@ -315,7 +309,7 @@ const buildPortalData = async (req) => {
     kpis: [
       { label: 'Guards On Duty', value: '24', sub: '8 per shift' },
       { label: 'Active Cameras', value: String(FALLBACK_CCTV.reduce((sum, row) => sum + row.online, 0)), sub: `${FALLBACK_CCTV.reduce((sum, row) => sum + (row.cameras - row.online), 0)} offline` },
-      { label: 'Visitors Today', value: String(visitors.length || 312), sub: `${visitorsInside || 28} still inside` },
+      { label: 'Visitors Today', value: String(visitors.length), sub: `${visitorsInside} still inside` },
       { label: 'Open Incidents', value: String(openIncidents || 3), sub: `${incidents.filter((item) => item.priority === 'High').length || 1} high priority` },
     ],
     incidents,
@@ -361,9 +355,11 @@ export const getSecurityIncidentsList = async (req, res) => {
   }
 };
 
-export const getSecurityVisitorsList = async (_req, res) => {
+export const getSecurityVisitorsList = async (req, res) => {
   try {
-    const data = await getSecurityVisitors();
+    const organizationId = getOrgId(req);
+    if (!organizationId) return res.status(403).json({ success: false, message: 'Hospital organization context is required' });
+    const data = await getSecurityVisitors(organizationId);
     return res.status(200).json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to load visitors', error: error.message });
@@ -476,20 +472,24 @@ export const createSecurityVisitor = async (req, res) => {
     if (!visitor) {
       return res.status(400).json({ success: false, message: 'visitor is required' });
     }
+    const organizationId = getOrgId(req);
+    if (!organizationId) return res.status(403).json({ success: false, message: 'Hospital organization context is required' });
+    if (!(await tableExists('security_visitor_passes'))) return res.status(503).json({ success: false, message: 'Visitor pass storage is unavailable' });
 
     const visitorId = `VIS-${randomUUID().slice(0, 6).toUpperCase()}`;
-    const record = {
-      id: visitorId,
-      visitor,
-      patient: patient || destination || 'Hospital',
-      passType,
-      checkIn: checkIn || formatDateLabel(Date.now(), 'Now'),
-      status,
-      destination,
-      escort,
-    };
-    await logSecurityEvent({ req, action: 'SECURITY_VISITOR_CREATED', resourceType: 'security_visitor', resourceId: visitorId, after: record });
-    return res.status(201).json({ success: true, data: record });
+    const [record] = await postgresSequelize.query(
+      `INSERT INTO security_visitor_passes
+        (id, organization_id, visitor_name, destination, pass_type, status, escort, check_in_at, created_by, updated_by)
+       VALUES (:id, :organizationId, :visitor, :destination, :passType, :status, :escort, COALESCE(CAST(:checkIn AS timestamptz), NOW()), :actorId, :actorId)
+       RETURNING id, visitor_name, destination, pass_type, status, escort, check_in_at, version`,
+      {
+        replacements: { id: visitorId, organizationId, visitor, destination: patient || destination || 'Hospital', passType, status, escort: escort || null, checkIn: checkIn || null, actorId: req.user?.id || null },
+        type: QueryTypes.SELECT,
+      },
+    );
+    const response = mapSecurityVisitor(record);
+    await logSecurityEvent({ req, action: 'SECURITY_VISITOR_CREATED', resourceType: 'security_visitor', resourceId: visitorId, after: response });
+    return res.status(201).json({ success: true, data: response });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to create visitor pass', error: error.message });
   }
@@ -497,18 +497,36 @@ export const createSecurityVisitor = async (req, res) => {
 
 export const updateSecurityVisitor = async (req, res) => {
   try {
-    const record = {
-      id: req.params.id,
-      ...(req.body?.visitor ? { visitor: req.body.visitor } : {}),
-      ...(req.body?.patient ? { patient: req.body.patient } : {}),
-      ...(req.body?.passType ? { passType: req.body.passType } : {}),
-      ...(req.body?.checkIn ? { checkIn: req.body.checkIn } : {}),
-      ...(req.body?.status ? { status: req.body.status } : {}),
-      ...(req.body?.destination ? { destination: req.body.destination } : {}),
-      ...(req.body?.escort ? { escort: req.body.escort } : {}),
-    };
-    await logSecurityEvent({ req, action: 'SECURITY_VISITOR_UPDATED', resourceType: 'security_visitor', resourceId: req.params.id, after: record });
-    return res.status(200).json({ success: true, data: record });
+    const organizationId = getOrgId(req);
+    if (!organizationId) return res.status(403).json({ success: false, message: 'Hospital organization context is required' });
+    const expectedVersion = Number(req.body?.expectedVersion);
+    if (!Number.isInteger(expectedVersion) || expectedVersion < 1) return res.status(422).json({ success: false, message: 'expectedVersion is required' });
+    const [record] = await postgresSequelize.query(
+      `UPDATE security_visitor_passes
+       SET visitor_name = COALESCE(:visitor, visitor_name),
+           destination = COALESCE(:destination, destination),
+           pass_type = COALESCE(:passType, pass_type),
+           status = COALESCE(:status, status),
+           escort = COALESCE(:escort, escort),
+           check_in_at = COALESCE(CAST(:checkIn AS timestamptz), check_in_at),
+           check_out_at = CASE WHEN :status = 'Exited' THEN NOW() ELSE check_out_at END,
+           updated_by = :actorId, version = version + 1, updated_at = NOW()
+       WHERE id = :id AND organization_id = :organizationId AND version = :expectedVersion
+       RETURNING id, visitor_name, destination, pass_type, status, escort, check_in_at, version`,
+      {
+        replacements: {
+          id: req.params.id, organizationId, expectedVersion, visitor: req.body?.visitor || null,
+          destination: req.body?.patient || req.body?.destination || null, passType: req.body?.passType || null,
+          status: req.body?.status || null, escort: req.body?.escort || null, checkIn: req.body?.checkIn || null,
+          actorId: req.user?.id || null,
+        },
+        type: QueryTypes.SELECT,
+      },
+    );
+    if (!record) return res.status(409).json({ success: false, code: 'version_conflict_or_not_found', message: 'Visitor pass changed or was not found' });
+    const response = mapSecurityVisitor(record);
+    await logSecurityEvent({ req, action: 'SECURITY_VISITOR_UPDATED', resourceType: 'security_visitor', resourceId: req.params.id, after: response });
+    return res.status(200).json({ success: true, data: response });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to update visitor pass', error: error.message });
   }

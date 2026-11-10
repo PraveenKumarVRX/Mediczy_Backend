@@ -9,7 +9,7 @@ import {
   buildLabExplainerDraft,
   createAgentHandoff,
   createAdherencePlan,
-  materializeAdherenceEvent,
+  materializeAdherenceEvents,
   runDueAdherenceEvents,
   deliverApprovedLabExplanation,
 } from '../services/medcore-adoption.service.js';
@@ -21,6 +21,7 @@ const actorId = (req) => req.user?.id || req.authToken?.id || null;
 // token can never expose another patient's adoption data.
 const tenantUid = (req) => String(req.user?.organization_uid || req.user?.tenant_uid || req.user?.tenantUid || req.tenantContext?.tenantUid || (req.tenantId ? `tenant:${req.tenantId}` : `user:${actorId(req) || 'unknown'}`));
 const clinicalReviewer = [authUser, requireRole(['doctor', 'admin', 'medical_director', 'nurse'])];
+const clinicalApprover = [authUser, requireRole(['doctor', 'admin', 'medical_director'])];
 
 // One opt-in gate covers the adoption surface. Deployments must explicitly set
 // MEDCORE_ADOPTION_ENABLED=true after clinical/counsel review is complete.
@@ -83,7 +84,7 @@ router.post('/pharmacy/forecast', authUser, async (req, res) => {
 
 router.get('/metrics/:metricKey', authUser, async (req, res) => {
   try {
-    const { rows } = await pool.query(`SELECT value, available, reason, source, unit FROM metric_integrity_results WHERE metric_key = $1 ORDER BY created_at DESC LIMIT 1`, [req.params.metricKey]);
+    const { rows } = await pool.query(`SELECT value, available, reason, source, unit FROM metric_integrity_results WHERE tenant_uid = $1 AND metric_key = $2 ORDER BY created_at DESC LIMIT 1`, [tenantUid(req), req.params.metricKey]);
     const metric = rows[0] ? metricResult(rows[0].value, rows[0]) : metricUnavailable('No computed value has been recorded', 'metric_integrity_results');
     res.json({ success: true, metricKey: req.params.metricKey, metric });
   } catch (error) {
@@ -95,7 +96,7 @@ router.get('/metrics/:metricKey', authUser, async (req, res) => {
 
 router.post('/agent-handoffs', authUser, async (req, res) => {
   try {
-    const handoff = await createAgentHandoff({ ...req.body, actorId: actorId(req), tenantUid: tenantUid(req) });
+    const handoff = await createAgentHandoff({ ...req.body, reason: req.body?.reason || req.body?.handoffReason || undefined, actorId: actorId(req), tenantUid: tenantUid(req) });
     res.status(201).json({ success: true, handoff });
   } catch (error) {
     res.status(500).json({ success: false, code: 'handoff_failed', message: error.message });
@@ -116,8 +117,15 @@ router.patch('/agent-handoffs/:id', ...clinicalReviewer, async (req, res) => {
   try {
     const status = ['claimed', 'completed', 'cancelled'].includes(req.body?.status) ? req.body.status : null;
     if (!status) return res.status(422).json({ success: false, code: 'validation_failed', message: 'status must be claimed, completed or cancelled' });
-    const { rows } = await pool.query(`UPDATE agent_handoffs SET status = $1, claimed_by = COALESCE($2, claimed_by), updated_at = NOW() WHERE id = $3 AND tenant_uid = $4 RETURNING *`, [status, actorId(req), req.params.id, tenantUid(req)]);
-    if (!rows[0]) return res.status(404).json({ success: false, code: 'not_found', message: 'Handoff not found' });
+    const currentActor = actorId(req);
+    const transition = status === 'claimed'
+      ? { sql: `status = 'claimed', claimed_by = $1, updated_at = NOW()`, where: `status = 'pending'`, params: [currentActor] }
+      : { sql: `status = $1, updated_at = NOW()`, where: `status = 'claimed' AND claimed_by = $2`, params: [status, currentActor] };
+    const { rows } = await pool.query(
+      `UPDATE agent_handoffs SET ${transition.sql} WHERE id = $${transition.params.length + 1} AND tenant_uid = $${transition.params.length + 2} AND ${transition.where} RETURNING *`,
+      [...transition.params, req.params.id, tenantUid(req)],
+    );
+    if (!rows[0]) return res.status(409).json({ success: false, code: 'invalid_or_contended_transition', message: 'Handoff is not available for this transition or is owned by another reviewer' });
     res.json({ success: true, handoff: rows[0] });
   } catch (error) {
     res.status(500).json({ success: false, code: 'handoff_update_failed', message: error.message });
@@ -144,7 +152,7 @@ router.get('/lab-explainer/queue', ...clinicalReviewer, async (req, res) => {
   }
 });
 
-router.post('/lab-explainer/:id/approve', ...clinicalReviewer, async (req, res) => {
+router.post('/lab-explainer/:id/approve', ...clinicalApprover, async (req, res) => {
   try {
     const { rows } = await pool.query(`UPDATE lab_explainer_drafts SET status = 'approved', reviewer_id = $1, reviewed_at = NOW() WHERE id = $2 AND tenant_uid = $3 AND status = 'pending' RETURNING *`, [actorId(req), req.params.id, tenantUid(req)]);
     if (!rows[0]) return res.status(409).json({ success: false, code: 'approval_required_or_already_reviewed', message: 'Draft is not pending or was not found' });
@@ -154,7 +162,7 @@ router.post('/lab-explainer/:id/approve', ...clinicalReviewer, async (req, res) 
   }
 });
 
-router.post('/lab-explainer/:id/reject', ...clinicalReviewer, async (req, res) => {
+router.post('/lab-explainer/:id/reject', ...clinicalApprover, async (req, res) => {
   try {
     const { rows } = await pool.query(`UPDATE lab_explainer_drafts SET status = 'rejected', reviewer_id = $1, review_reason = $2, reviewed_at = NOW() WHERE id = $3 AND tenant_uid = $4 AND status = 'pending' RETURNING *`, [actorId(req), req.body?.reason || 'Rejected by clinician', req.params.id, tenantUid(req)]);
     if (!rows[0]) return res.status(409).json({ success: false, code: 'approval_required_or_already_reviewed', message: 'Draft is not pending or was not found' });
@@ -179,10 +187,11 @@ router.post('/adherence/plans', authUser, async (req, res) => {
   try {
     if (!req.body?.patientId || !req.body?.medication) return res.status(422).json({ success: false, code: 'validation_failed', message: 'patientId and medication are required' });
     const plan = await createAdherencePlan({ ...req.body, actorId: actorId(req), tenantUid: tenantUid(req) });
-    const event = await materializeAdherenceEvent(plan);
-    res.status(201).json({ success: true, plan, firstEvent: event, quietHoursApplied: true });
+    const events = await materializeAdherenceEvents(plan);
+    if (!events.length) return res.status(422).json({ success: false, code: 'schedule_unsatisfiable', message: 'The plan did not produce any reminder occurrences' });
+    res.status(201).json({ success: true, plan, firstEvent: events[0], occurrencesMaterialized: events.length, quietHoursApplied: true });
   } catch (error) {
-    res.status(500).json({ success: false, code: 'adherence_plan_failed', message: error.message });
+    res.status(error.statusCode || 500).json({ success: false, code: error.statusCode === 422 ? 'validation_failed' : 'adherence_plan_failed', message: error.message });
   }
 });
 

@@ -120,6 +120,9 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261104000200-pre-employment-healthcheckups.migration.js',
   '20261107000100-customer-care-v1.migration.js',
   '20261107000200-customer-care-content-owner.migration.js',
+  '20261108000100-adherence-occurrence-integrity.migration.js',
+  '20261109000100-scm-receipt-integrity.migration.js',
+  '20261109000200-report-schedule-durability.migration.js',
   '20261109000300-email-sync-status-width.migration.js',
   '20261109000400-apple-refresh-tokens.migration.js',
   // MED-MIND-001. The health-coaching framework was never registered in any
