@@ -289,7 +289,10 @@ function normaliseGender(value) {
 const PLAUSIBLE_RANGE = {
   height: [50, 250],   // cm
   weight: [10, 400],   // kg
-  waist:  [30, 250],   // cm — below 30 is not an adult waist
+  // 40 cm is about 16 inches: already below any adult waist or hip, and far
+  // below FINDRISC's lowest band (<80 cm women, <94 cm men). A floor of 30 let
+  // through the exact 30 cm waist this check was added for.
+  waist:  [40, 250],   // cm
   hip:    [40, 250],   // cm
   neck:   [15, 80],    // cm
   sbp:    [50, 300],   // mmHg
