@@ -13,7 +13,7 @@ import { Op } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { Appointment } from '../models/index.js';
 import sharedPool from '../db/pgPool.js';
-import { resolveMedicine, priceLine, requiresPrescription } from '../utils/pharmacy-pricing.js';
+import { resolveMedicine, priceLine, requiresPrescription, computeOrderTotals } from '../utils/pharmacy-pricing.js';
 import multer from 'multer';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 
@@ -281,19 +281,22 @@ router.post(
       });
     }
 
-    const subtotal = priced.reduce((sum, line) => sum + line.lineTotal, 0);
+    // 15% off above 2,000 and a flat 40 delivery fee, from the shared policy so
+    // the cart, the order and the invoice cannot disagree.
+    const totals = computeOrderTotals(priced);
 
     const orderNumber = paymentGateway.generateOrderReceipt('ORD');
 
-    const order = await Order.create({
+    const orderFields = {
       orderNumber,
       userId,
       orderType: 'medicine',
       status: 'pending',
-      subtotal: parseFloat(subtotal.toFixed(2)),
+      subtotal: totals.subtotal,
       tax: 0,
-      discount: 0,
-      total: parseFloat(subtotal.toFixed(2)),
+      discount: totals.discount,
+      deliveryFee: totals.deliveryFee,
+      total: totals.total,
       currency: 'INR',
       shippingAddress: { address: String(deliveryAddress).trim() },
       metadata: {
@@ -304,14 +307,44 @@ router.post(
         deliveryAddress: String(deliveryAddress).trim(),
         prescriptionRequired: !!prescriptionRequired,
         prescriptionFileUrl,
+        pricing: {
+          discountPct: totals.discountPct,
+          discountThreshold: totals.discountThreshold,
+          deliveryFee: totals.deliveryFee,
+        },
       },
       notes: notes || null,
-    });
+    };
+
+    // `total` already includes the delivery fee, so the customer is billed the
+    // right amount either way. The dedicated column is only where the fee is
+    // recorded separately, and it arrives with its migration
+    // (20261110000300-order-delivery-fee). Until that has run, writing it would
+    // make Postgres reject the INSERT with 42703 and no medicine order could be
+    // placed at all. Recording the fee in metadata keeps the order placeable, and
+    // this fallback stops applying by itself once the column exists.
+    let order;
+    try {
+      order = await Order.create(orderFields);
+    } catch (createErr) {
+      const undefinedColumn = createErr?.original?.code === '42703' || createErr?.parent?.code === '42703';
+      if (!undefinedColumn) throw createErr;
+      console.warn('[billing/orders] orders."deliveryFee" is missing — run migration 20261110000300-order-delivery-fee. Recording the fee in metadata for now.');
+      const { deliveryFee, ...withoutColumn } = orderFields;
+      order = await Order.create({
+        ...withoutColumn,
+        metadata: { ...withoutColumn.metadata, deliveryFeeUnmigrated: deliveryFee },
+      });
+    }
 
     return res.status(201).json({
       success: true,
       message: 'Order placed successfully',
-      data: { order: { id: order.id, orderNumber: order.orderNumber, status: order.status, total: order.total } },
+      data: {
+        order: { id: order.id, orderNumber: order.orderNumber, status: order.status, total: order.total },
+        // The breakdown the customer was shown, so the client can reconcile it.
+        pricing: totals,
+      },
     });
   } catch (error) {
     console.error('Place pharmacy order error:', error);

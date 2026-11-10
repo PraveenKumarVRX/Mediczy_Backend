@@ -131,6 +131,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   // migration that depends on it; both are idempotent.
   'health-coaching-framework.migration.js',
   '20261110000100-mental-wellness-instruments.migration.js',
+  '20261110000300-order-delivery-fee.migration.js',
 ];
 
 function runStep(step) {

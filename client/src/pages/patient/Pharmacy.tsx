@@ -317,10 +317,29 @@ const Pharmacy = () => {
 
   const prescriptionNeeded = useMemo(() => cart.some(c => c.prescriptionRequired), [cart]);
 
-  const cartTotal = useMemo(() => cart.reduce((sum, c) => {
+  // Mirrors server/utils/pharmacy-pricing.js: 15% off above 2,000 (strictly
+  // above), plus a flat 40 delivery fee on every order. The discount never
+  // applies to the delivery fee, and the fee never counts towards the threshold.
+  const DELIVERY_FEE = 40;
+  const DISCOUNT_THRESHOLD = 2000;
+  const DISCOUNT_PCT = 15;
+
+  const money = (n: number) => Number(n.toFixed(2));
+
+  const cartSubtotal = useMemo(() => money(cart.reduce((sum, c) => {
     const { qty: packQty } = parsePackSize(c.packSize);
     return sum + (c.price / packQty) * c.quantity;
-  }, 0), [cart]);
+  }, 0)), [cart]);
+
+  const cartDiscount = useMemo(
+    () => (cartSubtotal > DISCOUNT_THRESHOLD ? money((cartSubtotal * DISCOUNT_PCT) / 100) : 0),
+    [cartSubtotal],
+  );
+  const cartDelivery = cart.length ? DELIVERY_FEE : 0;
+  const cartTotal = useMemo(
+    () => money(cartSubtotal - cartDiscount + cartDelivery),
+    [cartSubtotal, cartDiscount, cartDelivery],
+  );
 
   const handlePlaceOrder = async () => {
     if (cart.length === 0) { toast.error('Add at least one medicine'); return; }
@@ -537,11 +556,31 @@ const Pharmacy = () => {
                               </Button>
                             </div>
                           ))}
-                          <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-b-xl">
-                            <span className="text-sm font-semibold dark:text-slate-300">Total</span>
-                            <span className="text-lg font-bold text-emerald-600">₹{cartTotal.toFixed(2)}</span>
+                          <div className="px-3 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-b-xl space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-500 dark:text-slate-400">Subtotal</span>
+                              <span className="text-xs dark:text-slate-300">₹{cartSubtotal.toFixed(2)}</span>
+                            </div>
+                            {cartDiscount > 0 ? (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-emerald-600">Discount ({DISCOUNT_PCT}% over ₹{DISCOUNT_THRESHOLD.toLocaleString('en-IN')})</span>
+                                <span className="text-xs font-medium text-emerald-600">−₹{cartDiscount.toFixed(2)}</span>
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                                Add ₹{(DISCOUNT_THRESHOLD - cartSubtotal + 0.01).toFixed(2)} more to get {DISCOUNT_PCT}% off
+                              </p>
+                            )}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-500 dark:text-slate-400">Delivery</span>
+                              <span className="text-xs dark:text-slate-300">₹{cartDelivery.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-700 pt-1.5">
+                              <span className="text-sm font-semibold dark:text-slate-300">Total</span>
+                              <span className="text-lg font-bold text-emerald-600">₹{cartTotal.toFixed(2)}</span>
+                            </div>
                           </div>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center mt-1 px-2">Prices shown are approximate MRP. Actual billing may vary.</p>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center mt-1 px-2">This is the amount you will be charged.</p>
                         </div>
                         {cart.some(c => c.prescriptionRequired) && (
                           <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">

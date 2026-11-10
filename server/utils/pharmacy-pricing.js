@@ -205,4 +205,50 @@ export const priceLine = (medicine, requestedQuantity, item = {}) => {
   };
 };
 
-export default { RX_REQUIRED_SCHEDULES, requiresPrescription, parsePackSize, packPriceOf, resolveMedicine, resolveUnitMode, priceLine };
+/* ── Order-level pricing policy ──────────────────────────────────────────────
+ * Decided 2026-11-10: 15% off a medicine order whose value is above 2,000, and a
+ * flat 40 delivery fee on every order including the discounted ones.
+ *
+ * The threshold is tested on the catalogue-priced subtotal, before the discount
+ * and before delivery, so adding the fee can never tip an order over the line and
+ * the discount can never pull it back under. The discount applies to the medicines
+ * only and never to the delivery fee.
+ */
+export const DELIVERY_FEE_INR = 40;
+export const DISCOUNT_THRESHOLD_INR = 2000;
+export const MEDICINE_DISCOUNT_PCT = 15;
+
+const money = (n) => Number(Number(n).toFixed(2));
+
+/**
+ * Turns priced lines into the amounts an order is actually billed.
+ * "Above 2,000" is strictly above, so a subtotal of exactly 2,000 does not qualify.
+ */
+export const computeOrderTotals = (lines, { deliveryFee = DELIVERY_FEE_INR } = {}) => {
+  // A non-numeric lineTotal must not poison the sum: Number('x') is NaN, and a NaN
+  // subtotal would be written to the order as its total. priceLine always yields a
+  // finite figure, so this only guards a caller that bypassed it.
+  const subtotal = money((lines || []).reduce((sum, l) => {
+    const n = Number(l?.lineTotal);
+    return Number.isFinite(n) ? sum + n : sum;
+  }, 0));
+  const discountApplies = subtotal > DISCOUNT_THRESHOLD_INR;
+  const discount = discountApplies ? money((subtotal * MEDICINE_DISCOUNT_PCT) / 100) : 0;
+  const delivery = money(deliveryFee);
+  const total = money(subtotal - discount + delivery);
+  return {
+    subtotal,
+    discount,
+    discountPct: discountApplies ? MEDICINE_DISCOUNT_PCT : 0,
+    discountApplies,
+    discountThreshold: DISCOUNT_THRESHOLD_INR,
+    deliveryFee: delivery,
+    total,
+  };
+};
+
+export default {
+  RX_REQUIRED_SCHEDULES, requiresPrescription, parsePackSize, packPriceOf,
+  resolveMedicine, resolveUnitMode, priceLine, computeOrderTotals,
+  DELIVERY_FEE_INR, DISCOUNT_THRESHOLD_INR, MEDICINE_DISCOUNT_PCT,
+};

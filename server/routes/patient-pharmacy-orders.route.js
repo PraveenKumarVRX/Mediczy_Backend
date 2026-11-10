@@ -15,7 +15,7 @@ import express from 'express';
 import multer from 'multer';
 import { authUser } from '../middleware/auth.middleware.js';
 import sharedPool from '../db/pgPool.js';
-import { resolveMedicine, priceLine } from '../utils/pharmacy-pricing.js';
+import { resolveMedicine, priceLine, computeOrderTotals } from '../utils/pharmacy-pricing.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import {
   COUPON_SCOPES,
@@ -300,8 +300,11 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
     }
 
     // ── Calculate totals ───────────────────────────────────────────────────
-    const subtotal          = parseFloat(enrichedItems.reduce((s, i) => s + i.line_total, 0).toFixed(2));
-    const deliveryChargeVal = parseFloat(delivery_charge) || 0;
+    // 15% off above 2,000 and a flat 40 delivery fee, from the shared policy.
+    // delivery_charge used to be whatever the request said it was.
+    const policy = computeOrderTotals(enrichedItems.map((i) => ({ lineTotal: i.line_total })));
+    const subtotal          = policy.subtotal;
+    const deliveryChargeVal = policy.deliveryFee;
 
     let couponValidation = null;
     let discountVal = 0;
@@ -316,8 +319,18 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
       });
       discountVal = couponValidation.discount;
       appliedCouponCode = couponValidation.coupon.code;
-    } else {
-      discountVal = parseFloat(discount) || 0;
+    }
+
+    // Offers do not stack: the automatic above-2,000 discount and a coupon the
+    // customer entered are both offers on the same basket, so the larger one
+    // applies. Adding them would discount the same money twice. The request's own
+    // `discount` field is ignored — like `price`, it was caller-supplied and
+    // nothing validated it.
+    const automaticDiscount = policy.discount;
+    const usedCoupon = discountVal > automaticDiscount;
+    if (!usedCoupon) {
+      discountVal = automaticDiscount;
+      appliedCouponCode = null;
     }
 
     const totalAmount       = parseFloat(Math.max(0, subtotal + deliveryChargeVal - discountVal).toFixed(2));
@@ -352,7 +365,10 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
       ]
     );
 
-    if (couponValidation?.coupon) {
+    // Only burn the coupon if it was the offer that actually applied. Recording
+    // usage for a coupon that lost to the automatic discount would consume the
+    // customer's one-time code and give them nothing for it.
+    if (usedCoupon && couponValidation?.coupon) {
       await recordCouponUsage({
         coupon: couponValidation.coupon,
         userId,

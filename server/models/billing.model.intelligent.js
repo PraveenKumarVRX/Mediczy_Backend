@@ -45,6 +45,14 @@ const OrderModel = sequelize.define('Order', {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
   },
+  // Declared so Sequelize actually persists it. An undeclared attribute is
+  // dropped from the INSERT without an error, which would record every order
+  // with a 0 delivery fee while the customer was billed 40.
+  deliveryFee: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0
+  },
   total: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false

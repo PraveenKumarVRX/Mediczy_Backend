@@ -2,7 +2,8 @@ import { describe, expect, it } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePackSize, priceLine, packPriceOf, requiresPrescription, resolveUnitMode } from '../utils/pharmacy-pricing.js';
+import { parsePackSize, priceLine, packPriceOf, requiresPrescription, resolveUnitMode,
+         computeOrderTotals, DELIVERY_FEE_INR, DISCOUNT_THRESHOLD_INR, MEDICINE_DISCOUNT_PCT } from '../utils/pharmacy-pricing.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => readFileSync(join(ROOT, file), 'utf8');
@@ -117,6 +118,110 @@ describe('pack-vs-unit mode resolution', () => {
   });
 });
 
+describe('order totals: 15% over 2,000 and a flat 40 delivery fee', () => {
+  const lines = (...totals) => totals.map((lineTotal) => ({ lineTotal }));
+
+  it('uses the agreed policy figures', () => {
+    expect(DELIVERY_FEE_INR).toBe(40);
+    expect(DISCOUNT_THRESHOLD_INR).toBe(2000);
+    expect(MEDICINE_DISCOUNT_PCT).toBe(15);
+  });
+
+  it('charges the delivery fee on every order, discounted or not', () => {
+    expect(computeOrderTotals(lines(100)).deliveryFee).toBe(40);
+    expect(computeOrderTotals(lines(5000)).deliveryFee).toBe(40);
+    expect(computeOrderTotals(lines(100)).total).toBe(140);
+  });
+
+  it('discounts an order above the threshold', () => {
+    const t = computeOrderTotals(lines(2500));
+    expect(t.subtotal).toBe(2500);
+    expect(t.discount).toBe(375);      // 15% of 2500
+    expect(t.deliveryFee).toBe(40);
+    expect(t.total).toBe(2165);        // 2500 - 375 + 40
+    expect(t.discountApplies).toBe(true);
+  });
+
+  it('treats "above 2,000" as strictly above, so exactly 2,000 does not qualify', () => {
+    expect(computeOrderTotals(lines(2000)).discount).toBe(0);
+    expect(computeOrderTotals(lines(2000)).total).toBe(2040);
+    expect(computeOrderTotals(lines(2000.01)).discountApplies).toBe(true);
+  });
+
+  it('measures the threshold before the fee, so delivery cannot tip an order over it', () => {
+    // 1,980 + 40 delivery is 2,020, but the basket is still under the threshold.
+    const t = computeOrderTotals(lines(1980));
+    expect(t.discount).toBe(0);
+    expect(t.total).toBe(2020);
+  });
+
+  it('measures the threshold before the discount, so the discount cannot pull it back under', () => {
+    const t = computeOrderTotals(lines(2100));
+    expect(t.discount).toBe(315);
+    expect(t.subtotal - t.discount).toBeLessThan(DISCOUNT_THRESHOLD_INR);
+    expect(t.discountApplies).toBe(true);
+  });
+
+  it('never discounts the delivery fee itself', () => {
+    const t = computeOrderTotals(lines(4000));
+    expect(t.discount).toBe(600);                       // 15% of 4000, not of 4040
+    expect(t.total).toBe(4000 - 600 + 40);
+  });
+
+  it('sums many lines and rounds to paise', () => {
+    const t = computeOrderTotals(lines(1000.005, 1000.005, 500.33));
+    expect(t.subtotal).toBe(2500.34);
+    expect(Number.isInteger(Math.round(t.total * 100))).toBe(true);
+  });
+
+  it('is safe on an empty or malformed basket', () => {
+    expect(computeOrderTotals([]).subtotal).toBe(0);
+    expect(computeOrderTotals(undefined).subtotal).toBe(0);
+    expect(computeOrderTotals(lines(null, undefined, 'x', 50)).subtotal).toBe(50);
+  });
+});
+
+describe('both order routes bill the one policy', () => {
+  it('the billing route takes its totals from computeOrderTotals', () => {
+    const src = read('routes/billing.route.js');
+    expect(src).toContain('computeOrderTotals(priced)');
+    expect(src).toContain('deliveryFee: totals.deliveryFee');
+    expect(src).toContain('discount: totals.discount');
+    expect(src).toContain('total: totals.total');
+  });
+
+  it('the pharmacy route takes delivery and discount from the policy, not the request', () => {
+    const src = read('routes/patient-pharmacy-orders.route.js');
+    expect(src).toContain('computeOrderTotals(enrichedItems.map');
+    expect(src).toContain('const deliveryChargeVal = policy.deliveryFee');
+    // delivery_charge and discount used to be whatever the caller sent.
+    expect(src).not.toContain('parseFloat(delivery_charge) || 0');
+    expect(src).not.toContain('discountVal = parseFloat(discount) || 0');
+  });
+
+  it('offers do not stack, and a losing coupon is not consumed', () => {
+    const src = read('routes/patient-pharmacy-orders.route.js');
+    expect(src).toContain('const usedCoupon = discountVal > automaticDiscount');
+    expect(src).toContain('if (usedCoupon && couponValidation?.coupon)');
+  });
+
+  it('still places the order if the deliveryFee column has not been migrated yet', () => {
+    // PM2 runs from the working tree, so a restart can load this code before the
+    // migration has run. Writing a column Postgres does not have fails the INSERT
+    // with 42703, which would stop every medicine order.
+    const src = read('routes/billing.route.js');
+    expect(src).toContain("=== '42703'");
+    expect(src).toContain('deliveryFeeUnmigrated');
+    expect(src).toContain('20261110000300-order-delivery-fee');
+    // The customer is billed correctly either way, because total already includes it.
+    expect(src).toContain('total: totals.total');
+  });
+
+  it('Order declares deliveryFee, or Sequelize would drop it from the INSERT', () => {
+    expect(read('models/billing.model.intelligent.js')).toMatch(/deliveryFee:\s*\{[\s\S]{0,160}DECIMAL\(10, 2\)/);
+  });
+});
+
 describe('prescription schedules', () => {
   it('requires a prescription for H, H1 and X only', () => {
     for (const s of ['H', 'H1', 'X', 'h', ' x ']) expect(requiresPrescription(s)).toBe(true);
@@ -137,7 +242,7 @@ describe('POST /api/billing/orders no longer trusts the browser', () => {
     expect(handler).toContain('priceLine(medicine, item.quantity, item)');
     // The old arithmetic billed parseFloat(item.price) * qty.
     expect(handler).not.toMatch(/parseFloat\(item\.price\)/);
-    expect(handler).toContain('priced.reduce((sum, line) => sum + line.lineTotal, 0)');
+    expect(handler).toContain('computeOrderTotals(priced)');
   });
 
   it('refuses an item it cannot price instead of substituting another medicine', () => {
