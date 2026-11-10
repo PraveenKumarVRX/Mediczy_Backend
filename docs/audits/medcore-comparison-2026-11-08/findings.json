@@ -1,0 +1,556 @@
+[
+  {
+    "id": "F01",
+    "priority": "P1",
+    "status": "Confirmed partial workflow",
+    "title": "Five mounted hospital pages save local updates instead of performing the advertised business action",
+    "mediqzy": [
+      "client/src/routes/index.tsx:1229",
+      "client/src/pages/hospital/HospitalModulePages.tsx:108",
+      "client/src/pages/hospital/HospitalModulePages.tsx:194",
+      "client/src/pages/hospital/HospitalModulePages.tsx:234",
+      "client/src/pages/hospital/HospitalModulePages.tsx:294"
+    ],
+    "medcore": [
+      "apps/api/src/routes/appointments.ts:1",
+      "apps/api/src/routes/patients.ts:1",
+      "apps/api/src/routes/pharmacy.ts:1"
+    ],
+    "observed": "The mounted /hospital/appointments, /hospital/patients, /hospital/pharmacy, /hospital/claims and /hospital/staff components use ManagedSection. Its save handler writes label/meta/status to hospitalStorage, then shows \u201cUpdate Added\u201d. Statistics are literal strings. \u201cCreate schedule\u201d and \u201cCreate PO\u201d open that generic update dialog. Real appointment, patient, dispensing, insurance and staff APIs exist elsewhere. /hospital/beds and /hospital/opd-ipd redirect to other screens, so the dead Bed/OPD placeholder exports are deliberately NOT counted as mounted defects.",
+    "impact": "Hospital users can mistake a locally saved note for a scheduled visit, purchase order or other persisted operation. Different devices do not share the same business state.",
+    "acceptance": "Route each of the five pages to the canonical workflow or implement typed API forms. One action must create a real scoped business row and appear on a second session; reload/error/403 states must be truthful. Remove fixed KPI values. Verify each sidebar destination.",
+    "owner": "Hospital frontend + owning backend teams"
+  },
+  {
+    "id": "F02",
+    "priority": "P0",
+    "status": "Confirmed source defect",
+    "title": "Blood-bank display invents stock and expiry alerts when live data is empty or unavailable",
+    "mediqzy": [
+      "server/routes/hospital-display.route.js:365",
+      "client/src/pages/display/BloodBankDisplay.tsx:42",
+      "server/app.js:1459"
+    ],
+    "medcore": [
+      "apps/api/src/routes/bloodbank.ts:429"
+    ],
+    "observed": "GET /api/display/blood-bank queries blood_inventory; if it returns no rows, it constructs random quantities and expiry flags plus sample requisitions, returning success:true/live:false. BloodBankDisplay accepts success:true and renders the inventory without checking live. Its catch also suppresses fetch errors. The transactional blood module uses blood_bank_units, not this display query.",
+    "impact": "A clinical operational screen can show non-existent blood availability. This is a verified fallback path, not proof it was being triggered in production during this audit.",
+    "acceptance": "Use the canonical tenant-scoped blood units and component aggregation. On a valid empty database show zero; on a failed source show unavailable/stale with timestamp, never generated availability. Exercise empty data, SQL failure, stale fetch and component labels.",
+    "owner": "Blood bank + displays"
+  },
+  {
+    "id": "F03",
+    "priority": "P1",
+    "status": "Confirmed integration gap",
+    "title": "Persisted crossmatch and transfusion schema is not connected to the blood-bank workflow",
+    "mediqzy": [
+      "server/migrations/20261015000700-blood-crossmatch-transfusion.migration.js:10",
+      "server/routes/dept/bloodBank.route.js:743",
+      "server/routes/dept/bloodBank.route.js:778"
+    ],
+    "medcore": [
+      "apps/api/src/routes/bloodbank.ts:1184"
+    ],
+    "observed": "Mediqzy creates blood_crossmatches, blood_crossmatch_units and blood_transfusions, but source searches found references to those tables only in the migration. /cross-match computes a blood-group stock lookup, without recording a patient/sample/test/reviewer result. /requisitions/:id/issue does not consult crossmatch_id. Medcore has a persisted cross-match route, but its existence also does not certify safe issue gating.",
+    "impact": "Compatibility lookup and a successful migration can be misread as a completed laboratory crossmatch/transfusion traceability workflow.",
+    "acceptance": "Connect sample/patient/unit identity, result, method, reviewer, validity and consent to issue/return/transfusion events. Enforce approved clinical rules server-side. Prove invalid/missing/expired results block release, with a separately audited emergency exception policy.",
+    "owner": "Blood bank clinical owner + backend"
+  },
+  {
+    "id": "F04",
+    "priority": "P1",
+    "status": "Offline reproduced",
+    "title": "The same blood requisition can allocate a second set of units",
+    "mediqzy": [
+      "server/routes/dept/bloodBank.route.js:743"
+    ],
+    "medcore": [
+      "apps/api/src/routes/bloodbank.ts:747"
+    ],
+    "observed": "The issue handler locks the requisition row and available units, but never checks the requisition status. Repeating the call selects new available units, marks them issued and overwrites issued_unit_ids. R06 evaluated the actual handler with an in-memory SQL adapter: two calls both succeeded and the final reference contained only the second allocation. Medcore is not claimed immune to repeated-request issues; this is a Mediqzy defect identified during the comparison.",
+    "impact": "Duplicate submission can consume stock twice and lose the first allocation from the requisition\u2019s current unit list.",
+    "acceptance": "Require an explicit pending/approved \u2192 issued transition under the lock, use an idempotency key, and retain immutable allocation events. Sequential retry and concurrent double-submit must allocate exactly once; return/reissue must be explicit.",
+    "owner": "Blood bank backend"
+  },
+  {
+    "id": "F05",
+    "priority": "P1",
+    "status": "Confirmed wiring gap",
+    "title": "Adoption adherence scheduler has no application startup caller",
+    "mediqzy": [
+      "server/services/medcore-adoption-cron.service.js:7",
+      "server/routes/medcore-adoption.route.js:199"
+    ],
+    "medcore": [
+      "apps/api/src/services/adherence-scheduler.ts:104"
+    ],
+    "observed": "startMedcoreAdoptionCron is defined and exported, but searching executable server sources found no import or invocation beyond its own file. The explicit /adherence/run-due route exists. Therefore enabling the adoption flag alone does not establish background processing in the checked-in application bootstrap. This finding is specific to this scheduler, not all Mediqzy medication reminders.",
+    "impact": "Plans can remain due indefinitely unless something external calls the API; an undocumented external operator job was not assumed.",
+    "acceptance": "Register the scheduler in the supported job lifecycle, with per-job health, restart behavior and a documented single-worker/lease strategy. A due synthetic event must run after app restart without a manual HTTP call.",
+    "owner": "Job platform + patient engagement"
+  },
+  {
+    "id": "F06",
+    "priority": "P1",
+    "status": "Offline reproduced",
+    "title": "Adherence form creates unscheduled plans and the service does not generate recurring occurrences",
+    "mediqzy": [
+      "client/src/pages/MedCoreWorkbench.tsx:115",
+      "server/routes/medcore-adoption.route.js:178",
+      "server/services/medcore-adoption.service.js:29",
+      "server/services/medcore-adoption.service.js:38"
+    ],
+    "medcore": [
+      "apps/api/src/routes/ai-adherence.ts:132",
+      "apps/api/src/services/adherence-scheduler.ts:28"
+    ],
+    "observed": "The form sends patientId and medication (whose default JSON contains times), but no schedule. The service reads only schedule.nextDueAt/dueAt/time, returning null otherwise. The route still returns 201 with firstEvent:null. R01 reproduces this. For a valid date it inserts one event; after sending, no next occurrence is materialized in this service. Other Mediqzy reminder systems are separate and were not conflated with this path.",
+    "impact": "A successful plan response does not guarantee even the first reminder, let alone the daily course.",
+    "acceptance": "Specify timezone, start/end dates, times, dose, recurrence and cancellation in one validated contract. Reject unschedulable plans; materialize unique occurrences and verify a multi-day course, edits and missed doses.",
+    "owner": "Patient engagement + hospital frontend"
+  },
+  {
+    "id": "F07",
+    "priority": "P1",
+    "status": "Offline reproduced",
+    "title": "Quiet hours permanently discard due adoption reminders",
+    "mediqzy": [
+      "server/services/medcore-adoption.service.js:50"
+    ],
+    "medcore": [
+      "apps/api/src/services/notification.ts:1"
+    ],
+    "observed": "runDueAdherenceEvents reads only scheduled events, evaluates quiet hours with getUTCHours(), changes a quiet-hour event to skipped and returns deliveryDeferred:true. No new due date or later event is created. R03 verifies skipped persistence and absence of rescheduling. The patient timezone is not part of this calculation.",
+    "impact": "The API promises deferral but the reminder is removed from future processing; local quiet hours can also be interpreted in the wrong zone.",
+    "acceptance": "Persist a deferred state/new next_attempt_at using the configured patient timezone. Verify overnight windows, local dates and eventual exactly-once eligibility after the window; distinguish deliberately suppressed clinical reminders from deferred ones.",
+    "owner": "Patient engagement"
+  },
+  {
+    "id": "F08",
+    "priority": "P1",
+    "status": "Offline reproduced",
+    "title": "Concurrent adoption reminder workers can send the same event twice",
+    "mediqzy": [
+      "server/services/medcore-adoption.service.js:50",
+      "server/routes/medcore-adoption.route.js:199"
+    ],
+    "medcore": [
+      "apps/api/src/services/adherence-scheduler.ts:28"
+    ],
+    "observed": "Due rows are read without an atomic claim, then notificationService.send executes before status updates. Cron/manual calls or overlapping workers can select the same row. R04 evaluates two service invocations and observes two sends. Medcore\u2019s simple interval scheduler also should not be copied as an exactly-once reference; this requirement follows from the workflow.",
+    "impact": "Duplicate medication messages undermine trust and can confuse patients about dosing.",
+    "acceptance": "Claim unique occurrences transactionally, use an outbox/provider idempotency key, and recover expired leases. Two workers and a crash after provider acceptance must not create a second notification.",
+    "owner": "Patient engagement + notification platform"
+  },
+  {
+    "id": "F09",
+    "priority": "P1",
+    "status": "Offline reproduced / UI traced",
+    "title": "Lab-explainer workbench does not support an end-to-end patient explanation",
+    "mediqzy": [
+      "client/src/pages/MedCoreWorkbench.tsx:15",
+      "client/src/pages/MedCoreWorkbench.tsx:110",
+      "server/services/medcore-adoption.service.js:4",
+      "server/routes/medcore-adoption.route.js:132",
+      "server/services/medcore-adoption.service.js:101"
+    ],
+    "medcore": [
+      "apps/api/src/routes/ai-report-explainer.ts:63",
+      "apps/web/src/app/dashboard/lab-explainer/page.tsx:1"
+    ],
+    "observed": "The workbench\u2019s default/editable report shape is test/value/unit/referenceRange/flag; the service reads report.values[] with status or abnormal. R02 shows a high value in the form shape becomes \u201cNo out-of-range values were supplied\u201d. Draft creation also omits patientId/reportId. Delivery rejects a draft without a patient recipient. The workbench has no review/approve/reject/deliver action, although backend routes exist.",
+    "impact": "An operator can create a draft that omits the supplied result and cannot complete delivery from that screen.",
+    "acceptance": "Select a persisted lab order and patient, transform validated structured observations, show source values/units, support authorized review and delivery status. Test high/low/normal, missing reference ranges, wrong-patient prevention and full create\u2192review\u2192deliver UI.",
+    "owner": "Lab + hospital frontend"
+  },
+  {
+    "id": "F10",
+    "priority": "P1",
+    "status": "Offline reproduced",
+    "title": "Approved lab explanations can be delivered twice concurrently",
+    "mediqzy": [
+      "server/services/medcore-adoption.service.js:101"
+    ],
+    "medcore": [
+      "apps/api/src/routes/ai-report-explainer.ts:205"
+    ],
+    "observed": "Delivery selects an approved undelivered draft, sends the message, then conditionally updates delivered_at. The condition occurs after the irreversible send. R05 runs two callers and observes two notifications even when the later update has no row. The caller does not reject an empty updated.rows result.",
+    "impact": "Duplicate patient communications and unreliable delivery acknowledgement under retries/concurrency.",
+    "acceptance": "Use an atomic claim/outbox before contacting the provider, plus a unique draft/channel delivery key and retry reconciliation. A lost response and two simultaneous requests must produce one logical delivery.",
+    "owner": "Lab + notification platform"
+  },
+  {
+    "id": "F11",
+    "priority": "P2",
+    "status": "Confirmed policy mismatch",
+    "title": "Lab approval contract says doctor approval while the reviewer role list includes nurses",
+    "mediqzy": [
+      "server/routes/medcore-adoption.route.js:23",
+      "server/routes/medcore-adoption.route.js:132",
+      "server/routes/medcore-adoption.route.js:147"
+    ],
+    "medcore": [
+      "apps/api/src/routes/ai-report-explainer.ts:205"
+    ],
+    "observed": "clinicalReviewer includes doctor/admin/medical_director/nurse, and is reused for approve/reject. The API labels drafts requiresDoctorApproval:true. Medcore restricts its approval endpoint to doctor/admin. This is a mismatch between the stated workflow and authorization, not a claim that nursing review is universally impermissible.",
+    "impact": "The UI/API promise and actual delegated clinical authority disagree.",
+    "acceptance": "Have the clinical owner define who may approve which report type. Enforce that permission, use accurate copy, bind reviewer identity and reject inappropriate roles in contract tests.",
+    "owner": "Clinical governance + IAM"
+  },
+  {
+    "id": "F12",
+    "priority": "P2",
+    "status": "Confirmed transition gap",
+    "title": "Clinical handoff claims can be overwritten and completed cases reopened",
+    "mediqzy": [
+      "server/routes/medcore-adoption.route.js:116",
+      "client/src/pages/MedCoreWorkbench.tsx:125"
+    ],
+    "medcore": [
+      "apps/api/src/routes/agent-console.ts:1"
+    ],
+    "observed": "PATCH validates only that the requested status is claimed/completed/cancelled; UPDATE filters id+tenant, not current state or owner, and replaces claimed_by with the current actor. No compare-and-set claim is present. The UI sends handoffReason whereas createAgentHandoff reads reason, so the operator reason is replaced with a default.",
+    "impact": "Two reviewers can believe they own the same handoff, and task history loses meaningful state/ownership semantics.",
+    "acceptance": "Define pending\u2192claimed\u2192completed/cancelled transitions, atomic claim/owner checks, supervisor reassignment and append-only audit. Contract-test simultaneous claim, completed\u2192claimed rejection and reason persistence.",
+    "owner": "Clinical operations"
+  },
+  {
+    "id": "F13",
+    "priority": "P2",
+    "status": "Confirmed incomplete metric pipeline",
+    "title": "Adoption KPI endpoint has a table and reader but no identified computation producer or tenant dimension",
+    "mediqzy": [
+      "server/routes/medcore-adoption.route.js:84",
+      "server/migrations/20261015006100-medcore-adoption.migration.js:30",
+      "server/migrations/20261015006600-medcore-tenant-delivery.migration.js:9"
+    ],
+    "medcore": [
+      "apps/api/src/services/ai/kpi-metrics.ts:1"
+    ],
+    "observed": "Executable-source search for metric_integrity_results found the migration and reader, no writer. The latest-by-metric_key query has no tenant/date/model/evaluation filter; the tenant hardening migration excludes this table. Returning unavailable on missing data is good behavior. External data loading was not verified.",
+    "impact": "Workbench metric labels cannot be treated as measured hospital quality, accuracy or tenant-specific performance.",
+    "acceptance": "Define numerator/denominator, eligible cohort, source labels, time window and model/version. Compute reproducibly per authorized scope; distinguish global benchmarks from tenant metrics and unavailable from zero.",
+    "owner": "Data/AI evaluation"
+  },
+  {
+    "id": "F14",
+    "priority": "P1",
+    "status": "Confirmed validation/atomicity gap",
+    "title": "Controlled-substance register accepts missing witnesses and separates register from inventory posting",
+    "mediqzy": [
+      "server/routes/scm.route.js:775"
+    ],
+    "medcore": [
+      "apps/api/src/routes/controlled-substances.ts:120"
+    ],
+    "observed": "Mediqzy requires only itemId, txnType and quantity presence, calculates balance + Number(quantity), stores witnessName||null, and inserts the ledger in a second query without a transaction in this handler. It does not fetch the item\u2019s controlled classification, validate allowed transaction direction or prevent negative balance here. The SCM database handle is tenant-scoped; the absence of explicit tenant predicates is not itself a tenant finding.",
+    "impact": "Register and stock can diverge on failure, and controlled entries can lack the witness/actor evidence required by the intended hospital policy.",
+    "acceptance": "Validate item classification, finite positive quantity/direction, stock sufficiency and authorized witness identity; atomically write register+ledger+audit. Fault-inject between writes, test duplicate/concurrent dispense, and use approved local clinical policy rather than copying legal comments from Medcore.",
+    "owner": "Pharmacy + SCM"
+  },
+  {
+    "id": "F15",
+    "priority": "P1",
+    "status": "Confirmed receipt validation gap",
+    "title": "GRN receipt clamps PO totals but records the full supplied quantity and does not bind a line to its PO",
+    "mediqzy": [
+      "server/routes/scm.route.js:306"
+    ],
+    "medcore": [
+      "apps/api/src/routes/purchase-orders.ts:664"
+    ],
+    "observed": "The receipt handler checks PO status, then updates scm_po_lines by line.id only with LEAST(quantity, received_quantity + receivedQuantity). It separately writes the raw receivedQuantity and caller itemId into scm_grn_lines. It does not reject over-receipt or establish line.order_id = URL order.id in this handler. Medcore explicitly compares cumulative receipts to ordered quantity and returns an error for over-receipt.",
+    "impact": "For example, 15 received against an order of 10 can record 10 on the PO and 15 in GRN/inventory; a same-tenant line from another order can be referenced.",
+    "acceptance": "Lock the PO and its lines; validate ownership, derived item ID, positive finite quantity and remaining quantity before any write. Reject or explicitly approve overage. Test wrong PO line, item mismatch, negative quantity, partial receipts, rollback and concurrent receipt.",
+    "owner": "SCM"
+  },
+  {
+    "id": "F16",
+    "priority": "P1",
+    "status": "Confirmed transaction gap",
+    "title": "GRN posting can leave partial stock and reject its own retry",
+    "mediqzy": [
+      "server/routes/scm.route.js:346"
+    ],
+    "medcore": [
+      "apps/api/src/routes/purchase-orders.ts:700"
+    ],
+    "observed": "Posting checks whether any ledger row exists, auto-decides a pending approval, then inserts lines separately without an enclosing transaction/atomic claim. If line two fails, line one remains. A retry sees that one row and returns \u201calready posted\u201d, leaving the receipt incomplete. Concurrent callers can both pass the initial check. Approval permissions delegated to decideOperationsApproval also need a role-level test.",
+    "impact": "Inventory and accounting can show a partially applied receipt that ordinary retry cannot repair.",
+    "acceptance": "Atomically transition approved\u2192posted and post all lines with a unique per-GRN-line ledger constraint. Roll back on any line failure; concurrent calls and retry after timeout must converge to one complete receipt.",
+    "owner": "SCM + finance"
+  },
+  {
+    "id": "F17",
+    "priority": "P1",
+    "status": "Confirmed partial workflow",
+    "title": "Visitor management displays sample people and its Issue Pass button has no action",
+    "mediqzy": [
+      "client/src/pages/security/SecurityModulePages.tsx:458",
+      "server/controller/security-portal.controller.js:244",
+      "server/controller/security-portal.controller.js:474",
+      "server/routes/unified-hospital-staff.routes.js:630"
+    ],
+    "medcore": [
+      "apps/api/src/routes/visitors.ts:54"
+    ],
+    "observed": "SecurityVisitorsPage renders Issue Pass and Pass Register buttons without handlers. It reads portal-data and uses fallbackVisitors when data is absent. The backend also returns FALLBACK_VISITORS for an absent/empty/failed audit source. Create/update visitor APIs do exist; therefore this is not an absent-API finding. Creation stores a log event with free-text patient/destination, without the admission-bound occupancy/blacklist checks visible in Medcore.",
+    "impact": "Security staff see plausible but non-live visitors and cannot issue a real pass from the advertised action; visitor admission policy is not represented.",
+    "acceptance": "Wire real pass issuance/check-out/print, bind to an admission where relevant, enforce configurable occupancy/blacklist/visiting rules, and show empty/error states. Exercise the mounted page, not just the API.",
+    "owner": "Security portal"
+  },
+  {
+    "id": "F18",
+    "priority": "P2",
+    "status": "Confirmed event projection defect",
+    "title": "Updating visitor status can erase displayed visitor identity and destination",
+    "mediqzy": [
+      "server/controller/security-portal.controller.js:244",
+      "server/controller/security-portal.controller.js:499"
+    ],
+    "medcore": [
+      "apps/api/src/routes/visitors.ts:320"
+    ],
+    "observed": "updateSecurityVisitor records only supplied fields in a new audit event. getSecurityVisitors selects the newest event per resource_id and ignores older events; it does not merge the new patch with the creation record. A status-only checkout therefore projects defaults such as Visitor/Hospital instead of the original name/destination. The query also caps the source at 40 events before deduplication.",
+    "impact": "The visitor register can lose useful identifying details from the current view and omit older visitors who are still inside.",
+    "acceptance": "Persist a canonical visitor row transactionally with an audit event, or correctly fold the event stream from creation. Verify status-only patches preserve fields and pagination never drops active passes.",
+    "owner": "Security portal"
+  },
+  {
+    "id": "F19",
+    "priority": "P1",
+    "status": "Needs isolated integration verification",
+    "title": "Visitor read path does not explicitly establish the tenant/RLS context used by audit-log writes",
+    "mediqzy": [
+      "server/controller/security-portal.controller.js:119",
+      "server/controller/security-portal.controller.js:244",
+      "server/controller/security-portal.controller.js:364",
+      "server/models/auditLog.model.intelligent.js:253"
+    ],
+    "medcore": [
+      "apps/api/src/routes/visitors.ts:165"
+    ],
+    "observed": "getSecurityVisitors has no organization argument and reads audit_logs through postgresSequelize.query with only resource_type filtering. The write model documents FORCE RLS and explicitly installs a platform-admin context for its audit sink; this raw reader does not visibly use that helper. Database policies/connection behavior were not executed here. Depending on deployed RLS and DB role, the effect could be empty results (then fabricated fallbacks) or overly broad results. A cross-tenant leak is NOT claimed as observed.",
+    "impact": "Tenant isolation and availability of the actual visitor register cannot be established from the role check alone.",
+    "acceptance": "Use the canonical tenant-aware audit reader or scoped visitor repository. Test two hospitals, unaffiliated actor, pool reuse and forced RLS with the real application role; assert both no leakage and correct own-tenant records.",
+    "owner": "Security portal + platform data isolation"
+  },
+  {
+    "id": "F20",
+    "priority": "P2",
+    "status": "Confirmed output-contract defect",
+    "title": "Report-builder PDF and Excel exports do not produce the advertised formats",
+    "mediqzy": [
+      "server/routes/report-builder.route.js:205",
+      "server/services/report-builder.service.js:577"
+    ],
+    "medcore": [
+      "apps/api/src/services/pdf-generator.ts:1"
+    ],
+    "observed": "The mounted admin report route accepts excel/pdf. exportToExcel delegates to CSV. exportToPDF writes JSON but returns format:pdf and a .pdf filename, with a .json download URL. This finding concerns the custom report builder, not Mediqzy\u2019s separate working prescription/claim PDF generators.",
+    "impact": "Hospital reports cannot reliably be opened or sent in the requested format; response metadata disagrees with the artifact.",
+    "acceptance": "Generate real XLSX/PDF or remove unsupported choices. Assert content type, filename, file signature and successful parsing, including Unicode, long tables and tenant-bound downloads.",
+    "owner": "Reporting"
+  },
+  {
+    "id": "F21",
+    "priority": "P2",
+    "status": "Confirmed incomplete delivery/persistence",
+    "title": "Scheduled report definitions live in memory and recipients are only logged",
+    "mediqzy": [
+      "server/services/report-builder.service.js:86",
+      "server/services/report-builder.service.js:605",
+      "server/routes/report-builder.route.js:283"
+    ],
+    "medcore": [
+      "apps/api/src/routes/scheduled-reports.ts:169",
+      "apps/api/src/routes/scheduled-reports.ts:361"
+    ],
+    "observed": "scheduleReport stores cron tasks/config in a Map. The scheduled callback builds/archives the report but has only a comment and log where recipient email should be sent. getNextRunTime returns a string telling the operator to read the cron expression. No schedule restoration was found in this service. Archive persistence is distinct from durable schedule persistence. Medcore persists ScheduledReport/ReportRun and calls email, although provider success still needs verification there too.",
+    "impact": "A restart loses schedules, and a successful schedule/run does not mean the intended recipients received a report.",
+    "acceptance": "Persist tenant/timezone/recipient definitions and run state, restore after restart, compute a real next run, and deliver through an outbox with attempts and receipts. Test downtime catch-up, duplicate workers and failed provider delivery.",
+    "owner": "Reporting + job platform"
+  },
+  {
+    "id": "F22",
+    "priority": "P2",
+    "status": "Not found after counterpart search",
+    "title": "Dedicated maternity/ANC, partograph and postnatal lifecycle",
+    "mediqzy": [
+      "server/migrations/specialty-prescriptions-expansion.migration.js:1",
+      "server/services/hospital-crm-specialty.service.js:4"
+    ],
+    "medcore": [
+      "apps/api/src/routes/antenatal.ts:710",
+      "apps/api/src/routes/antenatal.ts:999",
+      "apps/web/src/app/dashboard/antenatal/[id]/page.tsx:1"
+    ],
+    "observed": "Medcore has antenatal cases/visits, partograph start/observations/end and postnatal visits with persisted models and UI. Mediqzy search matches are specialty prescription templates, timeline text, orchestration and maternity marketing segments; no equivalent dedicated case/observation routes or model lifecycle were found in server/client executable sources.",
+    "impact": "A maternity hospital cannot rely on specialty templates alone for longitudinal antenatal/intrapartum/postnatal documentation.",
+    "acceptance": "First agree clinical scope; implement patient+pregnancy identity, visits, longitudinal observations, delivery/postnatal linkage, signed corrections and role permissions. Validate clinical rules/data against approved references rather than importing Medcore\u2019s algorithms.",
+    "owner": "OB-GYN product + clinical owner"
+  },
+  {
+    "id": "F23",
+    "priority": "P2",
+    "status": "Not found after counterpart search",
+    "title": "Dedicated pediatric growth, development and feeding tracking",
+    "mediqzy": [
+      "client/src/pages/doctor/DoctorSpecialtyTemplates.tsx:1",
+      "client/src/pages/hospital/HospitalEHR.tsx:375"
+    ],
+    "medcore": [
+      "apps/api/src/routes/growth.ts:103",
+      "apps/api/src/routes/growth.ts:749",
+      "apps/api/src/routes/growth.ts:864"
+    ],
+    "observed": "Medcore stores growth observations, developmental milestones and feeding logs. Mediqzy has pediatric templates and an immunizations display, but no equivalent longitudinal growth/milestone/feeding API/model subsystem was found. This does not claim Mediqzy lacks every vaccination-related field or service.",
+    "impact": "Pediatric care needs structured longitudinal data and age-aware visualization beyond free-text templates.",
+    "acceptance": "Define approved growth references and corrected-age handling, persist measurements/units/age/source and revisions, and add developmental/feeding workflows. Test boundary ages, unit conversion, missing birth date and chart provenance.",
+    "owner": "Pediatrics product + clinical owner"
+  },
+  {
+    "id": "F24",
+    "priority": "P2",
+    "status": "Not found after counterpart search",
+    "title": "Clinical patient-record merge with linked clinical history",
+    "mediqzy": [
+      "server/services/hospital-crm-foundation.service.js:318",
+      "server/routes/unified-patient.routes.js:1"
+    ],
+    "medcore": [
+      "apps/api/src/routes/patients-merge.ts:87"
+    ],
+    "observed": "Medcore validates a retained patient plus source IDs and performs record reassignment under a merge workflow. Mediqzy has duplicate lead identity detection and mergeLeads; that is CRM identity management, not clinical patient merging. Executable search for patient-merge variants found an event name but no clinical merge implementation.",
+    "impact": "Duplicate patient identities can leave medication, encounter, invoice and lab histories fragmented.",
+    "acceptance": "Create a privileged preview/resolve/merge workflow with tenant and patient identity checks, a complete FK inventory, conflict handling, durable provenance and alias redirects. Require review and reconciliation fixtures; do not treat a generic ID update as a safe merge.",
+    "owner": "Patient identity + clinical data"
+  },
+  {
+    "id": "F25",
+    "priority": "P2",
+    "status": "Not found after counterpart search",
+    "title": "Appointment cancellation waitlist and offer lifecycle",
+    "mediqzy": [
+      "server/models/queue-management.model.js:1",
+      "server/services/whatsapp-agentic-booking.service.js:565"
+    ],
+    "medcore": [
+      "apps/api/src/routes/waitlist.ts:18",
+      "apps/api/src/services/waitlist.ts:10",
+      "apps/api/src/routes/appointments.ts:1133"
+    ],
+    "observed": "Mediqzy has queue waiting concepts and a WhatsApp \u201cjoin waitlist\u201d suggestion, but no dedicated persisted doctor/date cancellation waitlist flow was found. Medcore stores entries and invokes notifyNextInWaitlist on cancellation. Its implementation is an offer notification, not a guaranteed atomic slot reservation, so the target should improve that distinction.",
+    "impact": "A newly available slot is not systematically offered to patients who requested it, increasing manual scheduling work.",
+    "acceptance": "Persist preferences/consent, FIFO or approved priority, expiry, cancellation and offer state. Link cancellation to a scoped notification; acceptance must compete safely for the actual slot and prevent duplicate active entries.",
+    "owner": "Front desk + scheduling"
+  },
+  {
+    "id": "F26",
+    "priority": "P2",
+    "status": "Not found after counterpart search",
+    "title": "Linked multi-doctor visit planning",
+    "mediqzy": [
+      "server/services/qms-opd.service.js:1",
+      "server/routes/qms.route.js:229"
+    ],
+    "medcore": [
+      "apps/api/src/routes/coordinated-visits.ts:79"
+    ],
+    "observed": "Medcore plans sequential available slots across doctorIds and creates a CoordinatedVisit with linked appointments in a transaction. Mediqzy multi-doctor QMS provides board/token organization, not a linked sequential booking planner. No equivalent coordinated visit entity/booking lifecycle was found.",
+    "impact": "Multi-specialty checkups require manual sequencing and become difficult to reschedule coherently.",
+    "acceptance": "Add a visit group with ordered appointments, realistic transition time, resource availability and atomic reservation. Test unavailable middle slot, concurrent booking, partial attendance and group reschedule/cancel.",
+    "owner": "Scheduling + care pathways"
+  },
+  {
+    "id": "F27",
+    "priority": "P2",
+    "status": "Not found after counterpart search",
+    "title": "Invoice-linked installment payment plans",
+    "mediqzy": [
+      "server/routes/billing.route.js:1",
+      "server/routes/payment.route.js:1"
+    ],
+    "medcore": [
+      "apps/api/src/routes/payment-plans.ts:38",
+      "apps/api/src/routes/payment-plans.ts:392"
+    ],
+    "observed": "No payment-plan/installment/instalment source matches were found in the scoped executable search. Medcore persists invoice plans, down payment, installment records and payment state. Its due-reminders endpoint only marks records reminded without sending email, so that portion is explicitly not a complete benchmark.",
+    "impact": "Hospital collections lack a structured due-date/remaining-balance plan distinct from partial receipts or a wallet.",
+    "acceptance": "Support installment schedules, rounding on final installment, approved changes, actual receipt allocation, overdue status and reconciliation. Enforce total conservation and idempotent callbacks; implement genuine reminder delivery.",
+    "owner": "Hospital finance"
+  },
+  {
+    "id": "F28",
+    "priority": "P2",
+    "status": "Not found after counterpart search",
+    "title": "Structured advance directives and resuscitation preference lifecycle",
+    "mediqzy": [
+      "server/services/nabh-jci-compliance.service.js:1",
+      "server/routes/ehr.route.js:1"
+    ],
+    "medcore": [
+      "apps/api/src/routes/ehr.ts:861"
+    ],
+    "observed": "Medcore provides an AdvanceDirective model and scoped CRUD. Mediqzy search found compliance/checklist mentions, not a persisted patient-specific directive with author/review/version and bedside consumption. Generic consent records are an adjacent capability, not evidence of this lifecycle.",
+    "impact": "Critical preferences may remain free text without an authoritative current, reviewed record.",
+    "acceptance": "Define institution-approved directive types, validity, signatories, review/revocation and display rules; preserve history and explicit unknown state. Clinical/legal owners must approve the workflow before release.",
+    "owner": "Clinical governance + EHR"
+  },
+  {
+    "id": "F29",
+    "priority": "P2",
+    "status": "Not found after counterpart search",
+    "title": "Patient belongings custody at admission and discharge",
+    "mediqzy": [
+      "server/routes/adt.route.js:1",
+      "server/services/nursing-ipd.service.js:1"
+    ],
+    "medcore": [
+      "apps/api/src/routes/admissions.ts:1448"
+    ],
+    "observed": "Medcore stores admission belongings, supports updates and checkout. No patient-belongings/custody source matches were found in Mediqzy server/client executable sources. General asset tracking is not personal belongings custody.",
+    "impact": "Staff lack a structured record of valuables received, stored, handed over or returned.",
+    "acceptance": "Bind custody items to admission, witness/recipient, storage location and immutable movement history; close outstanding custody at discharge and test partial return and disputed item handling.",
+    "owner": "Nursing + front desk"
+  },
+  {
+    "id": "F30",
+    "priority": "P2",
+    "status": "Confirmed integration/data-contract gap",
+    "title": "Adoption pharmacy forecasts rely on manual history and do not enforce daily cadence",
+    "mediqzy": [
+      "client/src/pages/MedCoreWorkbench.tsx:18",
+      "client/src/pages/MedCoreWorkbench.tsx:119",
+      "server/services/pharmacy-forecast.service.js:7",
+      "server/services/pharmacy-forecast.service.js:43"
+    ],
+    "medcore": [
+      "apps/api/src/services/ai/pharmacy-forecast.ts:1"
+    ],
+    "observed": "The workbench sends manually entered dated quantities, initially three monthly rows. Default seasonLength requires 14 observations so that example correctly returns unavailable. The algorithm sorts valid dates but treats every observation as one seasonal step, then forecasts consecutive days. It does not validate spacing/duplicates or fetch canonical item history. Separate SCM reordering exists and is not claimed absent.",
+    "impact": "Feeding weekly/monthly/irregular data can produce a daily-looking forecast with the wrong meaning; an algorithm alone does not close stock planning integration.",
+    "acceptance": "Load scoped dispense/consumption history, normalize to an explicit daily series, handle missing vs zero, validate stockout censoring and return provenance. Compare historical holdout performance to a baseline before using outputs for procurement.",
+    "owner": "Pharmacy analytics"
+  },
+  {
+    "id": "F31",
+    "priority": "P2",
+    "status": "Confirmed CI policy difference",
+    "title": "Some repository quality gates remain advisory or accept known failing tests",
+    "mediqzy": [
+      ".github/workflows/ci.yml:84",
+      ".github/workflows/ci.yml:111"
+    ],
+    "medcore": [
+      ".github/workflows/test.yml:1",
+      ".github/workflows/coverage.yml:1",
+      ".github/workflows/ai-eval-nightly.yml:1"
+    ],
+    "observed": "Mediqzy CI uses a Jest known-failure gate and continue-on-error for full TypeScript and lint. It also has valuable nursing integrity fixtures and an accessibility regression command, so neither testing nor accessibility is absent. Medcore has separate coverage/AI-evaluation/load/security workflows. File counts cannot establish quality, and actual GitHub run history/branch protection were not inspected.",
+    "impact": "A green workflow can coexist with legacy failures and type/lint regressions outside narrower gates; scenario coverage for the confirmed defects is not demonstrated by build success.",
+    "acceptance": "Track baseline failures with owners/expiry, enforce changed-code checks and critical hospital contracts, then retire the backlog. Require successful tenant, state transition, retry, export and browser tests for affected modules; verify branch protection rather than relying on YAML presence.",
+    "owner": "Engineering productivity + QA"
+  }
+]

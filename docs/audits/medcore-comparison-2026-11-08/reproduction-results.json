@@ -1,0 +1,36 @@
+{
+  "snapshot": "cc7008b9be90e714c4e2220910ae45e09a6cb0c2",
+  "mode": "offline source evaluation with mocked persistence/providers",
+  "observations": [
+    {
+      "id": "R01-unscheduled-workbench-plan",
+      "result": "observed",
+      "interpretation": "Reproduces the reported gap; not a passing product acceptance test"
+    },
+    {
+      "id": "R02-lab-form-shape-loses-abnormal-value",
+      "result": "observed",
+      "interpretation": "Reproduces the reported gap; not a passing product acceptance test"
+    },
+    {
+      "id": "R03-quiet-hours-permanent-skip",
+      "result": "observed",
+      "interpretation": "Reproduces the reported gap; not a passing product acceptance test"
+    },
+    {
+      "id": "R04-concurrent-adherence-double-send",
+      "result": "observed",
+      "interpretation": "Reproduces the reported gap; not a passing product acceptance test"
+    },
+    {
+      "id": "R05-concurrent-lab-delivery-double-send",
+      "result": "observed",
+      "interpretation": "Reproduces the reported gap; not a passing product acceptance test"
+    },
+    {
+      "id": "R06-blood-requisition-can-be-issued-twice",
+      "result": "observed",
+      "interpretation": "Reproduces the reported gap; not a passing product acceptance test"
+    }
+  ]
+}

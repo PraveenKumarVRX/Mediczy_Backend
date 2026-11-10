@@ -1,0 +1,1346 @@
+{
+  "method": "Chromium live production DOM, settled initial route state; CSS pixels; 9 November 2026",
+  "pages": [
+    {
+      "route": "dashboard",
+      "actual_path": "/team/dashboard",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 2351
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "chat",
+      "actual_path": "/team/chat",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1061
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "whatsapp",
+      "actual_path": "/team/whatsapp",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 989
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1100
+        },
+        {
+          "width": 342,
+          "height": 518,
+          "scroll_height": 967
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "social-inbox",
+      "actual_path": "/team/social-inbox",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 977
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "omnichannel",
+      "actual_path": "/team/omnichannel",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 957
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "email-inbox",
+      "actual_path": "/team/email-inbox",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1061
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        },
+        {
+          "width": 359,
+          "height": 614,
+          "scroll_height": 1745
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "support-tickets",
+      "actual_path": "/team/support-tickets",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 2169
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "whatsapp-templates",
+      "actual_path": "/team/whatsapp-templates",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1391
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1100
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "chat-analytics",
+      "actual_path": "/team/chat-analytics",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1015
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1100
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "corporate-management",
+      "actual_path": "/team/corporate-management",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 2029
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "corporate-employees",
+      "actual_path": "/team/corporate-employees",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "corporate-health-booking",
+      "actual_path": "/team/corporate-health-booking",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1518
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "provider-network",
+      "actual_path": "/team/provider-network",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1003
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "directory",
+      "actual_path": "/team/directory",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "doctor-management",
+      "actual_path": "/team/doctor-management",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 2417
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "hospital-management",
+      "actual_path": "/team/hospital-management",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 915
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "clinic-management",
+      "actual_path": "/team/clinic-management",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1879
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "lab-management",
+      "actual_path": "/team/lab-management",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 915
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "pharmacy-management",
+      "actual_path": "/team/pharmacy-management",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 995
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "appointments",
+      "actual_path": "/team/appointments",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "health-plans",
+      "actual_path": "/team/health-plans",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 3140
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "user-plan-customization",
+      "actual_path": "/team/user-plan-customization",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1117
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "orders-revenue",
+      "actual_path": "/team/orders-revenue",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [],
+      "restricted": true,
+      "error": null
+    },
+    {
+      "route": "reports",
+      "actual_path": "/team/reports",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "settings",
+      "actual_path": "/team/settings",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [],
+      "restricted": true,
+      "error": null
+    },
+    {
+      "route": "profile",
+      "actual_path": "/team/profile",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1253
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1100
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "copilot",
+      "actual_path": "/team/copilot",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1053
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "rfqs",
+      "actual_path": "/team/rfqs",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [],
+      "restricted": true,
+      "error": null
+    },
+    {
+      "route": "tools",
+      "actual_path": "/team/tools",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [],
+      "restricted": true,
+      "error": null
+    },
+    {
+      "route": "dashboard",
+      "actual_path": "/team/dashboard",
+      "viewport": {
+        "w": 1366,
+        "h": 768
+      },
+      "document": {
+        "w": 1366,
+        "h": 2351
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 681,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "chat",
+      "actual_path": "/team/chat",
+      "viewport": {
+        "w": 1366,
+        "h": 768
+      },
+      "document": {
+        "w": 1366,
+        "h": 929
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 681,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "whatsapp",
+      "actual_path": "/team/whatsapp",
+      "viewport": {
+        "w": 1366,
+        "h": 768
+      },
+      "document": {
+        "w": 1366,
+        "h": 857
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 681,
+          "scroll_height": 1100
+        },
+        {
+          "width": 317,
+          "height": 386,
+          "scroll_height": 967
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "corporate-management",
+      "actual_path": "/team/corporate-management",
+      "viewport": {
+        "w": 1366,
+        "h": 768
+      },
+      "document": {
+        "w": 1366,
+        "h": 2053
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 681,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "dashboard",
+      "actual_path": "/team/dashboard",
+      "viewport": {
+        "w": 1024,
+        "h": 768
+      },
+      "document": {
+        "w": 1024,
+        "h": 2449
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 218,
+          "height": 684,
+          "scroll_height": 1033
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "chat",
+      "actual_path": "/team/chat",
+      "viewport": {
+        "w": 1024,
+        "h": 768
+      },
+      "document": {
+        "w": 1024,
+        "h": 912
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 218,
+          "height": 684,
+          "scroll_height": 1033
+        },
+        {
+          "width": 784,
+          "height": 912,
+          "scroll_height": 946
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "whatsapp",
+      "actual_path": "/team/whatsapp",
+      "viewport": {
+        "w": 1024,
+        "h": 768
+      },
+      "document": {
+        "w": 1024,
+        "h": 852
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 218,
+          "height": 684,
+          "scroll_height": 1031
+        },
+        {
+          "width": 212,
+          "height": 410,
+          "scroll_height": 907
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "corporate-management",
+      "actual_path": "/team/corporate-management",
+      "viewport": {
+        "w": 1024,
+        "h": 768
+      },
+      "document": {
+        "w": 1024,
+        "h": 2199
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 218,
+          "height": 684,
+          "scroll_height": 1033
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "dashboard",
+      "actual_path": "/team/dashboard",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "document": {
+        "w": 390,
+        "h": 4183
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 203,
+          "height": 763,
+          "scroll_height": 965
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "chat",
+      "actual_path": "/team/chat",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "document": {
+        "w": 390,
+        "h": 1005
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 203,
+          "height": 763,
+          "scroll_height": 965
+        },
+        {
+          "width": 390,
+          "height": 1005,
+          "scroll_height": 1468
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "whatsapp",
+      "actual_path": "/team/whatsapp",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "document": {
+        "w": 390,
+        "h": 915
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 203,
+          "height": 763,
+          "scroll_height": 963
+        },
+        {
+          "width": 109,
+          "height": 457,
+          "scroll_height": 847
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "corporate-management",
+      "actual_path": "/team/corporate-management",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "document": {
+        "w": 390,
+        "h": 2777
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 203,
+          "height": 763,
+          "scroll_height": 965
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "user-management",
+      "actual_path": "/team/user-management",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "fitness-certificates",
+      "actual_path": "/team/fitness-certificates",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "broker-management",
+      "actual_path": "/team/broker-management",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 993
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "plan-governance",
+      "actual_path": "/team/plan-governance",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 1117
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "activity",
+      "actual_path": "/team/activity",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 900
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "medcore",
+      "actual_path": "/team/medcore",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 2195
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1102
+        },
+        {
+          "width": 446,
+          "height": 96,
+          "scroll_height": 240
+        }
+      ],
+      "restricted": false,
+      "error": null
+    },
+    {
+      "route": "corporate-health-packages",
+      "actual_path": "/team/corporate-health-packages",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1440,
+        "h": 990
+      },
+      "vertical_scroll_regions": [
+        {
+          "width": 232,
+          "height": 813,
+          "scroll_height": 1100
+        }
+      ],
+      "restricted": false,
+      "error": null
+    }
+  ],
+  "login": [
+    {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "document": {
+        "w": 1528,
+        "h": 988
+      },
+      "links": [
+        {
+          "label": "Back to User Login",
+          "href": "/login",
+          "y": 32
+        },
+        {
+          "label": "Forgot password?",
+          "href": "/team/forgot-password",
+          "y": 509
+        },
+        {
+          "label": "Nurse Login",
+          "href": "/nurse/login",
+          "y": 659
+        },
+        {
+          "label": "Doctor Login",
+          "href": "/doctor/login",
+          "y": 659
+        },
+        {
+          "label": "Contact support",
+          "href": "mailto:support@mediqzy.com?subject=Team%20Portal%20Login%20Help",
+          "y": 699
+        }
+      ],
+      "inputs": [
+        {
+          "name": "email",
+          "autocomplete": ""
+        },
+        {
+          "name": "password",
+          "autocomplete": ""
+        }
+      ],
+      "outside": [
+        {
+          "tag": "DIV",
+          "cls": "absolute -bottom-16 -left-16 opacity-[0.01] pointer-events-none"
+        },
+        {
+          "tag": "svg",
+          "cls": {}
+        },
+        {
+          "tag": "path",
+          "cls": {}
+        },
+        {
+          "tag": "DIV",
+          "cls": "absolute -top-16 -right-16 opacity-[0.01] pointer-events-none"
+        },
+        {
+          "tag": "svg",
+          "cls": {}
+        },
+        {
+          "tag": "path",
+          "cls": {}
+        }
+      ]
+    },
+    {
+      "viewport": {
+        "w": 1366,
+        "h": 768
+      },
+      "document": {
+        "w": 1454,
+        "h": 856
+      },
+      "links": [
+        {
+          "label": "Back to User Login",
+          "href": "/login",
+          "y": -34
+        },
+        {
+          "label": "Forgot password?",
+          "href": "/team/forgot-password",
+          "y": 443
+        },
+        {
+          "label": "Nurse Login",
+          "href": "/nurse/login",
+          "y": 593
+        },
+        {
+          "label": "Doctor Login",
+          "href": "/doctor/login",
+          "y": 593
+        },
+        {
+          "label": "Contact support",
+          "href": "mailto:support@mediqzy.com?subject=Team%20Portal%20Login%20Help",
+          "y": 633
+        }
+      ],
+      "inputs": [
+        {
+          "name": "email",
+          "autocomplete": ""
+        },
+        {
+          "name": "password",
+          "autocomplete": ""
+        }
+      ],
+      "outside": [
+        {
+          "tag": "DIV",
+          "cls": "absolute -bottom-16 -left-16 opacity-[0.01] pointer-events-none"
+        },
+        {
+          "tag": "svg",
+          "cls": {}
+        },
+        {
+          "tag": "path",
+          "cls": {}
+        },
+        {
+          "tag": "DIV",
+          "cls": "absolute -top-16 -right-16 opacity-[0.01] pointer-events-none"
+        },
+        {
+          "tag": "svg",
+          "cls": {}
+        },
+        {
+          "tag": "path",
+          "cls": {}
+        }
+      ]
+    },
+    {
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "document": {
+        "w": 467,
+        "h": 921
+      },
+      "links": [
+        {
+          "label": "Back to User Login",
+          "href": "/login",
+          "y": 56
+        },
+        {
+          "label": "Forgot password?",
+          "href": "/team/forgot-password",
+          "y": 473.5
+        },
+        {
+          "label": "Nurse Login",
+          "href": "/nurse/login",
+          "y": 605
+        },
+        {
+          "label": "Doctor Login",
+          "href": "/doctor/login",
+          "y": 605
+        },
+        {
+          "label": "Contact support",
+          "href": "mailto:support@mediqzy.com?subject=Team%20Portal%20Login%20Help",
+          "y": 640
+        }
+      ],
+      "inputs": [
+        {
+          "name": "email",
+          "autocomplete": ""
+        },
+        {
+          "name": "password",
+          "autocomplete": ""
+        }
+      ],
+      "outside": [
+        {
+          "tag": "DIV",
+          "cls": "absolute -top-8 -right-8 opacity-[0.02] pointer-events-none"
+        },
+        {
+          "tag": "svg",
+          "cls": {}
+        },
+        {
+          "tag": "DIV",
+          "cls": "absolute -bottom-16 -left-16 opacity-[0.01] pointer-events-none"
+        },
+        {
+          "tag": "svg",
+          "cls": {}
+        },
+        {
+          "tag": "path",
+          "cls": {}
+        },
+        {
+          "tag": "DIV",
+          "cls": "absolute -top-16 -right-16 opacity-[0.01] pointer-events-none"
+        },
+        {
+          "tag": "svg",
+          "cls": {}
+        },
+        {
+          "tag": "path",
+          "cls": {}
+        }
+      ]
+    }
+  ],
+  "focused_checks": [
+    {
+      "type": "chatHeader",
+      "element": {
+        "color": "rgb(248, 250, 252)",
+        "bg": "rgb(255, 255, 255)",
+        "text": [
+          {
+            "tag": "H3",
+            "color": "rgb(248, 250, 252)",
+            "bg": "rgba(0, 0, 0, 0)",
+            "label": null,
+            "title": null
+          },
+          {
+            "tag": "P",
+            "color": "rgb(148, 163, 184)",
+            "bg": "rgba(0, 0, 0, 0)",
+            "label": null,
+            "title": null
+          },
+          {
+            "tag": "BUTTON",
+            "color": "rgb(248, 250, 252)",
+            "bg": "rgba(0, 0, 0, 0)",
+            "label": null,
+            "title": null
+          },
+          {
+            "tag": "BUTTON",
+            "color": "rgb(248, 250, 252)",
+            "bg": "rgba(0, 0, 0, 0)",
+            "label": null,
+            "title": null
+          },
+          {
+            "tag": "BUTTON",
+            "color": "rgb(248, 250, 252)",
+            "bg": "rgba(0, 0, 0, 0)",
+            "label": null,
+            "title": null
+          },
+          {
+            "tag": "BUTTON",
+            "color": "rgb(248, 250, 252)",
+            "bg": "rgba(0, 0, 0, 0)",
+            "label": null,
+            "title": null
+          }
+        ]
+      },
+      "buttonsWithoutNames": 13
+    },
+    {
+      "type": "sidebar-bottom",
+      "links": [
+        {
+          "label": "Chat",
+          "y": 748
+        },
+        {
+          "label": "Email Inbox",
+          "y": 784
+        },
+        {
+          "label": "Social Inbox",
+          "y": 820
+        }
+      ],
+      "scroll": [
+        {
+          "top": 289,
+          "h": 813,
+          "sh": 1102
+        }
+      ]
+    },
+    {
+      "type": "mobileDrawer",
+      "expanded": "true",
+      "dialog": "navigation",
+      "activeElement": "sidebar-toggle"
+    },
+    {
+      "type": "mobileEscape",
+      "expanded": "true"
+    }
+  ]
+}

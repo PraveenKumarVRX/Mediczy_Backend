@@ -1,0 +1,396 @@
+[
+  {
+    "id": "WP00",
+    "title": "Establish the migration, authorization and delivery foundation",
+    "findings": [],
+    "dependencies": [],
+    "owner": "Platform / data / QA",
+    "size": "M",
+    "route_names": [],
+    "ui_names": [],
+    "design": "Freeze the implementation base, compare each audited file against current main and attach the audit finding to its change. Inventory canonical hospital/patient/admission IDs before defining foreign keys. Establish one transaction-scoped tenant context, immutable actor attribution and an outbox abstraction used by later packages. Preserve upstream attribution in the reference package; resolve the repository license inconsistency before incorporating copied code into the distributed product. Reference files are supplied now and product integration is a separate implementation decision.",
+    "data": "Create a schema/ID mapping decision record. Reuse existing notification outbox/idempotency facilities where suitable; add only missing columns/indexes after inspecting deployed schema. Every new mutable record needs organization scope, version, actor, timestamps and audit linkage. Additive migrations must have preflight and resume/backfill checkpoints.",
+    "api": "Define common mutation semantics: authenticated tenant scope from the session; client-supplied patient/admission must be looked up in that scope; idempotency key for business commands; expectedVersion for concurrent edits; request ID in errors and audit. Existing API response formats remain compatible.",
+    "tests": "Disposable DB using the real application role; two hospitals; role matrix; pooled-connection reuse; migration from current schema; worker crash/retry fixture. License/provenance decision is documented rather than assumed from repository visibility."
+  },
+  {
+    "id": "WP01",
+    "title": "Connect the five hospital landing pages",
+    "findings": [
+      "F01"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Hospital frontend / respective API owners",
+    "size": "M",
+    "route_names": [
+      "appointments",
+      "patients",
+      "pharmacy",
+      "insurance-claims",
+      "users"
+    ],
+    "ui_names": [
+      "patients",
+      "pharmacy"
+    ],
+    "design": "Replace ManagedSection on appointments, patients, pharmacy, claims and staff with canonical working screens or typed forms backed by existing APIs. First compare current sidebar destinations with actual mounted routes. Keep existing working bed map, billing, notifications and doctors routes. A successful UI message follows a persisted business command, never localStorage.",
+    "data": "Reuse existing appointments, patient identities, dispensing, claims and staff tables. Remove local update stores from authoritative flows; do not auto-convert arbitrary local notes into clinical records. If notes must be retained, export them explicitly as notes.",
+    "api": "Reuse hospital/practice appointment/patient reads and owning scheduling, pharmacy, insurance and staff commands. Document exact current endpoint and response adapter per page before coding; do not implement a second CRUD API just to match Medcore URLs.",
+    "tests": "Five browser flows create/read a real business row in a second authenticated session. Validate tenant denial, permissions, reload, empty data and network failure. Fixed statistics and misleading Create PO/Create schedule actions disappear."
+  },
+  {
+    "id": "WP02",
+    "title": "Repair blood display, issue integrity and transfusion linkage",
+    "findings": [
+      "F02",
+      "F03",
+      "F04"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Blood bank backend / clinical owner / displays",
+    "size": "L",
+    "route_names": [
+      "bloodbank"
+    ],
+    "ui_names": [
+      "bloodbank",
+      "blood-bank"
+    ],
+    "design": "First remove generated stock and expose live/unavailable/stale states. Read canonical blood_bank_units under hospital scope. Then enforce one requisition state transition with idempotency and row locks; retain immutable allocation history. Connect existing crossmatch/transfusion tables to persisted patient/sample/unit results, clinical review, issue and bedside events. Review component-specific compatibility with the hospital clinical owner; do not copy a generic RBC rule for every component.",
+    "data": "Inspect the existing 20261015000700 schema before adding tables. Add allocation events keyed by organization/requisition/unit, reviewed crossmatch validity and transfusion observations only where missing. Historical issued rows without verified crossmatch remain explicitly legacy/unverified; never synthesize approval. Use constraints that permit explicit return/reissue history while preventing duplicate active allocations.",
+    "api": "Keep /api/display/blood-bank and existing requisition issue URLs. Issue requires an allowed current state and approved policy evidence; returns original result on an idempotent retry. Propose scoped crossmatch record/review and transfusion start/observe/complete commands; final path names follow route conventions.",
+    "tests": "Empty/error display; same request twice; concurrent requests; expired unit; wrong sample/patient; incompatible component; emergency exception with authorized reason; rollback on audit failure; return/reissue; conservation of inventory and allocation history."
+  },
+  {
+    "id": "WP03",
+    "title": "Make controlled-drug and GRN posting atomic",
+    "findings": [
+      "F14",
+      "F15",
+      "F16"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "SCM / pharmacy / finance",
+    "size": "L",
+    "route_names": [
+      "controlled-substances",
+      "purchase-orders"
+    ],
+    "ui_names": [
+      "purchase-orders"
+    ],
+    "design": "Validate controlled item classification, quantity direction, stock sufficiency, authorized witness and acting user. Post register+ledger+audit in one transaction. For receipts, derive item identity from a PO-owned line, reject invalid/over-limit quantity unless a specific approved overage workflow exists, and lock remaining quantities. Separate approval authority from posting; the post handler must not silently approve itself.",
+    "data": "Reuse scoped SCM tables and request DB handle; explicitly begin/commit/rollback on the same connection. Add a unique ledger reference per posted receipt line and command idempotency record after reconciling historical duplicates. Persist posting status so a partial failed attempt cannot masquerade as complete.",
+    "api": "Preserve current /orders/:id/grn, /grns/:id/post and /controlled-substances paths. Return conflict for wrong state/version or insufficient remaining quantity. Derive actor and witness identity from authenticated records; do not trust witnessName as proof of authorization.",
+    "tests": "Wrong-PO line, item mismatch, negative/NaN/zero quantity, over-receipt, second-line fault injection, concurrent receive/post, stale approval, missing witness and retry after lost response. Check stock/register/invoice reconciliation."
+  },
+  {
+    "id": "WP04",
+    "title": "Complete visitor pass lifecycle and isolate its records",
+    "findings": [
+      "F17",
+      "F18",
+      "F19"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Security portal / data isolation",
+    "size": "M",
+    "route_names": [
+      "visitors",
+      "visitors-stats"
+    ],
+    "ui_names": [
+      "visitors"
+    ],
+    "design": "Reproduce the RLS read-context issue with two synthetic hospitals before asserting a data leak. Replace latest-audit-event projection with an authoritative visitor repository or a correctly folded event stream. Wire Issue Pass, register export and checkout. Remove sample people and KPI fallback values. Add admission/visitor identity, configurable visiting policies and blacklist controls.",
+    "data": "Prefer scoped visitor/pass and pass-event tables; audit remains evidence rather than the only mutable record. Backfill only verified tenant-owned events. Quarantine ambiguous ownership; do not assign unknown records to the current tenant. Current projection loses partial-update fields, so reconstruction must fold complete event history.",
+    "api": "Retain security visitor list/create/patch APIs with canonical read/update service. Add explicit check-in/checkout/revoke actions and versioning. A policy conflict returns a clear reason; missing source/context yields unavailable or denial, never sample records.",
+    "tests": "Status-only patch retains identity; >40 events does not hide active passes; blacklist/occupancy policy; two-tenant list/update; real-role FORCE RLS and pool reuse; browser issue/print/checkout; empty/error states."
+  },
+  {
+    "id": "WP05",
+    "title": "Finish recurring adherence delivery",
+    "findings": [
+      "F05",
+      "F06",
+      "F07",
+      "F08"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Patient engagement / jobs / notifications",
+    "size": "L",
+    "route_names": [
+      "ai-adherence"
+    ],
+    "ui_names": [
+      "adherence"
+    ],
+    "design": "Register the job in the existing supported scheduler lifecycle. Define recurrence/timezone semantics and require schedulable plans in both form and API. Materialize unique occurrences, claim work atomically and use the shared outbox. Quiet hours defer to the next allowed local time; skipping must be a distinct explicit policy. Medication schedule edits version future occurrences and do not rewrite completed dose history.",
+    "data": "Extend existing adherence_plans/events after schema inspection with timezone, start/end, recurrence_version, scheduled_for, next_attempt_at, claim lease, attempt count and terminal reason. Uniqueness: organization+plan+recurrence_version+scheduled occurrence. Reconcile existing null/invalid schedules as needs_review.",
+    "api": "Keep adoption URLs for compatibility while creating a hospital-facing typed planner. Create returns firstDueAt and occurrence status or validation error. Run-due becomes an authorized operational command, not a general patient action. Expose delivery/dose status separately.",
+    "tests": "Three-day course, timezone midnight, quiet window crossing midnight, schedule edit, cancellation, worker restart, overlapping workers, crash before/after provider acceptance, timeout reconciliation, permanent provider rejection and missed-dose distinction."
+  },
+  {
+    "id": "WP06",
+    "title": "Finish clinician-reviewed lab explanations",
+    "findings": [
+      "F09",
+      "F10",
+      "F11"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Lab / clinical governance / frontend",
+    "size": "M",
+    "route_names": [
+      "ai-report-explainer"
+    ],
+    "ui_names": [
+      "lab-explainer"
+    ],
+    "design": "Select a persisted report and patient, map result observations into one schema, display source units/reference ranges and support review/reject/approve/deliver. The reviewer permission must match the institution policy and UI wording. Pin the report version at review; a changed report invalidates the previous approval. Claim delivery before contacting the provider through an outbox.",
+    "data": "Reuse lab_explainer_drafts; add source report version/content digest, review version, authorized reviewer, correction reason and delivery attempt/outbox linkage as needed. Existing drafts without patient/report IDs are incomplete and cannot be sent. Unique logical delivery per organization/draft-version/channel.",
+    "api": "Unify UI payload and backend report.values schema with strict validation. Authoritative patient/report linkage is server resolved. Approval checks pending state+version; delivery accepts approved current version only. A queued send is not reported as delivered.",
+    "tests": "Workbench shape regression; normal/high/low/missing units; wrong patient; nurse/doctor policy tests; report amended after approval; concurrent approval/delivery; provider timeout; durable delivery receipt; patient access to own explanation only."
+  },
+  {
+    "id": "WP07",
+    "title": "Harden handoff ownership and compute scoped KPIs",
+    "findings": [
+      "F12",
+      "F13"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Clinical operations / AI evaluation",
+    "size": "M",
+    "route_names": [
+      "agent-console",
+      "ai-kpis"
+    ],
+    "ui_names": [
+      "agent-console"
+    ],
+    "design": "Use compare-and-set handoff claims, explicit terminal states, supervisor reassignment and append-only transition events. Align reason vs handoffReason through one contract. Build the metric producer from defined cohorts and reviewed labels; unavailable remains distinct from zero. Workbench data must show scope, window, provenance and model/evaluation version.",
+    "data": "Reuse agent_handoffs with version/claim fields and transition audit. Add metric scope/window/model_version/dataset_version/numerator/denominator/computed_at fields or a new versioned result table; explicitly label any global benchmark. Do not assign tenant semantics to legacy global rows.",
+    "api": "PATCH claim/complete/cancel requires allowed transition and owner/permission. Add authorized reassignment. Metric GET resolves tenant from session and requires a requested/effective window; computation is a trusted job, not caller-supplied score storage.",
+    "tests": "Two reviewers claim simultaneously; terminal case cannot reopen through generic PATCH; operator reason retained; real zero vs missing labels; wrong-tenant metric inaccessible; repeat computation reproducible against a pinned fixture."
+  },
+  {
+    "id": "WP08",
+    "title": "Implement true report formats and durable scheduled delivery",
+    "findings": [
+      "F20",
+      "F21"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Reporting / jobs / notifications",
+    "size": "M",
+    "route_names": [
+      "scheduled-reports"
+    ],
+    "ui_names": [
+      "scheduled-reports"
+    ],
+    "design": "Generate parseable PDF/XLSX using established Mediqzy export libraries after inspecting existing helpers. Persist report definitions and schedule timezone/next_run; workers claim runs and send through the outbox. Restore overdue schedules with an explicit catch-up policy; archive generation and recipient delivery are separate states.",
+    "data": "Use existing report archive structures where appropriate; durable report schedules/runs/recipient deliveries need organization, report version, run window, digest, state and retention policy. Unique schedule+scheduled instant prevents duplicate runs. Revalidate recipients and report permissions at execution.",
+    "api": "Retain existing admin report API; return artifact MIME/filename/size/download expiry truthfully. Schedule creation returns an actual nextRunAt, not explanatory text. Add list runs/retry failed recipient/cancel commands with audit.",
+    "tests": "PDF magic bytes+parser, XLSX workbook parser, Unicode/large tables, scoped downloads, restart recovery, missed run policy, two workers, partial recipient failure and permission revoked before a scheduled export."
+  },
+  {
+    "id": "WP09",
+    "title": "Connect and validate pharmacy demand forecasting",
+    "findings": [
+      "F30"
+    ],
+    "dependencies": [
+      "WP03"
+    ],
+    "owner": "Pharmacy analytics",
+    "size": "M",
+    "route_names": [
+      "ai-pharmacy"
+    ],
+    "ui_names": [
+      "pharmacy-forecast"
+    ],
+    "design": "Load canonical consumption/dispense data rather than trusting manual caller history. Define daily calendar/timezone and distinguish missing observation, zero demand and stockout-censored demand. Normalize duplicates/gaps before forecasting. Backtest a pinned historical holdout against simple baselines; procurement remains an authorized action.",
+    "data": "Version forecast input window, source query, daily normalization rules, model parameters and result. Keep pharmacy_demand_forecasts if suitable; attach item/tenant identity through canonical master data. Label insufficient data and invalid cadence explicitly.",
+    "api": "Production forecast command accepts item/window/horizon, not arbitrary authoritative demand values. A sandbox/manual mode must be clearly marked. Return provenance, diagnostics and unavailable reason with chart.",
+    "tests": "Monthly/weekly input rejection or explicit resampling, duplicate dates, gaps vs zeros, stockout periods, new medicine with insufficient history, tenant-owned item, holdout metrics and no automatic PO generation."
+  },
+  {
+    "id": "WP10",
+    "title": "Add maternity, ANC, partograph and postnatal workflows",
+    "findings": [
+      "F22"
+    ],
+    "dependencies": [
+      "WP00",
+      "WP01"
+    ],
+    "owner": "OB-GYN product / clinical owner",
+    "size": "L",
+    "route_names": [
+      "antenatal"
+    ],
+    "ui_names": [
+      "antenatal"
+    ],
+    "design": "Implement one pregnancy case tied to the canonical patient, longitudinal ANC encounters and findings, approved labor observation/partograph workflow, delivery record and postnatal visits. Use clinically approved measurement/reference versions; copied chart formulas are not automatically accepted. Support signed entries and correction history, patient/encounter context and role-specific workflows.",
+    "data": "Proposed entities: pregnancy_cases, antenatal_visits, labor_records, labor_observations, delivery_records, postnatal_visits. Exact names/keys decided after canonical model review. Link existing encounter/note/consent/order records; avoid duplicating patient demographics as authority. Persist gestational dating provenance and units.",
+    "api": "Proposed hospital-scoped case create/list/detail, visit create/amend/sign, labor start/observation/end and postnatal visit commands. Status draft\u2192active\u2192delivered\u2192postnatal\u2192closed; exceptions/corrections audited. No autonomous clinical action based on chart position.",
+    "tests": "Wrong patient/tenant, concurrent observation, signed correction, multiple pregnancies over time, uncertain dates, chronological inconsistencies, missing observations, reviewed clinical fixtures and accessible charts with source values."
+  },
+  {
+    "id": "WP11",
+    "title": "Add longitudinal pediatric growth, development and feeding",
+    "findings": [
+      "F23"
+    ],
+    "dependencies": [
+      "WP00",
+      "WP01"
+    ],
+    "owner": "Pediatrics product / clinical owner",
+    "size": "L",
+    "route_names": [
+      "growth"
+    ],
+    "ui_names": [
+      "pediatric"
+    ],
+    "design": "Implement serial anthropometry with approved reference datasets, age/sex/corrected-age context, developmental observations and feeding records. Integrate existing immunization concepts where available; do not replace them with a duplicate registry. Store measurements separately from calculated scores and keep calculation provenance.",
+    "data": "Proposed growth_measurements, growth_calculations, developmental_observations and feeding_records with organization/patient/encounter, measured_at, units, author and amendment fields. Reference datasets and calculation versions must be immutable/reproducible.",
+    "api": "Proposed patient-scoped observation APIs with create/amend/history/chart. Calculator output is derived and versioned; missing/unsupported age/reference returns unavailable. Include source values and error states in UI.",
+    "tests": "Birth-date correction, premature infant corrected age, boundary ages, units, impossible values, time ordering, reference version change, duplicate submissions, tenant isolation and approved known-value clinical fixtures."
+  },
+  {
+    "id": "WP12",
+    "title": "Implement privileged clinical patient merge",
+    "findings": [
+      "F24"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Patient identity / clinical data / finance",
+    "size": "XL",
+    "route_names": [
+      "patients-merge",
+      "patients"
+    ],
+    "ui_names": [
+      "patients/duplicates"
+    ],
+    "design": "Inventory every clinical/financial FK and external identity reference before coding. Build candidate comparison and a read-only merge preview. Require authorized review, same-tenant identity checks, conflict resolution and explicit retained/source records. Execute reassignment transactionally where possible; defer external systems through a reconciliation outbox. Preserve source IDs as aliases and immutable provenance.",
+    "data": "Proposed patient_merge_requests, patient_aliases, merge_events and reconciliation tasks. Reuse canonical patient IDs; never create a second master patient table. Large merges may need a fenced resumable job with per-table progress and durable blocking of writes. A generic undo is unsafe after new downstream activity.",
+    "api": "Preview\u2192review\u2192execute\u2192reconcile\u2192complete, with failure states and idempotency. The preview has a digest/version; any changed source invalidates approval. Mutations reject merged source IDs or resolve them through a documented alias policy.",
+    "tests": "Self/cross-tenant merge, duplicate source list, conflicting allergies/identifiers, invoices/claims, record counts before/after, concurrent new encounter, timeout retry, reconciliation failure and restoration rehearsal before any real merge."
+  },
+  {
+    "id": "WP13",
+    "title": "Add cancellation waitlist and coordinated multi-doctor booking",
+    "findings": [
+      "F25",
+      "F26"
+    ],
+    "dependencies": [
+      "WP00",
+      "WP01"
+    ],
+    "owner": "Scheduling / front desk",
+    "size": "L",
+    "route_names": [
+      "waitlist",
+      "coordinated-visits",
+      "appointments"
+    ],
+    "ui_names": [
+      "appointments"
+    ],
+    "design": "Implement persistent patient preferences and consent, ranked waiting entries, offers with expiration and atomic slot reservation on acceptance. A cancellation event queues an offer, not a guaranteed booking. Coordinated visits group ordered appointments with transfer time and resource constraints; atomically reserve all selected slots or none.",
+    "data": "Proposed appointment_waitlist_entries, slot_offers, coordinated_visits and visit_appointments. Reuse canonical slot/appointment constraints. Unique active patient/doctor/preference entries; slot hold has TTL and version. Respect branch/timezone and doctor availability changes.",
+    "api": "Join/cancel/list own waitlist; authorized offer/accept/expire commands; group plan/commit/reschedule/cancel. Client planner results are proposals and are revalidated at commit. Emit notifications only from committed outbox events.",
+    "tests": "Two acceptors/one slot, cancelled/repeated offer, delivery failure, hold expiry, middle doctor unavailable, changed availability between plan/commit, patient travel buffer, group rollback, reschedule conflict and partial attendance."
+  },
+  {
+    "id": "WP14",
+    "title": "Add invoice installment plans and reconcile receipts",
+    "findings": [
+      "F27"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Hospital finance / payments",
+    "size": "L",
+    "route_names": [
+      "payment-plans",
+      "billing"
+    ],
+    "ui_names": [
+      "payment-plans"
+    ],
+    "design": "Create approved invoice-linked plans with down payment, due dates, final-installment rounding and explicit amendment policy. Allocate actual receipts idempotently to installments and reconcile against the canonical ledger. Implement real reminder delivery; the Medcore due-reminders stub is not usable delivery logic.",
+    "data": "Proposed invoice_payment_plans, installments, receipt_allocations and amendment events. Use exact decimal/minor-unit representation consistent with Mediqzy accounting. Sum of plan principal and allocations must conserve invoice balances; refunds, credit notes and voids create explicit adjustments.",
+    "api": "Plan create/preview/approve/amend/cancel; installment receipt allocation/statement/overdue list. Payment capture remains on the existing verified gateway path; plan APIs never invent successful payments or copy webhook/auth logic.",
+    "tests": "Rounding, overpayment, partial payment, duplicated webhook, void/credit/refund, concurrent allocation, overdue boundary, plan amendment after payment, tenant financial scope, statement reconciliation and failed reminders."
+  },
+  {
+    "id": "WP15",
+    "title": "Add advance directives and belongings custody",
+    "findings": [
+      "F28",
+      "F29"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "Clinical governance / EHR / nursing",
+    "size": "M",
+    "route_names": [
+      "ehr",
+      "admissions"
+    ],
+    "ui_names": [
+      "admissions"
+    ],
+    "design": "Define institution-approved directive types, authorized signatories/review/revocation and bedside display, with explicit unknown state. Implement admission-linked custody records with item list, storage location, witness and recipient acknowledgement, partial return and dispute history. Existing consent and asset tracking remain related but separate concepts.",
+    "data": "Proposed patient_directives with version/signature/review/validity and directive_events; admission_belongings with custody_items and custody_events. Sensitive clinical authority must not be inferred from a free-text code status or a generic uploaded file.",
+    "api": "Directive draft/review/sign/revoke/history and current-summary read; belongings receive/transfer/return/dispute. Discharge workflow checks outstanding custody and records authorized exceptions. Immutable signed history, amend through new version.",
+    "tests": "Revocation visibility, stale bedside cache, wrong role, unknown directive, two active contradictory records, partial belongings return, handover witness, admission transfer, discharge with unresolved custody and patient isolation."
+  },
+  {
+    "id": "WP16",
+    "title": "Enforce release evidence and retire advisory backlog",
+    "findings": [
+      "F31"
+    ],
+    "dependencies": [
+      "WP00"
+    ],
+    "owner": "QA / platform / module owners",
+    "size": "M",
+    "route_names": [],
+    "ui_names": [],
+    "design": "Turn each package acceptance matrix into required changed-module checks. Preserve the historical audit harness as evidence; write corrected-behavior regressions in normal test suites. Assign owner/expiry to known failures, then retire them. Verify real branch protection rather than assuming workflow YAML is enforced.",
+    "data": "Maintain migration fixtures, synthetic tenant datasets, reference clinical cases with provenance and test provider adapters. Store release evidence IDs/SHAs without patient data. Define observability and rollback triggers per package.",
+    "api": "CI contracts validate route/role/tenant/state/error behavior. Production smoke tests are read-only health and synthetic tenant checks approved for that environment; do not reuse broad patient API scanners or destructive Medcore integration setup.",
+    "tests": "No new known failures; type/lint gates for touched code; browser action tests, DB concurrency/fault tests, migration rehearsal, outbox recovery, provider sandbox evidence and clinical-owner acceptance where required."
+  }
+]

@@ -1,0 +1,770 @@
+capability,path,line,match
+payment_plan_extended,client/src/components/HealthConnectDashboard.tsx,187,<li>Install the <strong>Mediczy</strong> app from the Google Play Store</li>
+payment_plan_extended,client/src/components/HealthConnectDashboard.tsx,188,<li>Install the <strong>Health Connect</strong> app (if not pre-installed on Android 14+)</li>
+waitlist_extended,client/src/components/communication/communicationScope.test.ts,17,await listCrmCallActivity({ tenantUid: 'MEDSTAR' });
+waitlist_extended,client/src/components/communication/communicationScope.test.ts,18,"await listCrmCommunicationLog({ tenantUid: 'MEDSTAR', tenantId: 70 });"
+payment_plan_extended,client/src/components/layout/AdminLayout.tsx,454,"{ icon: Globe, label: 'Dedicated Installations', path: '/admin/dedicated-installations', color: 'text-indigo-500', bg: 'bg-indigo-500/10' },"
+belongings_extended,client/src/components/parking/ParkingValet.tsx,52,"<p class=""note"">Keep this slip. Present it (or a photo ID) to collect your vehicle. Valet service is not responsible for valuables left inside.</p>"
+belongings_extended,client/src/components/parking/ParkingValet.tsx,85,"<div><Label htmlFor=""vt-cond"">Condition on arrival (scratches, dents, valuables)</Label><Textarea id=""vt-cond"" rows={2} value={f.conditionNotes} onChange={(e) => setF({ ...f, conditionNotes: e.target.value })} maxLength={1000} /></div>"
+maternity_extended,client/src/constants/medical-specialties.ts,15,"'Obstetrics',"
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,7,"import { listMarketplaceApps, installMarketplaceApp, listInstalledApps } from '@/services/careos.service';"
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,11,"const [installed, setInstalled] = useState<any[]>([]);"
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,17,"listInstalledApps().then((r) => setInstalled(r?.data || [])),"
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,23,const install = async (appId: number) => {
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,24,await installMarketplaceApp(appId);
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,28,const installedIds = new Set(installed.map((a: any) => a.app_id || a.id));
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,49,{installedIds.has(app.id) ? (
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,50,"<Badge className=""bg-emerald-100 text-emerald-800"">Installed</Badge>"
+payment_plan_extended,client/src/features/ecosystem/pages/MarketplacePage.tsx,52,"<Button size=""sm"" onClick={() => install(app.id)}>Install</Button>"
+waitlist_extended,client/src/features/workspace/pages/FamilyPublishPage.tsx,15,const res = await listFamilyUpdates(patientId);
+payment_plan_extended,client/src/lib/firebase-config.ts,24,// Feature flag: gate FCM until Installations API is enabled
+payment_plan_extended,client/src/lib/firebase-config.ts,147,// Handle Firebase Installations API errors gracefully
+payment_plan_extended,client/src/lib/firebase-config.ts,148,if (error?.code === 'installations/request-failed' ||
+payment_plan_extended,client/src/lib/firebase-config.ts,150,error?.message?.includes('Firebase Installations API')) {
+payment_plan_extended,client/src/lib/firebase-config.ts,151,console.warn('⚠️ Firebase Installations API not enabled. Push notifications disabled.');
+payment_plan_extended,client/src/lib/firebase-config.ts,152,console.warn('   To enable: Visit https://console.developers.google.com/apis/api/firebaseinstallations.googleapis.com/overview');
+payment_plan_extended,client/src/lib/firebase-config.ts,285,// Handle Firebase Installations API errors gracefully
+payment_plan_extended,client/src/lib/firebase-config.ts,286,if (error?.code === 'installations/request-failed' ||
+payment_plan_extended,client/src/lib/firebase-config.ts,288,error?.message?.includes('Firebase Installations API')) {
+payment_plan_extended,client/src/lib/firebase-config.ts,289,console.warn('⚠️ Firebase push notifications unavailable - Installations API not enabled');
+payment_plan_extended,client/src/main.tsx,120,const newWorker = registration.installing;
+payment_plan_extended,client/src/main.tsx,123,if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,5,import AdminDedicatedInstallations from './AdminDedicatedInstallations';
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,15,"const detail = { installation: row, dailyMetrics: [], audit: [] };"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,25,return { data: { installations: [row] } } as never;
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,29,const mount = () => render(<MemoryRouter><AdminDedicatedInstallations /></MemoryRouter>);
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,40,"await waitFor(() => expect(screen.getByRole('button', { name: 'Configure lab installation' }).hasAttribute('disabled')).toBe(false));"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,41,"fireEvent.click(screen.getByRole('button', { name: 'Configure lab installation' }));"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,48,post.mockResolvedValueOnce({ data: { installation: row } });
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,50,"await waitFor(() => expect(post).toHaveBeenCalledWith('/admin/dedicated-installations', expect.objectContaining({"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,53,expect(await screen.findByText(/Installation configuration saved/)).toBeTruthy();
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,59,"expect(screen.getByRole('button', { name: 'Configure lab installation' }).hasAttribute('disabled')).toBe(true);"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,66,"post.mockResolvedValueOnce({ data: { installation: { ...row, version: 2 }, token: 'one-time-test-secret' } });"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.test.tsx,70,"expect(post).toHaveBeenCalledWith('/admin/dedicated-installations/test-id/connector/rotate', { version: 1 });"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,12,type Installation = { id: string; tenant_uid: string; tenant_name?: string; name: string; profile: string; modules: string[];
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,15,"type Detail = { installation: Installation; dailyMetrics: { day: string; observed_at: string; metrics: Record<string, number> }[];"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,18,const base = '/admin/dedicated-installations';
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,24,export default function AdminDedicatedInstallations() {
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,26,"const [rows, setRows] = useState<Installation[]>([]);"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,40,"const [credentialTarget, setCredentialTarget] = useState<Installation | null>(null);"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,47,".then(([catalog, list]) => { if (current) { setProfiles(catalog.data.profiles); setRows(list.data.installations); } })"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,75,function edit(row: Installation) {
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,84,setOpen(false); setNotice('Installation configuration saved. Remote deployment and module enforcement are separate steps.');
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,85,setRefresh(n => n + 1); await showDetail(result.data.installation.id);
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,96,await showDetail(r.data.installation.id);
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,104,"<div><h1 className=""text-3xl font-bold"">Dedicated installations</h1>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,114,"<Button disabled={!profiles.crm || busy} onClick={() => create('crm', 'Medstar CRM')}>Configure CRM installation</Button>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,118,"<Button disabled={!profiles.lab || busy} onClick={() => create('lab', 'Radolabs LIS')}>Configure lab installation</Button>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,122,"{loading ? <p role=""status"">Loading installations…</p> : rows.length === 0 ? <p>No installations on this page. Register an installation for an existing organization.</p> :"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,123,"<div className=""overflow-x-auto border rounded-lg""><table className=""w-full text-sm""><caption className=""sr-only"">Registered dedicated installations</caption>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,124,"<thead><tr className=""border-b text-left"">{['Installation', 'Organization', 'Scope', 'Connector', 'Reported health', 'Last observed', 'Actions'].map(x => <th key={x} className=""p-3"" scope=""col"">{x}</th>)}</tr></thead>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,136,"{detail && <Card><CardHeader><CardTitle>{detail.installation.name}</CardTitle></CardHeader><CardContent className=""space-y-5"">"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,138,"<div><dt>Installation ID</dt><dd className=""break-all"">{detail.installation.id}</dd></div>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,139,<div><dt>Last received / last observed</dt><dd>{time(detail.installation.last_received_at)} / {time(detail.installation.last_observed_at)}</dd></div>
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,140,<div><dt>AWS account / region</dt><dd>{detail.installation.aws_account_id || 'Not supplied'} / {detail.installation.region || 'Not supplied'}</dd></div>
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,141,<div><dt>Reported release</dt><dd>{detail.installation.release || 'Not reported'}</dd></div>
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,142,"<div><dt>Requested modules</dt><dd>{detail.installation.modules.join(', ')}</dd></div>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,145,"<div className=""flex flex-wrap gap-2""><Button disabled={busy} onClick={() => edit(detail.installation)}>Edit configuration</Button>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,146,"<Button variant=""outline"" disabled={busy} onClick={() => { setCredentialTarget(detail.installation); setCredentialAction('rotate'); }}>Issue / rotate connector credential</Button>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,147,"<Button variant=""outline"" disabled={busy || !detail.installation.connector_enrolled} onClick={() => { setCredentialTarget(detail.installation); setCredentialAction('revoke'); }}>Revoke connector</Button></div>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,151,"<thead><tr><th className=""text-left p-2"">UTC day</th>{profiles[detail.installation.profile]?.metrics.map(m => <th className=""p-2 text-right"" key={m}>{m.replaceAll('_', ' ')}</th>)}</tr></thead>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,152,"<tbody>{detail.dailyMetrics.map(d => <tr key={d.day}><th scope=""row"" className=""p-2 text-left"">{d.day}</th>{profiles[detail.installation.profile]?.metrics.map(m => <td className=""p-2 text-right"" key={m}>{d.metrics[m] === undefined ? '—' : d.metrics[m].toLocaleString()}</td>)}</tr>)}</tbody>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,159,<DialogTitle>{editing ? 'Edit installation' : 'Register installation'}</DialogTitle><DialogDescription>Select an existing organization and its requested product scope. Domain and AWS fields are inventory only; ownership is not verified here.</DialogDescription>
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,162,"<label className=""block"">Installation name<Input required maxLength={120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>"
+payment_plan_extended,client/src/pages/admin/AdminDedicatedInstallations.tsx,185,<DialogDescription>This credential is shown once. Save it in the installation's secret store. It authorizes aggregate reporting only; do not place it in frontend code.</DialogDescription></DialogHeader>
+payment_plan_extended,client/src/pages/admin/AdminTenantManagement.tsx,557,"<Button variant=""link"" onClick={() => navigate('/admin/dedicated-installations')}>Manage dedicated CRM / lab installations</Button>"
+payment_plan_extended,client/src/pages/admin/CouponManagement.tsx,194,"title: 'Standard promos installed',"
+payment_plan_extended,client/src/pages/admin/CouponManagement.tsx,202,"title: 'Install failed',"
+payment_plan_extended,client/src/pages/admin/CouponManagement.tsx,274,Install standard promos
+payment_plan_extended,client/src/pages/admin/CouponManagement.tsx,385,"Create your first offer or install the standard USG, pharmacy, and membership promos in one click."
+payment_plan_extended,client/src/pages/admin/CouponManagement.tsx,389,Install standard promos
+payment_plan_extended,client/src/pages/admin/CouponManagement.tsx,541,<DialogTitle>Install standard promotions</DialogTitle>
+payment_plan_extended,client/src/pages/admin/CouponManagement.tsx,561,{seedExecuteMutation.isPending ? 'Installing…' : 'Install now'}
+patient_merge_extended,client/src/pages/admin/FederatedLearningDashboard.tsx,20,includedUpdates?: number;
+patient_merge_extended,client/src/pages/admin/FederatedLearningDashboard.tsx,130,"<div><span className=""text-muted-foreground"">Included</span><p className=""font-semibold"">{m.includedUpdates ?? 0}</p></div>"
+patient_merge_extended,client/src/pages/admin/FederatedLearningDashboard.tsx,133,"<Progress value={Math.min(100, ((m.includedUpdates || 0) / Math.max(1, (m.pendingUpdates || 0) + (m.includedUpdates || 0))) * 100)} />"
+payment_plan_extended,client/src/pages/admin/HyperGridDashboard.tsx,318,"""MarketplaceAppInstalled"",""GatewayStatusUpdate"",""AssetLocationUpdate""].map(t => ("
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,2,"* HyperGrid App Marketplace — browse, install, and rate SMART / native apps"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,40,install_count?: number;
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,43,installed?: boolean;
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,52,"const [installing, setInstalling] = useState<number | null>(null);"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,71,const installApp = async (appId: number) => {
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,72,setInstalling(appId);
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,74,await api.post(`/hypergrid/marketplace/apps/${appId}/install`);
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,75,"toast({ title: 'App installed', description: 'App is now available in your HyperGrid tenant.' });"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,76,"setApps((prev) => prev.map((a) => (a.id === appId ? { ...a, installed: true } : a)));"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,78,"toast({ title: 'Install failed', description: e instanceof Error ? e.message : '', variant: 'destructive' });"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,80,setInstalling(null);
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,84,const uninstallApp = async (appId: number) => {
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,86,await api.delete(`/hypergrid/marketplace/apps/${appId}/install`);
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,87,toast({ title: 'App uninstalled' });
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,88,"setApps((prev) => prev.map((a) => (a.id === appId ? { ...a, installed: false } : a)));"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,90,"toast({ title: 'Uninstall failed', description: e instanceof Error ? e.message : '', variant: 'destructive' });"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,148,"{app.installed && <CheckCircle2 className=""h-5 w-5 text-emerald-600 shrink-0"" />}"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,155,"<span className=""flex items-center gap-1""><Download className=""h-3.5 w-3.5"" />{app.install_count || 0}</span>"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,158,{app.installed ? (
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,159,"<Button variant=""outline"" size=""sm"" className=""w-full"" onClick={() => uninstallApp(app.id)}>Uninstall</Button>"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,161,"<Button size=""sm"" className=""w-full gap-1"" disabled={installing === app.id} onClick={() => installApp(app.id)}>"
+payment_plan_extended,client/src/pages/admin/HyperGridMarketplace.tsx,163,{installing === app.id ? 'Installing…' : 'Install'}
+payment_plan_extended,client/src/pages/dept/BiomedicalModulePages.tsx,346,"type: ""Breakdown"" | ""PPM"" | ""Calibration"" | ""Installation"" | ""Inspection"" | ""Issue"";"
+payment_plan_extended,client/src/pages/dept/BiomedicalMonitoringPage.tsx,40,installDate: string;
+payment_plan_extended,client/src/pages/dept/BiomedicalMonitoringPage.tsx,65,"installDate: ""—"","
+payment_plan_extended,client/src/pages/dept/BiomedicalMonitoringPage.tsx,300,"[""Install Date"", device.installDate],"
+directives_extended,client/src/pages/doctor/DoctorAssist.tsx,788,"recommendation: 'Hour-1 Bundle: Measure lactate, obtain blood cultures, administer broad-spectrum antibiotics, begin rapid fluid resuscitation (30 mL/kg crystalloid for hypotension or lactate ≥4). Vasopressors if hypotensive during/after fluid resuscitation.',"
+directives_extended,client/src/pages/doctor/DoctorCalculators.tsx,264,: total >= 4 ? 'Moderately abnormal (4–6) — resuscitation may be needed'
+directives_extended,client/src/pages/doctor/DoctorCalculators.tsx,265,: 'Critically low (0–3) — immediate resuscitation required';
+waitlist_extended,client/src/pages/doctor/DoctorSelfCheckin.tsx,119,"<span className=""flex items-center gap-2""><Users className=""h-4 w-4"" /> Today's waiting list</span>"
+maternity_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,157,"name: ""Gynecology & Obstetrics"","
+maternity_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,160,"description: ""OB-GYN prescription with menstrual & obstetric charts"","
+maternity_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,162,"header: ""GYNECOLOGY / OBSTETRIC PRESCRIPTION"","
+maternity_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,166,"{ title: ""Obstetric History"", field: ""obstetric_history"", type: ""obstetric"" },"
+maternity_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,169,"{ title: ""Gestational Age"", field: ""gestational_age"", type: ""text"" },"
+maternity_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,179,"diagram: ""obstetric_chart"","
+maternity_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,180,"obstetricFormula: ""G_P_L_A_"","
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,755,"const [installDialogOpen, setInstallDialogOpen] = useState(false);"
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,765,// Install specialty template
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,766,const installTemplateMutation = useMutation({
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,782,setInstallDialogOpen(false);
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,783,"toast({ title: ""Success"", description: ""Specialty template installed successfully"" });"
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,786,"toast({ title: ""Error"", description: ""Failed to install template"", variant: ""destructive"" });"
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,819,const handleInstall = (specialty: typeof specialtyTemplates[0]) => {
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,821,installTemplateMutation.mutate(specialty);
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,855,<Button onClick={() => handleInstall(matchedSpecialty)}>
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,857,Install Template
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,916,"<Button size=""sm"" className=""flex-1"" onClick={() => handleInstall(specialty)}>"
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,918,Install
+pediatric_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,1039,"<CardTitle className=""text-sm"">Developmental Milestones</CardTitle>"
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,1067,if (specialty) handleInstall(specialty);
+payment_plan_extended,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,1071,Install Template
+waitlist_extended,client/src/pages/doctor/DoctorTriage.tsx,969,suggestions.push('📞 Alert emergency team on standby');
+waitlist_extended,client/src/pages/doctor/DoctorVoiceAssistant.tsx,843,"<Radio className=""h-3 w-3 animate-pulse"" /> {isAwoken ? ""Ready"" : ""Standby""}"
+waitlist_extended,client/src/pages/doctor/DoctorVoiceAssistant.tsx,1049,"? `Say ""Hey iSHA"" anytime · Tap the orb to activate${sttMode === 'browser' ? ' · on-device speech' : ''} · ${isAwoken ? ""Active — listening for commands"" : ""Standby""}`"
+directives_extended,client/src/pages/doctor/RemoteHealthMonitoring.tsx,196,"triageCategory?: 1 | 2 | 3 | 4 | 5; // 1=Resuscitation, 5=Non-urgent"
+directives_extended,client/src/pages/doctor/RemoteHealthMonitoring.tsx,321,"1: { bg: 'bg-red-600', text: 'text-white', label: 'Resuscitation', color: '#dc2626' },"
+directives_extended,client/src/pages/doctor/RemoteHealthMonitoring.tsx,1298,"const erLocations = ['Resuscitation Bay', 'Trauma Bay', 'Red Zone', 'Yellow Zone', 'Green Zone', 'Observation', 'Procedure Room'];"
+directives_extended,client/src/pages/er/ERQueue.tsx,51,"{ key: 'esi1' as const, level: 1, label: 'ESI-1 · Resuscitation', short: 'Immediate, life-threatening',"
+directives_extended,client/src/pages/er/ERRegister.tsx,23,"{ level: 1, label: 'ESI-1 — Resuscitation', hint: 'Immediate, life-threatening' },"
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,15,"installMarketplaceApp, listInstalledApps, createApiKey, listApiKeys, revokeApiKey,"
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,31,"const [installed, setInstalled] = useState<any[]>([]);"
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,76,"listInstalledApps().catch(() => ({ data: [] })),"
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,87,setInstalled(inst?.data || []);
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,97,const handleInstall = async (appId: number) => {
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,98,await installMarketplaceApp(appId);
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,99,flash('App installed');
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,100,const inst = await listInstalledApps();
+waitlist_extended,client/src/pages/hmis/CareOSEcosystem.tsx,100,const inst = await listInstalledApps();
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,101,setInstalled(inst?.data || []);
+waitlist_extended,client/src/pages/hmis/CareOSEcosystem.tsx,109,const keys = await listApiKeys();
+waitlist_extended,client/src/pages/hmis/CareOSEcosystem.tsx,116,const keys = await listApiKeys();
+waitlist_extended,client/src/pages/hmis/CareOSEcosystem.tsx,126,const hooks = await listWebhooks();
+waitlist_extended,client/src/pages/hmis/CareOSEcosystem.tsx,141,const refs = await listReferrals();
+waitlist_extended,client/src/pages/hmis/CareOSEcosystem.tsx,148,const refs = await listReferrals();
+waitlist_extended,client/src/pages/hmis/CareOSEcosystem.tsx,155,const s = await listNetworkSignals();
+waitlist_extended,client/src/pages/hmis/CareOSEcosystem.tsx,162,const s = await listNetworkSignals();
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,351,"<Button size=""sm"" variant=""outline"" className=""border-white/20 w-fit"" onClick={() => handleInstall(a.id)}>"
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,352,Install
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,358,{installed.length > 0 && (
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,360,"<p className=""text-xs text-slate-400 mb-2"">Installed ({installed.length})</p>"
+payment_plan_extended,client/src/pages/hmis/CareOSEcosystem.tsx,362,"{installed.map((a) => <Badge key={a.id || a.app_id} variant=""secondary"">{a.name || a.app_name}</Badge>)}"
+maternity_extended,client/src/pages/hmis/ClinicalCalculators.tsx,240,// Obstetrics
+maternity_extended,client/src/pages/hmis/ClinicalCalculators.tsx,242,"id: 'bishopScore', name: 'Bishop Score', category: 'Obstetrics',"
+maternity_extended,client/src/pages/hmis/ClinicalCalculators.tsx,246,"dilationCm:    { label: 'Cervical dilation (cm)', type: 'number', required: true },"
+waitlist_extended,client/src/pages/hmis/GlobalClinicalBoard.tsx,36,const res = await listNetworkOrgs();
+waitlist_extended,client/src/pages/hmis/GlobalClinicalBoard.tsx,64,const r = await listReferrals({ patientId: String(pid) });
+waitlist_extended,client/src/pages/hmis/GlobalClinicalBoard.tsx,80,const res = await listPatientImaging(pid);
+waitlist_extended,client/src/pages/hmis/HospitalCopilot.tsx,59,const res = await listApprovals('pending');
+waitlist_extended,client/src/pages/hmis/HospitalCopilot.tsx,69,const res = await listSimulationScenarios();
+directives_extended,client/src/pages/hospital/HospitalAmbulance.tsx,151,"equipment: ['Neonatal Ventilator', 'Transport Incubator', 'Monitors', 'Resuscitation Kit'],"
+directives_extended,client/src/pages/hospital/HospitalClinicalCDSS.tsx,16,"{ esi: 1, label: 'Resuscitation', color: 'bg-red-600', wait: 'Immediate', example: 'Cardiac arrest, severe trauma' },"
+maternity_extended,client/src/pages/hospital/HospitalDischargeSummary.tsx,1320,"<SelectItem value=""Gynecology & Obstetrics"">Gynecology & Obstetrics</SelectItem>"
+maternity_extended,client/src/pages/hospital/HospitalDischargeSummary.tsx,1362,"{ name: 'Gynecology & Obstetrics', count: 10, color: 'from-pink-500 to-pink-600' },"
+maternity_extended,client/src/pages/hospital/HospitalDoctorsManagement.tsx,64,"""Women's Health"": [""Gynecologist"", ""Obstetrician""],"
+maternity_extended,client/src/pages/hospital/HospitalInsuranceBilling.tsx,340,"{ id: 'BC003', code: 'ICD-O82.0', type: 'ICD-10', description: 'Cesarean Section', category: 'Obstetrics', baseRate: 60000, insuranceRate: 55000, isActive: true },"
+maternity_extended,client/src/pages/hospital/HospitalProcedureAdder.tsx,170,"category: 'Obstetric',"
+maternity_extended,client/src/pages/hospital/HospitalProcedureAdder.tsx,171,"department: 'Obstetrics & Gynecology',"
+maternity_extended,client/src/pages/hospital/HospitalProcedureAdder.tsx,246,"const categories = ['all', 'Surgical', 'Endoscopic', 'Interventional', 'Orthopedic', 'Ophthalmic', 'Dental', 'Obstetric', 'Diagnostic'];"
+maternity_extended,client/src/pages/hospital/HospitalProcedureAdder.tsx,247,"const departments = ['all', 'General Surgery', 'Gastroenterology', 'Cardiology', 'Orthopedics', 'Ophthalmology', 'Dentistry', 'Obstetrics & Gynecology', 'Radiology'];"
+maternity_extended,client/src/pages/lab/LabDashboard.tsx,909,"{title:'Obstetric USG', icon:Baby, link:'/lab/ris', bg:'bg-pink-500/10', ic:'text-pink-500', desc:'OB/GYN Ultrasound'},"
+belongings_extended,client/src/pages/lab/collection/TaskDrawer.tsx,40,"case ""custody"": return `${item.barcode ?? ""Specimen""} · ${String(item.type).replace(/_/g, "" "")}`;"
+belongings_extended,client/src/pages/lab/collection/format.ts,9,"/** Badge classes per status family: pending work is neutral/blue, field work amber, specimen in custody violet, done green, problems red/orange. */"
+belongings_extended,client/src/pages/lab/collection/types.ts,61,"at: string; kind: ""task"" | ""custody"" | ""consent"" | ""verification""; type: string; from?: string | null; to?: string | null;"
+belongings_extended,client/src/pages/lab/phlebotomist/PhlebotomistDashboard.tsx,84,"handoff: { icon: ClipboardCheck, title: ""Handoff & custody"", description: ""Log who received the specimens."" },"
+directives_extended,client/src/pages/patient/AISymptomTriage.tsx,28,"1: { color: 'text-red-700', bg: 'bg-red-50 dark:bg-red-900/30', border: 'border-red-300 dark:border-red-700', label: 'Resuscitation', icon: AlertCircle, action: 'Call emergency services (112) immediately' },"
+payment_plan_extended,client/src/pages/patient/DeviceIntegration.tsx,898,Requires Health Connect app installed on Android 9+. Grant permissions then tap Sync.
+payment_plan_extended,client/src/pages/patient/DeviceIntegration.tsx,1039,<li>Install xDrip+ (Android) or Spike (iOS) and connect to Dexcom Share</li>
+payment_plan_extended,client/src/pages/patient/DeviceIntegration.tsx,1075,<li>Install LibreLink on Android and enable connections</li>
+payment_plan_extended,client/src/pages/patient/DeviceIntegration.tsx,1213,"<li>Install ""Health Connect"" from the Play Store</li>"
+waitlist_extended,client/src/pages/patient/FamilyCareUpdates.tsx,52,"const res = await listFamilyUpdates(patientId, true);"
+waitlist_extended,client/src/pages/security/SecurityModulePages.tsx,576,"{ label: 'Standby', value: inventory.filter((a) => a.status === 'Standby').length, total: totalAssets, color: 'bg-blue-400' },"
+payment_plan_extended,client/src/pages/security/SecurityModulePages.tsx,946,"{ label: 'RFID Gate Control', detail: 'RFID readers installed at all Zone 2–5 entry points and hospital perimeter exits. Unregistered asset exits trigger immediate Theft Alert and visual gate alarm.' },"
+payment_plan_extended,client/src/pages/security/SecurityModulePages.tsx,947,"{ label: 'BLE Infrastructure', detail: 'BLE gateways installed every 15 m on all ward floors and clinical areas. Room-level accuracy achieved for all tagged assets continuously.' },"
+patient_merge_extended,client/src/pages/team/TeamCorporateManagement.tsx,5317,"// Run QC — discard fatal rows, warn on minor issues, deduplicate"
+belongings_extended,client/src/pages/team/TeamModulePages.tsx,287,"{ title: ""Chain-of-custody rollout"", description: ""Digitize tracking for top metro labs"", status: ""Rolling out"" },"
+payment_plan_extended,client/src/routes/index.tsx,192,"const AdminDedicatedInstallations = lazy(() => import(""@/pages/admin/AdminDedicatedInstallations""));"
+payment_plan_extended,client/src/routes/index.tsx,1620,"<Route path=""/admin/dedicated-installations"" element={<AdminRoute><AdminDedicatedInstallations /></AdminRoute>} />"
+payment_plan_extended,client/src/serviceWorker.ts,29,"self.addEventListener('install', (event: any) => {"
+payment_plan_extended,client/src/services/ble/CapacitorBLEService.ts,89,// The plugin should be installed: @capacitor-community/bluetooth-le
+payment_plan_extended,client/src/services/careos.service.ts,254,export async function installMarketplaceApp(appId: number) {
+payment_plan_extended,client/src/services/careos.service.ts,255,"const res = await api.post('/v3/healthos/platform/marketplace/install', { appId });"
+payment_plan_extended,client/src/services/careos.service.ts,259,export async function listInstalledApps() {
+payment_plan_extended,client/src/services/careos.service.ts,260,const res = await api.get('/v3/healthos/platform/marketplace/installed');
+maternity_extended,client/src/utils/chatIntents.ts,45,"pregnancy: ""Obstetrics"","
+patient_merge_extended,server/__tests__/chat-handoff.test.js,7,"it('requires both authenticated participants before reporting connected, dedupes and handles termination',()=>{"
+waitlist_extended,server/__tests__/crm-report-workflows.test.js,141,"const empty=await listRecoveryQueue(1,{},'HAAAAA');expect(empty).toHaveLength(0);"
+waitlist_extended,server/__tests__/crm-report-workflows.test.js,149,"const queue=await listRecoveryQueue(1,{},'HAAAAA');expect(queue).toHaveLength(1);expect(Number(queue[0].legacy_lead_id)).toBe(Number(leadId));expect(queue[0].display_name).toBe('Synthetic workflow lead');"
+payment_plan_extended,server/__tests__/dedicated-installation-ringfencing.test.js,5,"describe('dedicated installation connector global fence',()=>{"
+payment_plan_extended,server/__tests__/dedicated-installation-ringfencing.test.js,7,expect((await request(app).post('/api/admin/dedicated-installations/reports')).status).toBe(204);
+payment_plan_extended,server/__tests__/dedicated-installation-ringfencing.test.js,10,"['get','/api/admin/dedicated-installations/reports'],"
+payment_plan_extended,server/__tests__/dedicated-installation-ringfencing.test.js,11,"['post','/api/admin/dedicated-installations/reports/extra'],"
+payment_plan_extended,server/__tests__/dedicated-installation-ringfencing.test.js,12,"['post','/api/admin/dedicated-installations/reports-extra'],"
+payment_plan_extended,server/__tests__/dedicated-installation-ringfencing.test.js,13,"['get','/api/admin/dedicated-installations'],"
+payment_plan_extended,server/__tests__/dedicated-installation-ringfencing.test.js,14,"['post','/api/admin/dedicated-installations'],"
+payment_plan_extended,server/__tests__/dedicated-installation-ringfencing.test.js,15,"['post','/api/admin/dedicated-installations/32ebb22b-8299-4174-8d42-83fb7b076c0d/connector/rotate'],"
+patient_merge_extended,server/__tests__/gupshup-whatsapp.test.js,124,"it('uses a stable app-scoped callback deduplication ID', () => {"
+payment_plan_extended,server/__tests__/hypergrid-routes-tenant.test.js,28,"const routers = { edge: '/gateways', events: '/', mqtt: '/devices', twins: '/', terminology: '/codes', connector: '/connectors', marketplace: '/apps/9/install' };"
+patient_merge_extended,server/__tests__/patient-care-followup.test.js,6,"it('records confirmation follow-ups and deduplication markers in one transaction without cancelling paid care', async () => {"
+belongings_extended,server/__tests__/platform-edge-schema.test.js,165,"test('handoff records bounded QC in immutable custody evidence', () => {"
+payment_plan_extended,server/api-endpoint-test.js,8,* - Node.js and npm installed
+payment_plan_extended,server/app.js,180,import { dedicatedInstallationsRouter } from './routes/dedicated-installations.route.js';
+payment_plan_extended,server/app.js,1617,"app.use('/api/admin/dedicated-installations', dedicatedInstallationsRouter({ pool: pgPool, authenticate: authUser }));"
+payment_plan_extended,server/config/dedicated-installation-profiles.js,1,// Installation scopes are independent of organization-wide portal packs.
+payment_plan_extended,server/config/dedicated-installation-profiles.js,3,export const INSTALLATION_PROFILES = {
+payment_plan_extended,server/config/dedicated-installation-profiles.js,34,export class InstallationError extends Error {
+payment_plan_extended,server/config/dedicated-installation-profiles.js,37,"const fail = (message) => { throw new InstallationError(422, 'validation_failed', message); };"
+payment_plan_extended,server/config/dedicated-installation-profiles.js,42,export function validateInstallation(value) {
+payment_plan_extended,server/config/dedicated-installation-profiles.js,45,if (typeof value.name !== 'string' || !value.name.trim() || value.name.trim().length > 120) fail('Installation name must be 1–120 characters');
+payment_plan_extended,server/config/dedicated-installation-profiles.js,46,"const profile = Object.hasOwn(INSTALLATION_PROFILES, value.profile) ? INSTALLATION_PROFILES[value.profile] : null;"
+payment_plan_extended,server/config/dedicated-installation-profiles.js,68,const allowed = INSTALLATION_PROFILES[profileId]?.metrics || [];
+payment_plan_extended,server/config/dedicated-installation-profiles.js,74,"export function installationFreshness(row, now = Date.now()) {"
+waitlist_extended,server/controller/crm.controller.js,47,"const leads = await listLeadsForTenant(req.tenantId, { stage, q, assignedTo });"
+waitlist_extended,server/controllers/idempotentWebhookController.js,22,const result = await listEvents({
+payment_plan_extended,server/crm-app.mjs,1,/** Dedicated single-installation CRM runtime. Never imports the shared app/startup. */
+payment_plan_extended,server/crm-app.mjs,7,"import { validateDedicatedEnvironment, dedicatedBoundary } from './installations/crm/runtime-boundary.js';"
+payment_plan_extended,server/crm-app.mjs,8,const installation = validateDedicatedEnvironment(process.env);
+payment_plan_extended,server/crm-app.mjs,19,"const required=['public.tenants','public.users','public.entity_registry','public.api_v2_refresh_tokens','public.crm_login_attempts','public.crm_leads','public.crm_leads_v2','public.crm_contacts','public.crm_deals','public.crm_activities','public.feature_flags','public.crm_installation_versions'];"
+payment_plan_extended,server/crm-app.mjs,20,"if((process.env.COMMUNICATION_WORKSPACE_ENABLED_TENANTS||'').split(',').includes(installation.tenantUid))required.push('public.communication_workspace_rooms','public.communication_workspace_members','public.communication_workspace_messages','public.communication_workspace_attachments');"
+payment_plan_extended,server/crm-app.mjs,26,"const tenant = (await pool.query('SELECT id,unique_id,name,status,settings FROM tenants WHERE unique_id=$1 AND id=$2', [installation.tenantUid, installation.tenantId])).rows[0];"
+payment_plan_extended,server/crm-app.mjs,27,if (!tenant || tenant.status !== 'active') throw Error('Dedicated installation tenant is unavailable.');
+payment_plan_extended,server/crm-app.mjs,30,"app.use(cors({origin:installation.origin,credentials:true}));"
+payment_plan_extended,server/crm-app.mjs,33,"app.get('/health/ready',async(_req,res)=>{try{await checkDependencies();res.json({status:'ready',tenantUid:installation.tenantUid,release:process.env.RELEASE_SHA});}catch{res.status(503).json({status:'unavailable'});}});"
+payment_plan_extended,server/crm-app.mjs,34,app.use(dedicatedBoundary(installation));
+payment_plan_extended,server/crm-app.mjs,44,"if(process.env.CRM_OUTBOUND_ENABLED!=='true'&&req.method!=='GET'&&/(?:^|\/)(?:send|send-test|schedule|blast|dispatch|execute|publish|sync|call)(?:\/|$)/i.test(req.path))return res.status(503).json({success:false,code:'integration_not_configured',message:'External delivery is not configured for this "
+payment_plan_extended,server/crm-app.mjs,65,"const io=new SocketServer(server,{cors:{origin:installation.origin,credentials:true}});"
+payment_plan_extended,server/crm-app.mjs,76,"server.listen(Number(process.env.PORT||8888),'0.0.0.0',()=>console.log(JSON.stringify({service:'dedicated-crm',tenantUid:installation.tenantUid,release:process.env.RELEASE_SHA,port:Number(process.env.PORT||8888)})));"
+payment_plan_extended,server/crm-app.mjs,80,const {sendInstallationReport}=await import('./scripts/report-dedicated-installation.mjs');
+payment_plan_extended,server/crm-app.mjs,81,const {ReportOutbox}=await import('./installations/crm/report-outbox.mjs');
+payment_plan_extended,server/crm-app.mjs,84,"return sendInstallationReport({origin:process.env.DEDICATED_CONTROL_PLANE_URL,token,profile:'crm',report});"
+payment_plan_extended,server/db/migrations/011-hypergrid-platform.sql,349,"install_count INT NOT NULL DEFAULT 0,"
+payment_plan_extended,server/db/migrations/011-hypergrid-platform.sql,363,CREATE TABLE IF NOT EXISTS hg_app_installs (
+payment_plan_extended,server/db/migrations/011-hypergrid-platform.sql,366,"installed_by BIGINT,"
+payment_plan_extended,server/db/migrations/011-hypergrid-platform.sql,367,"installed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+payment_plan_extended,server/db/migrations/022-table-partitioning.sql,39,-- Create partitioned table (run only on fresh install / after shadow migration)
+payment_plan_extended,server/db/migrations/024-ai-agent-runs-official.sql,71,-- Existing production/staging installs may already have a non-partitioned
+payment_plan_extended,server/installations/crm/bootstrap.mjs,1,/** One-time empty-install bootstrap. Only explicit Medstar records and reference kinds are seeded. */
+payment_plan_extended,server/installations/crm/bootstrap.mjs,11,if(admin.email!=='info@medstarhospitals.com'||process.env.CRM_TENANT_UID!=='H98VG4'||process.env.CRM_TENANT_ID!=='70')throw Error('Unexpected installation identity');
+payment_plan_extended,server/installations/crm/bootstrap.mjs,16,"await db.query('CREATE TABLE IF NOT EXISTS crm_installation_versions (version text PRIMARY KEY, schema_sha256 text NOT NULL, installed_at timestamptz NOT NULL DEFAULT now())');"
+payment_plan_extended,server/installations/crm/bootstrap.mjs,17,"const prior=(await db.query(""SELECT schema_sha256 FROM crm_installation_versions WHERE version='initial-20261025'"")).rows[0];"
+payment_plan_extended,server/installations/crm/bootstrap.mjs,26,"if(!currentTenant)await db.query(`INSERT INTO tenants(id,uid,unique_id,name,slug,subdomain,type,email,phone,admin_email,address,plan,status,is_verified,settings,metadata,created_at,updated_at) VALUES(70,$1,'H98VG4','Medstar Hospital','medstar-hospital','medstar','hospital',$2,'9585858382',$2,'{}','f"
+payment_plan_extended,server/installations/crm/bootstrap.mjs,29,"const user={firstName:'Medstar',lastName:'Administrator',email:admin.email,password:hash,phoneNumber:'9585858382',role:'team',status:'active',isAdmin:false,isTeam:true,isVerified:false,tenant_id:70,organization_id:70,organization_type:'hospital',organization_uid:'H98VG4',metadata:JSON.stringify({isC"
+payment_plan_extended,server/installations/crm/bootstrap.mjs,41,await db.query('REVOKE ALL ON crm_installation_versions FROM medstar_app');
+payment_plan_extended,server/installations/crm/bootstrap.mjs,45,"await db.query('INSERT INTO crm_installation_versions(version,schema_sha256) VALUES($1,$2)',['initial-20261025',schemaHash]);"
+payment_plan_extended,server/installations/crm/report-outbox.mjs,4,import {validateReport} from '../../config/dedicated-installation-profiles.js';
+payment_plan_extended,server/installations/crm/runtime-boundary.js,13,"export function dedicatedBoundary(installation){return(req,res,next)=>{"
+payment_plan_extended,server/installations/crm/runtime-boundary.js,14,"if(req.get('host')?.toLowerCase()!==new URL(installation.origin).host)return res.status(421).json({success:false,code:'wrong_installation_host'});"
+payment_plan_extended,server/installations/crm/runtime-boundary.js,15,"for(const header of ['X-Tenant-ID','X-Tenant-Code']){const value=req.get(header);if(value&&![String(installation.tenantId),installation.tenantUid].includes(value))return res.status(403).json({success:false,code:'wrong_installation_tenant'});}"
+directives_extended,server/installations/crm/schema.sql,1442,"'resuscitation',"
+payment_plan_extended,server/installations/crm/smoke.mjs,19,await db.connect();if(process.env.CRM_TENANT_UID!=='H98VG4')throw Error('Wrong installation');
+payment_plan_extended,server/installations/crm/smoke.mjs,30,"const bad=jwt.sign({id:login.data.crmUser.id,isCRM:true,tokenType:'access'},'a-different-installation-secret',{expiresIn:120});"
+payment_plan_extended,server/installations/crm/smoke.mjs,31,"result=await call('/api/crm/profile',bad);check('different installation signing key denied',result.status===401,result.status);"
+payment_plan_extended,server/installations/crm/upgrade-workspace.mjs,10,if(process.env.CRM_TENANT_UID!=='H98VG4'||process.env.CRM_TENANT_ID!=='70')throw Error('Unexpected installation identity');
+payment_plan_extended,server/middleware/ringFencing.js,992,"// Installation connectors use a scoped machine credential, validated and"
+payment_plan_extended,server/middleware/ringFencing.js,994,if (requestMethod === 'POST' && requestPath === '/api/admin/dedicated-installations/reports') return next();
+payment_plan_extended,server/migrations/20260926000005-imaging-tenant-registry.migration.js,21,"* runs in bounded batches (row locks only, committed per batch); indexes are built CONCURRENTLY. The trigger is installed"
+payment_plan_extended,server/migrations/20261005000000-entity-uid-rule.sql,210,"-- one, makes it NOT NULL + UNIQUE, and installs the triggers. One call per table; this is also how"
+belongings_extended,server/migrations/20261005000200-entity-uid-reference-twins.sql,412,"-- ris_sample_custody_events.lab_id (12 rows): convention lab_id -> labs, all 1 distinct value(s) exist there"
+belongings_extended,server/migrations/20261005000200-entity-uid-reference-twins.sql,413,"SELECT attach_uid_reference('ris_sample_custody_events', 'lab_id', 'lab_uid', 'labs', 'unique_id');"
+payment_plan_extended,server/migrations/20261007000000-lab-collection-platform.sql,84,"-- unique_id, issues one to every existing row (none yet), makes it NOT NULL + unique and installs the triggers that"
+belongings_extended,server/migrations/20261007000000-lab-collection-platform.sql,231,-- ── 3. specimens and custody ─────────────────────────────────────────────────
+belongings_extended,server/migrations/20261007000000-lab-collection-platform.sql,267,CREATE TABLE IF NOT EXISTS lab_specimen_custody_events (
+belongings_extended,server/migrations/20261007000000-lab-collection-platform.sql,281,"CREATE INDEX IF NOT EXISTS idx_lab_specimen_custody_specimen ON lab_specimen_custody_events (specimen_id, id);"
+belongings_extended,server/migrations/20261007000000-lab-collection-platform.sql,282,"CREATE INDEX IF NOT EXISTS idx_lab_specimen_custody_task ON lab_specimen_custody_events (task_id, id);"
+belongings_extended,server/migrations/20261007000000-lab-collection-platform.sql,283,DROP TRIGGER IF EXISTS trg_lab_specimen_custody_append_only ON lab_specimen_custody_events;
+belongings_extended,server/migrations/20261007000000-lab-collection-platform.sql,284,CREATE TRIGGER trg_lab_specimen_custody_append_only BEFORE UPDATE OR DELETE ON lab_specimen_custody_events
+patient_merge_extended,server/migrations/20261007000000-lab-collection-platform.sql,396,"dedupe_key      text NOT NULL,"
+patient_merge_extended,server/migrations/20261007000000-lab-collection-platform.sql,403,CREATE UNIQUE INDEX IF NOT EXISTS uq_lab_collection_outbox_dedupe ON lab_collection_outbox (dedupe_key);
+payment_plan_extended,server/migrations/20261015000800-hospital-queue-schema-hardening.migration.js,5,* migration is intentionally idempotent so existing installations can move
+belongings_extended,server/migrations/20261015003600-ris-imaging-governance.migration.js,3,"/** Migration-owned RIS/PACS study, custody, QC, report-context and critical-alert schema. */"
+belongings_extended,server/migrations/20261015003600-ris-imaging-governance.migration.js,75,CREATE TABLE IF NOT EXISTS ris_sample_custody_events (
+belongings_extended,server/migrations/20261015003600-ris-imaging-governance.migration.js,87,"CREATE INDEX IF NOT EXISTS idx_ris_custody_study ON ris_sample_custody_events(study_id, created_at DESC);"
+belongings_extended,server/migrations/20261015003600-ris-imaging-governance.migration.js,157,DROP TABLE IF EXISTS ris_sample_custody_events CASCADE;
+belongings_extended,server/migrations/20261015005700-lab-collection-label-replacement.migration.js,44,ALTER TABLE lab_specimen_custody_events
+belongings_extended,server/migrations/20261015005700-lab-collection-label-replacement.migration.js,45,DROP CONSTRAINT IF EXISTS lab_specimen_custody_events_event_type_check
+belongings_extended,server/migrations/20261015005700-lab-collection-label-replacement.migration.js,48,ALTER TABLE lab_specimen_custody_events
+belongings_extended,server/migrations/20261015005700-lab-collection-label-replacement.migration.js,49,ADD CONSTRAINT lab_specimen_custody_events_event_type_check
+belongings_extended,server/migrations/20261015005700-lab-collection-label-replacement.migration.js,67,await client.query('ALTER TABLE lab_specimen_custody_events DROP CONSTRAINT IF EXISTS lab_specimen_custody_events_event_type_check');
+belongings_extended,server/migrations/20261015005700-lab-collection-label-replacement.migration.js,69,ALTER TABLE lab_specimen_custody_events
+belongings_extended,server/migrations/20261015005700-lab-collection-label-replacement.migration.js,70,ADD CONSTRAINT lab_specimen_custody_events_event_type_check
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,5,CREATE TABLE IF NOT EXISTS dedicated_installations (
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,26,CREATE INDEX IF NOT EXISTS dedicated_installations_tenant ON dedicated_installations(tenant_uid);
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,27,CREATE TABLE IF NOT EXISTS dedicated_installation_reports (
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,28,"installation_id UUID NOT NULL REFERENCES dedicated_installations(id),"
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,33,"PRIMARY KEY (installation_id, event_id)"
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,35,CREATE TABLE IF NOT EXISTS dedicated_installation_daily_metrics (
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,36,"installation_id UUID NOT NULL REFERENCES dedicated_installations(id),"
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,40,"PRIMARY KEY (installation_id, day)"
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,42,CREATE TABLE IF NOT EXISTS dedicated_installation_audit (
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,44,"installation_id UUID NOT NULL,"
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,50,"FOREIGN KEY (tenant_uid, installation_id) REFERENCES dedicated_installations(tenant_uid, id)"
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,52,"CREATE INDEX IF NOT EXISTS dedicated_installation_audit_recent ON dedicated_installation_audit(installation_id, created_at DESC);"
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,61,"await client.query(""SELECT pg_advisory_xact_lock(hashtext('dedicated-installations-migration'))"");"
+payment_plan_extended,server/migrations/20261018000100-dedicated-installations.migration.js,64,console.log('Dedicated installation schema ready');
+payment_plan_extended,server/migrations/20261101000100-medical-device-gateway-foundation.migration.js,32,// Older installations may not have biomedical tables yet; their original
+waitlist_extended,server/migrations/add-diagnostic-centre-tenant-type.migration.js,86,const labels = (await listEnumLabels(client)).map((r) => r.enumlabel);
+waitlist_extended,server/migrations/add-diagnostic-centre-tenant-type.migration.js,152,const existing = await listEnumLabels(sequelize);
+payment_plan_extended,server/migrations/add-webinar-modules.sql,82,-- Verify Installation
+payment_plan_extended,server/migrations/cloud-mother-local-ai-nodes.sql,62,"installed_models JSONB DEFAULT '[]',"
+payment_plan_extended,server/migrations/healthos-phases-2-4.migration.js,142,"install_count INTEGER DEFAULT 0,"
+payment_plan_extended,server/migrations/healthos-phases-2-4.migration.js,146,CREATE TABLE IF NOT EXISTS healthos_org_app_installs (
+payment_plan_extended,server/migrations/healthos-phases-2-4.migration.js,150,"installed_by BIGINT,"
+payment_plan_extended,server/migrations/healthos-phases-2-4.migration.js,153,"installed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+payment_plan_extended,server/migrations/healthos-phases-2-4.migration.js,278,DROP TABLE IF EXISTS healthos_org_app_installs;
+patient_merge_extended,server/migrations/lab-terminology-seed.migration.js,9,"* does NOT dedupe NULL tenant_id (SQL NULLs are distinct), so inserts are guarded with NOT EXISTS."
+payment_plan_extended,server/migrations/parking.migration.js,147,"installed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+payment_plan_extended,server/migrations/pgvector-hnsw-indexes.migration.js,7,* Prerequisites: pgvector extension installed (CREATE EXTENSION vector).
+payment_plan_extended,server/migrations/pgvector-hnsw-indexes.migration.js,18,// Ensure pgvector is installed
+patient_merge_extended,server/migrations/report-delivery-outbox.migration.js,6,"* timeout/restart never double-create, and the receiver can dedupe. Corrections bump the revision."
+patient_merge_extended,server/migrations/report-observations-dedupe-index.migration.js,2,* Migration: Report Observations — scoped dedupe UNIQUE index (WP3 Stage B)
+patient_merge_extended,server/migrations/report-observations-dedupe-index.migration.js,8,"* new canonical writer (which sets organization_uid, subject_uid, document_hash) is deduped."
+patient_merge_extended,server/migrations/report-observations-dedupe-index.migration.js,21,// dedupes on subject+document — otherwise re-analysis of the same report would duplicate rows.
+patient_merge_extended,server/migrations/report-observations-dedupe-index.migration.js,31,else { await client.query('COMMIT'); console.log('\n✅ Scoped dedupe index committed.'); }
+patient_merge_extended,server/migrations/report-observations-dedupe-index.migration.js,34,"console.error('❌ dedupe index migration failed, rolled back:', err.message);"
+patient_merge_extended,server/migrations/report-observations-dedupe-index.migration.js,47,console.log('✅ Scoped dedupe index dropped.');
+patient_merge_extended,server/migrations/report-observations-dedupe-index.migration.js,51,if (process.argv.some((a) => a && a.includes('report-observations-dedupe-index'))) {
+payment_plan_extended,server/migrations/report-observations-identity.migration.js,50,console.log('✅ lab_results: entity_registry FKs installed');
+patient_merge_extended,server/migrations/report-observations-identity.migration.js,77,// NOTE: the org/subject/document-scoped UNIQUE dedupe index spans both this migration's
+directives_extended,server/migrations/specialty-prescriptions-expansion.migration.js,336,"{ type: 'procedure', description: 'IV access x2, large bore', rationale: 'Resuscitation readiness' },"
+directives_extended,server/migrations/specialty-prescriptions-expansion.migration.js,346,"recommendation: 'Hemodynamic instability with GI bleed — initiate resuscitation, urgent GI consultation for endoscopy.',"
+pediatric_extended,server/migrations/specialty-prescriptions-expansion.migration.js,612,"{ type: 'assessment', description: 'Developmental milestone screening', rationale: 'Early detection of developmental delay' },"
+maternity_extended,server/migrations/specialty-prescriptions-expansion.migration.js,654,obstetrics_gynecology: {
+maternity_extended,server/migrations/specialty-prescriptions-expansion.migration.js,659,"{ type: 'assessment', description: 'Fundal height measurement (after appropriate gestational age)', rationale: 'Screen for growth abnormalities' },"
+maternity_extended,server/migrations/specialty-prescriptions-expansion.migration.js,661,"{ type: 'lab', description: 'Urine protein/glucose dipstick', rationale: 'Preeclampsia and gestational diabetes screening' },"
+maternity_extended,server/migrations/specialty-prescriptions-expansion.migration.js,663,"{ type: 'screening', description: 'Gestational-age-appropriate screening per trimester protocol', rationale: 'Per standard antenatal care schedule' },"
+maternity_extended,server/migrations/specialty-prescriptions-expansion.migration.js,665,"evidenceReference: 'ACOG (American College of Obstetricians and Gynecologists) Guidelines for Perinatal Care',"
+maternity_extended,server/migrations/specialty-prescriptions-expansion.migration.js,677,"{ section: 'Gestational Age', guidance: '' },"
+maternity_extended,server/migrations/specialty-prescriptions-expansion.migration.js,689,"name: 'Obstetrics & Gynecology Prescription',"
+patient_merge_extended,server/migrations/unified-feedback-signals.migration.js,72,"// Deduplication: one row per (source, source_id)"
+patient_merge_extended,server/migrations/unified-feedback-signals.migration.js,74,CREATE UNIQUE INDEX IF NOT EXISTS idx_ufs_dedup
+payment_plan_extended,server/models/auditLog.model.intelligent.js,22,// The dedicated installer owns DDL; its application role must never need it.
+payment_plan_extended,server/models/postgres/device.model.postgres.js,87,comment: 'Mediczy app version installed'
+payment_plan_extended,server/models/postgres/localAiNode.model.postgres.js,222,installed_models: {
+directives_extended,server/models/queue-management.model.js,55,"type: DataTypes.ENUM('resuscitation', 'emergent', 'urgent', 'less_urgent', 'non_urgent'),"
+waitlist_extended,server/routes/abdm.route.js,207,"const registrations = await listAbhaRegistrations(tenantId(req), patientId ? Number(patientId) : null);"
+waitlist_extended,server/routes/abdm.route.js,240,"const consents = await listConsents(tenantId(req), { patientId, status, abhaNumber });"
+waitlist_extended,server/routes/abdm.route.js,273,"const requests = await listPhiRequests(tenantId(req), consentId || null);"
+patient_merge_extended,server/routes/admin.route.js,716,"// login account (user_associations) - deduplicated by user where a row has both,"
+patient_merge_extended,server/routes/admin.route.js,2629,"'dedupedActiveRecipientAt', NOW(),"
+patient_merge_extended,server/routes/admin.route.js,4493,const dedupeKey = `${userId}|${canonicalEmail}|${message.subject}`;
+patient_merge_extended,server/routes/admin.route.js,4494,if (seenBatchKeys.has(dedupeKey)) {
+patient_merge_extended,server/routes/admin.route.js,4503,seenBatchKeys.add(dedupeKey);
+waitlist_extended,server/routes/admin.route.js,8041,"return res.json({ success: true, data: await listCronLeases() });"
+waitlist_extended,server/routes/admin.route.js,8310,const blocked = await listBlockedIPs();
+waitlist_extended,server/routes/admin.route.js,8459,const ips = await listTrustedIps(req.user.id);
+waitlist_extended,server/routes/admin/corporate-benefit-providers.routes.js,25,const providers = await listAllNetworkProvidersForAdmin();
+waitlist_extended,server/routes/admin/corporate-quotes.routes.js,41,const quotes = await listCorporateQuotes();
+patient_merge_extended,server/routes/billing.route.js,634,// 3) Deduplicate by name (case-insensitive) and limit
+payment_plan_extended,server/routes/careos.route.js,588,"router.get('/platform/marketplace/installed', ...clinical, async (req, res) => {"
+payment_plan_extended,server/routes/careos.route.js,589,"res.json({ success: true, data: await careos.listInstalledApps(orgId(req)) });"
+payment_plan_extended,server/routes/careos.route.js,591,"router.post('/platform/marketplace/install', ...doctorOnly, async (req, res) => {"
+payment_plan_extended,server/routes/careos.route.js,592,"res.json({ success: true, data: await careos.installApp({ organizationId: orgId(req), appId: req.body.appId, installedBy: req.user.id, config: req.body.config }) });"
+waitlist_extended,server/routes/cda.route.js,263,"const docs = await listCdaDocuments(Number(req.params.patientId), tenantId(req));"
+waitlist_extended,server/routes/clinic/dashboard.routes.js,433,"const appointments = await listClinicPortalAppointments(req.tenantId, { limit: req.query.limit });"
+waitlist_extended,server/routes/clinic/dashboard.routes.js,519,"const patients = await listClinicPortalPatients(req.tenantId, {"
+waitlist_extended,server/routes/clinic/dashboard.routes.js,574,const staff = await listClinicPortalStaff(req.tenantId);
+waitlist_extended,server/routes/clinical-safety.route.js,52,"history: req.query.includeInactive === 'true' ? await listAllergies(req.params.patientId, org, { includeInactive: true }) : undefined });"
+waitlist_extended,server/routes/clinical-safety.route.js,70,"res.json({ success: true, data: await listProblems(req.params.patientId, orgOfRequest(req), { includeResolved: req.query.includeResolved === 'true' }) });"
+waitlist_extended,server/routes/clinical-workflow.route.js,203,const notes = await listClinicalNotesForDoctor({
+waitlist_extended,server/routes/clinical-workflow.route.js,227,const notes = await listClinicalNotesForDoctor({
+waitlist_extended,server/routes/corporate.route.js,490,const programs = await listCorporateBenefitPrograms(corporateId);
+waitlist_extended,server/routes/corporate.route.js,504,"const providers = await listBenefitNetworkProviders(corporateId, req.query.category || null);"
+waitlist_extended,server/routes/corporate.route.js,517,"const providers = await listBenefitNetworkProviders(corp.corporateId, req.query.category || null);"
+waitlist_extended,server/routes/corporate.route.js,588,"const authorizations = await listCorporateBenefitAuthorizations(corporateId, {"
+waitlist_extended,server/routes/corporate.route.js,2588,"const providers=await listBenefitNetworkProviders(corporateId,req.query.category||null);"
+waitlist_extended,server/routes/crm-brightbean-chat.route.js,41,"try { return res.json({ success: true, conversations: await listInboxConversations(req.crmUser.tenantUid, req.query) }); }"
+waitlist_extended,server/routes/crm-brightbean-chat.route.js,77,"try { return res.json({ success: true, rules: await listInboxRules(req.crmUser.tenantUid, req.query) }); }"
+waitlist_extended,server/routes/crm-brightbean-chat.route.js,106,"try { return res.json({ success: true, templates: await listWhatsAppTemplates(req.crmUser.tenantUid, req.query) }); }"
+waitlist_extended,server/routes/crm-brightbean-chat.route.js,122,"try { return res.json({ success: true, requests: await listSocialErasureRequests(req.crmUser.tenantUid, req.query) }); }"
+waitlist_extended,server/routes/crm-brightbean-chat.route.js,138,"try { return res.json({ success: true, reminders: await listInboxReminders(req.crmUser.tenantUid, req.query) }); }"
+waitlist_extended,server/routes/crm-flow-builder.route.js,13,"router.get('/', authCRM, requireCRMCapability('foundation:read'), async (req, res) => { try { res.json({ success: true, flows: await listFlows(req.crmUser.tenantUid, req.query) }); } catch (e) { sendError(res, e); } });"
+waitlist_extended,server/routes/crm-social-growth.route.js,21,"try { const tenant = tenantUid(req, res); if (!tenant) return; res.json({ success: true, posts: await listPosts(tenant, req.query) }); }"
+waitlist_extended,server/routes/crm-social-growth.route.js,84,"router.get('/identities', authCRM, requireCRMCapability('foundation:read'), async (req, res) => { try { res.json({ success: true, identities: await listIdentities(req.crmUser.tenantUid, req.query) }); } catch (e) { sendError(res, e); } });"
+waitlist_extended,server/routes/crm-social-growth.route.js,86,"router.get('/triggers', authCRM, requireCRMCapability('foundation:read'), async (req, res) => { try { res.json({ success: true, triggers: await listTriggers(req.crmUser.tenantUid) }); } catch (e) { sendError(res, e); } });"
+waitlist_extended,server/routes/crm-social-growth.route.js,91,"router.get('/scheduled-replies', authCRM, requireCRMCapability('foundation:read'), async (req, res) => { try { res.json({ success: true, replies: await listScheduledReplies(req.crmUser.tenantUid, req.query) }); } catch (e) { sendError(res, e); } });"
+waitlist_extended,server/routes/crm.route.js,536,"communications = await listCrmCommunicationLog({ tenantId: req.crmUser.tenantId, tenantUid: req.crmUser.tenantUid, leadId: legacyLeadId, limit: 20 }).catch(() => []);"
+waitlist_extended,server/routes/crm.route.js,538,"calls = await listCrmCallActivity({ tenantUid: req.crmUser.tenantUid, leadId: legacyLeadId, limit: 20 }).catch(() => []);"
+payment_plan_extended,server/routes/dedicated-installations.route.js,3,"import { INSTALLATION_PROFILES, InstallationError, exactFields } from '../config/dedicated-installation-profiles.js';"
+payment_plan_extended,server/routes/dedicated-installations.route.js,4,import { DedicatedInstallationsService } from '../services/dedicated-installations.service.js';
+payment_plan_extended,server/routes/dedicated-installations.route.js,7,export function installationAdminGuard(pool) {
+payment_plan_extended,server/routes/dedicated-installations.route.js,24,"export function dedicatedInstallationsRouter({ pool, authenticate }) {"
+payment_plan_extended,server/routes/dedicated-installations.route.js,26,const service = new DedicatedInstallationsService(pool);
+payment_plan_extended,server/routes/dedicated-installations.route.js,35,"router.use(authenticate, installationAdminGuard(pool));"
+payment_plan_extended,server/routes/dedicated-installations.route.js,37,"router.get('/catalog', (req, res) => res.json({ success: true, profiles: INSTALLATION_PROFILES }));"
+payment_plan_extended,server/routes/dedicated-installations.route.js,39,"if (req.query.search != null && typeof req.query.search !== 'string') throw new InstallationError(422, 'validation_failed', 'Invalid search');"
+payment_plan_extended,server/routes/dedicated-installations.route.js,46,"(tenantUid != null && (typeof tenantUid !== 'string' || !/^[A-Z0-9]{6}$/.test(tenantUid)))) throw new InstallationError(422, 'validation_failed', 'Invalid pagination or tenant');"
+payment_plan_extended,server/routes/dedicated-installations.route.js,47,"res.json({ success: true, installations: await service.list({ tenantUid, limit, offset }) });"
+payment_plan_extended,server/routes/dedicated-installations.route.js,50,"res.status(201).json({ success: true, installation: await service.save(req.body, req.user.id) });"
+payment_plan_extended,server/routes/dedicated-installations.route.js,57,"router.put('/:id', wrap(async (req, res) => res.json({ success: true, installation: await service.save(req.body, req.user.id, req.params.id) })));"
+payment_plan_extended,server/routes/dedicated-installations.route.js,63,"if (error.code === '42P01' || error.code === '42703') return res.status(503).json({ success: false, code: 'schema_not_ready', message: 'Dedicated installation migration must be applied before using this page.' });"
+payment_plan_extended,server/routes/dedicated-installations.route.js,64,"if (error.code === '23505') return res.status(409).json({ success: false, code: 'duplicate_installation', message: 'This domain or tenant installation name is already registered.' });"
+payment_plan_extended,server/routes/dedicated-installations.route.js,65,const status = error instanceof InstallationError ? error.status : error.status === 413 ? 413 : 500;
+payment_plan_extended,server/routes/dedicated-installations.route.js,66,"res.status(status).json({ success: false, code: error instanceof InstallationError ? error.code : 'request_failed',"
+payment_plan_extended,server/routes/dedicated-installations.route.js,67,message: error instanceof InstallationError ? error.message : 'The request could not be completed. No change was confirmed.' });
+directives_extended,server/routes/dept/bloodBank.route.js,190,const generateDonorId = () => `DNR-${Date.now().toString(36).toUpperCase()}`;
+waitlist_extended,server/routes/dept/cssd.route.js,197,"res.json({ success: true, data: await listOperationsApprovals(db, 'cssd') });"
+waitlist_extended,server/routes/dept/cssd.route.js,202,"res.json({ success: true, data: await listOperationsAudit(db, 'cssd') });"
+waitlist_extended,server/routes/dept/dietary.route.js,625,"res.json({ success: true, data: await listOperationsApprovals(db, 'dietary') });"
+waitlist_extended,server/routes/dept/dietary.route.js,630,"res.json({ success: true, data: await listOperationsAudit(db, 'dietary') });"
+waitlist_extended,server/routes/dept/procurement.route.js,215,"const approvals = await listOperationsApprovals(db, null);"
+waitlist_extended,server/routes/dicom-modality.route.js,111,const orthancPeers = await listOrthancModalities().catch(() => []);
+waitlist_extended,server/routes/display-kiosk.route.js,132,const doctors = await listKioskDoctors(req.organizationId);
+waitlist_extended,server/routes/display-kiosk.route.js,171,const camps = await listKioskCamps(req.organizationId);
+belongings_extended,server/routes/doctor-ris-referred.route.js,32,"import { writeAuditEvent, writeCustodyEvent } from './lab/ris-imaging.route.js';"
+belongings_extended,server/routes/doctor-ris-referred.route.js,310,"await writeCustodyEvent(client, {"
+waitlist_extended,server/routes/doctor.enhanced.route.js,1053,"const rows = await listActivePortalSessions(doctorId, 'doctor');"
+waitlist_extended,server/routes/embeddings.route.js,39,const rows = await listEmbeddings({
+patient_merge_extended,server/routes/fb-leads.route.js,169,// Dedup: skip if same leadgen_id or recent email/phone match
+waitlist_extended,server/routes/feature-flags.route.js,20,"try { return res.json({ success: true, flags: await listFlags(req.query.tenantUid || null) }); }"
+waitlist_extended,server/routes/hospital-clinical-notes.route.js,87,const notes = await listClinicalNotes({
+waitlist_extended,server/routes/hospital-clinical-notes.route.js,101,const notes = await listClinicalNotes({
+maternity_extended,server/routes/hospital-display.route.js,464,"{ bed_number: '3B-06', patient_name: 'Lakshmi B.', age: 29, status: 'stable', diagnosis: 'Normal delivery post-partum', nurse: 'Sr. Anita', pending_orders: 1, medication_due: false, vitals: { spo2: 99, hr: 70, bp: '112/72' } },"
+waitlist_extended,server/routes/hospital-display.route.js,900,"res.json({ success: true, floors: await listFloors(req.hospitalOrgId) });"
+patient_merge_extended,server/routes/hospital-insurance.route.js,2403,"res.status(item ? 201 : 200).json({ success: true, item, deduped: !item });"
+waitlist_extended,server/routes/hrms.route.js,834,"const rows = await listHrLocations(req.tenantId, req.query);"
+waitlist_extended,server/routes/hrms.route.js,944,const locations = await listHrLocations(req.tenantId);
+waitlist_extended,server/routes/hrms.route.js,959,const locations = await listHrLocations(req.tenantId);
+waitlist_extended,server/routes/hrms.route.js,964,"const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 }, req.hrOrganizationType);"
+waitlist_extended,server/routes/hrms.route.js,1021,"const staff = await listStaff(req.tenantId, filters, req.hrOrganizationType);"
+waitlist_extended,server/routes/hrms.route.js,1269,"const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 }, req.hrOrganizationType);"
+waitlist_extended,server/routes/hrms.route.js,1505,"const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 }, req.hrOrganizationType);"
+waitlist_extended,server/routes/hrms.route.js,1740,"const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 }, req.hrOrganizationType);"
+waitlist_extended,server/routes/hypergrid-dicom.route.js,313,const orthancInstanceIds = await listOrthancStudyInstances(orthancStudy.ID).catch(() => []);
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,11,* POST   /api/hypergrid/marketplace/apps/:id/install  Tenant installs app
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,12,* DELETE /api/hypergrid/marketplace/apps/:id/install  Tenant uninstalls
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,79,"tags, avg_rating, install_count, review_status, created_at"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,85,"ORDER BY install_count DESC, avg_rating DESC"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,130,"router.post('/apps/:id/install', authUser, requireHgTenant, async (req, res) => {"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,135,"`INSERT INTO hg_app_installs (app_id, tenant_id, installed_by, installed_at)"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,140,"`UPDATE hg_marketplace_apps SET install_count = install_count + 1 WHERE id = $1`,"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,144,"eventType: 'MarketplaceAppInstalled', resourceId: req.params.id,"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,147,"res.json({ success: true, message: 'App installed.' });"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,149,"res.status(500).json({ success: false, message: 'Install failed' });"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,153,"router.delete('/apps/:id/install', authUser, requireHgTenant, async (req, res) => {"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,157,"`DELETE FROM hg_app_installs WHERE app_id = $1 AND tenant_id = $2`,"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,162,"res.status(500).json({ success: false, message: 'Uninstall failed' });"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,238,"(SELECT COUNT(*) FROM hg_app_installs) AS total_installs,"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,303,"(SELECT COALESCE(SUM(install_count),0) FROM hg_marketplace_apps"
+payment_plan_extended,server/routes/hypergrid-marketplace.route.js,304,"WHERE submitted_by = $1)                                          AS total_installs,"
+waitlist_extended,server/routes/hypergrid-twins.route.js,60,const twins  = await listTwins({
+waitlist_extended,server/routes/imaging-platform.route.js,63,"const rows = await listWorkflowQueue(tenantId, state, parseInt(req.query.limit || '50', 10));"
+waitlist_extended,server/routes/imaging-platform.route.js,110,"const rows = await listTemplates(getTenantId(req), req.query.modality || null);"
+waitlist_extended,server/routes/imaging-platform.route.js,207,"const rows = await listAnnotations(parseInt(req.params.sessionId, 10));"
+waitlist_extended,server/routes/imaging-platform.route.js,249,"const rows = await listVnaByTenant(getTenantId(req), req.query.tier || null);"
+waitlist_extended,server/routes/imaging-platform.route.js,361,const alerts = await listOpenCriticalAlerts(getTenantId(req));
+waitlist_extended,server/routes/imaging-platform.route.js,374,"const rows = await listMeasurements(req.params.studyInstanceUID, getTenantId(req));"
+waitlist_extended,server/routes/iso27001.route.js,40,"const controls = await listControls(tenantId(req), { domain, applicability, status });"
+waitlist_extended,server/routes/iso27001.route.js,112,"const risks = await listRisks(tenantId(req), { status, treatment, limit });"
+belongings_extended,server/routes/lab/ris-imaging.route.js,76,"export const writeCustodyEvent = async (db, {"
+belongings_extended,server/routes/lab/ris-imaging.route.js,87,`INSERT INTO ris_sample_custody_events
+belongings_extended,server/routes/lab/ris-imaging.route.js,151,"const buildEvidenceCsv = ({ generatedAt, generatedBy, summary, filters, studies, auditEvents, custodyEvents, qcReviews, criticalAlerts, resultContexts, signature }) => {"
+belongings_extended,server/routes/lab/ris-imaging.route.js,163,"lines.push(`summary,custodyEvents,${summary?.custodyEvents || 0}`);"
+belongings_extended,server/routes/lab/ris-imaging.route.js,197,"lines.push('custody_events,id,study_id,from_status,to_status,reason,created_at');"
+belongings_extended,server/routes/lab/ris-imaging.route.js,198,for (const row of custodyEvents || []) {
+belongings_extended,server/routes/lab/ris-imaging.route.js,200,"'custody_events',"
+belongings_extended,server/routes/lab/ris-imaging.route.js,326,CREATE TABLE IF NOT EXISTS ris_sample_custody_events (
+belongings_extended,server/routes/lab/ris-imaging.route.js,338,"CREATE INDEX IF NOT EXISTS idx_ris_custody_study ON ris_sample_custody_events(study_id, created_at DESC);"
+belongings_extended,server/routes/lab/ris-imaging.route.js,595,"await writeCustodyEvent(pool, {"
+belongings_extended,server/routes/lab/ris-imaging.route.js,936,// ─── GET /:id/custody ───────────────────────────────────────────────────────
+belongings_extended,server/routes/lab/ris-imaging.route.js,937,"router.get('/:id/custody', authLab, async (req, res) => {"
+belongings_extended,server/routes/lab/ris-imaging.route.js,949,FROM ris_sample_custody_events
+belongings_extended,server/routes/lab/ris-imaging.route.js,955,"return res.json({ success: true, custodyEvents: rows.rows });"
+belongings_extended,server/routes/lab/ris-imaging.route.js,1247,"summary: { studies: 0, auditEvents: 0, custodyEvents: 0, qcReviews: 0, criticalAlerts: 0, resultContexts: 0 },"
+belongings_extended,server/routes/lab/ris-imaging.route.js,1251,"custodyEvents: [],"
+belongings_extended,server/routes/lab/ris-imaging.route.js,1281,"custodyEvents: [],"
+belongings_extended,server/routes/lab/ris-imaging.route.js,1298,"const [auditEvents, custodyEvents, qcReviews, criticalAlerts, resultContexts] = await Promise.all(["
+belongings_extended,server/routes/lab/ris-imaging.route.js,1308,FROM ris_sample_custody_events
+belongings_extended,server/routes/lab/ris-imaging.route.js,1345,"custodyEvents: custodyEvents.rows.length,"
+belongings_extended,server/routes/lab/ris-imaging.route.js,1353,"custodyEvents: custodyEvents.rows,"
+belongings_extended,server/routes/lab/ris-imaging.route.js,1381,"custodyEvents: payload.data.custodyEvents,"
+belongings_extended,server/routes/lab/ris-imaging.route.js,1663,"await writeCustodyEvent(client, {"
+belongings_extended,server/routes/lab/ris-imaging.route.js,1844,"await writeCustodyEvent(client, {"
+waitlist_extended,server/routes/medical-device-gateway.route.js,71,"res.json({ success: true, data: await listQuarantine(req.hgTenantId, req.query.limit) });"
+payment_plan_extended,server/routes/mobile-discovery.route.js,39,// Lazy import keeps contract tests and unconfigured installations free of DB work.
+waitlist_extended,server/routes/module-access.route.js,364,const data = await listEntitlements({ organizationId: req.query.organizationId });
+waitlist_extended,server/routes/nabh-jci.route.js,132,"const incidents = await listIncidents(tenantId(req), { status, severity, limit });"
+waitlist_extended,server/routes/pharmacy-dispense.route.js,13,"const data = await listPendingDispense(org(req), { wardId: req.query.wardId ? Number(req.query.wardId) : undefined });"
+waitlist_extended,server/routes/qms.route.js,235,"const data = await listOpdQueues(req.qms.organizationId, { portal: req.qms.portal });"
+waitlist_extended,server/routes/report-review.route.js,15,const result = await listReviewQueue({
+patient_merge_extended,server/routes/rfq.route.js,578,"// Deduplicate rows within the upload by (emp_code, relationship) — keep last occurrence"
+patient_merge_extended,server/routes/rfq.route.js,579,const dedupeKey = (row) => {
+patient_merge_extended,server/routes/rfq.route.js,584,const dedupeMap = new Map();
+patient_merge_extended,server/routes/rfq.route.js,585,"for (const row of rows) dedupeMap.set(dedupeKey(row), row);"
+patient_merge_extended,server/routes/rfq.route.js,586,const dedupedRows = [...dedupeMap.values()];
+patient_merge_extended,server/routes/rfq.route.js,587,const duplicatesRemoved = rows.length - dedupedRows.length;
+patient_merge_extended,server/routes/rfq.route.js,594,for (let i = 0; i < dedupedRows.length; i += batchSize) {
+patient_merge_extended,server/routes/rfq.route.js,2647,"const batch = rows.slice(i, i + batchSize);  // claims batch (rows not deduped — keep all claims)"
+patient_merge_extended,server/routes/rfq.route.js,5374,* Deduplicates by trimmed content match so re-parsing the same RFQ is safe.
+waitlist_extended,server/routes/scm.route.js,907,"const approvals = await listOperationsApprovals(db, null);"
+waitlist_extended,server/routes/scm.route.js,913,"const audit = await listOperationsAudit(db, 'scm', 100);"
+waitlist_extended,server/routes/sftp.route.js,49,const connections = await listConnections(tenantId(req));
+waitlist_extended,server/routes/sftp.route.js,153,"const transfers = await listTransfers(tenantId(req), { status, direction, limit });"
+payment_plan_extended,server/routes/shared/registrationHelpers.js,9,*   • OTP route installer (addOtpRoutes)
+payment_plan_extended,server/routes/shared/registrationHelpers.js,336,// ── OTP route installer ───────────────────────────────────────────────────────
+waitlist_extended,server/routes/social-inbox.route.js,22,"const conversations = await listConversations({ channel, status, limit });"
+waitlist_extended,server/routes/super-admin-tenant.route.js,1509,const result = await listAllTenantServers();
+waitlist_extended,server/routes/x12n-edi.route.js,175,"const txns = await listEdiTransactions(tenantId(req), { transactionSet, direction, status, limit });"
+waitlist_extended,server/scripts/create-kiosk-register-whatsapp-template.js,139,await listTemplates(client);
+maternity_extended,server/scripts/generate-medicine-expansion.js,284,// ━━━ OBSTETRICS & GYNECOLOGY ━━━
+maternity_extended,server/scripts/generate-medicine-expansion.js,285,"[""Folvite 5"", ""Folic Acid"", ""5mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Vitamins"", ""Abbott"", 12, ""30 tablets"", ""OTC"", ""Folate deficiency, neural tube defect prevention"", ""None significant""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,286,"[""Sucrofer 100"", ""Iron Sucrose"", ""100mg/5ml"", ""Injection"", ""Obstetrics & Gynecology"", ""Parenteral Iron"", ""Emcure"", 195, ""5ml vial"", ""H"", ""Iron deficiency anemia (CKD, pregnancy)"", ""Nausea, hypotension""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,287,"[""Meftal Spas"", ""Mefenamic Acid + Dicyclomine"", ""250mg + 10mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Antispasmodics"", ""Blue Cross"", 56, ""10 tablets"", ""H"", ""Dysmenorrhea, menstrual cramps"", ""Nausea, dry mouth""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,288,"[""Regestrone 5"", ""Norethisterone"", ""5mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Progestins"", ""Torrent"", 35, ""10 tablets"", ""H"", ""Abnormal uterine bleeding, period postponement"", ""Nausea, breakthrough bleeding""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,289,"[""I-Pill"", ""Levonorgestrel"", ""1.5mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Emergency Contraception"", ""Cipla"", 95, ""1 tablet"", ""OTC"", ""Emergency contraception (within 72 hours)"", ""Nausea, irregular bleeding""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,290,"[""Unwanted 72"", ""Levonorgestrel"", ""0.75mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Emergency Contraception"", ""Mankind"", 85, ""2 tablets"", ""OTC"", ""Emergency contraception"", ""Nausea, fatigue, breast tenderness""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,291,"[""Mifepristone 200"", ""Mifepristone"", ""200mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Abortifacients"", ""Cipla"", 195, ""1 tablet"", ""X"", ""Medical termination of pregnancy (under medical supervision)"", ""Nausea, cramping, bleeding""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,292,"[""Misoprostol 200"", ""Misoprostol"", ""200mcg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Prostaglandins"", ""Cipla"", 15, ""4 tablets"", ""H"", ""MTP, cervical priming, PPH prevention"", ""Diarrhea, cramping""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,293,"[""Clomiphene 50"", ""Clomiphene Citrate"", ""50mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Ovulation Inducers"", ""Sun Pharma"", 55, ""5 tablets"", ""H"", ""Anovulatory infertility"", ""Hot flashes, ovarian hyperstimulation""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,294,"[""Tranexamic Acid 500"", ""Tranexamic Acid"", ""500mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""Antifibrinolytics"", ""Sun Pharma"", 65, ""10 tablets"", ""H"", ""Heavy menstrual bleeding, post-surgical bleeding"", ""GI upset, DVT risk""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,295,"[""Conjugated Estrogens 0.625"", ""Conjugated Estrogens"", ""0.625mg"", ""Tablet"", ""Obstetrics & Gynecology"", ""HRT"", ""Pfizer"", 155, ""28 tablets"", ""H"", ""Menopausal symptoms, vaginal atrophy"", ""Breast tenderness, DVT risk""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,391,"[""Shatavari 500"", ""Asparagus racemosus"", ""500mg"", ""Capsule"", ""Obstetrics & Gynecology"", ""Women's Health (Herbal)"", ""Himalaya"", 175, ""60 capsules"", ""OTC"", ""Female reproductive health, lactation"", ""None significant""],"
+maternity_extended,server/scripts/generate-medicine-expansion.js,633,"{ generic: ""L-Arginine + Proanthocyanidin"", strength: ""3g + 75mg"", form: ""Sachet"", cat: ""Obstetrics & Gynecology"", sub: ""Vascular Support"", sch: ""H"", mrp: 225, ind: ""Pre-eclampsia, IUGR, endothelial dysfunction"", se: ""GI upset"" },"
+patient_merge_extended,server/scripts/generate-medicine-expansion.js,723,// Deduplicate by brandName (case-insensitive)
+payment_plan_extended,server/scripts/healthos-smoke.mjs,131,"['POST', '/api/v3/healthos/platform/marketplace/install', { appId: 1 }],"
+payment_plan_extended,server/scripts/migrate-all.mjs,35,"{ id: 'dedicated-installations', cmd: 'node', args: ['migrations/20261018000100-dedicated-installations.migration.js'], cwd: SERVER },"
+belongings_extended,server/scripts/ops/checks/lab-collection-platform.checks.mjs,273,"check('the timeline joins task, custody, consent and verification evidence in time order', ['task', 'custody', 'consent', 'verification'].every((k) => kinds.has(k))"
+belongings_extended,server/scripts/ops/checks/lab-collection-platform.checks.mjs,275,"const custody = (await q(`SELECT event_type FROM lab_specimen_custody_events WHERE task_id = $1 AND specimen_id = $2 ORDER BY id`, [t1.id, specs[0].id])).rows.map((x) => x.event_type);"
+belongings_extended,server/scripts/ops/checks/lab-collection-platform.checks.mjs,276,"check('custody for one specimen runs scanned → collected → in_transit → handed_over → received', custody.join('>') === 'scanned>collected>in_transit>handed_over>received', custody.join('>'));"
+belongings_extended,server/scripts/ops/checks/lab-collection-platform.checks.mjs,572,"tasks: await t('lab_collection_tasks'), specimens: await t('lab_collection_specimens'), custody: await t('lab_specimen_custody_events'),"
+belongings_extended,server/scripts/ops/checks/lab-collection-platform.checks.mjs,584,"AND (table_name LIKE 'lab\\_collection\\_%' OR table_name LIKE 'lab\\_phleb%' OR table_name IN ('lab_specimen_custody_events', 'lab_mobile_operations'))`)).rows[0].n;"
+payment_plan_extended,server/scripts/ops/checks/users-organization-uid-guard.checks.mjs,61,Number(t) === 1 ? ok('trg_users_organization_uid is installed on users') : bad('trigger missing');
+payment_plan_extended,server/scripts/ops/database-encrypted-cutover.mjs,49,if(!existsSync('/etc/nginx/database-maintenance-enabled'))throw new Error('Nginx maintenance flag support must be installed and tested first');
+directives_extended,server/scripts/qa/clinical-golden-regression.mjs,74,: 'emergency immediate ecg acute coronary syndrome resuscitation';
+waitlist_extended,server/scripts/qa/crm-settings-db-integration.mjs,28,"await test('Two concurrent edits cannot overwrite one another',async()=>{const revision=row.revision;const result=await Promise.allSettled([save(11,'google_ads',{...input,credentials:{clientSecret:'A'},expectedRevision:revision},4),save(11,'google_ads',{...input,credentials:{refreshToken:'B'},expect"
+waitlist_extended,server/scripts/qa/crm-settings-db-integration.mjs,30,"await test('Tenant boundary cannot read or rotate a different tenant record',async()=>{assert.equal((await list(12)).find(r=>r.channel==='google_ads').credentialsConfigured,false);await assert.rejects(save(12,'google_ads',{...input,expectedRevision:row.revision},4),{statusCode:409});});"
+waitlist_extended,server/scripts/qa/crm-settings-db-integration.mjs,35,"await test('Audit failure rolls back credential and status changes',async()=>{await pool.query(""ALTER TABLE crm_audit_log ADD CONSTRAINT reject_save CHECK (event_type <> 'inventory_saved') NOT VALID"");await assert.rejects(save(11,'google_ads',{...input,expectedRevision:row.revision},4));assert.equal"
+waitlist_extended,server/scripts/qa/crm-settings-db-integration.mjs,36,"await test('Disconnect deletes the record and encrypted bundle atomically',async()=>{await change(11,'google_ads','disconnect',{expectedRevision:row.revision,confirm:'disconnect'},4);assert.equal((await list(11)).find(r=>r.channel==='google_ads').credentialsConfigured,false);});"
+directives_extended,server/scripts/qa/generate-clinical-golden-set.mjs,252,"['Upper GI bleed with hemodynamic instability', ['resuscit', 'transfuse', 'endoscopy']],"
+maternity_extended,server/scripts/qa/generate-clinical-golden-set.mjs,263,"['Ectopic pregnancy rupture unstable', ['surgery', 'transfuse', 'obstetric', 'emergency']],"
+payment_plan_extended,server/scripts/qa/health-package-eligibility-release-check.mjs,25,"check('Booking policy columns installed',columns.length===2);"
+payment_plan_extended,server/scripts/qa/health-package-eligibility-release-check.mjs,27,"check('Exactly one venue constraint installed',constraints.length===1);"
+payment_plan_extended,server/scripts/qa/lib/communication-hub-smoke-bootstrap.mjs,69,async function ensurePostgresInstalled() {
+payment_plan_extended,server/scripts/qa/lib/communication-hub-smoke-bootstrap.mjs,72,console.log('[smoke-bootstrap] Postgres not reachable — installing local PostgreSQL...');
+payment_plan_extended,server/scripts/qa/lib/communication-hub-smoke-bootstrap.mjs,74,"await runShell('sudo', ['apt-get', 'install', '-y', '-qq', 'postgresql', 'postgresql-contrib'], { env: { ...process.env, DEBIAN_FRONTEND: 'noninteractive' } });"
+payment_plan_extended,server/scripts/qa/lib/communication-hub-smoke-bootstrap.mjs,95,throw new Error('Postgres installed but smoke database is still unreachable');
+payment_plan_extended,server/scripts/qa/lib/communication-hub-smoke-bootstrap.mjs,230,await ensurePostgresInstalled();
+payment_plan_extended,server/scripts/report-dedicated-installation.mjs,6,"import { validateReport, INSTALLATION_PROFILES } from '../config/dedicated-installation-profiles.js';"
+payment_plan_extended,server/scripts/report-dedicated-installation.mjs,8,"export async function sendInstallationReport({ origin, token, profile, report, fetcher = fetch }) {"
+payment_plan_extended,server/scripts/report-dedicated-installation.mjs,11,"if (!Object.hasOwn(INSTALLATION_PROFILES, profile)) throw new Error('Explicit CRM or lab profile required');"
+payment_plan_extended,server/scripts/report-dedicated-installation.mjs,14,"const response = await fetcher(new URL('/api/admin/dedicated-installations/reports', url), {"
+payment_plan_extended,server/scripts/report-dedicated-installation.mjs,32,"console.log(JSON.stringify(await sendInstallationReport({ origin: DEDICATED_CONTROL_PLANE_URL, token, profile: DEDICATED_PROFILE, report })));"
+patient_merge_extended,server/scripts/smoke-team-booking-alert.mjs,192,"ok('UNION deduplicates (not UNION ALL)',"
+waitlist_extended,server/scripts/test-benefit-wallet-settlement.mjs,167,"const listed = await listCorporateBenefitAuthorizations(CORPORATE_ID, { limit: 50 });"
+waitlist_extended,server/services/admin-ip-binding.service.js,49,const trusted = await listTrustedIps(userId);
+payment_plan_extended,server/services/ai-brain/llm-provider.js,327,"// there (confirmed live, not something this integration installs):"
+payment_plan_extended,server/services/ai-brain/llm-provider.js,696,// -c 16384 -np 8 -ngl 99 --port 8080) — this integration does not install
+patient_merge_extended,server/services/ai-brain/multi-agent-orchestrator.js,341,// Execute tool calls (with deduplication)
+directives_extended,server/services/ai-brain/orchestrator.js,85,"- Give patient-facing actions. Never instruct a patient to activate a hospital response team, prepare a resuscitation bay, order STAT tests, set up a defibrillator or notify an attending physician."
+patient_merge_extended,server/services/ai-brain/orchestrator.js,270,// Deduplicate: skip tool calls we've already seen with identical args
+waitlist_extended,server/services/ai-brain/tools/hospital-os-tools.js,144,"return await listApprovals({ status: 'pending', patientId: params.patientId, limit: params.limit || 20 });"
+patient_merge_extended,server/services/ai-brain/tools/intelligence-tools.js,368,".filter((v, i, arr) => arr.indexOf(v) === i) // deduplicate"
+patient_merge_extended,server/services/ai-clinical-insights-cron.service.js,430,* Insert a clinical insight (with deduplication)
+directives_extended,server/services/ai-dept.service.js,544,": parseInt(r.fluid_balance_ml || 0) < -500 ? 'Negative balance — consider fluid resuscitation' : 'Monitor',"
+directives_extended,server/services/ai-emergency-triage.service.js,7,"*   1 — Resuscitation (life-threatening, immediate intervention)"
+directives_extended,server/services/ai-emergency-triage.service.js,318,"1: 'RESUSCITATION — Life-threatening, requires immediate intervention',"
+directives_extended,server/services/ai-interpretability.service.js,616,"const labels = { 1: 'Resuscitation', 2: 'Emergent', 3: 'Urgent', 4: 'Less Urgent', 5: 'Non-Urgent' };"
+patient_merge_extended,server/services/ai-medical-nlp.service.js,25,*   5. Persistence + deduplication
+patient_merge_extended,server/services/ai-medical-nlp.service.js,123,"// Merge, deduplicate by normalized_name + entity_type"
+patient_merge_extended,server/services/ai-model-governance.service.js,622,* @param {boolean} [change.dedupe=true] - Component+changeType idempotency (right for the periodic
+patient_merge_extended,server/services/ai-model-governance.service.js,628,"async proposeChange({ component, changeType, description, previousConfig, newConfig, rationale, riskAssessment = 'moderate', dedupe = true }) {"
+patient_merge_extended,server/services/ai-model-governance.service.js,632,const existing = dedupe ? await pool.query(`
+payment_plan_extended,server/services/aiNodeManager.service.js,347,"'1. Install the Local AI Node software on your server',"
+patient_merge_extended,server/services/appointment-preference-reminders.service.js,22,// The notification and deduplication marker commit together under the appointment row lock.
+patient_merge_extended,server/services/appointment-reminder-cron.service.js,11,* The personal inbox record and deduplication marker commit atomically;
+patient_merge_extended,server/services/ar-follow-up.service.js,36,* Create (or upsert) an AR follow-up item. Short-pay items dedupe on the source
+patient_merge_extended,server/services/ar-follow-up.service.js,37,"* remittance; aging items dedupe on (claim_id, category) while still open."
+patient_merge_extended,server/services/ar-follow-up.service.js,52,// original item (idempotent re-import / re-run). Returns null when deduped.
+patient_merge_extended,server/services/asset-tracking.service.js,19,const READER_DEDUPE_SECONDS = 5;
+patient_merge_extended,server/services/asset-tracking.service.js,249,"[device.id, tagIds, READER_DEDUPE_SECONDS, resolved.map((r) => r.scannedAt)]"
+maternity_extended,server/services/bedside-reference.service.js,140,"metformin: { category: 'B', note: 'Generally safe — preferred oral agent in gestational DM', ref: 'NICE NG3 / ACOG' },"
+waitlist_extended,server/services/careos/clinical-playback.service.js,57,"const alerts = await listCoordinatorAlerts(patientId, organizationId);"
+waitlist_extended,server/services/careos/government-health.service.js,13,"const signals = await listNetworkSignals({ status: 'active', limit: 10 });"
+payment_plan_extended,server/services/careos/index.js,25,"import { listMarketplaceApps, installApp, listInstalledApps } from './marketplace.service.js';"
+payment_plan_extended,server/services/careos/index.js,135,"installApp,"
+payment_plan_extended,server/services/careos/index.js,136,"listInstalledApps,"
+payment_plan_extended,server/services/careos/index.js,256,"installApp,"
+payment_plan_extended,server/services/careos/index.js,257,"listInstalledApps,"
+payment_plan_extended,server/services/careos/marketplace.service.js,15,"sql += ` ORDER BY install_count DESC, name`;"
+payment_plan_extended,server/services/careos/marketplace.service.js,20,"export async function installApp({ organizationId, appId, installedBy, config }) {"
+payment_plan_extended,server/services/careos/marketplace.service.js,23,"`INSERT INTO healthos_org_app_installs (organization_id, app_id, installed_by, config)"
+payment_plan_extended,server/services/careos/marketplace.service.js,27,"[organizationId, appId, installedBy, JSON.stringify(config || {})]"
+payment_plan_extended,server/services/careos/marketplace.service.js,29,"await pool.query(`UPDATE healthos_marketplace_apps SET install_count = install_count + 1 WHERE id = $1`, [appId]);"
+payment_plan_extended,server/services/careos/marketplace.service.js,33,export async function listInstalledApps(organizationId) {
+payment_plan_extended,server/services/careos/marketplace.service.js,37,FROM healthos_org_app_installs i
+payment_plan_extended,server/services/careos/marketplace.service.js,45,"export default { listMarketplaceApps, installApp, listInstalledApps };"
+waitlist_extended,server/services/careos/wearables-monitoring.service.js,62,"const readings = await listWearableReadings(patientId, organizationId, 48);"
+patient_merge_extended,server/services/clinical-knowledge-fabric.service.js,113,* Each rule gets its OWN change-log entry (dedupe: false): proposeChange()'s
+patient_merge_extended,server/services/clinical-knowledge-fabric.service.js,151,"dedupe: false,          // one change entry per rule — never share a change id between rules"
+waitlist_extended,server/services/clinical-notes.service.js,170,"const notes = await listClinicalNotes({ patientId, admissionId, limit });"
+maternity_extended,server/services/clinical-scores.service.js,610,// ── Obstetrics ─────────────────────────────────────────────────────────────────
+belongings_extended,server/services/collection/collection.service.js,8,"*   3. applies the change, appends the task/custody event and the outbox row;"
+belongings_extended,server/services/collection/collection.service.js,100,"async function custodyEvent(c, specimen, { eventType, from, to, actor, principal, operationId, evidence = {} }) {"
+belongings_extended,server/services/collection/collection.service.js,102,`INSERT INTO lab_specimen_custody_events
+patient_merge_extended,server/services/collection/collection.service.js,110,"async function outbox(c, { ownerUid, type, id, event, payload, correlationId, dedupe }) {"
+patient_merge_extended,server/services/collection/collection.service.js,112,"`INSERT INTO lab_collection_outbox (owner_uid, aggregate_type, aggregate_id, event_type, payload, correlation_id, dedupe_key)"
+patient_merge_extended,server/services/collection/collection.service.js,113,"VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING`,"
+patient_merge_extended,server/services/collection/collection.service.js,114,"[ownerUid, type, id, event, JSON.stringify(payload || {}), correlationId || null, dedupe],"
+belongings_extended,server/services/collection/collection.service.js,321,"FROM lab_specimen_custody_events e JOIN lab_collection_specimens s ON s.id = e.specimen_id WHERE e.task_id = $1`, [row.id]);"
+belongings_extended,server/services/collection/collection.service.js,326,"...cu.rows.map((r) => ({ at: r.occurred_at, kind: 'custody', type: r.event_type, from: r.from_state, to: r.to_state, actor: r.actor_ref, barcode: r.barcode, data: r.evidence })),"
+belongings_extended,server/services/collection/collection.service.js,500,"await custodyEvent(c, specimen, { eventType: 'scanned', from: null, to: 'scanned', actor, principal, operationId, evidence: { testIds: ids } });"
+belongings_extended,server/services/collection/collection.service.js,529,"for (const s of specs) await custodyEvent(c, s, { eventType: 'collected', from: 'scanned', to: 'collected', actor, principal, operationId });"
+belongings_extended,server/services/collection/collection.service.js,536,"for (const s of specs) await custodyEvent(c, s, { eventType: 'in_transit', from: 'collected', to: 'in_transit', actor, principal, operationId });"
+belongings_extended,server/services/collection/collection.service.js,549,"await custodyEvent(c, s, { eventType: 'handed_over', from, to: 'handed_over', actor, principal, operationId, evidence: { receiverKind, receiverRef } });"
+patient_merge_extended,server/services/collection/collection.service.js,615,"dedupe: `${task.id}:${version}:${command}`,"
+patient_merge_extended,server/services/collection/collection.service.js,783,"payload: { taskId: task.id, mode, status: 'unassigned', version: 1 }, dedupe: `${task.id}:1:create`,"
+belongings_extended,server/services/collection/collection.service.js,823,"await custodyEvent(c, specimen, { eventType: to, from: 'handed_over', to, actor: ACTORS.LAB_RECEIVER, principal, operationId, evidence: { condition, reason } });"
+patient_merge_extended,server/services/collection/collection.service.js,843,"payload: { taskId: task.id, status: d.to, version }, dedupe: `${task.id}:${version}:receive`,"
+belongings_extended,server/services/collection/collection.service.js,949,"JOIN (SELECT task_id, min(occurred_at) AS at FROM lab_specimen_custody_events WHERE event_type = 'handed_over' GROUP BY task_id) h ON h.task_id = t.id"
+belongings_extended,server/services/collection/permissions.js,12,"RECEIVE: 'collection.custody.receive',"
+waitlist_extended,server/services/corporate-benefit-wallet.service.js,360,const programs = await listCorporateBenefitPrograms(corporateId);
+waitlist_extended,server/services/corporate-benefit-wallet.service.js,770,const all = await listAllNetworkProvidersForAdmin();
+waitlist_extended,server/services/corporate-hr-management.service.js,66,const team = await listHrTeam(corporateId);
+waitlist_extended,server/services/crm-brightbean-chat.service.js,219,"const rules = await listInboxRules(tenantUid, { active: true });"
+patient_merge_extended,server/services/crm-lead-automation.service.js,35,// ─── Deduplication ────────────────────────────────────────────────────────────
+waitlist_extended,server/services/crm-segment-blast.service.js,33,"const members = await listSegmentMembers(tenantId, segmentId, { limit: 500 });"
+payment_plan_extended,server/services/daily-health-score.service.js,744,// installations used `date_of_birth`. Accept both while migrations are
+payment_plan_extended,server/services/dedicated-installations.service.js,2,"import { INSTALLATION_PROFILES, InstallationError, validateInstallation, validateReport, installationFreshness } from '../config/dedicated-installation-profiles.js';"
+payment_plan_extended,server/services/dedicated-installations.service.js,7,"return { ...rest, connector_enrolled: Boolean(token_hash), freshness: installationFreshness(row),"
+payment_plan_extended,server/services/dedicated-installations.service.js,11,export class DedicatedInstallationsService {
+payment_plan_extended,server/services/dedicated-installations.service.js,20,await db.query(`INSERT INTO dedicated_installation_audit
+payment_plan_extended,server/services/dedicated-installations.service.js,21,"(installation_id, tenant_uid, actor_ref, action, changes) VALUES ($1,$2,$3,$4,$5)`,"
+payment_plan_extended,server/services/dedicated-installations.service.js,30,"const { rows } = await this.pool.query(`SELECT i.*, t.name AS tenant_name FROM dedicated_installations i"
+payment_plan_extended,server/services/dedicated-installations.service.js,36,"const { rows } = await this.pool.query('SELECT * FROM dedicated_installations WHERE id=$1', [id]);"
+payment_plan_extended,server/services/dedicated-installations.service.js,37,"if (!rows[0]) throw new InstallationError(404, 'not_found', 'Installation not found');"
+payment_plan_extended,server/services/dedicated-installations.service.js,38,"const metrics = await this.pool.query(`SELECT day::text, observed_at, metrics FROM dedicated_installation_daily_metrics"
+payment_plan_extended,server/services/dedicated-installations.service.js,39,"WHERE installation_id=$1 ORDER BY day DESC LIMIT 31`, [id]);"
+payment_plan_extended,server/services/dedicated-installations.service.js,40,"const audit = await this.pool.query(`SELECT action, actor_ref, changes, created_at FROM dedicated_installation_audit"
+payment_plan_extended,server/services/dedicated-installations.service.js,41,"WHERE installation_id=$1 ORDER BY id DESC LIMIT 50`, [id]);"
+payment_plan_extended,server/services/dedicated-installations.service.js,42,"return { installation: publicRow(rows[0]), dailyMetrics: metrics.rows, audit: audit.rows };"
+payment_plan_extended,server/services/dedicated-installations.service.js,45,const value = validateInstallation(input);
+payment_plan_extended,server/services/dedicated-installations.service.js,46,"if (id && (!Number.isInteger(input.version) || input.version < 1)) throw new InstallationError(422, 'validation_failed', 'Current version is required');"
+payment_plan_extended,server/services/dedicated-installations.service.js,49,"if (!tenant || !INSTALLATION_PROFILES[value.profile].tenantTypes.includes(tenant.type)) throw new InstallationError(422, 'tenant_profile_mismatch', 'Select an existing organization compatible with this module profile');"
+payment_plan_extended,server/services/dedicated-installations.service.js,52,"before = (await db.query('SELECT * FROM dedicated_installations WHERE id=$1 FOR UPDATE', [id])).rows[0];"
+payment_plan_extended,server/services/dedicated-installations.service.js,53,"if (!before) throw new InstallationError(404, 'not_found', 'Installation not found');"
+payment_plan_extended,server/services/dedicated-installations.service.js,54,"if (before.version !== input.version) throw new InstallationError(409, 'version_conflict', 'Refresh the installation before saving');"
+payment_plan_extended,server/services/dedicated-installations.service.js,55,"if (before.tenant_uid !== value.tenantUid || before.profile !== value.profile) throw new InstallationError(422, 'immutable_scope', 'Tenant and product profile cannot be changed; register a separate installation');"
+payment_plan_extended,server/services/dedicated-installations.service.js,59,"? await db.query(`UPDATE dedicated_installations SET name=$1, modules=$2, domain=$3, aws_account_id=$4,"
+payment_plan_extended,server/services/dedicated-installations.service.js,61,": await db.query(`INSERT INTO dedicated_installations (name,modules,domain,aws_account_id,region,id,tenant_uid,profile)"
+payment_plan_extended,server/services/dedicated-installations.service.js,72,"if (!Number.isInteger(version) || version < 1) throw new InstallationError(422, 'validation_failed', 'Current version is required');"
+payment_plan_extended,server/services/dedicated-installations.service.js,74,"const row = (await db.query('SELECT * FROM dedicated_installations WHERE id=$1 FOR UPDATE', [id])).rows[0];"
+payment_plan_extended,server/services/dedicated-installations.service.js,75,"if (!row) throw new InstallationError(404, 'not_found', 'Installation not found');"
+payment_plan_extended,server/services/dedicated-installations.service.js,76,"if (row.version !== version) throw new InstallationError(409, 'version_conflict', 'Refresh the installation before changing credentials');"
+payment_plan_extended,server/services/dedicated-installations.service.js,78,"const updated = (await db.query(`UPDATE dedicated_installations SET token_hash=$2, credential_rotated_at=NOW(),"
+payment_plan_extended,server/services/dedicated-installations.service.js,81,"return { installation: publicRow(updated), ...(token ? { token } : {}) };"
+payment_plan_extended,server/services/dedicated-installations.service.js,85,"if (!/^mdi_[a-f0-9]{64}$/.test(token || '')) throw new InstallationError(401, 'invalid_connector', 'Invalid connector credential');"
+payment_plan_extended,server/services/dedicated-installations.service.js,88,"const row = (await db.query('SELECT * FROM dedicated_installations WHERE token_hash=$1 FOR UPDATE', [hash(token)])).rows[0];"
+payment_plan_extended,server/services/dedicated-installations.service.js,89,"if (!row) throw new InstallationError(401, 'invalid_connector', 'Invalid connector credential');"
+payment_plan_extended,server/services/dedicated-installations.service.js,92,"const old = (await db.query('SELECT payload_hash FROM dedicated_installation_reports WHERE installation_id=$1 AND event_id=$2', [row.id, value.eventId])).rows[0];"
+payment_plan_extended,server/services/dedicated-installations.service.js,94,"if (old.payload_hash !== digest) throw new InstallationError(409, 'event_reuse', 'The event ID was already used for a different report');"
+payment_plan_extended,server/services/dedicated-installations.service.js,95,"return { replayed: true, installationId: row.id };"
+payment_plan_extended,server/services/dedicated-installations.service.js,97,"await db.query(`INSERT INTO dedicated_installation_reports (installation_id,event_id,payload_hash,observed_at)"
+payment_plan_extended,server/services/dedicated-installations.service.js,99,"await db.query(`UPDATE dedicated_installations SET last_received_at=NOW(),"
+payment_plan_extended,server/services/dedicated-installations.service.js,105,if (Object.keys(value.metrics).length) await db.query(`INSERT INTO dedicated_installation_daily_metrics
+payment_plan_extended,server/services/dedicated-installations.service.js,106,"(installation_id,day,observed_at,metrics) VALUES ($1,$2,$3,$4)"
+payment_plan_extended,server/services/dedicated-installations.service.js,107,"ON CONFLICT (installation_id,day) DO UPDATE SET observed_at=EXCLUDED.observed_at, metrics=EXCLUDED.metrics"
+payment_plan_extended,server/services/dedicated-installations.service.js,108,"WHERE dedicated_installation_daily_metrics.observed_at < EXCLUDED.observed_at`, [row.id, value.day, value.observedAt, JSON.stringify(value.metrics)]);"
+payment_plan_extended,server/services/dedicated-installations.service.js,109,"return { replayed: false, installationId: row.id };"
+patient_merge_extended,server/services/emailAutoProcessService.js,444,"// Prefer records where lastName is populated (deduplicates split vs combined names),"
+waitlist_extended,server/services/floor-map.service.js,59,const floors = await listFloors(organizationId);
+waitlist_extended,server/services/floor-map.service.js,82,"twins = await listTwins({ tenantId: organizationId, twinType: 'asset', limit: 100 });"
+patient_merge_extended,server/services/health-checkup-notify.service.js,158,// Deduped below so a self-booking with identical contacts is not notified twice.
+maternity_extended,server/services/hospital-crm-specialty.service.js,4,"{ code: 'obgyn', displayName: 'Obstetrics & Gynecology', segments: ['Pregnancy care', 'High-risk pregnancy', 'Women health', 'PCOS', 'Maternity packages'], funnel: ['Campaign', 'Lead', 'Counselling', 'Appointment', 'Consultation', 'Registration', 'Maternity journey'], kpis: ['Leads', 'Appointments',"
+waitlist_extended,server/services/hospital-crm-specialty.service.js,62,const rows = await listSpecialties(tenant);
+waitlist_extended,server/services/hospital-crm-specialty.service.js,85,const list = await listSpecialties(tenant);
+patient_merge_extended,server/services/hospital-era.service.js,143,// (deduped on the remittance id). Fire-and-forget — never blocks posting.
+waitlist_extended,server/services/hospital-os/department-agents.service.js,19,"const studies = await listPatientImagingStudies(patientId, tenantId).catch(() => []);"
+directives_extended,server/services/hospital-queue.service.js,48,"'ESI-1': 100, resuscitation: 100, 1: 100,"
+waitlist_extended,server/services/imaging/imaging-report-drafter.service.js,98,"const templates = await listTemplates(tenantId, normalizeModality(study.modality));"
+waitlist_extended,server/services/imaging/imaging-ris-auto-ingest.service.js,464,const instances = await listOrthancStudyInstances(study.ID);
+waitlist_extended,server/services/imaging/imaging-ris-auto-ingest.service.js,553,const studies = await listOrthancStudies({ limit });
+patient_merge_extended,server/services/insuranceEmailAI.service.js,305,// Dedup by messageId
+maternity_extended,server/services/intentEscalation.service.js,27,"if (text.includes(""pregnancy"")) return ""Obstetrics"";"
+payment_plan_extended,server/services/iso27001.service.js,158,"{ id:'A.8.19', domain:'A.8', dn:'Technological controls', name:'Installation of software on operational systems', type:'Preventive' },"
+waitlist_extended,server/services/iso27001.service.js,300,const controls = await listControls(tenantId);
+patient_merge_extended,server/services/lab-rule-engine.service.js,353,* Run all rules against a lab context. Returns fired alerts (does NOT deduplicate).
+directives_extended,server/services/multilingual-triage.service.js,9,"{ language: 'hi', patterns: [/बेहोश/i, /behosh/i], canonical: 'unresponsive', category: 'arrest', explanation: 'Unresponsive phrase matched the immediate resuscitation rule.' },"
+directives_extended,server/services/nabh-jci-compliance.service.js,84,"{ code: 'COP', name: 'Care of Patients',                          description: 'General care, high-risk patients, resuscitation, blood/blood products' },"
+directives_extended,server/services/nabh-jci-compliance.service.js,100,"{ code: 'COP',  name: 'Care of Patients',                        description: 'Resuscitation, high-risk patients, pain management, end-of-life care' },"
+directives_extended,server/services/nabh-jci-compliance.service.js,124,"{ code: 'COP.3', standardCode: 'COP', desc: 'Resuscitation equipment and trained staff are available 24/7', criticality: 'critical' },"
+payment_plan_extended,server/services/notification.service.js,524,// Auto-deactivate stale tokens (FCM returns NotRegistered when app uninstalled / token refreshed)
+waitlist_extended,server/services/nursing-workflow.service.js,156,const patients = await listNursingPatients({ wardId });
+waitlist_extended,server/services/orthanc-hypergrid-bridge.service.js,147,const instances = await listOrthancStudyInstances(studyId);
+payment_plan_extended,server/services/payment.service.js,231,"async capturePayment(paymentId, amount, currency = 'INR') {"
+patient_merge_extended,server/services/report-analysis.service.js,397,"// directly. persistObservations resolves subject/org uids, canonicalises, and dedupes.)"
+patient_merge_extended,server/services/report-delivery.service.js,9,* configured later the backlog delivers. The receiver dedupes on event_id.
+payment_plan_extended,server/services/report-extraction.service.js,95,"// Rasterizer not installed — be explicit, never guess."
+payment_plan_extended,server/services/report-extraction.service.js,96,"return { pages: [], method: 'ocr_unavailable', totalPages: 0, note: 'pdftoppm (poppler-utils) not installed' };"
+patient_merge_extended,server/services/report-identity.service.js,14,"*   - organization_uid = the corporate/tenant context, for scoping every read/write/dedupe/delivery."
+waitlist_extended,server/services/scheme-package.service.js,122,"const found = await listPackages({ scheme, q: input.packageCode, limit: 1 });"
+patient_merge_extended,server/services/surveillance-analytics.service.js,67,const NATIVE_DEDUPE_SECONDS = 60;
+patient_merge_extended,server/services/surveillance-analytics.service.js,652,"[gateway.organization_id, camId, type, def.severity, def.label, String(NATIVE_DEDUPE_SECONDS)]"
+waitlist_extended,server/services/tele-icu/icu-command-network.service.js,154,const rosters = await listRoster(networkId);
+waitlist_extended,server/services/tenant-scope.service.js,44,const tables = (await listTables(db)).filter((t) => !NO_RLS.has(t));
+waitlist_extended,server/services/tenant-scope.service.js,68,const tables = await listTables(client);
+waitlist_extended,server/services/wayfinding.service.js,75,const floors = await listFloors(organizationId);
+patient_merge_extended,server/tests/chatwoot-bridge.test.mjs,136,"it('deduplicates concurrent customer callbacks and creates one remote conversation/message', async () => {"
+patient_merge_extended,server/tests/chatwoot-bridge.test.mjs,168,"it('deduplicates agent webhooks and routes the reply through the tenant channel', async () => {"
+payment_plan_extended,server/tests/dedicated-crm-bootstrap.test.mjs,16,"execFileSync(bin+'/psql',['-h','127.0.0.1','-p',String(port),'-U','medstar_owner','-d','postgres','-v','ON_ERROR_STOP=1','--single-transaction','-f',new URL('../installations/crm/schema.sql',import.meta.url).pathname],{stdio:'ignore'});"
+payment_plan_extended,server/tests/dedicated-crm-bootstrap.test.mjs,19,"const run=()=>execFileSync(process.execPath,[new URL('../installations/crm/bootstrap.mjs',import.meta.url).pathname],{env,encoding:'utf8',stdio:['ignore','pipe','pipe']});"
+payment_plan_extended,server/tests/dedicated-crm-bootstrap.test.mjs,29,"const upgrade=()=>execFileSync(process.execPath,[new URL('../installations/crm/upgrade-workspace.mjs',import.meta.url).pathname],{env,encoding:'utf8',stdio:['ignore','pipe','pipe']});"
+payment_plan_extended,server/tests/dedicated-crm-runtime.test.mjs,7,"import {validateDedicatedEnvironment,dedicatedBoundary} from '../installations/crm/runtime-boundary.js';"
+payment_plan_extended,server/tests/dedicated-crm-runtime.test.mjs,8,import {ReportOutbox} from '../installations/crm/report-outbox.mjs';
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,12,import { up } from '../migrations/20261018000100-dedicated-installations.migration.js';
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,13,import { DedicatedInstallationsService } from '../services/dedicated-installations.service.js';
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,14,import { dedicatedInstallationsRouter } from '../routes/dedicated-installations.route.js';
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,15,"import { validateInstallation, validateReport } from '../config/dedicated-installation-profiles.js';"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,16,import { sendInstallationReport } from '../scripts/report-dedicated-installation.mjs';
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,27,"dir = mkdtempSync(join(tmpdir(), 'dedicated-installations-test-'));"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,41,svc = new DedicatedInstallationsService(pool);
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,43,"app.use('/installations', dedicatedInstallationsRouter({ pool, authenticate(req, res, next) {"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,51,beforeEach(async () => { await pool.query('TRUNCATE dedicated_installations CASCADE'); });
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,58,"test('separate CRM and lab installations share registry but not scopes', async () => {"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,69,"{ ...crm, modules: [] }, { ...crm, awsAccountId: 123456789012 }, { ...crm, region: 'x'.repeat(100) }]) assert.throws(() => validateInstallation(input));"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,72,"test('duplicate domains and names cannot register another installation', async () => {"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,87,await pool.query(`CREATE FUNCTION reject_installation_audit() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END; $$;
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,88,CREATE TRIGGER reject_audit BEFORE INSERT ON dedicated_installation_audit FOR EACH ROW EXECUTE FUNCTION reject_installation_audit();`);
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,92,} finally { await pool.query('DROP TRIGGER reject_audit ON dedicated_installation_audit; DROP FUNCTION reject_installation_audit()'); }
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,98,"const stored = (await pool.query('SELECT token_hash FROM dedicated_installations WHERE id=$1', [a.id])).rows[0].token_hash;"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,102,"const second = await svc.credential(a.id, first.installation.version, 1);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,105,"await svc.credential(a.id, second.installation.version, 1, true);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,111,"await assert.rejects(svc.report(key.token, { ...report(), installationId: b.id }), expectCode('validation_failed'));"
+patient_merge_extended,server/tests/dedicated-installations.test.mjs,116,"test('concurrent retries deduplicate and changed bodies reject the same event ID', async () => {"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,131,"assert.equal(detail.installation.freshness, 'healthy');"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,132,"await pool.query(""UPDATE dedicated_installations SET last_observed_at=NOW()-INTERVAL '10 minutes' WHERE id=$1"", [a.id]);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,134,"assert.equal(detail.installation.freshness, 'stale');"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,137,await request(app).get('/installations').expect(401);
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,138,"await request(app).get('/installations').set('x-test-user', '1').set('x-test-role', 'doctor').expect(403);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,139,"await request(app).get('/installations').set('x-test-user', '2').expect(403);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,140,"await request(app).get('/installations').set('x-test-user', '3').expect(403);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,141,"await request(app).get('/installations').set('x-test-user', '1').expect(200);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,144,"const created = await request(app).post('/installations').set('x-test-user', '1').send(crm).expect(201);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,145,const id = created.body.installation.id;
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,146,"await request(app).put(`/installations/${id}`).set('x-test-user', '1').send(crm).expect(422);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,147,"await request(app).get('/installations?limit=-2').set('x-test-user', '1').expect(422);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,148,await request(app).post('/installations/reports').send(report()).expect(401);
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,149,"const key = await request(app).post(`/installations/${id}/connector/rotate`).set('x-test-user', '1').send({ version: 1 }).expect(200);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,151,"await request(app).post('/installations/reports').set('Authorization', `Bearer ${key.body.token}`).send(report()).expect(200);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,152,"await request(app).get('/installations').set('Authorization', `Bearer ${key.body.token}`).expect(401);"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,160,"assert.deepEqual(await sendInstallationReport(options), { success: true, replayed: true });"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,163,"await assert.rejects(sendInstallationReport({ ...options, origin: 'http://control.example' }));"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,164,"await assert.rejects(sendInstallationReport({ ...options, origin: 'https://user:secret@control.example' }));"
+payment_plan_extended,server/tests/dedicated-installations.test.mjs,165,"await assert.rejects(sendInstallationReport({ ...options, fetcher: async () => ({ ok: false, status: 503 }) }), /HTTP 503/);"
+patient_merge_extended,server/tests/gupshup-queue.test.mjs,12,"test('Gupshup durable inbox, callback deduplication, failure retention and ordered delivery status', { timeout: 15000 }, async () => {"
+waitlist_extended,server/utils/firebase-admin.js,540,// lock-screen notification even when the app is killed or in standby.

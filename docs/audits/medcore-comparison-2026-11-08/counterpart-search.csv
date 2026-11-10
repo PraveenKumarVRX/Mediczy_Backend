@@ -1,0 +1,80 @@
+capability,path,line,match
+maternity,server/services/hospital-crm-specialty.service.js,4,"{ code: 'obgyn', displayName: 'Obstetrics & Gynecology', segments: ['Pregnancy care', 'High-risk pregnancy', 'Women health', 'PCOS', 'Maternity packages'], funnel: ['Campaign', 'Lead', 'Counselling', 'Appointment', 'Consultation', 'Registration', 'Maternity jo"
+maternity,server/services/workflow-ai-orchestrator.service.js,61,"steps: ['obs_review', 'fetal_monitoring', 'delivery_planning', 'delivery', 'postnatal_care', 'discharge']"
+maternity,server/scripts/generate-medicine-expansion.js,389,"[""Kottakkal Dhanwantaram"", ""Ayurvedic Oil"", ""Multi"", ""Oil"", ""Musculoskeletal"", ""Ayurvedic External"", ""Kottakkal Arya Vaidya Sala"", 215, ""200ml bottle"", ""OTC"", ""Joint pain, postnatal care, arthritis"", ""None significant""],"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,656,"name: 'Antenatal — Routine Visit Framework',"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,659,"{ type: 'assessment', description: 'Fundal height measurement (after appropriate gestational age)', rationale: 'Screen for growth abnormalities' },"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,660,"{ type: 'assessment', description: 'Fetal heart rate assessment', rationale: 'Confirm fetal wellbeing' },"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,663,"{ type: 'screening', description: 'Gestational-age-appropriate screening per trimester protocol', rationale: 'Per standard antenatal care schedule' },"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,675,"name: 'Antenatal Visit Note',"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,680,"{ section: 'Fundal Height', guidance: '' },"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,681,"{ section: 'Fetal Heart Rate', guidance: '' },"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,690,"patientEducationText: 'Take prenatal vitamins as prescribed. Attend all scheduled antenatal visits and screening tests. Seek immediate care for severe headache, visual changes, severe abdominal pain, reduced fetal movement, or vaginal bleeding.',"
+maternity,server/migrations/specialty-prescriptions-expansion.migration.js,693,"{ diagramType: 'fundal_height_tracking_chart', label: 'Fundal Height Growth Chart', purpose: 'annotation' },"
+maternity,client/src/pages/hmis/PatientTimeline.tsx,14,interface BranchVisit {
+maternity,client/src/pages/hmis/PatientTimeline.tsx,79,"const [branchVisits, setBranchVisits] = useState<BranchVisit[]>([]);"
+maternity,client/src/pages/hmis/PatientTimeline.tsx,99,setBranchVisits(res.data?.data ?? []);
+maternity,client/src/pages/hmis/PatientTimeline.tsx,102,setBranchVisits([]);
+maternity,client/src/pages/hmis/PatientTimeline.tsx,149,{branchVisits.length > 1 && (
+maternity,client/src/pages/hmis/PatientTimeline.tsx,152,{branchVisits.map((b) => (
+pediatrics,server/migrations/specialty-prescriptions-expansion.migration.js,611,"{ type: 'assessment', description: 'Growth parameters (height/weight/head circumference), plotted on growth chart', rationale: 'Screen for growth abnormalities' },"
+pediatrics,server/migrations/specialty-prescriptions-expansion.migration.js,614,"{ type: 'review', description: 'Immunization status review and update per schedule', rationale: 'Ensure age-appropriate protection' },"
+pediatrics,server/migrations/specialty-prescriptions-expansion.migration.js,633,"{ section: 'Immunization Review', guidance: '' },"
+pediatrics,server/migrations/specialty-prescriptions-expansion.migration.js,643,"{ diagramType: 'growth_chart_boys', label: 'Growth Chart (Boys) — for plotting growth parameters', purpose: 'annotation' },"
+pediatrics,server/migrations/specialty-prescriptions-expansion.migration.js,644,"{ diagramType: 'growth_chart_girls', label: 'Growth Chart (Girls) — for plotting growth parameters', purpose: 'annotation' },"
+pediatrics,server/migrations/specialty-prescriptions-expansion.migration.js,649,"'Follow up per immunization schedule',"
+pediatrics,server/migrations/specialty-prescriptions-expansion.migration.js,693,"{ diagramType: 'fundal_height_tracking_chart', label: 'Fundal Height Growth Chart', purpose: 'annotation' },"
+pediatrics,server/routes/crm-underwriting.route.js,346,"{ head: 'Vaccination / Immunization', category: 'exclusion', status: 'excluded', description: 'Routine vaccinations and preventive immunization.', isStandardExcl: true },"
+pediatrics,server/routes/crm-underwriting.route.js,405,"{ head: 'Vaccination / Immunization', category: 'preventive', status: 'conditional', description: 'Adult vaccinations (flu, typhoid, hepatitis B) may be covered. Routine childhood vaccines excluded.', isOptional: true },"
+pediatrics,server/routes/clinical-workflow.route.js,398,"{ code: '90471', description: 'Immunization administration, injection' },"
+pediatrics,server/routes/fhir.route.js,6,"*            Practitioner, Organization, Immunization"
+pediatrics,server/routes/fhir.route.js,111,"{ type: 'Immunization',         interaction: interactions(false), searchParam: [{ name: 'patient', type: 'reference' }] },"
+pediatrics,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,323,"description: ""Pediatric prescription with growth charts"","
+pediatrics,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,330,"{ title: ""Immunization Status"", field: ""immunization"", type: ""immunization"" },"
+pediatrics,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,332,"{ title: ""Growth Parameters"", field: ""growth"", type: ""growth_chart"" },"
+pediatrics,client/src/pages/doctor/DoctorSpecialtyTemplates.tsx,340,"diagram: ""growth_chart"","
+pediatrics,client/src/pages/hospital/HospitalEHR.tsx,75,immunizations: Immunization[];
+pediatrics,client/src/pages/hospital/HospitalEHR.tsx,180,interface Immunization {
+pediatrics,client/src/pages/hospital/HospitalEHR.tsx,375,"immunizations: [],"
+pediatrics,client/src/pages/hospital/HospitalEHR.tsx,1789,{/* Immunizations */}
+pediatrics,client/src/pages/hospital/HospitalEHR.tsx,1793,"<Syringe className=""h-5 w-5"" /> Immunizations"
+pediatrics,client/src/pages/hospital/HospitalEHR.tsx,1810,{patient.immunizations.map((imm) => (
+pediatrics,client/src/pages/admin/NGOManagement.tsx,115,"programs: ['Maternal Care', 'Child Immunization', 'Mental Health Support', 'Health Workshops'],"
+patient_merge,server/services/event.service.js,73,"MERGED: 'patient.merged',"
+coordinated_visits,server/services/qms-opd.service.js,2,* Multi-OPD / multi-doctor QMS helpers + appointment → token bridge.
+coordinated_visits,server/routes/qms.route.js,229,/** Multi-OPD / multi-doctor board index for hospital QMS */
+coordinated_visits,client/src/pages/clinic/ClinicRegister.tsx,473,"{ icon: Users,       title: ""Multi-Doctor Management"", desc: ""Manage your entire team effortlessly"" },"
+waitlist,server/services/whatsapp-agentic-booking.service.js,565,"`3️⃣ Join waitlist for this slot`,"
+waitlist,server/models/queue-management.model.js,2,* Queue Management Model - Patient Waitlist and Triage
+waitlist,client/src/pages/doctor/DoctorSelfCheckin.tsx,119,"<span className=""flex items-center gap-2""><Users className=""h-4 w-4"" /> Today's waiting list</span>"
+waitlist,client/src/pages/team/TeamModulePages.tsx,308,"{ title: ""Waitlist automation"", description: ""Auto-upgrade slots when cancellations occur"", status: ""Beta"" },"
+scheduled_reports,server/app.js,1722,"app.use('/api/admin/reports', reportBuilderRouter); // Custom report builder & scheduled reports"
+scheduled_reports,server/services/report-builder.service.js,8,* - Scheduled report generation
+scheduled_reports,server/services/report-builder.service.js,615,this.cancelScheduledReport(scheduleId);
+scheduled_reports,server/services/report-builder.service.js,624,console.log(`[ReportBuilder] Running scheduled report: ${scheduleId}`);
+scheduled_reports,server/services/report-builder.service.js,628,"console.log(`[ReportBuilder] Scheduled report ${scheduleId} completed:`, {"
+scheduled_reports,server/services/report-builder.service.js,637,"console.error(`[ReportBuilder] Scheduled report ${scheduleId} failed:`, error);"
+scheduled_reports,server/services/report-builder.service.js,671,* Cancel a scheduled report
+scheduled_reports,server/services/report-builder.service.js,673,cancelScheduledReport(scheduleId) {
+scheduled_reports,server/services/report-builder.service.js,684,* Get all scheduled reports
+scheduled_reports,server/migrations/phase2-3-tables.migration.js,8,* - Scheduled reports
+scheduled_reports,server/migrations/phase2-3-tables.migration.js,135,// 7. Scheduled Reports Table
+scheduled_reports,server/migrations/phase2-3-tables.migration.js,137,CREATE TABLE IF NOT EXISTS scheduled_reports (
+scheduled_reports,server/migrations/phase2-3-tables.migration.js,153,console.log('[Migration] ✓ scheduled_reports table created');
+scheduled_reports,server/migrations/phase2-3-tables.migration.js,272,console.log('  - scheduled_reports (recurring reports)');
+scheduled_reports,server/routes/report-builder.route.js,7,* - Scheduled reports
+scheduled_reports,server/routes/report-builder.route.js,300,* @desc Get all scheduled reports
+scheduled_reports,server/routes/report-builder.route.js,309,res.status(500).json({ error: 'Failed to fetch scheduled reports' });
+scheduled_reports,server/routes/report-builder.route.js,315,* @desc Cancel a scheduled report
+scheduled_reports,server/routes/report-builder.route.js,321,const result = reportBuilderService.cancelScheduledReport(scheduleId);
+scheduled_reports,server/routes/report-builder.route.js,325,res.status(500).json({ error: 'Failed to cancel scheduled report' });
+scheduled_reports,client/src/pages/icu/ICUModulePages.tsx,26,"// infection-bundle compliance, scheduled reports, analytics trends) now say so explicitly instead of"
+scheduled_reports,client/src/pages/icu/ICUModulePages.tsx,620,"<NotAvailable title=""Scheduled reporting isn't connected yet."" reason=""Census/mortality/utilization report generation isn't wired to a backend yet."" />"
+scheduled_reports,client/src/pages/corporate/CorporateReports.tsx,107,"() => reports.find((report) => report.category === 'MIS' || report.scheduledFrequency === 'weekly' || report.reportKey?.startsWith('weekly-mis-')),"
+scheduled_reports,client/src/pages/corporate/CorporateReports.tsx,492,"{report.scheduledFrequency === 'weekly' && <Badge variant=""outline"">Weekly</Badge>}"
+scheduled_reports,client/src/pages/ot/OTModulePages.tsx,491,"<NotAvailable title=""Scheduled reporting isn't connected yet."" reason=""Utilization/turnover/case-mix report generation isn't wired to a backend yet."" />"
+scheduled_reports,client/src/pages/hr/HRModulePages.tsx,1903,"<KPI label=""Scheduled Reports"" value=""8""   sub=""Auto-generated monthly"" icon={Calendar}  color=""text-blue-600"" />"
+scheduled_reports,client/src/pages/admin/AdminPlaceholders.tsx,274,"{ label: 'Scheduled Reports', value: '12', icon: Calendar },"
+scheduled_reports,client/src/pages/admin/AdminPlaceholders.tsx,282,"features={['Custom Dashboards', 'Scheduled Reports', 'Export to Excel/PDF', 'Real-time Analytics']}"
+advance_directive,server/services/nabh-jci-compliance.service.js,98,"{ code: 'PFR',  name: 'Patient and Family Rights',               description: 'Consent, complaints, ethics committee, advance directives' },"
+advance_directive,server/routes/dept/bloodBank.route.js,190,const generateDonorId = () => `DNR-${Date.now().toString(36).toUpperCase()}`;
