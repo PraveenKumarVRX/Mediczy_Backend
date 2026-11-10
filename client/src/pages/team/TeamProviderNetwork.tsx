@@ -50,6 +50,12 @@ const TeamProviderNetwork = () => {
   const [urlsRaw, setUrlsRaw] = useState('');
   const [providerType, setProviderType] = useState('hospital');
   const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelType, setExcelType] = useState('lab');
+  const [single, setSingle] = useState({
+    provider_type: 'lab', name: '', city: '', state: '',
+    address: '', pincode: '', phone: '', email: '',
+  });
+  const [addingSingle, setAddingSingle] = useState(false);
   const [batchId, setBatchId] = useState('');
   const [batch, setBatch] = useState<BatchSummary | null>(null);
   const [sample, setSample] = useState<BatchSample[]>([]);
@@ -94,6 +100,37 @@ const TeamProviderNetwork = () => {
     }
   };
 
+  // Adds one partner and carries it to the live network in a single action,
+  // instead of hand-writing JSON and then running QC and publish by hand.
+  const addSinglePartner = async () => {
+    if (!single.name.trim() || !single.city.trim() || !single.state.trim()) {
+      setStatus(false, 'A partner needs at least a name, city and state');
+      return;
+    }
+    setAddingSingle(true);
+    try {
+      const { data } = await api.post(
+        '/team/provider-network-bot/providers',
+        { provider: single, provider_type: single.provider_type },
+        { headers: authHeader }
+      );
+      if (data?.success) {
+        const thin = Array.isArray(data.incompleteFields) && data.incompleteFields.length
+          ? ` Added without ${data.incompleteFields.join(', ')}.`
+          : '';
+        setStatus(true, `${single.name} added to the network.${thin}`);
+        setSingle({ provider_type: single.provider_type, name: '', city: '', state: '', address: '', pincode: '', phone: '', email: '' });
+        if (data.batchId) await fetchBatch(data.batchId);
+      } else {
+        setStatus(false, data?.message || data?.error || 'Could not add the partner');
+      }
+    } catch (e: any) {
+      setStatus(false, e?.response?.data?.message || e?.response?.data?.error || e?.message || 'Could not add the partner');
+    } finally {
+      setAddingSingle(false);
+    }
+  };
+
   const ingestManual = async () => {
     setLoading(true);
     try {
@@ -130,6 +167,8 @@ const TeamProviderNetwork = () => {
       const form = new FormData();
       form.append('file', excelFile);
       form.append('notes', notes);
+      // A network list rarely carries a type column, so the panel states it once.
+      form.append('provider_type', excelType);
       const { data } = await api.post('/team/provider-network-bot/ingest/excel', form, {
         headers: {
           ...(authHeader || {}),
@@ -305,7 +344,29 @@ const TeamProviderNetwork = () => {
               <CardTitle className="text-base">Excel Upload</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              <Label>Provider Type</Label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={excelType}
+                onChange={(e) => setExcelType(e.target.value)}
+              >
+                <option value="lab">lab</option>
+                <option value="hospital">hospital</option>
+                <option value="clinic">clinic</option>
+                <option value="diagnostic_center">diagnostic_center</option>
+                <option value="doctor">doctor</option>
+                <option value="pharmacy">pharmacy</option>
+                <option value="home_healthcare">home_healthcare</option>
+                <option value="gym">gym</option>
+                <option value="wellness_center">wellness_center</option>
+                <option value="ambulance_provider">ambulance_provider</option>
+              </select>
               <Input type="file" accept=".xlsx,.xls" onChange={(e) => setExcelFile(e.target.files?.[0] || null)} />
+              <p className="text-[11px] text-muted-foreground">
+                Columns are matched by name, so "Lab Name", "Location", "State", "Pin Code" and
+                "Contact No." are all understood. Name, city and state are required; address,
+                pincode and a phone or email are recorded when present.
+              </p>
               <Textarea
                 rows={4}
                 value={notes}
@@ -352,6 +413,73 @@ const TeamProviderNetwork = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* One partner at a time, for the common case of adding a single lab or
+            hospital rather than a whole list. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Add a Single Partner</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label>Type *</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={single.provider_type}
+                  onChange={(e) => setSingle({ ...single, provider_type: e.target.value })}
+                >
+                  <option value="lab">lab</option>
+                  <option value="hospital">hospital</option>
+                  <option value="clinic">clinic</option>
+                  <option value="diagnostic_center">diagnostic_center</option>
+                  <option value="doctor">doctor</option>
+                  <option value="pharmacy">pharmacy</option>
+                  <option value="home_healthcare">home_healthcare</option>
+                  <option value="gym">gym</option>
+                  <option value="wellness_center">wellness_center</option>
+                  <option value="ambulance_provider">ambulance_provider</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Name *</Label>
+                <Input value={single.name} onChange={(e) => setSingle({ ...single, name: e.target.value })} placeholder="Likitha Diagnostics" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>City *</Label>
+                <Input value={single.city} onChange={(e) => setSingle({ ...single, city: e.target.value })} placeholder="Hyderabad" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>State *</Label>
+                <Input value={single.state} onChange={(e) => setSingle({ ...single, state: e.target.value })} placeholder="Telangana" />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Address</Label>
+                <Input value={single.address} onChange={(e) => setSingle({ ...single, address: e.target.value })} placeholder="Street, area" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Pincode</Label>
+                <Input value={single.pincode} onChange={(e) => setSingle({ ...single, pincode: e.target.value })} placeholder="500055" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input value={single.phone} onChange={(e) => setSingle({ ...single, phone: e.target.value })} placeholder="9876543210" />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Email</Label>
+                <Input value={single.email} onChange={(e) => setSingle({ ...single, email: e.target.value })} placeholder="partner@example.com" />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Name, city and state identify the partner and are required. Address, pincode and a
+              contact are recorded when you have them, and the partner is added either way.
+            </p>
+            <Button onClick={addSinglePartner} disabled={addingSingle} className="w-full sm:w-auto">
+              <Upload className="h-4 w-4 mr-2" />
+              {addingSingle ? 'Adding…' : 'Add to Network'}
+            </Button>
+          </CardContent>
+        </Card>
 
         {batch && (
           <Card>

@@ -61,7 +61,13 @@ const ALLOWED_PROVIDER_TYPES = new Set([
   'other'
 ]);
 
-const REQUIRED_FIELDS = ['provider_type', 'name', 'address', 'city', 'state', 'pincode'];
+// What a directory entry must have to mean anything: who it is, and where.
+// Street address, pincode and a contact line are wanted but routinely absent
+// from a real network list — a 101-row lab list carried name, state and town and
+// nothing else — so their absence marks an entry incomplete rather than
+// rejecting it. Demanding them made the whole upload unpublishable.
+const REQUIRED_FIELDS = ['provider_type', 'name', 'city', 'state'];
+const RECOMMENDED_FIELDS = ['address', 'pincode'];
 const CONTACT_FIELDS = ['phone', 'email'];
 
 const TYPE_ALIASES = {
@@ -112,48 +118,112 @@ function normalizeProviderType(rawType) {
   return TYPE_ALIASES[normalized] || (ALLOWED_PROVIDER_TYPES.has(normalized) ? normalized : 'other');
 }
 
-function normalizeRecord(input) {
+/**
+ * Spreadsheet headers are written for people, not for this parser: "Lab Name",
+ * "Location", "Pin Code", "Contact No.". Lookups were done against exact
+ * snake_case keys, so a real sheet matched nothing and every row was stored with
+ * empty fields and failed QC on all of them, with the actual values stranded in
+ * metadata. Keys are therefore folded to lowercase with runs of non-alphanumerics
+ * collapsed to a single underscore before anything is read.
+ */
+const foldKey = (key) => String(key || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '_')
+  .replace(/^_+|_+$/g, '');
+
+const foldRecord = (record) => {
+  const folded = {};
+  for (const [key, value] of Object.entries(record || {})) {
+    const k = foldKey(key);
+    // First writer wins, so an exact header is never overwritten by a variant.
+    if (k && !(k in folded)) folded[k] = value;
+  }
+  return folded;
+};
+
+/** Returns the first non-empty value among the given folded keys. */
+const pick = (folded, ...keys) => {
+  for (const key of keys) {
+    const v = text(folded[key]);
+    if (v) return v;
+  }
+  return '';
+};
+
+function normalizeRecord(input, defaults = {}) {
   const record = input || {};
-  const providerType = normalizeProviderType(record.provider_type || record.type || record.category);
+  const f = foldRecord(record);
+
+  const providerType = normalizeProviderType(
+    pick(f, 'provider_type', 'type', 'category', 'partner_type', 'facility_type')
+      || defaults.provider_type
+  );
+
+  // A sheet usually names the place in a column of its own kind: "Lab Name",
+  // "Hospital Name", "Centre Name".
+  const name = pick(f, 'name', 'provider_name', 'hospital_name', 'clinic_name',
+    'doctor_name', 'lab_name', 'laboratory_name', 'centre_name', 'center_name',
+    'diagnostic_centre', 'diagnostic_center', 'partner_name', 'facility_name',
+    'pharmacy_name', 'organisation_name', 'organization_name');
+
+  // "Location" in a network list is a town, not a street address, so it fills
+  // city rather than being passed off as an address it is not.
+  const city = pick(f, 'city', 'town', 'district', 'location', 'place', 'branch', 'area');
+  const address = pick(f, 'address', 'full_address', 'address_line', 'address_line_1',
+    'street', 'street_address', 'locality', 'landmark');
+
   return {
     provider_type: providerType,
-    name: text(record.name || record.provider_name || record.hospital_name || record.clinic_name || record.doctor_name),
-    website: normalizeWebsite(record.website || record.url || record.source_url),
-    phone: text(record.phone || record.contact_number || record.mobile || record.telephone),
-    email: text(record.email || record.contact_email),
-    address: text(record.address || record.full_address || record.location),
-    city: text(record.city),
-    state: text(record.state),
-    pincode: text(record.pincode || record.pin || record.zip || record.postal_code),
-    latitude: text(record.latitude || record.lat),
-    longitude: text(record.longitude || record.lng || record.lon),
-    contact_person: text(record.contact_person || record.contact_name),
+    name,
+    website: normalizeWebsite(pick(f, 'website', 'url', 'source_url', 'web', 'site')),
+    phone: pick(f, 'phone', 'contact_number', 'mobile', 'telephone', 'phone_number',
+      'contact_no', 'mobile_no', 'mobile_number', 'contact'),
+    email: pick(f, 'email', 'contact_email', 'email_id', 'email_address', 'mail'),
+    address,
+    city,
+    state: pick(f, 'state', 'province', 'region'),
+    pincode: pick(f, 'pincode', 'pin', 'zip', 'postal_code', 'pin_code', 'zipcode', 'postcode'),
+    latitude: pick(f, 'latitude', 'lat'),
+    longitude: pick(f, 'longitude', 'lng', 'lon', 'long'),
+    contact_person: pick(f, 'contact_person', 'contact_name', 'spoc', 'poc',
+      'contact_person_name', 'coordinator'),
     services: Array.isArray(record.services)
       ? record.services.filter(Boolean)
-      : text(record.services)
-        ? text(record.services).split(',').map((x) => x.trim()).filter(Boolean)
+      : pick(f, 'services', 'tests', 'specialities', 'specialties')
+        ? pick(f, 'services', 'tests', 'specialities', 'specialties').split(',').map((x) => x.trim()).filter(Boolean)
         : [],
-    source_url: normalizeWebsite(record.source_url || record.website || record.url),
+    source_url: normalizeWebsite(pick(f, 'source_url', 'website', 'url')),
+    // The original row is kept verbatim, so commercial columns a sheet carries —
+    // rates, coordinator names — survive even though they have no column here.
     metadata: typeof record === 'object' ? record : { value: record }
   };
 }
 
+/**
+ * Three outcomes, not two:
+ *   FAIL — cannot be identified or placed; must not reach the directory.
+ *   WARN — identified and placed, but thin on address, pincode or a contact.
+ *   PASS — complete.
+ * Publishing accepts PASS and WARN; FAIL needs the explicit force.
+ */
 function computeQc(provider) {
-  const missing = [];
-  for (const field of REQUIRED_FIELDS) {
-    if (!text(provider[field])) missing.push(field);
-  }
+  const missingRequired = REQUIRED_FIELDS.filter((field) => !text(provider[field]));
+
+  const missingRecommended = RECOMMENDED_FIELDS.filter((field) => !text(provider[field]));
   if (!CONTACT_FIELDS.some((f) => text(provider[f]))) {
-    missing.push('contact(phone_or_email)');
+    missingRecommended.push('contact(phone_or_email)');
   }
-
   if (text(provider.website) && !/^https?:\/\//i.test(text(provider.website))) {
-    missing.push('website(protocol_missing)');
+    missingRecommended.push('website(protocol_missing)');
   }
 
-  const score = Math.max(0, Math.round(((REQUIRED_FIELDS.length + 1 - missing.length) / (REQUIRED_FIELDS.length + 1)) * 100));
-  const status = missing.length === 0 ? 'PASS' : 'FAIL';
-  return { status, score, missing };
+  // Everything still absent is reported, so nothing is hidden by being downgraded.
+  const missing = [...missingRequired, ...missingRecommended];
+  const checks = REQUIRED_FIELDS.length + RECOMMENDED_FIELDS.length + 1;
+  const score = Math.max(0, Math.round(((checks - missing.length) / checks) * 100));
+
+  const status = missingRequired.length ? 'FAIL' : (missingRecommended.length ? 'WARN' : 'PASS');
+  return { status, score, missing, missingRequired, missingRecommended };
 }
 
 async function ensureTables() {
@@ -303,11 +373,13 @@ async function runQc(batchId) {
   );
 
   let passCount = 0;
+  let warnCount = 0;
   let failCount = 0;
 
   for (const row of rows) {
     const qc = computeQc(row);
     if (qc.status === 'PASS') passCount += 1;
+    else if (qc.status === 'WARN') warnCount += 1;
     else failCount += 1;
 
     await pool.query(
@@ -331,7 +403,8 @@ async function runQc(batchId) {
     [batchId, passCount, failCount]
   );
 
-  return { passCount, failCount, total: rows.length };
+  // publishable = complete entries plus the incomplete-but-identifiable ones.
+  return { passCount, warnCount, failCount, publishable: passCount + warnCount, total: rows.length };
 }
 
 function parseTitle(html) {
@@ -447,7 +520,8 @@ router.post('/ingest/manual', authTeam, requireProviderNetworkAccess, async (req
     }
 
     const batchId = await createBatch({ sourceType: 'manual', userId: req.teamUser?.id, notes: req.body?.notes });
-    const normalized = providers.map(normalizeRecord);
+    const defaultType = normalizeProviderType(req.body?.provider_type || 'other');
+    const normalized = providers.map((row) => normalizeRecord(row, { provider_type: defaultType }));
     await persistRecords(batchId, 'manual', normalized);
 
     return res.json({
@@ -481,21 +555,99 @@ router.post('/ingest/excel', authTeam, requireProviderNetworkAccess, async (req,
       return res.status(400).json({ success: false, error: 'Excel has no data rows' });
     }
 
+    // A network list rarely carries a type column — a lab list is simply all labs
+    // — so the form states it once. A per-row type still wins where present.
+    const defaultType = normalizeProviderType(req.body?.provider_type || 'other');
     const batchId = await createBatch({ sourceType: 'excel', userId: req.teamUser?.id, notes: req.body?.notes });
-    const normalized = rows.map(normalizeRecord);
+    const normalized = rows.map((row) => normalizeRecord(row, { provider_type: defaultType }));
     await persistRecords(batchId, 'excel', normalized);
+
+    // Say which columns were understood. A sheet whose headers do not map lands
+    // every row empty, and that was previously only visible as a QC failure.
+    const recognised = ['name', 'city', 'state', 'address', 'pincode', 'phone', 'email']
+      .filter((field) => normalized.some((r) => text(r[field])));
+    const unmapped = Object.keys(rows[0] || {}).filter((h) => {
+      const k = foldKey(h);
+      return !['name', 'provider_name', 'hospital_name', 'clinic_name', 'lab_name', 'laboratory_name',
+        'centre_name', 'center_name', 'city', 'town', 'district', 'location', 'state', 'address',
+        'pincode', 'pin', 'pin_code', 'phone', 'mobile', 'contact_no', 'email', 'email_id',
+        'website', 'url', 'provider_type', 'type'].includes(k);
+    });
 
     return res.json({
       success: true,
       batchId,
       sourceType: 'excel',
       sheet: firstSheetName,
+      providerType: defaultType,
       ingested: normalized.length,
+      recognisedFields: recognised,
+      unmappedColumns: unmapped,
       next: `/api/provider-network-bot/qc/${batchId}`
     });
   } catch (error) {
     console.error('[provider-network-bot] excel ingest failed:', error);
     return res.status(500).json({ success: false, error: 'Excel ingest failed' });
+  }
+});
+
+/**
+ * Adds one partner — a lab, a hospital — from the Team form, and carries it all
+ * the way to the live network in a single action.
+ *
+ * Bulk upload has always been three steps (ingest, QC, publish), which is right
+ * for a hundred rows and absurd for one. Adding a single partner previously meant
+ * hand-writing JSON into the manual ingest box and then running QC and publish
+ * yourself. This runs the identical pipeline, so a partner added one at a time is
+ * validated and recorded exactly like one arriving in a spreadsheet.
+ */
+router.post('/providers', authTeam, requireProviderNetworkAccess, async (req, res) => {
+  try {
+    const provider = req.body?.provider && typeof req.body.provider === 'object'
+      ? req.body.provider
+      : req.body;
+    const normalized = normalizeRecord(provider, {
+      provider_type: normalizeProviderType(req.body?.provider_type || provider?.provider_type || 'other')
+    });
+
+    const qc = computeQc(normalized);
+    if (qc.status === 'FAIL' && req.body?.force !== true) {
+      return res.status(400).json({
+        success: false,
+        code: 'PROVIDER_INCOMPLETE',
+        message: `A partner needs at least ${qc.missingRequired.join(', ')}.`,
+        missing: qc.missing,
+        missingRequired: qc.missingRequired
+      });
+    }
+
+    const batchId = await createBatch({
+      sourceType: 'manual',
+      userId: req.teamUser?.id,
+      notes: req.body?.notes || `Single partner: ${normalized.name || 'unnamed'}`
+    });
+    await persistRecords(batchId, 'manual', [normalized]);
+    const qcResult = await runQc(batchId);
+    const { publishedCount } = await publishBatch(batchId, { force: req.body?.force === true });
+
+    return res.status(201).json({
+      success: true,
+      batchId,
+      published: publishedCount > 0,
+      qcStatus: qc.status,
+      // Named so the caller can tell a complete entry from one that went in thin.
+      incompleteFields: qc.missingRecommended,
+      provider: {
+        provider_type: normalized.provider_type,
+        name: normalized.name,
+        city: normalized.city,
+        state: normalized.state
+      },
+      qc: qcResult
+    });
+  } catch (error) {
+    console.error('[provider-network-bot] single provider add failed:', error);
+    return res.status(500).json({ success: false, error: 'Could not add the partner' });
   }
 });
 
@@ -569,11 +721,15 @@ router.post('/qc/:batchId', authTeam, requireProviderNetworkAccess, async (req, 
   }
 });
 
-router.post('/publish/:batchId', authTeam, requireProviderNetworkAccess, async (req, res) => {
-  try {
-    const { batchId } = req.params;
-    const force = req.body?.force === true;
-    const publishFilter = force ? '' : `AND qc_status = 'PASS'`;
+/**
+ * Publishes a batch into the live network. Extracted so a single partner added
+ * from the Team form takes exactly the same path as a bulk upload, rather than a
+ * second copy of this upsert that could drift from it.
+ */
+async function publishBatch(batchId, { force = false } = {}) {
+  // WARN entries are identified and placed, only thin on address or contact,
+  // so they publish normally. Only FAIL needs the explicit force.
+  const publishFilter = force ? '' : `AND qc_status IN ('PASS', 'WARN')`;
 
     const { rows: entries } = await pool.query(
       `SELECT *
@@ -669,6 +825,13 @@ router.post('/publish/:batchId', authTeam, requireProviderNetworkAccess, async (
       [batchId]
     );
 
+  return { publishedCount };
+}
+
+router.post('/publish/:batchId', authTeam, requireProviderNetworkAccess, async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const { publishedCount } = await publishBatch(batchId, { force: req.body?.force === true });
     return res.json({
       success: true,
       batchId,
@@ -750,5 +913,9 @@ router.get('/directory/published', async (req, res) => {
     return res.status(500).json({ success: false, error: 'Failed to fetch published directory' });
   }
 });
+
+// Exported for tests: the parsing and QC rules are where a real spreadsheet
+// succeeds or fails, so they are checked directly rather than only through HTTP.
+export { normalizeRecord, computeQc, foldKey, normalizeProviderType, REQUIRED_FIELDS, RECOMMENDED_FIELDS };
 
 export default router;
