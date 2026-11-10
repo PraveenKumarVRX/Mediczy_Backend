@@ -277,6 +277,46 @@ function normaliseGender(value) {
 }
 
 /**
+ * Physiologically plausible adult ranges, in the units the API documents.
+ *
+ * These numbers are not validation for its own sake: waist feeds FINDRISC and
+ * neck circumference feeds STOP-BANG, so an impossible measurement does not
+ * fail — it produces a confident, wrong clinical score. A 30 cm waist, a 30 cm
+ * hip and a 10 cm neck were all accepted and used in the result with no warning
+ * (web portal QA, Risk Check). Bounds are deliberately wide: the job is to
+ * reject the impossible, not to judge the unusual.
+ */
+const PLAUSIBLE_RANGE = {
+  height: [50, 250],   // cm
+  weight: [10, 400],   // kg
+  waist:  [30, 250],   // cm — below 30 is not an adult waist
+  hip:    [40, 250],   // cm
+  neck:   [15, 80],    // cm
+  sbp:    [50, 300],   // mmHg
+  bmi:    [8, 100],
+};
+
+/**
+ * A measurement if it is possible, otherwise null, recording what was dropped.
+ *
+ * Discarded rather than rejected outright: the rest of the assessment is still
+ * worth scoring, which matches how this route already treats a missing height
+ * or weight. The caller is told what was ignored so it can ask again, instead
+ * of a silent substitution.
+ */
+function plausibleMeasurement(name, value, ignored) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = parseFloat(value);
+  if (!Number.isFinite(n)) return null;
+  const [min, max] = PLAUSIBLE_RANGE[name] || [];
+  if (min !== undefined && (n < min || n > max)) {
+    ignored.push({ field: name, value: n, expectedRange: `${min}-${max}` });
+    return null;
+  }
+  return n;
+}
+
+/**
  * The first usable value for any of `keys` inside the assessment's own
  * `responses` object.
  *
@@ -396,12 +436,12 @@ router.post('/save', authUser, async (req, res) => {
     // and then told it "could not be synced to your account". Prefer the
     // submitted value, fall back to the stored profile, and save without them
     // rather than refusing the assessment.
-    const measurement = (value) => {
-      const n = parseFloat(value);
-      return Number.isFinite(n) && n > 0 ? n : null;
-    };
-    const assessmentHeight = measurement(height) ?? measurement(accountProfile?.height);
-    const assessmentWeight = measurement(weight) ?? measurement(accountProfile?.weight);
+    // Measurements outside the possible are collected here and reported back,
+    // rather than being fed to the clinical scores (see PLAUSIBLE_RANGE).
+    const ignoredMeasurements = [];
+    const measurement = (name, value) => plausibleMeasurement(name, value, ignoredMeasurements);
+    const assessmentHeight = measurement('height', height) ?? measurement('height', accountProfile?.height);
+    const assessmentWeight = measurement('weight', weight) ?? measurement('weight', accountProfile?.weight);
 
     // Age and gender do change the score, so they stay required — but say which
     // one is missing instead of listing four fields, two of which are not.
@@ -423,9 +463,9 @@ router.post('/save', authUser, async (req, res) => {
       gender: assessmentGender,
       height: assessmentHeight,
       weight: assessmentWeight,
-      waist: waist ? parseFloat(waist) : null,
-      hip: hip ? parseFloat(hip) : null,
-      bmi: bmi ? parseFloat(bmi) : null,
+      waist: plausibleMeasurement('waist', waist, ignoredMeasurements),
+      hip: plausibleMeasurement('hip', hip, ignoredMeasurements),
+      bmi: plausibleMeasurement('bmi', bmi, ignoredMeasurements),
       whr: whr ? parseFloat(whr) : null,
       smoking: (() => {
         if (!smoking) return 'never';
@@ -471,8 +511,8 @@ router.post('/save', authUser, async (req, res) => {
       ethnicity: req.body.ethnicity || 'south_asian',
       bmi: assessmentData.bmi || null,
       waistCm: assessmentData.waist || null,
-      neckCircumferenceCm: req.body.neck_cm ? parseFloat(req.body.neck_cm) : null,
-      sbp: req.body.sbp ? parseFloat(req.body.sbp) : null,
+      neckCircumferenceCm: plausibleMeasurement('neck', req.body.neck_cm, ignoredMeasurements),
+      sbp: plausibleMeasurement('sbp', req.body.sbp, ignoredMeasurements),
       bpTreated: assessmentData.hypertension === 'yes',
       smoking: (() => {
         switch (assessmentData.smoking) {
@@ -539,6 +579,10 @@ router.post('/save', authUser, async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Health assessment saved successfully',
+      // Measurements that could not be true of a person, left out of the score
+      // instead of scored. The client should ask for these again rather than
+      // present the result as though they had been used.
+      ...(ignoredMeasurements.length ? { ignoredMeasurements } : {}),
       assessment: {
         id: assessment.id,
         userId,

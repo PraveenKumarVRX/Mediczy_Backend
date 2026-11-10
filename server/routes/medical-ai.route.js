@@ -923,6 +923,10 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
     let creditsUsed = 0;
     let creditLimit = 1;
     let pendingAmount = 0;
+    // True when the consultation goes ahead on an unpaid balance: care first,
+    // billing afterwards. Surfaced in the response so the client can show what
+    // is owed without standing between the patient and the doctor.
+    let billingDeferred = false;
     
     if (user) {
       // Check credits for authenticated users
@@ -944,16 +948,21 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         }
       }
       
-      // Check if user has already used their emergency credit and hasn't paid AND doesn't have HC
+      // An unpaid balance must NEVER withhold an emergency consultation.
+      //
+      // This used to return 402 Payment Required, so a signed-in patient with
+      // a pending amount was refused an emergency doctor and told to top up
+      // Health Coins first — while an unauthenticated stranger was waved
+      // through, up to five a day. A patient in an emergency is the one person
+      // who cannot be asked to settle an invoice, and the account telling us
+      // they have used this before is the account most likely to need it again.
+      //
+      // The call proceeds; the fee is still recorded below, so the balance
+      // stays accurate and billing can follow up afterwards.
       if (creditsUsed >= creditLimit && pendingAmount > 0 && !canProceedWithHC) {
-        return res.status(402).json({
-          success: false,
-          error: 'Emergency credit exhausted',
-          message: `You have already used your ${creditLimit} free emergency consultation. Please pay your pending amount of ₹${pendingAmount.toFixed(2)} or use Health Coins to continue.`,
-          pendingAmount: pendingAmount,
-          paymentRequired: true,
-          hcAvailable: hcWallet ? parseFloat(hcWallet.balance || 0) : 0,
-          hcRequired: 50
+        billingDeferred = true;
+        mlog("Emergency proceeding with unpaid balance", {
+          userId: user.id, pendingAmount, creditsUsed, creditLimit
         });
       }
     } else {
@@ -1109,8 +1118,11 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         sourceChannel: 'emergency_triage'
       }, { transaction: rlsTransaction });
 
-      // Update user's emergency credit usage if using credit (only for authenticated users)
-      if (isUsingCredit && user) {
+      // Record the consultation against the account whenever it was not paid
+      // for with Health Coins — both the free credit and a deferred-billing
+      // call. Recording only the credit case left a deferred call untracked,
+      // so care given on an unpaid balance never reached the balance.
+      if ((isUsingCredit || billingDeferred) && user) {
         await User.update({
           emergencyTriageCreditsUsed: creditsUsed + 1,
           emergencyTriagePendingAmount: pendingAmount + consultationFee
@@ -1228,12 +1240,17 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         creditUsed: isUsingCredit,
         healthCoinsUsed: isPayingWithHC ? 50 : 0,
         creditsRemaining: Math.max(0, creditLimit - (creditsUsed + (isUsingCredit ? 1 : 0))),
-        pendingAmount: isUsingCredit ? pendingAmount + consultationFee : pendingAmount,
-        message: isPayingWithHC 
+        pendingAmount: (isUsingCredit || billingDeferred) ? pendingAmount + consultationFee : pendingAmount,
+        // The call was connected despite an unpaid balance; the client shows
+        // what is owed afterwards, and never gates the consultation on it.
+        billingDeferred,
+        message: isPayingWithHC
           ? `Paid with 50 Health Coins for this consultation.`
-          : (isUsingCredit 
+          : (isUsingCredit
             ? `This consultation is on credit. Pay ₹${consultationFee} later.`
-            : 'Payment pending for this consultation.')
+            : (billingDeferred
+              ? `Connected now. ₹${(pendingAmount + consultationFee).toFixed(2)} is outstanding on your account and can be settled afterwards.`
+              : 'Payment pending for this consultation.'))
       },
       message: `Consultation requested with ${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}. ${
         isPayingWithHC 
