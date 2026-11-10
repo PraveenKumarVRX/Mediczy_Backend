@@ -15,15 +15,13 @@ export default function ChannelNavigation({ links, active }: {
   links: Partial<Record<CommunicationChannel, string>>;
   active?: CommunicationChannel;
 }) {
+  const availableChannels = communicationChannels.filter(({ id }) => Boolean(links[id]));
   return <nav aria-label="Communication channels" className="flex flex-wrap gap-2 py-3">
-    {communicationChannels.map(({ id, label, icon: Icon }) => {
+    {availableChannels.map(({ id, label, icon: Icon }) => {
       const content = <><Icon className="h-4 w-4" />{label}</>;
       const style = 'inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-sm';
-      return links[id]
-        ? <Link key={id} to={links[id]!} aria-current={active === id ? 'page' : undefined}
-            className={`${style} ${active === id ? 'border-teal-500 bg-teal-500/10 text-teal-600 dark:text-teal-300' : 'border-current/20 hover:bg-slate-500/10'}`}>{content}</Link>
-        : <span key={id} aria-disabled="true" title={`${label} workspace is not available in this portal yet`}
-            className={`${style} cursor-not-allowed opacity-50`}>{content}<span className="sr-only"> unavailable</span></span>;
+      return <Link key={id} to={links[id]!} aria-current={active === id ? 'page' : undefined}
+        className={`${style} ${active === id ? 'border-teal-500 bg-teal-500/10 text-teal-600 dark:text-teal-300' : 'border-current/20 hover:bg-slate-500/10'}`}>{content}</Link>;
     })}
   </nav>;
 }

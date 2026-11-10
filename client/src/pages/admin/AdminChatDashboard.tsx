@@ -60,6 +60,7 @@ import {
   XCircle,
   ExternalLink,
   ArrowUpRight,
+  ArrowLeft,
   Smartphone,
   Mail
 } from 'lucide-react';
@@ -865,7 +866,7 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
     return (
       <LayoutComponent>
       <ChannelNavigation active="chat" links={portal === 'team'
-        ? { chat: '/team/chat', email: '/team/email-inbox', whatsapp: '/team/whatsapp-inbox' }
+        ? { chat: '/team/chat', email: '/team/email-inbox', whatsapp: '/team/whatsapp' }
         : { chat: '/admin/chat', email: '/admin/email', sms: '/admin/sms', whatsapp: '/admin/whatsapp', video: '/admin/video', voice: '/admin/voice' }} />
 
         <div className="flex items-center justify-center min-h-[400px]">
@@ -878,15 +879,16 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
   return (
     <LayoutComponent>
       <ChannelNavigation active="chat" links={portal === 'team'
-        ? { chat: '/team/chat', email: '/team/email-inbox', whatsapp: '/team/whatsapp-inbox' }
+        ? { chat: '/team/chat', email: '/team/email-inbox', whatsapp: '/team/whatsapp' }
         : { chat: '/admin/chat', email: '/admin/email', sms: '/admin/sms', whatsapp: '/admin/whatsapp', video: '/admin/video', voice: '/admin/voice' }} />
-      <div className="h-[calc(100vh-120px)] flex flex-col space-y-4">
+      <div className="flex min-h-[calc(100dvh-10rem)] flex-col gap-4 lg:h-[calc(100vh-10rem)]">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Chat Management</h1>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-primary">Communication</p>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{isTeamUser ? 'Customer Inbox' : 'Chat Management'}</h1>
             <p className="text-muted-foreground">
-              RocketChat-style admin dashboard for healthcare communication
+              {isTeamUser ? 'Work assigned conversations, replies and case context in one place.' : 'Manage team communication and customer conversations.'}
             </p>
           </div>
           <div className="flex items-center space-x-2">
@@ -902,7 +904,7 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
         </div>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
+        {!isTeamUser && <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between space-y-0 pb-2">
@@ -953,10 +955,10 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
               </div>
             </CardContent>
           </Card>
-        </div>
+        </div>}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className={`grid w-full grid-cols-7 ${isTeamUser ? 'hidden' : ''}`}>
             <TabsTrigger value="chat" className="flex items-center space-x-2">
               <MessageSquare className="h-4 w-4" />
               <span>Chat Interface</span>
@@ -1081,9 +1083,9 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
 
           {/* Chat Interface Tab */}
           <TabsContent value="chat" className="flex-1 flex">
-            <div className="flex flex-1 min-h-[400px] max-h-[calc(100vh-260px)] border rounded-lg overflow-hidden">
+            <div className="flex min-h-[32rem] flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_20px_60px_-36px_rgba(15,23,42,0.75)] lg:max-h-[calc(100vh-15rem)] lg:flex-row">
               {/* Sidebar */}
-              <div className="w-80 border-r bg-muted/30">
+              <div className={`${selectedRoom ? 'hidden lg:block' : 'block'} w-full shrink-0 border-b border-border/70 bg-muted/30 lg:w-[19rem] lg:border-b-0 lg:border-r`}>
                 <div className="p-4 border-b">
                   <div className="relative">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -1101,7 +1103,7 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
                     {/* Channels */}
                     <div className="mb-4">
                       <div className="flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground">
-                        <span>CHANNELS</span>
+                        <span>{isTeamUser ? 'TEAM ROOMS' : 'CHANNELS'}</span>
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
@@ -1120,17 +1122,18 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
                         </Dialog>
                       </div>
                       {rooms
-                        .filter(room => !room.isBot)
+                        .filter(room => !room.isBot && !room.isWhatsApp)
                         .filter(room => 
                           searchQuery === '' || 
                           room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           room.description?.toLowerCase().includes(searchQuery.toLowerCase())
                         )
                         .map((room) => (
-                        <div
+                        <button
                           key={room.id}
-                          className={`flex items-center px-3 py-2 rounded-md cursor-pointer hover:bg-muted/50 ${
-                            selectedRoom === room.id ? 'bg-blue-100 text-blue-700' : ''
+                          type="button"
+                          className={`flex w-full items-center px-3 py-2 rounded-lg text-left transition-colors hover:bg-muted/70 ${
+                            selectedRoom === room.id ? 'bg-primary/10 text-primary' : ''
                           }`}
                           onClick={() => {
                             setSelectedRoom(room.id);
@@ -1143,30 +1146,49 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
                           }}
                         >
                           <div className="flex items-center space-x-2 flex-1">
-                            {room.isWhatsApp ? (
-                              <Smartphone className="h-4 w-4 text-green-600" />
-                            ) : room.isPrivate ? (
+                            {room.isPrivate ? (
                               <Lock className="h-4 w-4" />
                             ) : (
                               <Hash className="h-4 w-4" />
                             )}
                             <span className="text-sm font-medium">{room.name}</span>
                             {room.isPinned && <Pin className="h-3 w-3" />}
-                            {room.isWhatsApp && (
-                              <Badge variant="outline" className="text-xs bg-green-50">
-                                WA
-                              </Badge>
-                            )}
                           </div>
                           {room.unread > 0 && (
                             <Badge variant="destructive" className="h-5 min-w-5 text-xs">
                               {room.unread}
                             </Badge>
                           )}
-                        </div>
+                        </button>
                       ))}
                     </div>
 
+                    {isTeamUser && (
+                      <div className="mt-4 border-t border-border/70 pt-3">
+                        <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Customer conversations</div>
+                        {rooms
+                          .filter(room => room.isWhatsApp)
+                          .filter(room => searchQuery === '' || room.name.toLowerCase().includes(searchQuery.toLowerCase()) || room.description?.toLowerCase().includes(searchQuery.toLowerCase()))
+                          .map((room) => (
+                            <button
+                              key={room.id}
+                              type="button"
+                              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted/70 ${selectedRoom === room.id ? 'bg-primary/10 text-primary' : ''}`}
+                              onClick={() => {
+                                setSelectedRoom(room.id);
+                                setSelectedWhatsappNumber(room.phoneNumber);
+                                loadWhatsAppMessages(room.phoneNumber);
+                              }}
+                            >
+                              <Smartphone className="h-4 w-4 shrink-0 text-emerald-500" />
+                              <span className="min-w-0 flex-1 truncate text-sm font-medium">{room.name}</span>
+                              {room.unread > 0 && <Badge variant="destructive" className="h-5 min-w-5 text-xs">{room.unread}</Badge>}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+
+                    {!isTeamUser && <>
                     {/* Chat Bots */}
                     <div className="mt-4">
                       <div className="flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground">
@@ -1293,35 +1315,39 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
                         </div>
                       ))}
                     </div>
+                    </>}
                   </div>
                 </ScrollArea>
               </div>
 
               {/* Chat Area */}
-              <div className="flex-1 flex flex-col">
+              <div className={`${selectedRoom ? 'flex' : 'hidden lg:flex'} min-h-0 flex-1 flex-col`}>
                 {/* Chat Header */}
-                <div className="p-4 border-b bg-white">
+                <div className="border-b border-border/70 bg-card px-4 py-3 text-card-foreground">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
+                      <Button variant="ghost" size="sm" className="-ml-2 gap-1 px-2 lg:hidden" onClick={() => { setSelectedRoom(null); setSelectedWhatsappNumber(null); }}>
+                        <ArrowLeft className="h-3.5 w-3.5" /> Queue
+                      </Button>
                       {currentRoom?.isPrivate ? <Lock className="h-5 w-5" /> : <Hash className="h-5 w-5" />}
                       <div>
                         <h3 className="font-semibold">{currentRoom?.name ?? 'General'}</h3>
                         <p className="text-sm text-muted-foreground">
-                          {currentRoom?.members?.toLocaleString?.() ?? 0} members  b7 {currentRoom?.description ?? 'General discussion and updates'}
+                          {currentRoom?.members?.toLocaleString?.() ?? 0} members · {currentRoom?.description ?? 'General discussion and updates'}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="icon" aria-label="Start voice call">
                         <Phone className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="icon" aria-label="Start video call">
                         <Video className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="icon" aria-label="View conversation details">
                         <Info className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="icon" aria-label="More conversation actions">
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </div>
@@ -1329,7 +1355,7 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
                 </div>
 
                 {/* Messages */}
-                <ScrollArea className="flex-1 p-4 bg-slate-100 dark:bg-slate-800">
+                <ScrollArea className="flex-1 bg-muted/25 p-4">
                   <div className="space-y-4">
                     {selectedWhatsappNumber ? (
                       whatsappMessages.length === 0 ? (
@@ -1380,7 +1406,7 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
                       </div>
                     ) : (
                       roomMessages.map((message) => (
-                        <div key={message.id} className={`flex space-x-3 p-3 rounded-lg shadow-sm ${message.isWhatsApp ? 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800' : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600'}`}>
+                        <div key={message.id} className={`flex space-x-3 rounded-xl border p-3 shadow-sm ${message.isWhatsApp ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-border/70 bg-card'}`}>
                           <Avatar className="h-10 w-10 ring-2 ring-offset-2 ${message.isWhatsApp ? 'ring-green-400' : 'ring-blue-400'}">
                             <AvatarImage src={message.avatar} />
                             <AvatarFallback className={`text-xs font-semibold ${message.isWhatsApp ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'}`}>
@@ -1432,7 +1458,7 @@ export default function AdminChatDashboard({ portal = 'admin' }: { portal?: Comm
                 </ScrollArea>
 
                 {/* Message Input */}
-                <div className="p-4 border-t bg-white dark:bg-slate-800 shadow-lg">
+                <div className="border-t border-border/70 bg-card p-4 shadow-[0_-8px_24px_-18px_rgba(15,23,42,0.7)]">
                   {selectedWhatsappNumber ? (
                     <div className="flex space-x-2">
                       <div className="flex-1 relative">
