@@ -145,30 +145,47 @@ export const resolveMedicine = async (pool, { medicineId, name } = {}) => {
  * `price` only selects the interpretation; the amount always comes from the
  * catalogue, so a tampered price cannot raise or lower the total.
  */
-export const resolveUnitMode = (item, { packPrice, unitsPerPack }) => {
-  const declared = String(item?.unitMode || '').toLowerCase();
-  if (declared === 'pack' || declared === 'unit') return { mode: declared, basis: 'declared' };
+export const STALE_UNIT_PRICING = 'stale_unit_pricing';
 
-  if (unitsPerPack <= 1) return { mode: 'pack', basis: 'single-unit pack' };
+/**
+ * Medicines are sold by the pack only — decided 2026-11-10, no loose tablets — so
+ * `quantity` always counts whole packs and a line is always billed at the pack
+ * price.
+ *
+ * One client generation priced per tablet instead: it sent `unit: 'tablet'` with
+ * `price` equal to the pack price divided by the pack count, and `quantity`
+ * counting tablets. Reading that quantity as packs would bill ten packs for ten
+ * tablets, so such a line is refused rather than billed. A browser holding the
+ * previous bundle in cache is exactly how one would still arrive, and a wrong
+ * refusal costs a reload while a wrong charge costs the customer ten times the
+ * price.
+ *
+ * A line is pack-consistent when it says so, when its price is the pack price, or
+ * when the pack cannot be split anyway.
+ */
+export const checkPackConsistency = (item, { packPrice, unitsPerPack }) => {
+  if (unitsPerPack <= 1) return { ok: true, basis: 'pack cannot be split' };
+
+  const declared = String(item?.unitMode || '').toLowerCase();
+  if (declared === 'pack') return { ok: true, basis: 'declared pack' };
 
   const unitLabel = String(item?.unit || '').toLowerCase().trim();
-  if (unitLabel === 'pack') return { mode: 'pack', basis: 'unit label' };
+  if (unitLabel === 'pack') return { ok: true, basis: 'unit label is pack' };
 
   const sent = parseFloat(item?.price);
   if (Number.isFinite(sent) && sent > 0) {
+    if (Math.abs(sent - packPrice) <= 0.01) return { ok: true, basis: 'price is the pack price' };
     const perUnit = packPrice / unitsPerPack;
-    if (Math.abs(sent - packPrice) <= 0.01) return { mode: 'pack', basis: 'price matches the pack' };
-    if (Math.abs(sent - perUnit) <= 0.02) return { mode: 'unit', basis: 'price matches one unit' };
+    if (Math.abs(sent - perUnit) <= 0.02) {
+      return { ok: false, basis: 'price is one unit of a pack, so quantity counts units' };
+    }
   }
 
-  return { mode: 'unit', basis: 'undetermined, assumed per unit' };
+  // Nothing identifies the line either way. Treating it as packs is the policy,
+  // and it cannot be the ten-times case, which is always identifiable by its price.
+  return { ok: true, basis: 'no per-unit signal' };
 };
 
-/**
- * Prices one line from the catalogue. `quantity` counts whole packs or individual
- * units depending on the mode resolved from the line (see resolveUnitMode).
- * A measured pack — a 100 ml bottle, a 15 gm tube — is always one sellable thing.
- */
 export const priceLine = (medicine, requestedQuantity, item = {}) => {
   const packPrice = packPriceOf(medicine);
   if (packPrice === null) {
@@ -177,15 +194,18 @@ export const priceLine = (medicine, requestedQuantity, item = {}) => {
   const pack = parsePackSize(medicine?.pack_size);
   const quantity = Math.max(1, Math.floor(Number(requestedQuantity) || 1));
 
-  const { mode, basis } = resolveUnitMode(item, { packPrice, unitsPerPack: pack.sellableUnits });
-  const unitPrice = mode === 'pack'
-    ? packPrice
-    : Number((packPrice / pack.sellableUnits).toFixed(2));
+  const consistency = checkPackConsistency(item, { packPrice, unitsPerPack: pack.sellableUnits });
+  if (!consistency.ok) {
+    return { error: STALE_UNIT_PRICING, medicineName: medicine?.name || null, basis: consistency.basis };
+  }
+
+  // Packs only: one pack, one pack price.
+  const unitPrice = packPrice;
   const lineTotal = Number((unitPrice * quantity).toFixed(2));
 
   return {
-    unitMode: mode,
-    unitModeBasis: basis,
+    unitMode: 'pack',
+    unitModeBasis: consistency.basis,
     medicineId: medicine.id,
     medicineName: medicine.name,
     brandName: medicine.brand_name || null,
@@ -196,9 +216,10 @@ export const priceLine = (medicine, requestedQuantity, item = {}) => {
     schedule: medicine.schedule || null,
     packSize: medicine.pack_size || null,
     packPrice,
-    unit: pack.unit,
+    unit: 'pack',
+    packContains: pack.countable ? `${pack.sellableUnits} ${pack.unit}${pack.sellableUnits === 1 ? '' : 's'}` : pack.unit,
     unitsPerPack: pack.sellableUnits,
-    soldByPack: !pack.countable,
+    soldByPack: true,
     quantity,
     unitPrice,
     lineTotal,
@@ -249,6 +270,6 @@ export const computeOrderTotals = (lines, { deliveryFee = DELIVERY_FEE_INR } = {
 
 export default {
   RX_REQUIRED_SCHEDULES, requiresPrescription, parsePackSize, packPriceOf,
-  resolveMedicine, resolveUnitMode, priceLine, computeOrderTotals,
+  resolveMedicine, checkPackConsistency, priceLine, computeOrderTotals, STALE_UNIT_PRICING,
   DELIVERY_FEE_INR, DISCOUNT_THRESHOLD_INR, MEDICINE_DISCOUNT_PCT,
 };

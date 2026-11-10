@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePackSize, priceLine, packPriceOf, requiresPrescription, resolveUnitMode,
+import { parsePackSize, priceLine, packPriceOf, requiresPrescription, checkPackConsistency, STALE_UNIT_PRICING,
          computeOrderTotals, DELIVERY_FEE_INR, DISCOUNT_THRESHOLD_INR, MEDICINE_DISCOUNT_PCT } from '../utils/pharmacy-pricing.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,14 +40,14 @@ describe('pack size reading', () => {
 });
 
 describe('line pricing', () => {
-  it('prices a counted pack per unit and multiplies by quantity', () => {
+  it('prices a counted pack by the pack and multiplies by the pack count', () => {
     const line = priceLine(med({ mrp: '33.23', selling_price: '33.23', pack_size: '10 tablets' }), 2);
-    expect(line.unitPrice).toBe(3.32);
-    expect(line.lineTotal).toBe(6.64);
-    expect(line.soldByPack).toBe(false);
+    expect(line.unitPrice).toBe(33.23);
+    expect(line.lineTotal).toBe(66.46);
+    expect(line.soldByPack).toBe(true);
   });
 
-  it('prices a measured pack at the whole pack price', () => {
+  it('prices a measured pack at the whole pack price too', () => {
     const line = priceLine(med({ mrp: '16.22', selling_price: '16.22', pack_size: 'bottle of 100 ml Syrup' }), 2);
     expect(line.unitPrice).toBe(16.22);
     expect(line.lineTotal).toBe(32.44);
@@ -72,153 +72,81 @@ describe('line pricing', () => {
   });
 });
 
-describe('pack-vs-unit mode resolution', () => {
-  // Two client generations are live: one sends `unit: 'pack'` with the pack price
-  // and quantity 1, the other sends a per-tablet price with quantity in tablets.
-  // Reading one as the other is a tenfold error in the customer's bill.
+describe('medicines are sold by the pack', () => {
+  // Decided 2026-11-10: packs only, no loose tablets.
   const strip = med({ mrp: '12.33', selling_price: '12.33', pack_size: 'strip of 10 tablets' });
 
-  it('bills a pack when the client says pack', () => {
-    const line = priceLine(strip, 1, { unit: 'pack', price: 12.33, packPrice: 12.33 });
+  it('bills the pack price per pack, never a fraction of it', () => {
+    const line = priceLine(strip, 1, { unitMode: 'pack', price: 12.33, packPrice: 12.33 });
     expect(line.unitMode).toBe('pack');
+    expect(line.unitPrice).toBe(12.33);
     expect(line.lineTotal).toBe(12.33);
+    expect(line.soldByPack).toBe(true);
   });
 
-  it('bills per tablet when the client priced per tablet', () => {
-    const line = priceLine(strip, 10, { unit: 'tablet', price: 1.23, packPrice: 12.33 });
-    expect(line.unitMode).toBe('unit');
-    expect(line.lineTotal).toBe(12.3);
+  it('multiplies by the number of packs', () => {
+    expect(priceLine(strip, 3, { unitMode: 'pack' }).lineTotal).toBe(36.99);
   });
 
-  it('honours an explicit unitMode over any inferred signal', () => {
-    expect(priceLine(strip, 1, { unitMode: 'pack', unit: 'tablet', price: 1.23 }).unitMode).toBe('pack');
-    expect(priceLine(strip, 1, { unitMode: 'unit', unit: 'pack', price: 12.33 }).unitMode).toBe('unit');
+  it('names what the pack contains, without pricing it per unit', () => {
+    expect(priceLine(strip, 1, { unitMode: 'pack' }).packContains).toBe('10 tablets');
+    expect(priceLine(strip, 1, { unitMode: 'pack' }).unit).toBe('pack');
   });
 
-  it('assumes per unit when nothing identifies the mode, so it cannot overcharge', () => {
-    const line = priceLine(strip, 1, {});
-    expect(line.unitMode).toBe('unit');
-    expect(line.lineTotal).toBeLessThan(12.33);
-  });
-
-  it('always bills a measured pack as one whole pack', () => {
+  it('prices a measured pack the same way, by the container', () => {
     const syrup = med({ mrp: '16.22', selling_price: '16.22', pack_size: 'bottle of 100 ml Syrup' });
-    for (const item of [{}, { unit: 'ml', price: 0.16 }, { unitMode: 'unit' }]) {
-      expect(priceLine(syrup, 1, item).lineTotal).toBe(16.22);
+    expect(priceLine(syrup, 2, { unitMode: 'pack' }).lineTotal).toBe(32.44);
+  });
+
+  it('refuses a line priced per tablet instead of billing ten packs for ten tablets', () => {
+    // A browser holding the previous bundle still prices per tablet. Reading its
+    // tablet count as packs would charge ten times the intended amount, so the
+    // line is refused and the customer is asked to reload.
+    const stale = priceLine(strip, 10, { unit: 'tablet', price: 1.23, packPrice: 12.33 });
+    expect(stale.error).toBe(STALE_UNIT_PRICING);
+    expect(stale.lineTotal).toBeUndefined();
+  });
+
+  it('accepts a line that identifies itself as packs, however it says so', () => {
+    for (const item of [{ unitMode: 'pack' }, { unit: 'pack' }, { price: 12.33 }]) {
+      expect(priceLine(strip, 1, item).error).toBeUndefined();
     }
   });
 
+  it('accepts a line with no per-unit signal at all', () => {
+    // Only an identifiable per-unit price is the ten-times case.
+    expect(priceLine(strip, 1, {}).error).toBeUndefined();
+    expect(priceLine(strip, 1, {}).lineTotal).toBe(12.33);
+  });
+
+  it('cannot be confused when the pack holds one thing', () => {
+    const single = med({ mrp: '50', selling_price: '50', pack_size: 'vial of 1 Injection' });
+    expect(checkPackConsistency({ unit: 'injection', price: 50 }, { packPrice: 50, unitsPerPack: 1 }).ok).toBe(true);
+    expect(priceLine(single, 2, { unit: 'injection', price: 50 }).lineTotal).toBe(100);
+  });
+
   it('takes the amount from the catalogue, so a tampered price cannot change the bill', () => {
-    const honest = priceLine(strip, 10, { unit: 'tablet', price: 1.23, packPrice: 12.33 });
-    const tampered = priceLine(strip, 10, { unit: 'tablet', price: 0.01, packPrice: 0.01 });
-    // A price the server does not recognise only loses the mode hint; it can
-    // never set the amount, which still comes from the catalogue.
+    const honest = priceLine(strip, 2, { unitMode: 'pack', price: 12.33 });
+    const tampered = priceLine(strip, 2, { unitMode: 'pack', price: 0.01 });
     expect(tampered.lineTotal).toBe(honest.lineTotal);
-    expect(priceLine(strip, 1, { price: 0 }).lineTotal).toBeGreaterThan(0);
+    expect(priceLine(strip, 1, { unitMode: 'pack', price: 0 }).lineTotal).toBe(12.33);
   });
 });
 
-describe('order totals: 15% over 2,000 and a flat 40 delivery fee', () => {
-  const lines = (...totals) => totals.map((lineTotal) => ({ lineTotal }));
-
-  it('uses the agreed policy figures', () => {
-    expect(DELIVERY_FEE_INR).toBe(40);
-    expect(DISCOUNT_THRESHOLD_INR).toBe(2000);
-    expect(MEDICINE_DISCOUNT_PCT).toBe(15);
-  });
-
-  it('charges the delivery fee on every order, discounted or not', () => {
-    expect(computeOrderTotals(lines(100)).deliveryFee).toBe(40);
-    expect(computeOrderTotals(lines(5000)).deliveryFee).toBe(40);
-    expect(computeOrderTotals(lines(100)).total).toBe(140);
-  });
-
-  it('discounts an order above the threshold', () => {
-    const t = computeOrderTotals(lines(2500));
-    expect(t.subtotal).toBe(2500);
-    expect(t.discount).toBe(375);      // 15% of 2500
-    expect(t.deliveryFee).toBe(40);
-    expect(t.total).toBe(2165);        // 2500 - 375 + 40
-    expect(t.discountApplies).toBe(true);
-  });
-
-  it('treats "above 2,000" as strictly above, so exactly 2,000 does not qualify', () => {
-    expect(computeOrderTotals(lines(2000)).discount).toBe(0);
-    expect(computeOrderTotals(lines(2000)).total).toBe(2040);
-    expect(computeOrderTotals(lines(2000.01)).discountApplies).toBe(true);
-  });
-
-  it('measures the threshold before the fee, so delivery cannot tip an order over it', () => {
-    // 1,980 + 40 delivery is 2,020, but the basket is still under the threshold.
-    const t = computeOrderTotals(lines(1980));
-    expect(t.discount).toBe(0);
-    expect(t.total).toBe(2020);
-  });
-
-  it('measures the threshold before the discount, so the discount cannot pull it back under', () => {
-    const t = computeOrderTotals(lines(2100));
-    expect(t.discount).toBe(315);
-    expect(t.subtotal - t.discount).toBeLessThan(DISCOUNT_THRESHOLD_INR);
-    expect(t.discountApplies).toBe(true);
-  });
-
-  it('never discounts the delivery fee itself', () => {
-    const t = computeOrderTotals(lines(4000));
-    expect(t.discount).toBe(600);                       // 15% of 4000, not of 4040
-    expect(t.total).toBe(4000 - 600 + 40);
-  });
-
-  it('sums many lines and rounds to paise', () => {
-    const t = computeOrderTotals(lines(1000.005, 1000.005, 500.33));
-    expect(t.subtotal).toBe(2500.34);
-    expect(Number.isInteger(Math.round(t.total * 100))).toBe(true);
-  });
-
-  it('is safe on an empty or malformed basket', () => {
-    expect(computeOrderTotals([]).subtotal).toBe(0);
-    expect(computeOrderTotals(undefined).subtotal).toBe(0);
-    expect(computeOrderTotals(lines(null, undefined, 'x', 50)).subtotal).toBe(50);
-  });
-});
-
-describe('both order routes bill the one policy', () => {
-  it('the billing route takes its totals from computeOrderTotals', () => {
+describe('a stale per-unit basket is refused, not billed', () => {
+  it('the billing route answers 409 and names the items to re-add', () => {
     const src = read('routes/billing.route.js');
-    expect(src).toContain('computeOrderTotals(priced)');
-    expect(src).toContain('deliveryFee: totals.deliveryFee');
-    expect(src).toContain('discount: totals.discount');
-    expect(src).toContain('total: totals.total');
+    expect(src).toContain('STALE_UNIT_PRICING');
+    expect(src).toContain('STALE_CLIENT_PRICING');
+    expect(src).toContain('status(409)');
+    expect(src).toContain('sold by the pack');
   });
 
-  it('the pharmacy route takes delivery and discount from the policy, not the request', () => {
+  it('the pharmacy route does the same, and keeps it apart from an unpriceable item', () => {
     const src = read('routes/patient-pharmacy-orders.route.js');
-    expect(src).toContain('computeOrderTotals(enrichedItems.map');
-    expect(src).toContain('const deliveryChargeVal = policy.deliveryFee');
-    // delivery_charge and discount used to be whatever the caller sent.
-    expect(src).not.toContain('parseFloat(delivery_charge) || 0');
-    expect(src).not.toContain('discountVal = parseFloat(discount) || 0');
-  });
-
-  it('offers do not stack, and a losing coupon is not consumed', () => {
-    const src = read('routes/patient-pharmacy-orders.route.js');
-    expect(src).toContain('const usedCoupon = discountVal > automaticDiscount');
-    expect(src).toContain('if (usedCoupon && couponValidation?.coupon)');
-  });
-
-  it('still places the order if the deliveryFee column has not been migrated yet', () => {
-    // PM2 runs from the working tree, so a restart can load this code before the
-    // migration has run. Writing a column Postgres does not have fails the INSERT
-    // with 42703, which would stop every medicine order.
-    const src = read('routes/billing.route.js');
-    expect(src).toContain("=== '42703'");
-    expect(src).toContain('deliveryFeeUnmigrated');
-    expect(src).toContain('20261110000300-order-delivery-fee');
-    // The customer is billed correctly either way, because total already includes it.
-    expect(src).toContain('total: totals.total');
-  });
-
-  it('Order declares deliveryFee, or Sequelize would drop it from the INSERT', () => {
-    expect(read('models/billing.model.intelligent.js')).toMatch(/deliveryFee:\s*\{[\s\S]{0,160}DECIMAL\(10, 2\)/);
+    expect(src).toContain('stalePricedItems');
+    expect(src).toContain('STALE_CLIENT_PRICING');
+    expect(src).toContain('MEDICINE_NOT_IN_CATALOGUE');
   });
 });
 

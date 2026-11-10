@@ -15,7 +15,7 @@ import express from 'express';
 import multer from 'multer';
 import { authUser } from '../middleware/auth.middleware.js';
 import sharedPool from '../db/pgPool.js';
-import { resolveMedicine, priceLine, computeOrderTotals } from '../utils/pharmacy-pricing.js';
+import { resolveMedicine, priceLine, computeOrderTotals, STALE_UNIT_PRICING } from '../utils/pharmacy-pricing.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import {
   COUPON_SCOPES,
@@ -223,6 +223,7 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
     // wrong row, which meant the prescription gate judged a drug the customer had
     // never ordered. An item that cannot be resolved is refused, not re-priced.
     const unresolvedItems = [];
+    const stalePricedItems = [];
     const enrichedItems = [];
     for (const item of items) {
       const name = item.medicine_name || item.name || '';
@@ -232,6 +233,7 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
       });
       if (!dbMed) { unresolvedItems.push(name || String(item.medicine_id ?? '')); continue; }
       const line = priceLine(dbMed, item.quantity, item);
+      if (line.error === STALE_UNIT_PRICING) { stalePricedItems.push(dbMed.name); continue; }
       if (line.error) { unresolvedItems.push(dbMed.name); continue; }
       enrichedItems.push({
         medicine_name: line.medicineName,
@@ -252,6 +254,17 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
         pack_price:    line.packPrice,
         unit_price:    line.unitPrice,
         line_total:    line.lineTotal,
+      });
+    }
+
+    // Sold by the pack: a per-tablet line would bill ten packs for ten tablets.
+    if (stalePricedItems.length) {
+      console.warn(`[pharmacy-orders] stale per-unit pricing from user ${userId}: ${stalePricedItems.join(', ')}`);
+      return res.status(409).json({
+        success: false,
+        code: 'STALE_CLIENT_PRICING',
+        message: 'Medicines are sold by the pack. Please refresh the page and add these to your cart again.',
+        items: stalePricedItems,
       });
     }
 

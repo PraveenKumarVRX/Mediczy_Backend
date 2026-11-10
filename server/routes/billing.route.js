@@ -13,7 +13,7 @@ import { Op } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { Appointment } from '../models/index.js';
 import sharedPool from '../db/pgPool.js';
-import { resolveMedicine, priceLine, requiresPrescription, computeOrderTotals } from '../utils/pharmacy-pricing.js';
+import { resolveMedicine, priceLine, requiresPrescription, computeOrderTotals, STALE_UNIT_PRICING } from '../utils/pharmacy-pricing.js';
 import multer from 'multer';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 
@@ -213,6 +213,7 @@ router.post(
     // price is also a tampering hole (nothing stopped it being 0).
     const priced = [];
     const unresolved = [];
+    const staleLines = [];
     for (const item of items) {
       const medicine = await resolveMedicine(sharedPool, {
         medicineId: item.medicineId ?? item.medicine_id ?? item.id,
@@ -223,11 +224,28 @@ router.post(
         continue;
       }
       const line = priceLine(medicine, item.quantity, item);
+      if (line.error === STALE_UNIT_PRICING) {
+        staleLines.push(medicine.name);
+        continue;
+      }
       if (line.error) {
         unresolved.push(medicine.name);
         continue;
       }
       priced.push(line);
+    }
+
+    // A line priced per tablet comes from a browser still running the previous
+    // bundle. Medicines are sold by the pack, so reading its tablet count as packs
+    // would bill ten packs for ten tablets. Ask for a reload instead.
+    if (staleLines.length) {
+      console.warn(`[billing/orders] stale per-unit pricing from user ${userId}: ${staleLines.join(', ')}`);
+      return res.status(409).json({
+        success: false,
+        code: 'STALE_CLIENT_PRICING',
+        message: 'Medicines are sold by the pack. Please refresh the page and add these to your cart again.',
+        items: staleLines,
+      });
     }
 
     if (unresolved.length) {

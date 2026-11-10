@@ -89,42 +89,9 @@ interface CartItem extends MedicineResult {
   quantity: number;
 }
 
-/** Parse packSize like "10 tablets" → { qty: 10, unit: 'tablet' } */
-// Mirrors server/utils/pharmacy-pricing.js. `qty` is how many separately
-// priceable items a pack holds, so a measured pack is 1.
-//
-// The previous version matched an unanchored /(\d+)\s*(.*)/, so "bottle of
-// 100 ml Syrup" became 100 units and a 16.22 bottle was offered at 0.16 per ml.
-// Nothing dispenses 1 ml of syrup, and the figure shown no longer matched the
-// price the order was billed at.
-const MEASURE_UNITS = new Set(['ml', 'l', 'litre', 'liter', 'g', 'gm', 'gms', 'gram', 'mg', 'mcg', 'kg', 'iu', '%']);
-const COUNTABLE_UNITS = new Set([
-  'tablet', 'capsule', 'injection', 'sachet', 'suppository', 'pessary', 'lozenge',
-  'chewable', 'patch', 'ampoule', 'vial', 'piece', 'pen', 'applicator', 'suspension',
-  'wafer', 'granule', 'strip', 'kit', 'unit',
-]);
-const singularUnit = (word: string) => {
-  const w = (word || '').trim().toLowerCase();
-  if (w.length > 2 && w.endsWith('ies')) return `${w.slice(0, -3)}y`;
-  if (w.length > 2 && w.endsWith('s') && !w.endsWith('ss')) return w.slice(0, -1);
-  return w;
-};
-const parsePackSize = (packSize?: string): { qty: number; unit: string; countable: boolean } => {
-  const raw = (packSize || '').trim();
-  const whole = { qty: 1, unit: 'pack', countable: false };
-  if (!raw) return whole;
-  const match = raw.match(/(?:^|\bof\s+)(\d+(?:\.\d+)?)\s+([^\d]+)$/i) || raw.match(/^(\d+(?:\.\d+)?)\s+([^\d]+)$/i);
-  if (!match) return whole;
-  const count = Number(match[1]);
-  if (!Number.isFinite(count) || count <= 0) return whole;
-  const firstWord = singularUnit((match[2] || '').trim().split(/\s+/)[0] || '');
-  if (MEASURE_UNITS.has(firstWord)) {
-    const container = singularUnit(raw.split(/\s+of\s+/i)[0] || 'pack');
-    return { qty: 1, unit: container || 'pack', countable: false };
-  }
-  if (COUNTABLE_UNITS.has(firstWord)) return { qty: Math.floor(count), unit: firstWord, countable: true };
-  return whole;
-};
+// Medicines are sold by the pack, so nothing here divides a pack price into
+// units. The parser that did was how a 100 ml syrup bottle came to be offered
+// at 0.16 per ml; with pack-only pricing that whole class of error is gone.
 
 // ──────────────────── Helpers ────────────────────
 
@@ -326,10 +293,11 @@ const Pharmacy = () => {
 
   const money = (n: number) => Number(n.toFixed(2));
 
-  const cartSubtotal = useMemo(() => money(cart.reduce((sum, c) => {
-    const { qty: packQty } = parsePackSize(c.packSize);
-    return sum + (c.price / packQty) * c.quantity;
-  }, 0)), [cart]);
+  // Sold by the pack only, so quantity counts packs and each costs the pack price.
+  const cartSubtotal = useMemo(
+    () => money(cart.reduce((sum, c) => sum + c.price * c.quantity, 0)),
+    [cart],
+  );
 
   const cartDiscount = useMemo(
     () => (cartSubtotal > DISCOUNT_THRESHOLD ? money((cartSubtotal * DISCOUNT_PCT) / 100) : 0),
@@ -351,11 +319,9 @@ const Pharmacy = () => {
     try {
       setPlacingOrder(true);
       const orderItems = cart.map(c => {
-        const { qty: packQty, unit } = parsePackSize(c.packSize);
-        const unitPrice = +(c.price / packQty).toFixed(2);
-        // unitMode tells the server how to read `quantity`; the amount itself is
-        // always taken from the catalogue, never from these figures.
-        return { name: c.name, quantity: c.quantity, price: unitPrice, medicineId: c.id, unit, unitMode: packQty > 1 ? 'unit' : 'pack', packPrice: c.price, packSize: c.packSize };
+        // Quantity counts packs. unitMode says so explicitly, so the server never
+        // has to infer it; the amount itself always comes from the catalogue.
+        return { name: c.name, quantity: c.quantity, price: c.price, medicineId: c.id, unit: 'pack', unitMode: 'pack', packPrice: c.price, packSize: c.packSize };
       });
 
       // Multipart only when there is a file, so the plain JSON path is untouched.
@@ -499,7 +465,7 @@ const Pharmacy = () => {
                                     </p>
                                   </div>
                                   <div className="text-right shrink-0">
-                                    <p className="text-sm font-bold text-emerald-600">₹{(med.price / parsePackSize(med.packSize).qty).toFixed(2)}<span className="text-[10px] font-normal text-slate-400">/{parsePackSize(med.packSize).unit}</span></p>
+                                    <p className="text-sm font-bold text-emerald-600">₹{med.price.toFixed(2)}<span className="text-[10px] font-normal text-slate-400">/pack</span></p>
                                     {med.packSize && (
                                       <p className="text-[10px] text-slate-400 dark:text-slate-500">MRP ₹{med.price} / {med.packSize}</p>
                                     )}
@@ -527,7 +493,7 @@ const Pharmacy = () => {
                             <div key={item.id} className="flex items-center gap-3 px-3 py-2.5">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium dark:text-white truncate">{item.name}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Pack: ₹{item.price.toFixed(2)} ({item.packSize || "pack size not specified"}) · ₹{(item.price / parsePackSize(item.packSize).qty).toFixed(2)} / {parsePackSize(item.packSize).unit}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">₹{item.price.toFixed(2)} per pack · {item.packSize || "pack size not specified"}</p>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <Button
@@ -546,7 +512,7 @@ const Pharmacy = () => {
                                   <Plus className="h-3 w-3" />
                                 </Button>
                               </div>
-                              <span className="text-sm font-bold text-emerald-600 w-16 text-right">₹{((item.price / parsePackSize(item.packSize).qty) * item.quantity).toFixed(2)}</span>
+                              <span className="text-sm font-bold text-emerald-600 w-16 text-right">₹{(item.price * item.quantity).toFixed(2)}</span>
                               <Button
                                 type="button" variant="ghost" size="icon"
                                 className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
