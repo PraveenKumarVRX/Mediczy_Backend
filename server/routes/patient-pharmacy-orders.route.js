@@ -15,6 +15,7 @@ import express from 'express';
 import multer from 'multer';
 import { authUser } from '../middleware/auth.middleware.js';
 import sharedPool from '../db/pgPool.js';
+import { resolveMedicine, priceLine } from '../utils/pharmacy-pricing.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import {
   COUPON_SCOPES,
@@ -215,41 +216,53 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
     }
 
     // ── Enrich items with MRP from pharmacy_medicines DB ──────────────────
-    const enrichedItems = await Promise.all(items.map(async (item) => {
+    // Resolution is exact: numeric id, CIMS id, then a whole name. It used to be
+    // `name ILIKE '%<name>%' ... ORDER BY mrp ASC LIMIT 1` — the cheapest substring
+    // match — so "Augmentin 625" resolved to "CipAugmentin 625mg" at 110.83, a
+    // different manufacturer's product. The `schedule` below came off that same
+    // wrong row, which meant the prescription gate judged a drug the customer had
+    // never ordered. An item that cannot be resolved is refused, not re-priced.
+    const unresolvedItems = [];
+    const enrichedItems = [];
+    for (const item of items) {
       const name = item.medicine_name || item.name || '';
-      const result = await sharedPool.query(
-        `SELECT id, name, brand_name, generic_name, strength, form, mrp, unit_price, pack_size, manufacturer, schedule
-         FROM pharmacy_medicines
-         WHERE name ILIKE $1 OR brand_name ILIKE $1 OR generic_name ILIKE $1
-         ORDER BY
-           CASE WHEN LOWER(name) = LOWER($2) THEN 0
-                WHEN LOWER(brand_name) = LOWER($2) THEN 1
-                ELSE 2 END,
-           mrp ASC LIMIT 1`,
-        [`%${name}%`, name]
-      );
-      const dbMed    = result.rows[0] || null;
-      const unitMrp  = dbMed
-        ? parseFloat(dbMed.mrp || dbMed.unit_price || 0)
-        : parseFloat(item.unit_price || item.mrp || item.price || 0);
-      const qty = parseFloat(item.quantity) || 1;
-      return {
-        medicine_name: dbMed?.name || name,
-        brand_name:    dbMed?.brand_name  || item.brand_name  || null,
-        generic_name:  dbMed?.generic_name|| item.generic_name|| null,
-        strength:      dbMed?.strength    || item.strength    || null,
-        form:          dbMed?.form        || item.form        || null,
-        manufacturer:  dbMed?.manufacturer|| item.manufacturer|| null,
-        pack_size:     dbMed?.pack_size   || item.pack_size   || null,
-        medicine_id:   dbMed?.id          || null,
+      const dbMed = await resolveMedicine(sharedPool, {
+        medicineId: item.medicine_id ?? item.medicineId ?? item.id,
+        name,
+      });
+      if (!dbMed) { unresolvedItems.push(name || String(item.medicine_id ?? '')); continue; }
+      const line = priceLine(dbMed, item.quantity, item);
+      if (line.error) { unresolvedItems.push(dbMed.name); continue; }
+      enrichedItems.push({
+        medicine_name: line.medicineName,
+        brand_name:    line.brandName,
+        generic_name:  line.genericName,
+        strength:      line.strength,
+        form:          line.form,
+        manufacturer:  line.manufacturer,
+        pack_size:     line.packSize,
+        medicine_id:   line.medicineId,
         // Persisted on the line so a dispensing pharmacist sees the schedule without re-querying,
         // and so an audit can tell what the system believed at the time of the order.
-        schedule:      dbMed?.schedule    || null,
-        quantity:      qty,
-        unit_price:    unitMrp,
-        line_total:    parseFloat((unitMrp * qty).toFixed(2)),
-      };
-    }));
+        schedule:      line.schedule,
+        quantity:      line.quantity,
+        unit:          line.unit,
+        units_per_pack: line.unitsPerPack,
+        sold_by_pack:  line.soldByPack,
+        pack_price:    line.packPrice,
+        unit_price:    line.unitPrice,
+        line_total:    line.lineTotal,
+      });
+    }
+
+    if (unresolvedItems.length) {
+      return res.status(400).json({
+        success: false,
+        code: 'MEDICINE_NOT_IN_CATALOGUE',
+        message: `We could not price these items against the current catalogue: ${unresolvedItems.join(', ')}. Please remove and re-add them.`,
+        unresolved: unresolvedItems,
+      });
+    }
 
     // ── Prescription gate for scheduled drugs ─────────────────────────────
     // Schedule H / H1 / X cannot lawfully be supplied without a prescription (Drugs and Cosmetics

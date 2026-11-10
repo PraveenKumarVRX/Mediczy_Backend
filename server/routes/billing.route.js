@@ -12,6 +12,8 @@ import doctorModel from '../models/postgres/doctor.model.postgres.js';
 import { Op } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { Appointment } from '../models/index.js';
+import sharedPool from '../db/pgPool.js';
+import { resolveMedicine, priceLine, requiresPrescription } from '../utils/pharmacy-pricing.js';
 
 const router = express.Router();
 
@@ -169,11 +171,62 @@ router.post('/orders', authUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Enter a full street address, city and valid six-digit pincode.' });
     }
 
-    const subtotal = items.reduce((sum, item) => {
-      const qty = Math.max(1, parseInt(item.quantity) || 1);
-      const price = parseFloat(item.price) || 0;
-      return sum + price * qty;
-    }, 0);
+    // Price every line from the catalogue. The browser's `price` is never billed:
+    // the Pharmacy page derives it by dividing the pack price by a pack count it
+    // parses itself, which billed a 33.23 strip at 3.32, and a client-supplied
+    // price is also a tampering hole (nothing stopped it being 0).
+    const priced = [];
+    const unresolved = [];
+    for (const item of items) {
+      const medicine = await resolveMedicine(sharedPool, {
+        medicineId: item.medicineId ?? item.medicine_id ?? item.id,
+        name: item.name || item.medicine_name,
+      });
+      if (!medicine) {
+        unresolved.push(item.name || item.medicine_name || String(item.medicineId ?? ''));
+        continue;
+      }
+      const line = priceLine(medicine, item.quantity, item);
+      if (line.error) {
+        unresolved.push(medicine.name);
+        continue;
+      }
+      priced.push(line);
+    }
+
+    if (unresolved.length) {
+      // Refusing beats quietly substituting a different medicine, which is what a
+      // cheapest-substring-match lookup used to do ("Augmentin 625" resolved to
+      // "CipAugmentin 625mg" at a lower price, and the Schedule came off that row).
+      return res.status(400).json({
+        success: false,
+        code: 'MEDICINE_NOT_IN_CATALOGUE',
+        message: `We could not price these items against the current catalogue: ${unresolved.join(', ')}. Please remove and re-add them.`,
+        unresolved,
+      });
+    }
+
+    // Schedule H / H1 / X cannot lawfully be supplied without a prescription.
+    // This path had no gate at all while the companion pharmacy route did, so
+    // seven Schedule H lines were accepted here with none on file.
+    const rxLines = priced.filter((line) => requiresPrescription(line.schedule));
+    if (rxLines.length) {
+      const named = rxLines
+        .map((l) => `${l.brandName || l.medicineName} (Schedule ${String(l.schedule).toUpperCase()})`)
+        .join(', ');
+      console.warn(`[billing/orders] rejected: prescription required for ${named} (user ${userId})`);
+      return res.status(400).json({
+        success: false,
+        code: 'PRESCRIPTION_REQUIRED',
+        message: `A doctor's prescription is required for: ${named}. Please order these through the prescription upload flow.`,
+        requiresPrescription: rxLines.map((l) => ({
+          medicine_name: l.brandName || l.medicineName,
+          schedule: String(l.schedule).toUpperCase(),
+        })),
+      });
+    }
+
+    const subtotal = priced.reduce((sum, line) => sum + line.lineTotal, 0);
 
     const orderNumber = paymentGateway.generateOrderReceipt('ORD');
 
@@ -189,7 +242,10 @@ router.post('/orders', authUser, async (req, res) => {
       currency: 'INR',
       shippingAddress: { address: String(deliveryAddress).trim() },
       metadata: {
-        items,
+        // The catalogue-priced lines, so order history and an audit show what was
+        // actually billed rather than what the browser proposed.
+        items: priced,
+        clientSubmittedItems: items,
         deliveryAddress: String(deliveryAddress).trim(),
         prescriptionRequired: !!prescriptionRequired,
       },

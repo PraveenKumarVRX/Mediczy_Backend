@@ -90,14 +90,40 @@ interface CartItem extends MedicineResult {
 }
 
 /** Parse packSize like "10 tablets" → { qty: 10, unit: 'tablet' } */
-const parsePackSize = (packSize?: string): { qty: number; unit: string } => {
-  if (!packSize) return { qty: 1, unit: 'unit' };
-  const match = packSize.match(/(\d+)\s*(.*)/);
-  if (!match) return { qty: 1, unit: 'unit' };
-  const qty = parseInt(match[1], 10) || 1;
-  const raw = (match[2]?.trim().toLowerCase()) || 'unit';
-  const unit = raw.endsWith('s') && raw.length > 2 ? raw.slice(0, -1) : raw;
-  return { qty, unit };
+// Mirrors server/utils/pharmacy-pricing.js. `qty` is how many separately
+// priceable items a pack holds, so a measured pack is 1.
+//
+// The previous version matched an unanchored /(\d+)\s*(.*)/, so "bottle of
+// 100 ml Syrup" became 100 units and a 16.22 bottle was offered at 0.16 per ml.
+// Nothing dispenses 1 ml of syrup, and the figure shown no longer matched the
+// price the order was billed at.
+const MEASURE_UNITS = new Set(['ml', 'l', 'litre', 'liter', 'g', 'gm', 'gms', 'gram', 'mg', 'mcg', 'kg', 'iu', '%']);
+const COUNTABLE_UNITS = new Set([
+  'tablet', 'capsule', 'injection', 'sachet', 'suppository', 'pessary', 'lozenge',
+  'chewable', 'patch', 'ampoule', 'vial', 'piece', 'pen', 'applicator', 'suspension',
+  'wafer', 'granule', 'strip', 'kit', 'unit',
+]);
+const singularUnit = (word: string) => {
+  const w = (word || '').trim().toLowerCase();
+  if (w.length > 2 && w.endsWith('ies')) return `${w.slice(0, -3)}y`;
+  if (w.length > 2 && w.endsWith('s') && !w.endsWith('ss')) return w.slice(0, -1);
+  return w;
+};
+const parsePackSize = (packSize?: string): { qty: number; unit: string; countable: boolean } => {
+  const raw = (packSize || '').trim();
+  const whole = { qty: 1, unit: 'pack', countable: false };
+  if (!raw) return whole;
+  const match = raw.match(/(?:^|\bof\s+)(\d+(?:\.\d+)?)\s+([^\d]+)$/i) || raw.match(/^(\d+(?:\.\d+)?)\s+([^\d]+)$/i);
+  if (!match) return whole;
+  const count = Number(match[1]);
+  if (!Number.isFinite(count) || count <= 0) return whole;
+  const firstWord = singularUnit((match[2] || '').trim().split(/\s+/)[0] || '');
+  if (MEASURE_UNITS.has(firstWord)) {
+    const container = singularUnit(raw.split(/\s+of\s+/i)[0] || 'pack');
+    return { qty: 1, unit: container || 'pack', countable: false };
+  }
+  if (COUNTABLE_UNITS.has(firstWord)) return { qty: Math.floor(count), unit: firstWord, countable: true };
+  return whole;
 };
 
 // ──────────────────── Helpers ────────────────────
