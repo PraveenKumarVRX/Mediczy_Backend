@@ -85,7 +85,11 @@ describe('lab test cart (report rows 115, 116)', () => {
 
     const second = await addToCart(user, { test: { id: 'CBC', name: 'Complete Blood Count' } });
     expect(second.body.itemCount).toBe(1);
-    expect(second.body.cart[0].quantity).toBe(2);
+    // One unit, not two. prepareLabCheckout bills a de-duplicated set of test
+    // ids and ignores quantity, so a merged quantity of 2 showed the patient
+    // 2 x 450 while the gateway asked for 450. The cart total must be the
+    // billed total, so a lab test is always a single unit.
+    expect(second.body.cart[0].quantity).toBe(1);
   });
 
   test('removing one of two identical items leaves the other (did not empty the cart)', async () => {
