@@ -426,11 +426,8 @@ const HospitalTeamChat                 = lazy(() => import("@/pages/hospital/Hos
 const HospitalNotifications            = lazy(() => import("@/pages/hospital/HospitalNotifications"));
 
 const _HospitalModulePages = () => import("@/pages/hospital/HospitalModulePages");
-const HospitalAppointmentsPage = lazyNamed(_HospitalModulePages, "HospitalAppointmentsPage");
 const HospitalBedsPage         = lazyNamed(_HospitalModulePages, "HospitalBedsPage");
-const HospitalPatientsPage     = lazyNamed(_HospitalModulePages, "HospitalPatientsPage");
 const HospitalOpdIpdPage       = lazyNamed(_HospitalModulePages, "HospitalOpdIpdPage");
-const HospitalPharmacyPage     = lazyNamed(_HospitalModulePages, "HospitalPharmacyPage");
 const HospitalLabReportsPage   = lazyNamed(_HospitalModulePages, "HospitalLabReportsPage");
 const HospitalBillingPage      = lazy(() => import("@/pages/hospital/HospitalBillingPage"));
 const HospitalOSHub            = lazy(() => import("@/pages/hospital/HospitalOSHub"));
@@ -449,8 +446,6 @@ const HospitalPharmacyDispense = lazy(() => import("@/pages/hospital/HospitalPha
 const HospitalSecurity         = lazy(() => import("@/pages/hospital/HospitalSecurity"));
 const HospitalAssetTracking    = lazy(() => import("@/pages/hospital/HospitalAssetTracking"));
 const HospitalCorporateCRM     = lazy(() => import("@/pages/hospital/HospitalCorporateCRM"));
-const HospitalClaimsPage       = lazyNamed(_HospitalModulePages, "HospitalClaimsPage");
-const HospitalStaffPage        = lazyNamed(_HospitalModulePages, "HospitalStaffPage");
 const HospitalSettingsPage     = lazyNamed(_HospitalModulePages, "HospitalSettingsPage");
 const HospitalSupportPage      = lazyNamed(_HospitalModulePages, "HospitalSupportPage");
 
@@ -1225,16 +1220,16 @@ const AppRoutes = () => {
         <Route path="/hospital/procedure-adder"            element={<HospitalProcedureAdder />} />
         <Route path="/hospital/discharge-summary"          element={<HospitalDischargeSummary />} />
         <Route path="/hospital/ip-sheets"                  element={<HospitalIPSheets />} />
-        <Route path="/hospital/appointments"               element={<HospitalAppointmentsPage />} />
+        <Route path="/hospital/appointments"               element={<Navigate to="/hospital/practice-management?tab=appointments" replace />} />
         <Route path="/hospital/beds"                       element={<Navigate to="/hospital/beds/map" replace />} />
-        <Route path="/hospital/patients"                   element={<HospitalPatientsPage />} />
+        <Route path="/hospital/patients"                   element={<Navigate to="/hospital/practice-management?tab=patients" replace />} />
         <Route path="/hospital/doctors"                    element={<HospitalDoctorsManagement />} />
         <Route path="/hospital/opd-ipd"                    element={<Navigate to="/hospital/command-center" replace />} />
-        <Route path="/hospital/pharmacy"                   element={<HospitalPharmacyPage />} />
+        <Route path="/hospital/pharmacy"                   element={<Navigate to="/hospital/pharmacy-dispense" replace />} />
         <Route path="/hospital/lab-reports"                element={<HospitalLabReportsPage />} />
         <Route path="/hospital/billing"                    element={<HospitalBillingPage />} />
-        <Route path="/hospital/claims"                     element={<HospitalClaimsPage />} />
-        <Route path="/hospital/staff"                      element={<HospitalStaffPage />} />
+        <Route path="/hospital/claims"                     element={<Navigate to="/hospital/insurance-claims?tab=claims" replace />} />
+        <Route path="/hospital/staff"                      element={<Navigate to="/hospital/practice-management?tab=staff" replace />} />
         <Route path="/hospital/communication"              element={<HospitalCommunicationHub />} />
         <Route path="/hospital/team-chat"                  element={<HospitalTeamChat />} />
         <Route path="/hospital/ambulance"                  element={<HospitalAmbulance />} />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,6 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
-import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import { 
   Building2, Calendar as CalendarIcon, Users, Clock, 
   Activity, UserCheck, Bell, Settings, LogOut, Plus, 
@@ -98,6 +97,7 @@ interface Resource {
 
 const HospitalPracticeManagement = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [hospitalData, setHospitalData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('patients');
@@ -167,26 +167,11 @@ const HospitalPracticeManagement = () => {
     toast({ title: 'Request failed', description: responseMessage, variant: 'destructive' });
   };
 
-  const STORAGE_KEYS = {
-    appointments: 'hospital-practice-appointments',
-    patients: 'hospital-practice-patients',
-    staff: 'hospital-practice-staff',
-    resources: 'hospital-practice-resources',
-  };
-
-  const persistPractice = (payload: Partial<{ appointments: Appointment[]; patients: Patient[]; staff: Staff[]; resources: Resource[]; }>) => {
-    if (payload.appointments !== undefined) saveHospitalStore(STORAGE_KEYS.appointments, payload.appointments);
-    if (payload.patients !== undefined) saveHospitalStore(STORAGE_KEYS.patients, payload.patients);
-    if (payload.staff !== undefined) saveHospitalStore(STORAGE_KEYS.staff, payload.staff);
-    if (payload.resources !== undefined) saveHospitalStore(STORAGE_KEYS.resources, payload.resources);
-  };
-
   const hydratePractice = (payload: Partial<{ appointments: Appointment[]; patients: Patient[]; staff: Staff[]; resources: Resource[]; }>) => {
     if (payload.appointments !== undefined) setAppointments(payload.appointments);
     if (payload.patients !== undefined) setPatients(payload.patients);
     if (payload.staff !== undefined) setStaff(payload.staff);
     if (payload.resources !== undefined) setResources(payload.resources);
-    persistPractice(payload);
   };
 
   const fetchPracticeData = async (isInitial = false) => {
@@ -203,22 +188,7 @@ const HospitalPracticeManagement = () => {
       const appointmentsData = appointmentsRes.data?.appointments || [];
       
       // Transform appointments to match frontend format
-      const transformedAppointments = appointmentsData.map((apt: any) => ({
-        id: apt.id.toString(),
-        patientId: apt.userId?.toString() || '',
-        patientName: apt.patientName || 'Unknown',
-        patientPhone: apt.patientPhone || '',
-        doctorId: apt.doctorId?.toString() || '',
-        doctorName: apt.doctorName || 'Dr. Unknown',
-        department: apt.specialization || 'General',
-        date: apt.appointmentDate || '',
-        time: apt.appointmentTime?.substring(0, 5) || '',
-        type: 'OPD' as const,
-        status: mapStatus(apt.status),
-        priority: 'Normal' as const,
-        notes: apt.reason || '',
-        createdAt: apt.createdAt || new Date().toISOString()
-      }));
+      const transformedAppointments = appointmentsData.map((apt: any) => normalizeAppointment(apt));
       
       hydratePractice({ appointments: transformedAppointments });
 
@@ -240,8 +210,8 @@ const HospitalPracticeManagement = () => {
         if (Array.isArray(livePatients) && livePatients.length > 0) {
           hydratePractice({ patients: livePatients });
         }
-      } catch (_) {
-        /* keep local/demo patients when API unavailable */
+      } catch (error) {
+        handleApiError(error, 'Failed to load the live patient list');
       }
       
     } catch (error) {
@@ -267,6 +237,23 @@ const HospitalPracticeManagement = () => {
     return statusMap[backendStatus] || 'Scheduled';
   };
 
+  const normalizeAppointment = (appointment: any, fallback: Partial<Appointment> = {}): Appointment => ({
+    id: String(appointment?.id ?? fallback.id ?? ''),
+    patientId: String(appointment?.userId ?? appointment?.patientId ?? fallback.patientId ?? ''),
+    patientName: appointment?.patientName ?? fallback.patientName ?? 'Unknown',
+    patientPhone: appointment?.patientPhone ?? fallback.patientPhone ?? '',
+    doctorId: String(appointment?.doctorId ?? fallback.doctorId ?? ''),
+    doctorName: appointment?.doctorName ?? fallback.doctorName ?? 'Unassigned',
+    department: appointment?.specialization ?? appointment?.department ?? fallback.department ?? 'General',
+    date: appointment?.appointmentDate ?? appointment?.date ?? fallback.date ?? '',
+    time: String(appointment?.appointmentTime ?? appointment?.time ?? fallback.time ?? '').slice(0, 5),
+    type: (appointment?.type ?? fallback.type ?? 'OPD') as Appointment['type'],
+    status: mapStatus(String(appointment?.status ?? fallback.status ?? 'scheduled').toLowerCase()),
+    priority: (appointment?.priority ?? fallback.priority ?? 'Normal') as Appointment['priority'],
+    notes: appointment?.reason ?? appointment?.notes ?? fallback.notes ?? '',
+    createdAt: appointment?.createdAt ?? fallback.createdAt ?? new Date().toISOString(),
+  });
+
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
     const data = localStorage.getItem('hospitalData');
@@ -281,6 +268,13 @@ const HospitalPracticeManagement = () => {
     }
     fetchPracticeData(true);
   }, [navigate]);
+
+  useEffect(() => {
+    const requestedTab = searchParams.get('tab');
+    if (requestedTab && ['appointments', 'patients', 'staff', 'resources'].includes(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [searchParams]);
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -329,31 +323,22 @@ const HospitalPracticeManagement = () => {
 
   const handleSaveAppointment = async () => {
     if (!appointmentForm?.id) return;
-    let updated: Appointment = appointmentForm as Appointment;
-    let savedLocally = false;
     try {
       const { data } = await api.patch(
         `/hospital/practice/appointments/${appointmentForm.id}`,
         appointmentForm,
         { headers: hospitalHeaders() }
       );
-      updated = data?.data || updated;
+      const response = data?.data;
+      if (!response) throw new Error('The server did not return the updated appointment');
+      const updated = normalizeAppointment(response, appointmentForm);
+
+      setAppointments(prev => prev.map(a => a.id === updated.id ? { ...a, ...updated } as Appointment : a));
+      toast({ title: 'Appointment updated', description: `${updated.patientName || appointmentForm.patientName || 'Appointment'} saved.` });
+      setShowEditAppointmentDialog(false);
     } catch (error) {
-      savedLocally = true;
-      console.error('Failed to update appointment via API', error);
+      handleApiError(error, 'Failed to update appointment — no changes were saved');
     }
-
-    setAppointments(prev => {
-      const next = prev.map(a => a.id === updated.id ? { ...a, ...updated } as Appointment : a);
-      saveHospitalStore(STORAGE_KEYS.appointments, next);
-      return next;
-    });
-
-    toast({
-      title: savedLocally ? 'Saved locally' : 'Appointment updated',
-      description: `${updated.patientName || 'Appointment'} saved.`,
-    });
-    setShowEditAppointmentDialog(false);
   };
 
   const handleRegisterPatient = async () => {
@@ -362,51 +347,26 @@ const HospitalPracticeManagement = () => {
       return;
     }
 
-    const fallbackPatient: Patient = {
-      id: `P-${Date.now()}`,
-      uhid: `UHID-${Date.now().toString().slice(-6)}`,
-      name: patientForm.name,
-      age: Number(patientForm.age) || 0,
-      gender: (patientForm.gender || 'Other') as Patient['gender'],
-      phone: patientForm.phone,
-      email: patientForm.email || undefined,
-      address: patientForm.address || '',
-      bloodGroup: 'O+',
-      admissionStatus: patientForm.admissionStatus,
-      admissionDate: patientForm.admissionStatus === 'IPD' ? new Date().toISOString().slice(0, 10) : undefined,
-      assignedDoctor: patientForm.assignedDoctor || undefined,
-      department: patientForm.department || undefined,
-    };
-
     try {
-      let newPatient: Patient = fallbackPatient;
-      try {
-        const { data } = await api.post(
-          '/hospital/practice/patients',
-          {
-            name: patientForm.name,
-            age: Number(patientForm.age) || undefined,
-            gender: patientForm.gender as Patient['gender'],
-            phone: patientForm.phone,
-            email: patientForm.email,
-            address: patientForm.address,
-            admissionStatus: patientForm.admissionStatus,
-            department: patientForm.department,
-            assignedDoctor: patientForm.assignedDoctor,
-            bloodGroup: 'O+',
-          },
-          { headers: hospitalHeaders() }
-        );
-        newPatient = data?.data || fallbackPatient;
-      } catch (error) {
-        console.error('Failed to register patient via API', error);
-      }
-
-      setPatients(prev => {
-        const next = [newPatient, ...prev];
-        saveHospitalStore(STORAGE_KEYS.patients, next);
-        return next;
-      });
+      const { data } = await api.post(
+        '/hospital/practice/patients',
+        {
+          name: patientForm.name,
+          age: Number(patientForm.age) || undefined,
+          gender: patientForm.gender as Patient['gender'],
+          phone: patientForm.phone,
+          email: patientForm.email,
+          address: patientForm.address,
+          admissionStatus: patientForm.admissionStatus,
+          department: patientForm.department,
+          assignedDoctor: patientForm.assignedDoctor,
+          bloodGroup: 'O+',
+        },
+        { headers: hospitalHeaders() }
+      );
+      const newPatient = data?.data;
+      if (!newPatient) throw new Error('The server did not return the registered patient');
+      setPatients(prev => [newPatient, ...prev]);
       toast({ title: 'Patient registered', description: `${newPatient?.name || 'Patient'} added.` });
       setPatientForm({ name: '', age: '', gender: '', phone: '', email: '', address: '', admissionStatus: 'OPD', department: '', assignedDoctor: '' });
       setShowNewPatientDialog(false);
@@ -423,58 +383,24 @@ const HospitalPracticeManagement = () => {
 
     try {
       if (editingStaffId) {
-        let updated: Staff | undefined;
-        let savedLocally = false;
-        try {
-          const { data } = await api.patch(
-            `/hospital/practice/staff/${editingStaffId}`,
-            staffForm,
-            { headers: hospitalHeaders() }
-          );
-          updated = data?.data;
-        } catch (error) {
-          savedLocally = true;
-          console.error('Failed to update staff via API', error);
-        }
-        setStaff(prev => {
-          const next = prev.map(s => {
-            if (s.id !== editingStaffId) return s;
-            const merged = updated ? { ...s, ...updated } : { ...s, ...staffForm };
-            return merged as Staff;
-          });
-          saveHospitalStore(STORAGE_KEYS.staff, next);
-          return next;
-        });
-        toast({ title: savedLocally ? 'Saved locally' : 'Staff updated', description: `${staffForm.name} saved.` });
+        const { data } = await api.patch(
+          `/hospital/practice/staff/${editingStaffId}`,
+          staffForm,
+          { headers: hospitalHeaders() }
+        );
+        const updated = data?.data;
+        if (!updated) throw new Error('The server did not return the updated staff member');
+        setStaff(prev => prev.map(s => s.id === editingStaffId ? { ...s, ...updated } as Staff : s));
+        toast({ title: 'Staff updated', description: `${updated.name || staffForm.name} saved.` });
       } else {
-        const fallbackStaff: Staff = {
-          id: `ST-${Date.now()}`,
-          name: staffForm.name,
-          role: staffForm.role,
-          department: staffForm.department,
-          specialization: staffForm.specialization || undefined,
-          phone: staffForm.phone,
-          email: staffForm.email,
-          shift: staffForm.shift,
-          status: staffForm.status,
-          joiningDate: new Date().toISOString().slice(0, 10),
-        };
-        let newStaff: Staff = fallbackStaff;
-        try {
-          const { data } = await api.post(
-            '/hospital/practice/staff',
-            staffForm,
-            { headers: hospitalHeaders() }
-          );
-          newStaff = data?.data || fallbackStaff;
-        } catch (error) {
-          console.error('Failed to add staff via API', error);
-        }
-        setStaff(prev => {
-          const next = [newStaff, ...prev];
-          saveHospitalStore(STORAGE_KEYS.staff, next);
-          return next;
-        });
+        const { data } = await api.post(
+          '/hospital/practice/staff',
+          staffForm,
+          { headers: hospitalHeaders() }
+        );
+        const newStaff = data?.data;
+        if (!newStaff) throw new Error('The server did not return the new staff member');
+        setStaff(prev => [newStaff, ...prev]);
         toast({ title: 'Staff added', description: `${newStaff?.name || 'Staff'} created.` });
       }
 
@@ -493,30 +419,14 @@ const HospitalPracticeManagement = () => {
     }
 
     try {
-      const fallbackResource: Resource = {
-        id: `RS-${Date.now()}`,
-        name: resourceForm.name,
-        type: resourceForm.type,
-        department: resourceForm.department,
-        status: resourceForm.status,
-        location: resourceForm.location,
-      };
-      let newResource: Resource = fallbackResource;
-      try {
-        const { data } = await api.post(
-          '/hospital/practice/resources',
-          resourceForm,
-          { headers: hospitalHeaders() }
-        );
-        newResource = data?.data || fallbackResource;
-      } catch (error) {
-        console.error('Failed to add resource via API', error);
-      }
-      setResources(prev => {
-        const next = [newResource, ...prev];
-        saveHospitalStore(STORAGE_KEYS.resources, next);
-        return next;
-      });
+      const { data } = await api.post(
+        '/hospital/practice/resources',
+        resourceForm,
+        { headers: hospitalHeaders() }
+      );
+      const newResource = data?.data;
+      if (!newResource) throw new Error('The server did not return the new resource');
+      setResources(prev => [newResource, ...prev]);
       toast({ title: 'Resource added', description: `${newResource?.name || 'Resource'} added.` });
       setResourceForm({ name: '', type: 'Bed', department: '', status: 'Available', location: '' });
       setShowAddResourceDialog(false);
@@ -527,20 +437,12 @@ const HospitalPracticeManagement = () => {
 
   const handleCompleteAppointment = async (apt: Appointment) => {
     try {
-      try {
-        await api.post(
-          `/hospital/practice/appointments/${apt.id}/status`,
-          { status: 'Completed' },
-          { headers: hospitalHeaders() }
-        );
-      } catch (error) {
-        console.error('Failed to update appointment status via API', error);
-      }
-      setAppointments(prev => {
-        const next = prev.map(a => a.id === apt.id ? { ...a, status: 'Completed' } : a);
-        saveHospitalStore(STORAGE_KEYS.appointments, next);
-        return next;
-      });
+      await api.patch(
+        `/hospital/practice/appointments/${apt.id}`,
+        { status: 'completed' },
+        { headers: hospitalHeaders() }
+      );
+      setAppointments(prev => prev.map(a => a.id === apt.id ? { ...a, status: 'Completed' } : a));
       toast({ title: 'Appointment completed', description: `${apt.patientName} marked completed.` });
     } catch (error) {
       handleApiError(error, 'Failed to update appointment status');
@@ -555,24 +457,6 @@ const HospitalPracticeManagement = () => {
 
     try {
       const doctor = staff.find(s => s.id === newAppointmentForm.doctorId);
-      const fallbackAppointment: Appointment = {
-        id: `APT-${Date.now()}`,
-        patientId: newAppointmentForm.patientName.slice(0, 2).toUpperCase(),
-        patientName: newAppointmentForm.patientName,
-        patientPhone: newAppointmentForm.patientPhone,
-        doctorId: doctor?.id || '',
-        doctorName: doctor?.name || 'On Call',
-        department: newAppointmentForm.department || 'General Medicine',
-        date: format(selectedDate, 'yyyy-MM-dd'),
-        time: newAppointmentForm.time,
-        type: newAppointmentForm.type,
-        status: 'Scheduled',
-        priority: newAppointmentForm.priority,
-        notes: newAppointmentForm.notes,
-        createdAt: new Date().toISOString().slice(0, 10),
-      };
-      // A failed API write must not be shown as "Appointment created" with a fabricated local id — that hides a
-      // real scheduling failure from the front desk.
       const { data } = await api.post(
         '/hospital/practice/appointments',
         {
@@ -591,13 +475,22 @@ const HospitalPracticeManagement = () => {
         },
         { headers: hospitalHeaders() }
       );
-      const created: Appointment = data?.data || fallbackAppointment;
-
-      setAppointments(prev => {
-        const next = [created, ...prev];
-        saveHospitalStore(STORAGE_KEYS.appointments, next);
-        return next;
+      const response = data?.data;
+      if (!response) throw new Error('The server did not return the scheduled appointment');
+      const created = normalizeAppointment(response, {
+        patientName: newAppointmentForm.patientName,
+        patientPhone: newAppointmentForm.patientPhone,
+        doctorId: doctor?.id || '',
+        doctorName: doctor?.name || 'Unassigned',
+        department: newAppointmentForm.department || 'General Medicine',
+        date: format(selectedDate, 'yyyy-MM-dd'),
+        time: newAppointmentForm.time,
+        type: newAppointmentForm.type,
+        priority: newAppointmentForm.priority,
+        notes: newAppointmentForm.notes,
       });
+
+      setAppointments(prev => [created, ...prev]);
       toast({ title: 'Appointment created', description: `${created?.patientName || 'Appointment'} scheduled.` });
       setShowNewAppointmentDialog(false);
       setNewAppointmentForm({ patientName: '', patientPhone: '', department: '', doctorId: '', type: 'OPD', priority: 'Normal', time: '', notes: '' });
@@ -609,22 +502,14 @@ const HospitalPracticeManagement = () => {
   const handleToggleResource = async (res: Resource) => {
     const nextStatus = res.status === 'Available' ? 'In-Use' : 'Available';
     try {
-      let updated: Resource = { ...res, status: nextStatus };
-      try {
-        const { data } = await api.patch(
-          `/hospital/practice/resources/${res.id}`,
-          { status: nextStatus },
-          { headers: hospitalHeaders() }
-        );
-        updated = data?.data || updated;
-      } catch (error) {
-        console.error('Failed to update resource via API', error);
-      }
-      setResources(prev => {
-        const next = prev.map(r => r.id === res.id ? updated : r);
-        saveHospitalStore(STORAGE_KEYS.resources, next);
-        return next;
-      });
+      const { data } = await api.patch(
+        `/hospital/practice/resources/${res.id}`,
+        { status: nextStatus },
+        { headers: hospitalHeaders() }
+      );
+      const updated = data?.data;
+      if (!updated) throw new Error('The server did not return the updated resource');
+      setResources(prev => prev.map(r => r.id === res.id ? updated : r));
       toast({ title: 'Resource updated', description: `${updated.name} marked as ${updated.status}.` });
     } catch (error) {
       handleApiError(error, 'Failed to update resource');
@@ -638,54 +523,19 @@ const HospitalPracticeManagement = () => {
     }
 
     try {
-      let updatedPatient: Patient | undefined;
-      let updatedResource: Resource | undefined;
-      try {
-        const { data } = await api.post(
-          '/hospital/practice/resources/allocate',
-          {
-            patientId: bedAllocationForm.patientId,
-            resourceId: bedAllocationForm.resourceId,
-          },
-          { headers: hospitalHeaders() }
-        );
-
-        updatedPatient = data?.data?.patient;
-        updatedResource = data?.data?.resource;
-      } catch (error) {
-        console.error('Failed to allocate bed via API', error);
-      }
-
-      const fallbackPatient = patients.find(p => p.id === bedAllocationForm.patientId);
-      const fallbackResource = resources.find(r => r.id === bedAllocationForm.resourceId);
-
-      if (fallbackPatient && !updatedPatient) {
-        updatedPatient = {
-          ...fallbackPatient,
-          admissionStatus: 'IPD',
-          bed: fallbackResource?.name || fallbackPatient.bed,
-          ward: fallbackResource?.department || fallbackPatient.ward,
-          admissionDate: fallbackPatient.admissionDate || new Date().toISOString().slice(0, 10),
-        };
-      }
-      if (fallbackResource && !updatedResource) {
-        updatedResource = { ...fallbackResource, status: 'Reserved' };
-      }
-
-      if (updatedPatient) {
-        setPatients(prev => {
-          const next = prev.map(p => p.id === updatedPatient?.id || p.uhid === updatedPatient?.uhid ? updatedPatient as Patient : p);
-          saveHospitalStore(STORAGE_KEYS.patients, next);
-          return next;
-        });
-      }
-      if (updatedResource) {
-        setResources(prev => {
-          const next = prev.map(r => r.id === updatedResource?.id ? updatedResource as Resource : r);
-          saveHospitalStore(STORAGE_KEYS.resources, next);
-          return next;
-        });
-      }
+      const { data } = await api.post(
+        '/hospital/practice/resources/allocate',
+        {
+          patientId: bedAllocationForm.patientId,
+          resourceId: bedAllocationForm.resourceId,
+        },
+        { headers: hospitalHeaders() }
+      );
+      const updatedPatient = data?.data?.patient;
+      const updatedResource = data?.data?.resource;
+      if (!updatedPatient || !updatedResource) throw new Error('The server did not confirm the bed allocation');
+      setPatients(prev => prev.map(p => p.id === updatedPatient.id || p.uhid === updatedPatient.uhid ? updatedPatient as Patient : p));
+      setResources(prev => prev.map(r => r.id === updatedResource.id ? updatedResource as Resource : r));
 
       toast({ title: 'Bed allocated', description: `${updatedPatient?.name || 'Patient'} assigned to ${updatedResource?.name || 'bed'}.` });
       setBedAllocationForm({ patientId: '', resourceId: '' });
@@ -696,51 +546,21 @@ const HospitalPracticeManagement = () => {
   };
 
   const handleConvertToIPD = async (patient: Patient) => {
-    const numericId = /^\d+$/.test(patient.id);
-    if (numericId) {
-      try {
-        const { data } = await api.patch(
-          `/hospital/practice/patients/${patient.id}`,
-          { admissionStatus: 'IPD' },
-          { headers: hospitalHeaders() }
-        );
-        const redirect = data?.data?.redirect;
-        if (redirect) {
-          navigate(redirect);
-          toast({ title: 'Admission', description: `Complete admission for ${patient.name}.` });
-          return;
-        }
-      } catch (_) {
-        /* fall through to direct navigation */
-      }
-      navigate(
-        `/hospital/adt/admit?patientId=${encodeURIComponent(patient.id)}&name=${encodeURIComponent(patient.name)}&type=op_converted`
-      );
-      toast({ title: 'Admission', description: `Complete admission for ${patient.name}.` });
-      return;
-    }
     try {
-      let updated: Patient = { ...patient, admissionStatus: 'IPD' };
-      try {
-        const { data } = await api.patch(
-          `/hospital/practice/patients/${patient.id}`,
-          {
-            admissionStatus: 'IPD',
-            admissionDate: patient.admissionDate || new Date().toISOString().slice(0, 10),
-            bed: patient.bed || 'Pending bed',
-            ward: patient.ward || 'Ward'
-          },
-          { headers: hospitalHeaders() }
-        );
-        updated = data?.data || updated;
-      } catch (error) {
-        console.error('Failed to convert patient via API', error);
+      const { data } = await api.patch(
+        `/hospital/practice/patients/${patient.id}`,
+        { admissionStatus: 'IPD' },
+        { headers: hospitalHeaders() }
+      );
+      const redirect = data?.data?.redirect;
+      if (redirect) {
+        navigate(redirect);
+        toast({ title: 'Admission', description: `Complete admission for ${patient.name}.` });
+        return;
       }
-      setPatients(prev => {
-        const next = prev.map(p => p.id === patient.id ? updated : p);
-        saveHospitalStore(STORAGE_KEYS.patients, next);
-        return next;
-      });
+      const updated = data?.data;
+      if (!updated) throw new Error('The server did not return the updated patient');
+      setPatients(prev => prev.map(p => p.id === patient.id ? updated : p));
       toast({ title: 'Converted to IPD', description: `${updated.name} moved to IPD.` });
     } catch (error) {
       handleApiError(error, 'Failed to convert patient to IPD');
@@ -768,28 +588,16 @@ const HospitalPracticeManagement = () => {
 
   const handleDischargePatient = async (patient: Patient) => {
     try {
-      let updated: Patient = { ...patient, admissionStatus: 'Discharged' };
-      try {
-        const { data } = await api.post(
-          `/hospital/practice/patients/${patient.id}/discharge`,
-          {},
-          { headers: hospitalHeaders() }
-        );
-        updated = data?.data || updated;
-      } catch (error) {
-        console.error('Failed to discharge patient via API', error);
-      }
-      setPatients(prev => {
-        const next = prev.map(p => p.id === patient.id ? updated : p);
-        saveHospitalStore(STORAGE_KEYS.patients, next);
-        return next;
-      });
+      const { data } = await api.post(
+        `/hospital/practice/patients/${patient.id}/discharge`,
+        {},
+        { headers: hospitalHeaders() }
+      );
+      const updated = data?.data;
+      if (!updated) throw new Error('The server did not return the discharged patient');
+      setPatients(prev => prev.map(p => p.id === patient.id ? updated : p));
       if (updated.bed) {
-        setResources(prev => {
-          const next = prev.map(r => r.name === updated.bed || r.id === updated.bed ? { ...r, status: 'Available' } : r);
-          saveHospitalStore(STORAGE_KEYS.resources, next);
-          return next;
-        });
+        setResources(prev => prev.map(r => r.name === updated.bed || r.id === updated.bed ? { ...r, status: 'Available' } : r));
       }
       toast({ title: 'Patient discharged', description: `${updated.name} marked as discharged.` });
     } catch (error) {
