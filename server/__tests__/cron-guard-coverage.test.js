@@ -72,14 +72,31 @@ describe('inline jobs in app.js', () => {
     expect(appSrc).not.toMatch(/cronTickStart\(/);
   });
 
-  it('every inline cron.schedule handler begins with the cross-process guard', () => {
+  it('every inline cron.schedule handler is guarded, inline or by the service it calls', () => {
+    // In cluster mode each worker schedules the same job, so an unguarded handler
+    // fires once per worker. A handler may hold the lease itself via cronBeginJob,
+    // or delegate to a service that takes its own lease before doing any work --
+    // ar-follow-up and order-expiry do the latter, and the per-service tests above
+    // assert that those two await beginJob first.
+    const DELEGATES_TO_SERVICE = [/arFollowUpService\.runArEscalation\(/, /orderExpiryService\.expireAbandonedOrders\(/];
     const handlers = appSrc.split(/^cron\.schedule\(/m).slice(1);
-    expect(handlers.length).toBe(6);
-    for (const h of handlers) expect(h.split('\n').slice(0, 3).join('\n')).toMatch(/await cronBeginJob\(/);
+    expect(handlers.length).toBeGreaterThanOrEqual(6);
+    const unguarded = [];
+    for (const h of handlers) {
+      const head = h.split('\n').slice(0, 4).join('\n');
+      const guardedInline = /await cronBeginJob\(/.test(head);
+      const guardedByService = DELEGATES_TO_SERVICE.some((re) => re.test(h.slice(0, 600)));
+      if (!guardedInline && !guardedByService) unguarded.push(h.split('\n')[0].trim().slice(0, 60));
+    }
+    expect(unguarded).toEqual([]);
   });
 
-  it('the guarded set is exactly the six inline jobs, each registered so its runs are visible in the status view', () => {
-    expect(keys).toEqual(['ai_demographic_parity', 'ai_drift_monitor', 'audit_chain_verify', 'audit_log_partition', 'corporate_weekly_mis', 'hospital_billing_nightly']);
+  it('every inline job that takes its own lease uses a registered key, so its runs show in the status view', () => {
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys).toEqual(expect.arrayContaining([
+      'ai_demographic_parity', 'ai_drift_monitor', 'audit_chain_verify',
+      'audit_log_partition', 'corporate_weekly_mis', 'hospital_billing_nightly',
+    ]));
     for (const key of keys) expect(registered.has(key)).toBe(true);
   });
 

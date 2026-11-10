@@ -105,6 +105,14 @@ export const TASK_DEFINITIONS = [
   // CRM Growth Engine
   { key: 'crm_segment_refresh',   name: 'CRM Segment Membership Refresh',        schedule: 'Every 15 min',     category: 'crm',        scheduleDesc: '*/15 * * * *' },
   { key: 'crm_automation_tick',   name: 'CRM Automation Trigger Sweep',          schedule: 'Every 5 min',      category: 'crm',        scheduleDesc: '*/5 * * * *' },
+  // Biomedical CMMS. Took its lease under this key without being declared, so
+  // its runs and its failures never appeared in the status view.
+  { key: 'biomedical_pm_overdue', name: 'Biomedical PM/Calibration Overdue Sweep', schedule: 'Daily 12:30 AM', category: 'device', scheduleDesc: '30 0 * * *' },
+  // MedCore adoption. Gated by MEDCORE_ADOPTION_ENABLED, which is unset in
+  // production, so it is registered but dormant. It was claiming and releasing
+  // this key without ever being declared here, which left getStatus() blind to
+  // its runs and its failures.
+  { key: 'medcore_adherence_tick', name: 'MedCore Adherence Occurrence Delivery', schedule: 'Every minute (gated)', category: 'ai', scheduleDesc: '* * * * *' },
 ];
 
 // Key lookup map

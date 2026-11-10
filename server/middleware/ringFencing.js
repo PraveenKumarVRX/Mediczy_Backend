@@ -187,6 +187,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   doctor: {
     allowedPaths: [
+      '/api/medcore-adoption', // module route: requireRole(doctor/admin/medical_director/nurse) is enforced per route
       '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/care-series',  // module route (RBAC enforced per route)
       '/api/dialysis',  // module route (RBAC enforced per route)
@@ -250,6 +251,8 @@ const USER_TYPE_PERMISSIONS = {
   },
   admin: {
     allowedPaths: [
+      '/api/scm', // module route: authScm requires a hospital-attached token and scmRbacGuard enforces the SCM role (admin/buyer/approver/stores/viewer)
+      '/api/medcore-adoption', // module route: requireRole(doctor/admin/medical_director/nurse) is enforced per route
       '/api/kits',
       '/api/checkup-kits',
       '/api/lab/kits',
@@ -398,6 +401,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   nurse: {
     allowedPaths: [
+      '/api/medcore-adoption', // module route: requireRole(doctor/admin/medical_director/nurse) is enforced per route
       // Assigned admission services enforce tenant/ward scope and individual action permissions.
       '/api/v1/nursing',
       '/api/v1/nursing-ipd',
@@ -478,6 +482,8 @@ const USER_TYPE_PERMISSIONS = {
   },
   hospital: {
     allowedPaths: [
+      '/api/scm', // module route: authScm requires a hospital-attached token and scmRbacGuard enforces the SCM role (admin/buyer/approver/stores/viewer)
+      '/api/medcore-adoption', // module route: requireRole(doctor/admin/medical_director/nurse) is enforced per route
       // roadmap-intelligence: ONLY the operational analytics sub-routes are exposed (tenant-scoped, RLS-backed, role-gated in
       // the router). The clinical decision-support / consent sub-routes (pgx, voice-biometrics, ar-surgical-plans, trials,
       // sdoh, wounds, revenue-cycle) stay OFF until a SaMD classification and clinical validation approve them —
