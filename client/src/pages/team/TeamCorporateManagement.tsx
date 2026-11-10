@@ -951,6 +951,7 @@ const TeamCorporateManagement = () => {
   const [showAssignNetworkDialog, setShowAssignNetworkDialog] = useState(false);
   const [assigningNetworks, setAssigningNetworks] = useState<{ id: number; name: string; type: 'lab' | 'hospital' | 'clinic'; city?: string }[]>([]);
   const [selectedNetworkPartnerIds, setSelectedNetworkPartnerIds] = useState<NetworkPartnerSelectionKey[]>([]);
+  const [removingNetwork, setRemovingNetwork] = useState(false);
   const [labSearch, setLabSearch] = useState('');
   const [hospitalSearch, setHospitalSearch] = useState('');
   const [clinicSearch, setClinicSearch] = useState('');
@@ -5692,6 +5693,62 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
     setShowAssignNetworkDialog(true);
   };
 
+  /**
+   * Remove the selected venues from this corporate's network.
+   *
+   * The network is what every annual-health-checkup venue list is built from,
+   * so removing a lab here withdraws it from employee booking. Until now the
+   * network could only be added to: a lab attached by mistake stayed, and a
+   * 180-lab network could not be trimmed to the labs actually contracted.
+   *
+   * A venue with live check-up bookings comes back 409 with the counts; the
+   * caller is asked once, in plain terms, before forcing it. Bookings already
+   * made keep the venue they were booked at.
+   */
+  const removeSelectedNetworkPartners = async (force = false) => {
+    if (!selectedCorporate || selectedNetworkPartnerIds.length === 0) return;
+    const partners = [
+      ...labPartners.filter(p => selectedNetworkPartnerIds.includes(getNetworkPartnerKey('lab', p.id))).map(p => ({ partnerId: p.id, partnerType: 'lab' as const })),
+      ...hospitalPartners.filter(p => selectedNetworkPartnerIds.includes(getNetworkPartnerKey('hospital', p.id))).map(p => ({ partnerId: p.id, partnerType: 'hospital' as const })),
+      ...clinicPartners.filter(p => selectedNetworkPartnerIds.includes(getNetworkPartnerKey('clinic', p.id))).map(p => ({ partnerId: p.id, partnerType: 'clinic' as const })),
+    ];
+    if (partners.length === 0) return;
+
+    setRemovingNetwork(true);
+    try {
+      const token = localStorage.getItem('teamToken');
+      // axios sends a DELETE body only under `data`.
+      await api.delete('/admin/corporate-network-assignments', {
+        data: { corporateId: selectedCorporate.id, partners, ...(force ? { force: true } : {}) },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      toast({
+        title: 'Network Updated',
+        description: `${partners.length} venue${partners.length !== 1 ? 's' : ''} removed from the check-up network.`,
+      });
+      setSelectedNetworkPartnerIds([]);
+      fetchNetworkPartners(selectedCorporate.id);
+    } catch (err: any) {
+      const data = err?.response?.data;
+      if (err?.response?.status === 409 && data?.code === 'partner_has_active_bookings') {
+        const total = (data.blocking || []).reduce((sum: number, b: any) => sum + (b.activeBookings || 0), 0);
+        const confirmed = window.confirm(
+          `${total} active check-up booking${total !== 1 ? 's' : ''} still point at ${(data.blocking || []).length} of these venues.\n\n` +
+          `Those bookings keep the venue they were booked at, but the venue will no longer be offered for new bookings.\n\nRemove anyway?`
+        );
+        if (confirmed) { await removeSelectedNetworkPartners(true); return; }
+        return;
+      }
+      toast({
+        title: 'Could not remove',
+        description: data?.message || 'Failed to remove venues from the network.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRemovingNetwork(false);
+    }
+  };
+
   const handleConfirmNetworkAssignment = async () => {
     if (assigningNetworks.length === 0 || !selectedCorporate) return;
     // Resolve final employee list
@@ -8371,6 +8428,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           <span className="text-sm font-medium text-primary">{selectedNetworkPartnerIds.length} partner{selectedNetworkPartnerIds.length !== 1 ? 's' : ''} selected</span>
                           <Button size="sm" className="h-7 text-xs" onClick={handleBulkAssignNetworks}>
                             <Users className="h-3 w-3 mr-1" />Assign to Employees
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-7 text-xs"
+                            disabled={removingNetwork}
+                            onClick={() => removeSelectedNetworkPartners()}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            {removingNetwork ? 'Removing…' : 'Remove from Network'}
                           </Button>
                           <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setSelectedNetworkPartnerIds([])}>
                             ✕ Clear

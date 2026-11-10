@@ -6297,6 +6297,149 @@ router.post('/corporate-network-assignments', authUser, requireRole(['admin', 't
 });
 
 /**
+ * Remove Network Partners from a Corporate
+ * DELETE /api/admin/corporate-network-assignments
+ *
+ * The counterpart to the POST above, which could only ever add: a lab wrongly
+ * attached to a corporate's annual-health-checkup network stayed there, and a
+ * network of 180 labs could not be trimmed to the ones actually contracted.
+ *
+ * Body: { corporateId, partners: [{ partnerId, partnerType }], force? }
+ * A single { partnerId, partnerType } is accepted too, so one row can be
+ * removed without building an array.
+ *
+ * Removing a venue withdraws it from employee booking (every AHC venue list
+ * joins corporate_network_assignments), so a partner with live bookings for
+ * this corporate is refused with 409 and the counts, rather than silently
+ * stranding those appointments. `force: true` removes it anyway, which the
+ * caller must choose deliberately; existing bookings keep their own lab_id and
+ * frozen lab_snapshot and so remain honourable.
+ */
+router.delete('/corporate-network-assignments', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const { corporateId, partnerId, partnerType, force } = req.body || {};
+    const validTypes = ['lab', 'hospital', 'clinic'];
+    const requested = Array.isArray(req.body?.partners)
+      ? req.body.partners
+      : (partnerId && partnerType ? [{ partnerId, partnerType }] : []);
+
+    const numericCorporateId = parseInt(corporateId, 10);
+    if (!numericCorporateId || Number.isNaN(numericCorporateId) || requested.length === 0) {
+      return res.status(400).json({ success: false, message: 'corporateId and at least one partner are required' });
+    }
+
+    const partnerMap = new Map();
+    for (const partner of requested) {
+      const id = parseInt(partner?.partnerId, 10);
+      const type = partner?.partnerType;
+      if (!id || Number.isNaN(id)) {
+        return res.status(400).json({ success: false, message: 'partnerId must be a valid number' });
+      }
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ success: false, message: 'partnerType must be lab, hospital or clinic' });
+      }
+      partnerMap.set(`${type}:${id}`, { partnerId: id, partnerType: type });
+    }
+    const partners = Array.from(partnerMap.values());
+
+    await ensureCorporateNetworkAssignmentsTable();
+
+    // Keep what is about to be deleted, so the audit row can restore it.
+    const removing = await postgresSequelize.query(
+      `SELECT partner_id, partner_type, employee_ids, assigned_by, assigned_at
+         FROM corporate_network_assignments
+        WHERE corporate_id = :corporateId
+          AND (partner_type, partner_id) IN (
+                SELECT * FROM unnest(CAST(:types AS text[]), CAST(:ids AS int[]))
+              )`,
+      {
+        replacements: {
+          corporateId: numericCorporateId,
+          types: partners.map((p) => p.partnerType),
+          ids: partners.map((p) => p.partnerId),
+        },
+        type: postgresSequelize.QueryTypes.SELECT,
+      }
+    );
+
+    if (removing.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'None of those partners are assigned to this corporate.',
+      });
+    }
+
+    // Live bookings at a venue being withdrawn. Only labs can hold these today;
+    // the check is keyed on partner_type so it stays correct if that changes.
+    const labIds = partners.filter((p) => p.partnerType === 'lab').map((p) => p.partnerId);
+    let blocking = [];
+    if (labIds.length && !force) {
+      blocking = await postgresSequelize.query(
+        `SELECT b.lab_id AS "partnerId", COUNT(*)::int AS "activeBookings"
+           FROM health_checkup_bookings b
+          WHERE b.corporate_id = :corporateId
+            AND b.lab_id IN (:labIds)
+            AND LOWER(COALESCE(b.status, '')) NOT IN ('cancelled', 'completed', 'reports_available')
+          GROUP BY b.lab_id`,
+        {
+          replacements: { corporateId: numericCorporateId, labIds },
+          type: postgresSequelize.QueryTypes.SELECT,
+        }
+      ).catch(() => []);
+
+      if (blocking.length) {
+        return res.status(409).json({
+          success: false,
+          code: 'partner_has_active_bookings',
+          message: 'Some of these venues still have active check-up bookings for this corporate. Move or cancel those bookings first, or remove anyway.',
+          blocking,
+          force: 'Send force: true to remove them regardless; existing bookings keep the venue they were booked at.',
+        });
+      }
+    }
+
+    const [, meta] = await postgresSequelize.query(
+      `DELETE FROM corporate_network_assignments
+        WHERE corporate_id = :corporateId
+          AND (partner_type, partner_id) IN (
+                SELECT * FROM unnest(CAST(:types AS text[]), CAST(:ids AS int[]))
+              )`,
+      {
+        replacements: {
+          corporateId: numericCorporateId,
+          types: partners.map((p) => p.partnerType),
+          ids: partners.map((p) => p.partnerId),
+        },
+        type: postgresSequelize.QueryTypes.DELETE,
+      }
+    );
+
+    await auditAction({
+      module: 'corporate',
+      entityType: 'network_assignment',
+      entityId: numericCorporateId,
+      action: 'remove_partners',
+      actor: req.user?.id,
+      details: { partners, removed: removing, forced: Boolean(force), role: req.user?.role },
+    });
+
+    return res.json({
+      success: true,
+      message: `${removing.length} partner(s) removed from the corporate network.`,
+      removed: removing.length,
+      partners,
+    });
+  } catch (error) {
+    console.error('corporate network removal failed:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to remove corporate network assignment',
+      error: error.message,
+    });
+  }
+});
+
+/**
  * Assign Health Package to Corporate Employees
  * POST /api/admin/corporate-package-assignments
  * Creates health package assignments for corporate employees
