@@ -177,6 +177,7 @@ const Pharmacy = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [deliveryAddr, setDeliveryAddr] = useState('');
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { fetchPharmacyOrders(); }, []);
@@ -314,6 +315,8 @@ const Pharmacy = () => {
     setCart(prev => prev.filter(c => c.id !== id));
   };
 
+  const prescriptionNeeded = useMemo(() => cart.some(c => c.prescriptionRequired), [cart]);
+
   const cartTotal = useMemo(() => cart.reduce((sum, c) => {
     const { qty: packQty } = parsePackSize(c.packSize);
     return sum + (c.price / packQty) * c.quantity;
@@ -322,22 +325,43 @@ const Pharmacy = () => {
   const handlePlaceOrder = async () => {
     if (cart.length === 0) { toast.error('Add at least one medicine'); return; }
     if (deliveryAddr.trim().length < 15 || !/\b[1-9]\d{5}\b/.test(deliveryAddr) || !/[a-zA-Z]{3}/.test(deliveryAddr)) { toast.error('Enter your full street address, city and six-digit pincode'); return; }
+    if (prescriptionNeeded && !prescriptionFile) {
+      toast.error('A prescription is required', { description: 'Some items in your cart are prescription-only. Please attach a prescription.' });
+      return;
+    }
     try {
       setPlacingOrder(true);
-      const { data } = await api.post('/billing/orders', {
-        orderType: 'medicine',
-        items: cart.map(c => {
-          const { qty: packQty, unit } = parsePackSize(c.packSize);
-          const unitPrice = +(c.price / packQty).toFixed(2);
-          return { name: c.name, quantity: c.quantity, price: unitPrice, medicineId: c.id, unit, packPrice: c.price, packSize: c.packSize };
-        }),
-        deliveryAddress: deliveryAddr.trim(),
-        prescriptionRequired: cart.some(c => c.prescriptionRequired),
+      const orderItems = cart.map(c => {
+        const { qty: packQty, unit } = parsePackSize(c.packSize);
+        const unitPrice = +(c.price / packQty).toFixed(2);
+        // unitMode tells the server how to read `quantity`; the amount itself is
+        // always taken from the catalogue, never from these figures.
+        return { name: c.name, quantity: c.quantity, price: unitPrice, medicineId: c.id, unit, unitMode: packQty > 1 ? 'unit' : 'pack', packPrice: c.price, packSize: c.packSize };
       });
+
+      // Multipart only when there is a file, so the plain JSON path is untouched.
+      let data;
+      if (prescriptionFile) {
+        const fd = new FormData();
+        fd.append('orderType', 'medicine');
+        fd.append('items', JSON.stringify(orderItems));
+        fd.append('deliveryAddress', deliveryAddr.trim());
+        fd.append('prescriptionRequired', String(prescriptionNeeded));
+        fd.append('prescription', prescriptionFile);
+        ({ data } = await api.post('/billing/orders', fd, { headers: { 'Content-Type': 'multipart/form-data' } }));
+      } else {
+        ({ data } = await api.post('/billing/orders', {
+          orderType: 'medicine',
+          items: orderItems,
+          deliveryAddress: deliveryAddr.trim(),
+          prescriptionRequired: prescriptionNeeded,
+        }));
+      }
       if (data.success) {
         toast.success('Order placed!', { description: `Order #${data.data?.order?.orderNumber || data.data?.order?.id || ''} created.` });
         setShowOrderDialog(false);
         setCart([]);
+        setPrescriptionFile(null);
         setMedQuery('');
         setMedResults([]);
         setDeliveryAddr('');
@@ -528,13 +552,32 @@ const Pharmacy = () => {
                       </div>
                     )}
 
-                    {/* ── Upload Prescription ── */}
+                    {/* ── Upload Prescription ──
+                        This input previously had no onChange and no state, so a file
+                        the patient chose here was discarded and never sent. */}
                     <div className="space-y-2">
-                      <Label className="dark:text-slate-300">Upload Prescription (optional)</Label>
+                      <Label className="dark:text-slate-300">
+                        Upload Prescription {prescriptionNeeded ? <span className="text-amber-600">*</span> : '(optional)'}
+                      </Label>
                       <div className="border-2 border-dashed rounded-xl p-4 text-center hover:border-emerald-400 transition-colors dark:border-slate-600 dark:hover:border-emerald-500">
                         <FileText className="h-6 w-6 mx-auto text-slate-400 mb-1" />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">Drag & drop or click to upload</p>
-                        <Input type="file" accept="image/*,.pdf" className="max-w-[180px] mx-auto text-xs" />
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">
+                          {prescriptionFile ? prescriptionFile.name : 'PDF or image, up to 10 MB'}
+                        </p>
+                        <Input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,.pdf"
+                          className="max-w-[180px] mx-auto text-xs"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            if (file && file.size > 10 * 1024 * 1024) {
+                              toast.error('That prescription is larger than 10 MB');
+                              e.target.value = '';
+                              return;
+                            }
+                            setPrescriptionFile(file);
+                          }}
+                        />
                       </div>
                     </div>
 

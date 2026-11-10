@@ -126,10 +126,10 @@ describe('prescription schedules', () => {
 
 describe('POST /api/billing/orders no longer trusts the browser', () => {
   const source = read('routes/billing.route.js');
-  const handler = source.slice(
-    source.indexOf("router.post('/orders', authUser"),
-    source.indexOf("* GET /api/billing/orders")
-  );
+  // Anchored on the route's own path literal so the slice survives the signature
+  // being reformatted (it gained a multer stage and became multi-line).
+  const start = source.indexOf("router.post(\n  '/orders',");
+  const handler = source.slice(start, source.indexOf('* GET /api/billing/orders', start));
 
   it('prices from the catalogue rather than the submitted price', () => {
     expect(handler.length).toBeGreaterThan(500);
@@ -148,6 +148,21 @@ describe('POST /api/billing/orders no longer trusts the browser', () => {
   it('gates Schedule H/H1/X, which this path did not check at all', () => {
     expect(handler).toContain('requiresPrescription(line.schedule)');
     expect(handler).toContain('PRESCRIPTION_REQUIRED');
+  });
+
+  it('accepts a prescription file and lets one satisfy the gate', () => {
+    expect(handler).toContain('prescriptionFileUrl');
+    expect(handler).toContain('rxLines.length && !prescriptionFileUrl');
+    expect(handler).toContain('uploadToMinio');
+    // A storage failure is ours, not the customer's invalid order.
+    expect(handler).toContain('PRESCRIPTION_UPLOAD_FAILED');
+  });
+
+  it('reads multipart fields, where items is JSON text and a boolean is a string', () => {
+    expect(handler).toContain("typeof items === 'string'");
+    expect(handler).toContain('JSON.parse(items)');
+    // "false" is truthy, so !!value would have read it as true.
+    expect(handler).toContain("rawRxRequired.toLowerCase() === 'true'");
   });
 
   it('persists what was billed, keeping the submitted lines only for audit', () => {

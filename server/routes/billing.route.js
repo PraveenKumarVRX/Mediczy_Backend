@@ -14,6 +14,20 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { Appointment } from '../models/index.js';
 import sharedPool from '../db/pgPool.js';
 import { resolveMedicine, priceLine, requiresPrescription } from '../utils/pharmacy-pricing.js';
+import multer from 'multer';
+import { uploadToMinio } from '../services/minio-upload.service.js';
+
+// A prescription may accompany a medicine order. Memory storage, 10 MB, the
+// same accepted types as the companion pharmacy route.
+const prescriptionUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (allowed.includes(file.mimetype)) return cb(null, true);
+    cb(new Error(`File type not allowed: ${file.mimetype}`));
+  },
+});
 
 const router = express.Router();
 
@@ -159,10 +173,32 @@ router.post('/orders/create', authUser, async (req, res) => {
  * Place a new medicine (pharmacy) order from patient dashboard.
  * Accepts: { orderType, items[], deliveryAddress, prescriptionRequired }
  */
-router.post('/orders', authUser, async (req, res) => {
+router.post(
+  '/orders',
+  authUser,
+  (req, res, next) => prescriptionUpload.single('prescription')(req, res, (error) => {
+    if (!error) return next();
+    return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({
+      success: false,
+      message: error.code === 'LIMIT_FILE_SIZE' ? 'The prescription must be 10 MB or smaller' : error.message,
+    });
+  }),
+  async (req, res) => {
   try {
     const userId = req.user.id;
-    const { orderType = 'medicine', items, deliveryAddress, prescriptionRequired = false, notes } = req.body;
+    const { orderType = 'medicine', deliveryAddress, notes } = req.body;
+
+    // A multipart submission (one carrying a prescription file) delivers every
+    // field as a string, so `items` arrives as JSON text and a boolean arrives as
+    // "true"/"false" — on which `!!value` is true either way.
+    let items = req.body?.items;
+    if (typeof items === 'string') {
+      try { items = JSON.parse(items); } catch { items = null; }
+    }
+    const rawRxRequired = req.body?.prescriptionRequired;
+    const prescriptionRequired = typeof rawRxRequired === 'string'
+      ? rawRxRequired.toLowerCase() === 'true'
+      : Boolean(rawRxRequired);
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, message: 'items must be a non-empty array' });
@@ -209,16 +245,35 @@ router.post('/orders', authUser, async (req, res) => {
     // Schedule H / H1 / X cannot lawfully be supplied without a prescription.
     // This path had no gate at all while the companion pharmacy route did, so
     // seven Schedule H lines were accepted here with none on file.
+    let prescriptionFileUrl = null;
+    if (req.file) {
+      try {
+        const uploaded = await uploadToMinio({
+          buffer: req.file.buffer,
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          keyPrefix: `uploads/prescriptions/${userId}`,
+        });
+        prescriptionFileUrl = uploaded.url;
+      } catch (uploadErr) {
+        console.error('[billing/orders] prescription upload failed:', uploadErr.message);
+      }
+    }
+
     const rxLines = priced.filter((line) => requiresPrescription(line.schedule));
-    if (rxLines.length) {
+    if (rxLines.length && !prescriptionFileUrl) {
       const named = rxLines
         .map((l) => `${l.brandName || l.medicineName} (Schedule ${String(l.schedule).toUpperCase()})`)
         .join(', ');
-      console.warn(`[billing/orders] rejected: prescription required for ${named} (user ${userId})`);
+      // A failed upload is our fault, so say so rather than call the order invalid.
+      const uploadAttemptedButFailed = Boolean(req.file);
+      console.warn(`[billing/orders] rejected: prescription required for ${named} (user ${userId}, upload_attempted=${uploadAttemptedButFailed})`);
       return res.status(400).json({
         success: false,
-        code: 'PRESCRIPTION_REQUIRED',
-        message: `A doctor's prescription is required for: ${named}. Please order these through the prescription upload flow.`,
+        code: uploadAttemptedButFailed ? 'PRESCRIPTION_UPLOAD_FAILED' : 'PRESCRIPTION_REQUIRED',
+        message: uploadAttemptedButFailed
+          ? 'We could not store your prescription file, so the order was not placed. Please try uploading it again.'
+          : `A doctor's prescription is required for: ${named}. Please attach a prescription and place the order again.`,
         requiresPrescription: rxLines.map((l) => ({
           medicine_name: l.brandName || l.medicineName,
           schedule: String(l.schedule).toUpperCase(),
@@ -248,6 +303,7 @@ router.post('/orders', authUser, async (req, res) => {
         clientSubmittedItems: items,
         deliveryAddress: String(deliveryAddress).trim(),
         prescriptionRequired: !!prescriptionRequired,
+        prescriptionFileUrl,
       },
       notes: notes || null,
     });
