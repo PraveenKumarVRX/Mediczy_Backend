@@ -43,6 +43,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/abdm',  // ABHA / ABDM self-service (the router enforces staff-only HPR/HFR sub-routes)
       '/api/programs',  // Health coaching programs (was 403 for patients/employees — real route, unlisted)
       '/api/health-assessment',  // Health risk assessments
+      '/api/health-score',  // Daily composite health score — mounted, called by the mobile app, was unlisted so it 403'd
       '/api/hra',  // HRA alias for health assessments
       '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
       '/api/reports',  // Medical report uploads and analysis
@@ -134,6 +135,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/abdm',  // ABHA / ABDM self-service (the router enforces staff-only HPR/HFR sub-routes)
       '/api/programs',  // Health coaching programs (was 403 for patients/employees — real route, unlisted)
       '/api/health-assessment',  // Health risk assessments
+      '/api/health-score',  // Daily composite health score — mounted, called by the mobile app, was unlisted so it 403'd
       '/api/hra',  // HRA alias for health assessments
       '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
       '/api/reports',  // Medical report uploads and analysis
@@ -724,6 +726,39 @@ const isPathAllowed = (requestPath, allowedPath) => {
   return requestPath === normalizedAllowed || requestPath.startsWith(`${normalizedAllowed}/`);
 };
 
+/**
+ * Does any mounted router serve this path?
+ *
+ * This middleware runs before routing, so a denial cannot otherwise tell a
+ * path the caller may not use from a path that does not exist. Both came back
+ * as "insufficient privileges", which reads as a permissions defect and sends
+ * whoever is debugging it to the allow-list for an endpoint that was never
+ * written.
+ *
+ * Reads Express's own layer stack: every `app.use('/api/x', router)` leaves a
+ * layer whose regexp matches that prefix. Layers mounted at the root
+ * (`express.json`, this middleware, error handlers) match everything, so they
+ * are skipped via `fast_slash` — counting them would make every path look
+ * mounted and give back the old behaviour.
+ *
+ * Errs towards "mounted": if the stack cannot be read on some future Express,
+ * the caller gets the 403 it used to get rather than a wrong 404.
+ */
+const isPathMounted = (app, requestPath) => {
+  const stack = app?._router?.stack || app?.router?.stack;
+  if (!Array.isArray(stack)) return true;
+  try {
+    return stack.some((layer) => {
+      if (!layer?.regexp || layer.regexp.fast_slash) return false;
+      // Only mounted routers and routes count, not root-level middleware.
+      if (!layer.route && !layer.handle?.stack) return false;
+      return layer.regexp.test(requestPath);
+    });
+  } catch {
+    return true;
+  }
+};
+
 // Public endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
   '/health',
@@ -1097,6 +1132,23 @@ const ringFencingMiddleware = (req, res, next) => {
     );
 
     if (!hasPathAccess) {
+      // This gate runs BEFORE routing, so until now a path that no router
+      // serves was reported as "Access denied - insufficient privileges",
+      // identical to a real permission refusal. A QA pass reading that
+      // concluded /api/mental-health/* needed "opening to patients" and filed
+      // it as a permissions defect; there is no such router, so opening it
+      // would have changed nothing. Saying which it is costs nothing — the
+      // caller is already authenticated — and a missing feature stops looking
+      // like a missing grant.
+      const mounted = isPathMounted(req.app, requestPath);
+      if (!mounted) {
+        console.log(`🚫 Ring-fencing: ${userType} requested ${requestPath}, which no router serves`);
+        return res.status(404).json({
+          error: 'No endpoint on this server serves that path',
+          code: 'ENDPOINT_NOT_FOUND',
+          requestedPath: requestPath
+        });
+      }
       console.log(`🚫 Ring-fencing: ${userType} attempted unauthorized access to: ${requestPath}`);
       console.log(`   Allowed paths for ${userType}:`, permissions.allowedPaths);
       return res.status(403).json({
@@ -1471,6 +1523,8 @@ export const withPatientRelationship = (relationshipModel) => {
   }
   return verifyPatientRelationship(relationshipModel);
 };
+
+export { isPathMounted };
 
 export {
   ringFencingMiddleware,

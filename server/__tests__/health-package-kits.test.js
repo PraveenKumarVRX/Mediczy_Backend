@@ -29,7 +29,12 @@ describe('kit path fencing',()=>{
   beforeAll(async()=>{
     const {default:fence}=await import('../middleware/ringFencing.js');
     ({SECRET:secret}=(await import('../config/auth.config.js')).JWT_CONFIG);
-    fenced=express();fenced.use(fence);fenced.use((req,res)=>res.json({ok:true}));
+    // Stub routers per alias, not a root catch-all: the fence answers 404 for a
+    // path nothing mounts, and a '/' catch-all would make every alias look unmounted.
+    fenced=express();fenced.use(fence);
+    for(const path of ['/api/kits','/api/checkup-kits','/api/lab/kits']){
+      const stub=express.Router();stub.use((req,res)=>res.json({ok:true}));fenced.use(path,stub);
+    }
   });
   test.each(['admin','team','lab'])('allows %s through each kit alias',async role=>{
     const token=jwt.sign({id:7,userType:role,role},secret);

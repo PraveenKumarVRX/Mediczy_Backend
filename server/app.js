@@ -1522,7 +1522,14 @@ app.use('/api/medcore-adoption', medcoreAdoptionRouter); // Clean-room MedCore c
 app.use("/api/v3/ai-analytics", authUser, aiAnalyticsRouter); // AI analytics dashboard (LLM ops, quality, tools, population health)
 app.use("/api/v3/ai-deeptech", authUser, aiDeepTechRouter); // DeepTech: HIS, Clinical NLP, Pre-auth, Multi-agent Context, Federated Learning
 app.use("/api/diet", dietRouter); // Diet plan shortcut (alias for /api/ai-health/diet)
-app.use("/api/ahunground", ayushmanRouter);
+// The Ayushman router was mounted only at "/api/ahunground" — a prefix
+// nothing calls and nothing allow-lists, while the ring-fencing allow-list
+// and every caller use "/api/ayushman". The router was therefore
+// unreachable by either name: /api/ayushman/* passed the gate and hit no
+// route (404), /api/ahunground/* had a route and was refused by the gate
+// (403). That is why the Ayushman e-card read as "missing API".
+app.use("/api/ayushman", ayushmanRouter);
+app.use("/api/ahunground", ayushmanRouter); // retained alias
 app.use('/api/places', placesRouter);
 
 app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats endpoint, outside /api to bypass middleware)

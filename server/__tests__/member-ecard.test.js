@@ -56,14 +56,19 @@ describe('the endpoint', () => {
 
   it('is authenticated and scoped to the caller, never to an id in the URL', () => {
     expect(handler).toContain("router.get('/e-card', authUser");
-    expect(handler).toContain('getECardForUser(req.user.id)');
+    // Resolution moved behind member-ecard.service.js, which tries the TPA
+    // membership first and then the policy roster. The scoping rule is
+    // unchanged and is what matters here: the row holds a policy number and a
+    // balance, so resolving it by anything a caller supplies is how one member
+    // ends up holding another member's card.
+    expect(handler).toContain('resolveMemberCard(req.user.id)');
     expect(handler).not.toMatch(/req\.(params|query|body)/);
   });
 
-  it('tells an unlinked member what to do instead of failing blankly', () => {
-    expect(handler).toContain('ECARD_NOT_LINKED');
+  it('names the state rather than failing blankly', () => {
+    expect(handler).toContain("code: result?.reason || 'ECARD_NOT_LINKED'");
     expect(handler).toContain('status(404)');
-    expect(handler).toMatch(/HR or TPA desk/);
+    expect(handler).toContain('result?.message');
   });
 
   it('does not put the database error in the response', () => {

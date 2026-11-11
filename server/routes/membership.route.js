@@ -11,6 +11,7 @@ import purchaseNotification from '../services/purchase-notification.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
 
 import { tpaClaimsLifecycleService } from '../services/tpa-claims-lifecycle.service.js';
+import { resolveMemberCard } from '../services/member-ecard.service.js';
 const router = express.Router();
 
 const COUPON_SCOPES = {
@@ -413,17 +414,29 @@ async function loadActiveCorporateLink(userId) {
  * drift, and it is resolved strictly through the member's linked account —
  * never by name or by four digits of a phone number.
  */
+/**
+ * GET /e-card
+ *
+ * Resolves from whichever source holds this member's cover: the TPA
+ * membership first, since that is the administrator's own record, then the
+ * policy roster. A member whose employer has submitted an enrolment the TPA
+ * desk has not yet decided is told that, rather than being given a bare 404
+ * they can do nothing about.
+ *
+ * Scoped to req.user.id — never an id in the URL, query or body. The row holds
+ * a policy number and a balance, and resolving it by anything a caller can
+ * supply is how one member ends up holding another member's card.
+ */
 router.get('/e-card', authUser, async (req, res) => {
   try {
-    const card = await tpaClaimsLifecycleService.getECardForUser(req.user.id);
-    if (!card) {
-      return res.status(404).json({
-        success: false,
-        code: 'ECARD_NOT_LINKED',
-        message: 'No insurance membership is linked to this account yet. Ask your HR or TPA desk to link it.',
-      });
-    }
-    return res.json(card);
+    const result = await resolveMemberCard(req.user.id);
+    if (result?.ecard) return res.json(result);
+    return res.status(404).json({
+      success: false,
+      code: result?.reason || 'ECARD_NOT_LINKED',
+      message: result?.message || 'No insurance membership is linked to this account yet.',
+      ...(result?.enrolment ? { enrolment: result.enrolment } : {}),
+    });
   } catch (error) {
     console.error('[membership] e-card lookup failed:', error.message);
     return res.status(500).json({ success: false, message: 'Could not load your e-card' });
