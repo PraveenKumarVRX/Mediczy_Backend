@@ -4,7 +4,7 @@ import {
   FileText, Inbox, ChevronLeft, ChevronRight, Loader2, Paperclip,
   Bold, Italic, Underline, Strikethrough, Link2, Quote, PenLine,
   RotateCcw, Maximize2, Minimize2, Plus, Bell, ShieldAlert, Search,
-  CheckCircle, Settings, Bot, LayoutTemplate, Wand2, Pencil, Trash, Save,
+  CheckCircle, Settings, Bot, LayoutTemplate, Wand2, Pencil, Trash, Save, Eye, Code2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -192,6 +192,8 @@ const EmailInbox: React.FC = () => {
   const [showTemplatePicker, setShowTemplatePicker]   = useState(false);
   const [tmplForm, setTmplForm]                       = useState({ name: '', subject: '', body: '', category: 'general' });
   const [tmplSaveLoading, setTmplSaveLoading]         = useState(false);
+  const [templateStudioMode, setTemplateStudioMode]   = useState<'visual' | 'html'>('visual');
+  const templateCanvasRef                              = useRef<HTMLIFrameElement>(null);
 
   // Bot reply state
   const [botReplyLoading, setBotReplyLoading]         = useState(false);
@@ -388,6 +390,7 @@ const EmailInbox: React.FC = () => {
   const openTemplateModal = () => {
     setEditingTemplate(null);
     setTmplForm({ name: '', subject: '', body: '', category: 'general' });
+    setTemplateStudioMode('visual');
     fetchTemplates();
     setShowTemplateModal(true);
   };
@@ -395,6 +398,21 @@ const EmailInbox: React.FC = () => {
   const editTemplate = (t: EmailTemplate) => {
     setEditingTemplate(t);
     setTmplForm({ name: t.name, subject: t.subject || '', body: t.body || '', category: t.category || 'general' });
+    setTemplateStudioMode('visual');
+  };
+
+  const readVisualTemplate = () => {
+    const document = templateCanvasRef.current?.contentDocument;
+    if (!document?.body) return tmplForm.body;
+    document.body.removeAttribute('contenteditable');
+    const html = `<!doctype html>${document.documentElement.outerHTML}`;
+    document.body.setAttribute('contenteditable', 'true');
+    return html;
+  };
+
+  const switchTemplateStudioMode = (mode: 'visual' | 'html') => {
+    if (templateStudioMode === 'visual') setTmplForm(form => ({ ...form, body: readVisualTemplate() }));
+    setTemplateStudioMode(mode);
   };
 
   const saveTemplate = async () => {
@@ -404,14 +422,16 @@ const EmailInbox: React.FC = () => {
     }
     setTmplSaveLoading(true);
     try {
+      const body = templateStudioMode === 'visual' ? readVisualTemplate() : tmplForm.body;
+      const payload = { ...tmplForm, body };
       if (editingTemplate) {
-        const res = await api.put(`/team/emails/templates/${editingTemplate.id}`, tmplForm);
+        const res = await api.put(`/team/emails/templates/${editingTemplate.id}`, payload);
         if (res.data.success) {
           setTemplates(prev => prev.map(t => t.id === editingTemplate.id ? res.data.data : t));
           toast({ title: 'Template updated' });
         }
       } else {
-        const res = await api.post('/team/emails/templates', tmplForm);
+        const res = await api.post('/team/emails/templates', payload);
         if (res.data.success) {
           setTemplates(prev => [res.data.data, ...prev]);
           toast({ title: 'Template created' });
@@ -1506,7 +1526,7 @@ const EmailInbox: React.FC = () => {
       {/* ─── Template Management Modal ─── */}
       {showTemplateModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-background border border-border rounded-xl w-full max-w-4xl shadow-2xl flex flex-col" style={{ height: '85vh' }}>
+          <div className="bg-background border border-border rounded-2xl w-full max-w-6xl shadow-2xl flex flex-col" style={{ height: '88vh' }}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
               <div className="flex items-center gap-2 font-semibold">
@@ -1563,77 +1583,68 @@ const EmailInbox: React.FC = () => {
                 </div>
               </div>
 
-              {/* Right — template editor */}
-              <div className="flex-1 flex flex-col min-w-0 p-5 gap-4 overflow-y-auto">
-                <h3 className="font-semibold text-sm text-foreground">
-                  {editingTemplate ? `Edit — ${editingTemplate.name}` : 'Create New Template'}
-                </h3>
-
-                <div>
-                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Template Name *</label>
-                  <input
-                    type="text"
-                    value={tmplForm.name}
-                    onChange={e => setTmplForm(p => ({ ...p, name: e.target.value }))}
-                    placeholder="e.g. Appointment Reminder"
-                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
+              {/* Right — template studio */}
+              <div className="flex-1 min-w-0 overflow-y-auto p-5">
+                <div className="mb-5 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Subject Line</label>
-                    <input
-                      type="text"
-                      value={tmplForm.subject}
-                      onChange={e => setTmplForm(p => ({ ...p, subject: e.target.value }))}
-                      placeholder="Subject (optional)"
-                      className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
-                    />
+                    <p className="text-sm font-semibold text-foreground">{editingTemplate ? `Editing ${editingTemplate.name}` : 'New email template'}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Edit copy on the canvas, inspect the exact email rendering, or use HTML source for advanced changes.</p>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Category</label>
-                    <select
-                      value={tmplForm.category}
-                      onChange={e => setTmplForm(p => ({ ...p, category: e.target.value }))}
-                      className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
-                    >
-                      {[['general','General'],['appointment','Appointment'],['billing','Billing'],
-                        ['health-report','Health Report'],['prescription','Prescription'],
-                        ['follow-up','Follow-up'],['support','Support'],['other','Other']
-                      ].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Body</label>
-                  <textarea
-                    rows={12}
-                    value={tmplForm.body}
-                    onChange={e => setTmplForm(p => ({ ...p, body: e.target.value }))}
-                    placeholder="Write your template body here… You can use plain text. When applied, it will be inserted into the email composer."
-                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50 resize-none font-mono"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 justify-end pt-2 border-t border-border">
-                  {editingTemplate && (
-                    <button
-                      type="button"
-                      onClick={() => { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); }}
-                      className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted text-foreground transition-colors"
-                    >
-                      Cancel
+                  <div className="inline-flex rounded-xl bg-muted p-1">
+                    <button onClick={() => switchTemplateStudioMode('visual')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${templateStudioMode === 'visual' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+                      <Eye className="h-3.5 w-3.5" /> Visual edit
                     </button>
-                  )}
-                  <button
-                    onClick={saveTemplate}
-                    disabled={tmplSaveLoading}
-                    className="flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium disabled:opacity-60 transition-colors"
-                  >
-                    {tmplSaveLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                    {editingTemplate ? 'Update Template' : 'Save Template'}
+                    <button onClick={() => switchTemplateStudioMode('html')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${templateStudioMode === 'html' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+                      <Code2 className="h-3.5 w-3.5" /> HTML source
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-muted-foreground">Template name *</label>
+                      <input type="text" value={tmplForm.name} onChange={e => setTmplForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Appointment Reminder" className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-400/50" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-muted-foreground">Subject line</label>
+                      <input type="text" value={tmplForm.subject} onChange={e => setTmplForm(p => ({ ...p, subject: e.target.value }))} placeholder="Subject (optional)" className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-400/50" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-muted-foreground">Category</label>
+                      <select value={tmplForm.category} onChange={e => setTmplForm(p => ({ ...p, category: e.target.value }))} className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-400/50">
+                        {[['general','General'],['corporate_ahc','Corporate AHC'],['appointment','Appointment'],['billing','Billing'],['health-report','Health Report'],['prescription','Prescription'],['follow-up','Follow-up'],['support','Support'],['other','Other']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </div>
+
+                    {templateStudioMode === 'html' ? (
+                      <div>
+                        <div className="mb-1 flex items-center justify-between gap-2"><label className="block text-xs font-semibold text-muted-foreground">HTML source</label><span className="text-[10px] text-muted-foreground">Keep placeholders such as {'{{employee_name}}'} intact.</span></div>
+                        <textarea rows={18} value={tmplForm.body} onChange={e => setTmplForm(p => ({ ...p, body: e.target.value }))} placeholder="Paste or write HTML email markup…" className="w-full resize-y rounded-xl border border-border bg-slate-950 px-3 py-3 font-mono text-xs leading-relaxed text-emerald-200 focus:outline-none focus:ring-2 focus:ring-teal-400/50" />
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="mb-1 flex items-center justify-between gap-2"><label className="block text-xs font-semibold text-muted-foreground">Visual editor</label><span className="text-[10px] text-teal-600 dark:text-teal-300">Edit wording directly; the email layout is preserved.</span></div>
+                        <div className="overflow-hidden rounded-xl border border-teal-200 bg-slate-100 p-2 dark:border-teal-500/20 dark:bg-slate-950">
+                          <iframe ref={templateCanvasRef} key={`edit-${editingTemplate?.id || 'new'}-${tmplForm.body.length}`} srcDoc={tmplForm.body || '<p style="font-family:Arial,sans-serif;color:#64748b;padding:24px">Start by adding HTML in the source tab, then return here to edit your copy visually.</p>'} sandbox="allow-same-origin" title="Visual email template editor" onLoad={event => { const body = event.currentTarget.contentDocument?.body; if (body) { body.contentEditable = 'true'; body.style.outline = 'none'; } }} onBlur={() => setTmplForm(form => ({ ...form, body: readVisualTemplate() }))} className="h-[360px] w-full rounded-lg bg-white" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex min-w-0 flex-col">
+                    <div className="mb-1 flex items-center justify-between"><label className="text-xs font-semibold text-muted-foreground">Live email preview</label><span className="text-[10px] text-muted-foreground">Rendered as the recipient sees it</span></div>
+                    <div className="flex-1 overflow-hidden rounded-xl border border-border bg-slate-100 p-2 dark:bg-slate-950">
+                      <iframe key={`preview-${editingTemplate?.id || 'new'}-${tmplForm.body.length}`} srcDoc={tmplForm.body || '<p style="font-family:Arial,sans-serif;color:#64748b;padding:24px">Your rendered email preview will appear here.</p>'} sandbox="allow-same-origin" title="Email template preview" className="h-[480px] w-full rounded-lg bg-white" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
+                  {editingTemplate && <button type="button" onClick={() => { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); setTemplateStudioMode('visual'); }} className="rounded-xl border border-border px-4 py-2 text-sm text-foreground transition hover:bg-muted">Cancel</button>}
+                  <button onClick={saveTemplate} disabled={tmplSaveLoading} className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-teal-600/15 transition hover:bg-teal-700 disabled:opacity-60">
+                    {tmplSaveLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {editingTemplate ? 'Save changes' : 'Save template'}
                   </button>
                 </div>
               </div>
