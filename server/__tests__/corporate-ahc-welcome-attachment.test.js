@@ -101,7 +101,7 @@ describe('the AHC welcome email carries the file attached to the template', () =
     await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
     let [, payload] = sendOutboundEmail.mock.calls[0];
     expect(payload.htmlContent).toContain('AHC appointment booking manual attached with this email');
-    expect(payload.htmlContent).toContain('AHC Appointment Booking Manual.pdf');
+    expect(payload.htmlContent).not.toContain('AHC Appointment Booking Manual.pdf');
 
     // Without a file the same body must not mention an attachment.
     sendOutboundEmail.mockClear();

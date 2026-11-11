@@ -114,9 +114,11 @@ describe('the invitation explains the process and signs off with the care desk',
       attachmentName: 'AHC Appointment Booking Manual.pdf',
     });
     expect(withFile.html).toContain('AHC appointment booking manual attached with this email');
-    expect(withFile.html).toContain('AHC Appointment Booking Manual.pdf');
     expect(withFile.text).toContain('AHC appointment booking manual attached with this email');
     expect(withFile.attachmentName).toBe('AHC Appointment Booking Manual.pdf');
+    // The copy must NOT name the file — the saved studio template is static
+    // HTML and a baked-in filename goes stale when HR replaces the attachment.
+    expect(withFile.html).not.toContain('AHC Appointment Booking Manual.pdf');
 
     // No attachment resolved -> the email must not tell the employee to read one.
     for (const name of [null, undefined, '', '   ']) {
@@ -127,13 +129,14 @@ describe('the invitation explains the process and signs off with the care desk',
     }
   });
 
-  it('escapes the attachment filename', () => {
+  it('never echoes the attachment filename into the body', () => {
     const { html } = ahcInvitationMessage({
       employeeName: 'Shiva', programName: 'AHC', validTo: '25-12-2026',
       attachmentName: '<img src=x onerror=alert(1)>.pdf',
     });
     expect(html).not.toContain('<img src=x');
-    expect(html).toContain('&lt;img src=x');
+    expect(html).not.toContain('onerror');
+    expect(html).toContain('AHC appointment booking manual attached with this email');
   });
 
   it('still refuses to send without a personalised expiry', () => {

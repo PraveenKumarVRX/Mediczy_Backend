@@ -73,8 +73,11 @@ export function ahcInvitationMessage({ employeeName, corporateName, programName,
   const subject = `Your ${programme} is available \u2014 complete it by ${expiry}`;
   const validityLine = start ? `${start} to ${expiry}` : `until ${expiry}`;
   const manual = String(attachmentName || '').trim();
+  // Deliberately does not name the file: the saved studio template is static
+  // HTML, so a filename baked into the copy goes stale the moment HR replaces
+  // the attachment. The sentence is identical on both paths.
   const manualLine = manual
-    ? `Please also refer to the AHC appointment booking manual attached with this email (${manual}) for step-by-step screens.`
+    ? 'Please also refer to the AHC appointment booking manual attached with this email for step-by-step screens.'
     : '';
 
   const text = [
