@@ -394,10 +394,25 @@ router.get('/my-hospitals', authUser, async (req, res) => {
 
     const { corporateId, companyName } = corp;
 
+    // An optional caller position turns this into "nearest first". Anything
+    // that is not a usable coordinate is treated as no position at all, rather
+    // than silently ordering by a NaN.
+    const coord = (value, limit) => {
+      const n = Number.parseFloat(value);
+      return Number.isFinite(n) && Math.abs(n) <= limit ? n : null;
+    };
+    const lat = coord(req.query.lat, 90);
+    const lng = coord(req.query.lng ?? req.query.lon, 180);
+
     const hospitals = await postgresSequelize.query(
       // hospitals stores the number as phone_number and has no rating column at
       // all, so this selected two columns that do not exist and the endpoint
       // answered 500 every time — the corporate hospital network never loaded.
+      //
+      // Distance is computed only when the caller sends a position. The great
+      // circle distance is good enough to order a city's hospitals and needs no
+      // PostGIS; rows without coordinates sort last rather than being dropped,
+      // because a hospital in the network is still in the network.
       `SELECT h.id,
               h.hospital_name   AS name,
               h.city,
@@ -405,14 +420,24 @@ router.get('/my-hospitals', authUser, async (req, res) => {
               h.address,
               h.phone_number    AS phone,
               h.specializations,
-              h.metadata
+              h.metadata,
+              h.latitude,
+              h.longitude,
+              CASE
+                WHEN :lat::float8 IS NULL OR :lng::float8 IS NULL
+                  OR h.latitude IS NULL OR h.longitude IS NULL THEN NULL
+                ELSE 6371 * 2 * asin(sqrt(
+                       power(sin(radians(h.latitude::float8 - :lat::float8) / 2), 2)
+                     + cos(radians(:lat::float8)) * cos(radians(h.latitude::float8))
+                     * power(sin(radians(h.longitude::float8 - :lng::float8) / 2), 2)))
+              END AS distance_km
          FROM hospitals h
          JOIN corporate_network_assignments cna
            ON cna.partner_id   = h.id
           AND cna.partner_type = 'hospital'
           AND cna.corporate_id = :corporateId
-        ORDER BY h.hospital_name ASC`,
-      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+        ORDER BY distance_km ASC NULLS LAST, h.hospital_name ASC`,
+      { replacements: { corporateId, lat, lng }, type: postgresSequelize.QueryTypes.SELECT }
     );
 
     const formatted = hospitals.map(h => ({
@@ -425,6 +450,11 @@ router.get('/my-hospitals', authUser, async (req, res) => {
       specializations: h.specializations || [],
       // hospitals carries no rating; reported as 0 rather than invented.
       rating:        0,
+      latitude:      h.latitude  === null ? null : Number(h.latitude),
+      longitude:     h.longitude === null ? null : Number(h.longitude),
+      distanceKm:    h.distance_km === null || h.distance_km === undefined
+                       ? null
+                       : Math.round(Number(h.distance_km) * 10) / 10,
       isCorpAssigned: true,
       corporateId,
       corporateName:  companyName,
