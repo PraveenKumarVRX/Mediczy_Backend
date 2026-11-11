@@ -15,125 +15,23 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import llmProvider from './ai-brain/llm-provider.js';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS icu_admissions (
-      id                    BIGSERIAL PRIMARY KEY,
-      organization_id       BIGINT,
-      admission_id          BIGINT NOT NULL,
-      patient_id            BIGINT NOT NULL,
-      icu_unit              TEXT,               -- MICU | SICU | NICU | PICU | CCU | general
-      bed_number            TEXT,
-      admitted_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      discharged_at         TIMESTAMPTZ,
-      discharge_destination TEXT,              -- ward | stepdown | ot | expired | transferred
-      admitting_reason      TEXT,
-      admitting_doctor_id   TEXT,
-      status                TEXT DEFAULT 'active',  -- active | discharged
-      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_icu_active_admission
-      ON icu_admissions(admission_id) WHERE status = 'active';
-    CREATE INDEX IF NOT EXISTS idx_icu_unit ON icu_admissions(organization_id, icu_unit, status);
+import { schemaVerifier } from '../utils/schema-guard.js';
+const SCHEMA_TABLES = ['icu_admissions', 'icu_ventilator_charts', 'icu_drip_records', 'icu_daily_goals', 'icu_severity_scores', 'icu_events'];
 
-    CREATE TABLE IF NOT EXISTS icu_ventilator_charts (
-      id                  BIGSERIAL PRIMARY KEY,
-      organization_id     BIGINT,
-      icu_admission_id    BIGINT NOT NULL,
-      patient_id          BIGINT,
-      charted_by          TEXT,
-      mode                TEXT,      -- AC/VC | SIMV | PSV | CPAP | HFNC | BiPAP
-      fio2_percent        SMALLINT,
-      peep_cmh2o          NUMERIC(5,1),
-      tidal_volume_ml     SMALLINT,
-      rate_bpm            SMALLINT,
-      pip_cmh2o           NUMERIC(5,1),
-      plateau_cmh2o       NUMERIC(5,1),
-      compliance_ml_cmh2o NUMERIC(6,2),
-      spo2_percent        SMALLINT,
-      etco2_mmhg          SMALLINT,
-      pip_alarm_high      NUMERIC(5,1),
-      peep_alarm_low      NUMERIC(5,1),
-      notes               TEXT,
-      charted_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_vent_icu_adm ON icu_ventilator_charts(icu_admission_id, charted_at DESC);
-
-    CREATE TABLE IF NOT EXISTS icu_drip_records (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      icu_admission_id  BIGINT NOT NULL,
-      patient_id        BIGINT,
-      recorded_by       TEXT,
-      drug_name         TEXT NOT NULL,
-      concentration     TEXT,           -- e.g. "1mg/ml", "4mcg/ml"
-      rate_ml_hr        NUMERIC(8,2),
-      dose_unit         TEXT,           -- mcg/kg/min | mcg/min | mg/hr | units/hr
-      dose_value        NUMERIC(10,3),
-      action            TEXT DEFAULT 'running',   -- started | running | titrated | stopped
-      stopped_reason    TEXT,
-      recorded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_drip_icu_adm ON icu_drip_records(icu_admission_id, recorded_at DESC);
-
-    CREATE TABLE IF NOT EXISTS icu_daily_goals (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      icu_admission_id  BIGINT NOT NULL,
-      patient_id        BIGINT,
-      goal_date         DATE NOT NULL DEFAULT CURRENT_DATE,
-      shift             TEXT DEFAULT 'day',   -- day | night
-      set_by            TEXT,
-      goals             JSONB DEFAULT '[]'::jsonb,   -- [{ category, goal, completed }]
-      sedation_target   TEXT,                -- RASS score target e.g. "-1 to 0"
-      pain_target       TEXT,
-      glucose_target    TEXT,
-      fluid_balance_ml  INTEGER,
-      ventilator_wean   BOOLEAN DEFAULT FALSE,
-      mobility_goal     TEXT,
-      notes             TEXT,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_goals_icu_adm ON icu_daily_goals(icu_admission_id, goal_date DESC);
-
-    CREATE TABLE IF NOT EXISTS icu_severity_scores (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      icu_admission_id  BIGINT NOT NULL,
-      patient_id        BIGINT,
-      scored_by         TEXT,
-      score_type        TEXT NOT NULL,   -- SOFA | APACHE_II | GCS | SAPS_II | NEWS2
-      total_score       NUMERIC(6,2),
-      components        JSONB DEFAULT '{}'::jsonb,
-      interpretation    TEXT,           -- mild | moderate | severe | critical
-      mortality_risk    NUMERIC(5,2),   -- percent
-      scored_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_scores_icu_adm ON icu_severity_scores(icu_admission_id, scored_at DESC);
-
-    CREATE TABLE IF NOT EXISTS icu_events (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      icu_admission_id  BIGINT NOT NULL,
-      patient_id        BIGINT,
-      event_type        TEXT NOT NULL,   -- deterioration | cardiac_arrest | code_blue | extubation | reintubation | complication | family_meeting | other
-      severity          TEXT DEFAULT 'moderate',  -- mild | moderate | severe | critical
-      description       TEXT NOT NULL,
-      action_taken      TEXT,
-      reported_by       TEXT,
-      event_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_events_icu_adm ON icu_events(icu_admission_id, event_at DESC);
-  `);
-}
-ensureTables().catch(e => console.warn('[icu] table init:', e.message));
+// Schema is owned by the migration, not created here. A missing table
+// fails closed with SCHEMA_NOT_MIGRATED naming what to apply, instead of
+// this service quietly building a table the migration never shaped.
+const ensureTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20260526000001-create-hmis-phase3-5-tables before using ICU',
+});
 
 // ── ICU admission ─────────────────────────────────────────────────────────────
 
 export async function admitToICU({ organizationId, admissionId, patientId, icuUnit, bedNumber, admittingReason, admittingDoctorId }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO icu_admissions (organization_id, admission_id, patient_id, icu_unit, bed_number, admitting_reason, admitting_doctor_id)
      VALUES (:orgId, :admId, :patientId, :unit, :bed, :reason, :doctor)
@@ -153,6 +51,7 @@ export async function admitToICU({ organizationId, admissionId, patientId, icuUn
 }
 
 export async function dischargeFromICU(icuAdmissionId, { dischargeDestination, dischargedBy }) {
+  await ensureTables();
   await sequelize.query(
     `UPDATE icu_admissions SET status = 'discharged', discharged_at = NOW(), discharge_destination = :dest, updated_at = NOW() WHERE id = :id`,
     { replacements: { id: icuAdmissionId, dest: dischargeDestination || null }, type: QueryTypes.UPDATE }
@@ -161,6 +60,7 @@ export async function dischargeFromICU(icuAdmissionId, { dischargeDestination, d
 }
 
 export async function getActiveICUAdmission(admissionId) {
+  await ensureTables();
   const [row] = await sequelize.query(
     `SELECT ia.*, p.first_name || ' ' || p.last_name as patient_name
      FROM icu_admissions ia LEFT JOIN patients p ON p.id = ia.patient_id
@@ -171,6 +71,7 @@ export async function getActiveICUAdmission(admissionId) {
 }
 
 export async function getICUCensus(organizationId, icuUnit) {
+  await ensureTables();
   let where = `organization_id = :orgId AND status = 'active'`;
   const replacements = { orgId: organizationId };
   if (icuUnit) { where += ' AND icu_unit = :unit'; replacements.unit = icuUnit; }
@@ -186,6 +87,7 @@ export async function getICUCensus(organizationId, icuUnit) {
 // ── Ventilator charting ───────────────────────────────────────────────────────
 
 export async function chartVentilator(data) {
+  await ensureTables();
   const {
     organizationId, icuAdmissionId, patientId, chartedBy, mode,
     fio2Percent, peepCmh2o, tidalVolumeMl, rateBpm, pipCmh2o,
@@ -221,6 +123,7 @@ export async function chartVentilator(data) {
 }
 
 export async function getVentilatorCharts(icuAdmissionId, { limit = 24 } = {}) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM icu_ventilator_charts WHERE icu_admission_id = :id ORDER BY charted_at DESC LIMIT :limit`,
     { replacements: { id: icuAdmissionId, limit }, type: QueryTypes.SELECT }
@@ -230,6 +133,7 @@ export async function getVentilatorCharts(icuAdmissionId, { limit = 24 } = {}) {
 // ── Drip records ──────────────────────────────────────────────────────────────
 
 export async function recordDrip({ organizationId, icuAdmissionId, patientId, recordedBy, drugName, concentration, rateMlHr, doseUnit, doseValue, action, stoppedReason }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO icu_drip_records (organization_id, icu_admission_id, patient_id, recorded_by, drug_name, concentration, rate_ml_hr, dose_unit, dose_value, action, stopped_reason)
      VALUES (:orgId, :icuAdmId, :patientId, :by, :drug, :conc, :rate, :unit, :dose, :action, :reason)
@@ -248,6 +152,7 @@ export async function recordDrip({ organizationId, icuAdmissionId, patientId, re
 }
 
 export async function getActiveDrips(icuAdmissionId) {
+  await ensureTables();
   return sequelize.query(
     `SELECT DISTINCT ON (drug_name) * FROM icu_drip_records
      WHERE icu_admission_id = :id AND action != 'stopped'
@@ -259,6 +164,7 @@ export async function getActiveDrips(icuAdmissionId) {
 // ── Daily goals ───────────────────────────────────────────────────────────────
 
 export async function setDailyGoals({ organizationId, icuAdmissionId, patientId, goalDate, shift, setBy, goals, sedationTarget, painTarget, glucoseTarget, fluidBalanceMl, ventilatorWean, mobilityGoal, notes }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO icu_daily_goals (organization_id, icu_admission_id, patient_id, goal_date, shift, set_by, goals, sedation_target, pain_target, glucose_target, fluid_balance_ml, ventilator_wean, mobility_goal, notes)
      VALUES (:orgId, :icuAdmId, :patientId, :date, :shift, :by, :goals::jsonb, :sedation, :pain, :glucose, :fluid, :wean, :mobility, :notes)
@@ -280,6 +186,7 @@ export async function setDailyGoals({ organizationId, icuAdmissionId, patientId,
 }
 
 export async function getLatestGoals(icuAdmissionId) {
+  await ensureTables();
   const [row] = await sequelize.query(
     `SELECT * FROM icu_daily_goals WHERE icu_admission_id = :id ORDER BY goal_date DESC, created_at DESC LIMIT 1`,
     { replacements: { id: icuAdmissionId }, type: QueryTypes.SELECT }
@@ -290,6 +197,7 @@ export async function getLatestGoals(icuAdmissionId) {
 // ── Severity scoring ──────────────────────────────────────────────────────────
 
 export async function recordSeverityScore({ organizationId, icuAdmissionId, patientId, scoredBy, scoreType, totalScore, components, interpretation, mortalityRisk }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO icu_severity_scores (organization_id, icu_admission_id, patient_id, scored_by, score_type, total_score, components, interpretation, mortality_risk)
      VALUES (:orgId, :icuAdmId, :patientId, :by, :type, :score, :components::jsonb, :interp, :mortality)
@@ -308,6 +216,7 @@ export async function recordSeverityScore({ organizationId, icuAdmissionId, pati
 }
 
 export async function getScoreHistory(icuAdmissionId, scoreType) {
+  await ensureTables();
   let where = 'icu_admission_id = :id';
   const replacements = { id: icuAdmissionId };
   if (scoreType) { where += ' AND score_type = :type'; replacements.type = scoreType; }
@@ -321,6 +230,7 @@ export async function getScoreHistory(icuAdmissionId, scoreType) {
 // ── ICU events ────────────────────────────────────────────────────────────────
 
 export async function logICUEvent({ organizationId, icuAdmissionId, patientId, eventType, severity, description, actionTaken, reportedBy, eventAt }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO icu_events (organization_id, icu_admission_id, patient_id, event_type, severity, description, action_taken, reported_by, event_at)
      VALUES (:orgId, :icuAdmId, :patientId, :type, :severity, :desc, :action, :by, :at)
@@ -338,6 +248,7 @@ export async function logICUEvent({ organizationId, icuAdmissionId, patientId, e
 }
 
 export async function getICUEvents(icuAdmissionId) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM icu_events WHERE icu_admission_id = :id ORDER BY event_at DESC`,
     { replacements: { id: icuAdmissionId }, type: QueryTypes.SELECT }
@@ -347,6 +258,7 @@ export async function getICUEvents(icuAdmissionId) {
 // ── ICU patient summary ───────────────────────────────────────────────────────
 
 export async function getICUSummary(icuAdmissionId) {
+  await ensureTables();
   const [admission] = await sequelize.query(
     `SELECT ia.*, p.first_name || ' ' || p.last_name as patient_name
      FROM icu_admissions ia LEFT JOIN patients p ON p.id = ia.patient_id
@@ -380,6 +292,7 @@ export async function getICUSummary(icuAdmissionId) {
  * discharge-summary and referral-letter drafters.
  */
 export async function generateICUProgressNoteDraft(icuAdmissionId) {
+  await ensureTables();
   const summary = await getICUSummary(icuAdmissionId);
   const fallback = {
     subjective: 'ICU patient — see charted vitals, drips, and goals for this shift.',

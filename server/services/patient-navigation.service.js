@@ -14,31 +14,18 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS patient_navigation_events (
-      id              BIGSERIAL PRIMARY KEY,
-      organization_id BIGINT,
-      patient_id      BIGINT NOT NULL,
-      encounter_id    BIGINT,
-      admission_id    BIGINT,
-      category        TEXT NOT NULL,
-      event_code      TEXT,
-      title           TEXT NOT NULL,
-      description     TEXT,
-      status          TEXT DEFAULT 'completed',   -- completed | pending | cancelled
-      location        JSONB DEFAULT '{}'::jsonb,  -- { ward, room, department }
-      performed_by    TEXT,
-      metadata        JSONB DEFAULT '{}'::jsonb,
-      event_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_pne_patient  ON patient_navigation_events(patient_id);
-    CREATE INDEX IF NOT EXISTS idx_pne_event_at ON patient_navigation_events(event_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_pne_org      ON patient_navigation_events(organization_id, event_at DESC);
-  `);
-}
-ensureTables().catch(e => console.warn('[patient-navigation] table init:', e.message));
+import { schemaVerifier } from '../utils/schema-guard.js';
+const SCHEMA_TABLES = ['patient_navigation_events'];
+
+// Schema is owned by the migration, not created here. A missing table
+// fails closed with SCHEMA_NOT_MIGRATED naming what to apply, instead of
+// this service quietly building a table the migration never shaped.
+const ensureTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20260526000001-create-hmis-phase3-5-tables before using patient navigation',
+});
 
 export async function recordNavigationEvent({
   organizationId,
@@ -55,6 +42,7 @@ export async function recordNavigationEvent({
   metadata = {},
   eventAt
 }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO patient_navigation_events
        (organization_id, patient_id, encounter_id, admission_id, category, event_code,
@@ -78,6 +66,7 @@ export async function recordNavigationEvent({
 }
 
 export async function getPatientTimeline(patientId, organizationId, { limit = 100, offset = 0, since } = {}) {
+  await ensureTables();
   let where = 'patient_id = :patientId';
   const replacements = { patientId, limit, offset };
 

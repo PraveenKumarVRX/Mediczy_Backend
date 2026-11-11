@@ -7,94 +7,23 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS anesthesia_assessments (
-      id                    BIGSERIAL PRIMARY KEY,
-      organization_id       BIGINT,
-      ot_booking_id         BIGINT,
-      admission_id          BIGINT NOT NULL,
-      patient_id            BIGINT,
-      anesthetist_id        TEXT,
-      assessment_date       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      asa_class             SMALLINT,   -- 1-6
-      airway_class          SMALLINT,   -- Mallampati 1-4
-      airway_notes          TEXT,
-      aspiration_risk       BOOLEAN DEFAULT FALSE,
-      npo_status            TEXT,       -- fasting | not_fasting | unclear
-      npo_confirmed_at      TIMESTAMPTZ,
-      current_medications   JSONB DEFAULT '[]'::jsonb,
-      allergies_confirmed   BOOLEAN DEFAULT FALSE,
-      pre_op_labs_reviewed  BOOLEAN DEFAULT FALSE,
-      cardiac_risk          TEXT,       -- low | intermediate | high
-      pulmonary_risk        TEXT,
-      anesthesia_plan       TEXT,       -- general | spinal | epidural | regional | sedation | local
-      consent_obtained      BOOLEAN DEFAULT FALSE,
-      consent_notes         TEXT,
-      pre_med_given         BOOLEAN DEFAULT FALSE,
-      pre_med_details       TEXT,
-      clearance_status      TEXT DEFAULT 'pending',  -- cleared | conditional | deferred | refused
-      clearance_notes       TEXT,
-      assessment_data       JSONB DEFAULT '{}'::jsonb,
-      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_anesthesia_assessment_admission
-      ON anesthesia_assessments(admission_id);
-    CREATE INDEX IF NOT EXISTS idx_anesthesia_assessment_booking
-      ON anesthesia_assessments(ot_booking_id);
+import { schemaVerifier } from '../utils/schema-guard.js';
+const SCHEMA_TABLES = ['anesthesia_assessments', 'anesthesia_records'];
 
-    CREATE TABLE IF NOT EXISTS anesthesia_records (
-      id                    BIGSERIAL PRIMARY KEY,
-      organization_id       BIGINT,
-      ot_booking_id         BIGINT NOT NULL,
-      admission_id          BIGINT,
-      patient_id            BIGINT,
-      anesthetist_id        TEXT,
-      anesthesia_type       TEXT,
-      induction_agent       TEXT,
-      induction_dose        TEXT,
-      maintenance_agent     TEXT,
-      airway_device         TEXT,        -- ETT | LMA | mask | spinal | epidural
-      airway_device_size    TEXT,
-      intubation_attempts   SMALLINT DEFAULT 1,
-      intubation_grade      SMALLINT,
-      position              TEXT,
-      iv_access             TEXT,
-      preop_bp_systolic     SMALLINT,
-      preop_bp_diastolic    SMALLINT,
-      preop_hr              SMALLINT,
-      preop_spo2            SMALLINT,
-      blood_loss_ml         INTEGER,
-      urine_output_ml       INTEGER,
-      fluids_given          JSONB DEFAULT '[]'::jsonb,   -- [{ type, amount_ml }]
-      drugs_given           JSONB DEFAULT '[]'::jsonb,   -- [{ drug, dose, time }]
-      regional_details      TEXT,
-      intraop_events        TEXT,
-      reversal_given        BOOLEAN DEFAULT FALSE,
-      reversal_agent        TEXT,
-      extubation_status     TEXT,    -- smooth | difficult | reintubated | not_applicable
-      pacu_destination      TEXT,    -- ward | icu | pacu
-      pacu_arrival_bp_sys   SMALLINT,
-      pacu_arrival_hr       SMALLINT,
-      pacu_arrival_spo2     SMALLINT,
-      pacu_pain_score       SMALLINT,
-      pacu_aldrete_score    SMALLINT,
-      complications         TEXT,
-      record_start          TIMESTAMPTZ,
-      record_end            TIMESTAMPTZ,
-      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_anesthesia_record_booking
-      ON anesthesia_records(ot_booking_id);
-  `);
-}
-ensureTables().catch(e => console.warn('[anesthesia] table init:', e.message));
+// Schema is owned by the migration, not created here. A missing table
+// fails closed with SCHEMA_NOT_MIGRATED naming what to apply, instead of
+// this service quietly building a table the migration never shaped.
+const ensureTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20260526000001-create-hmis-phase3-5-tables before using anesthesia records',
+});
 
 // ── Pre-anesthesia assessment ─────────────────────────────────────────────────
 
 export async function createAssessment(data) {
+  await ensureTables();
   const {
     organizationId, otBookingId, admissionId, patientId, anesthetistId,
     asaClass, airwayClass, airwayNotes, aspirationRisk, npoStatus, npoConfirmedAt,
@@ -147,6 +76,7 @@ export async function createAssessment(data) {
 }
 
 export async function getAssessmentByBooking(otBookingId) {
+  await ensureTables();
   const [row] = await sequelize.query(
     `SELECT * FROM anesthesia_assessments WHERE ot_booking_id = :bookingId ORDER BY created_at DESC LIMIT 1`,
     { replacements: { bookingId: otBookingId }, type: QueryTypes.SELECT }
@@ -157,6 +87,7 @@ export async function getAssessmentByBooking(otBookingId) {
 // ── Intra-operative record ────────────────────────────────────────────────────
 
 export async function createRecord(data) {
+  await ensureTables();
   const {
     organizationId, otBookingId, admissionId, patientId, anesthetistId,
     anesthesiaType, inductionAgent, inductionDose, maintenanceAgent,
@@ -214,6 +145,7 @@ export async function createRecord(data) {
 }
 
 export async function getRecordByBooking(otBookingId) {
+  await ensureTables();
   const [row] = await sequelize.query(
     `SELECT * FROM anesthesia_records WHERE ot_booking_id = :bookingId ORDER BY created_at DESC LIMIT 1`,
     { replacements: { bookingId: otBookingId }, type: QueryTypes.SELECT }
@@ -222,6 +154,7 @@ export async function getRecordByBooking(otBookingId) {
 }
 
 export async function updateRecord(recordId, updates) {
+  await ensureTables();
   const allowed = ['intraop_events','drugs_given','fluids_given','blood_loss_ml','urine_output_ml',
     'complications','extubation_status','pacu_destination','pacu_arrival_bp_sys','pacu_arrival_hr',
     'pacu_arrival_spo2','pacu_pain_score','pacu_aldrete_score','record_end'];

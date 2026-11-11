@@ -9,103 +9,28 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS corporate_referrals (
-      id                  BIGSERIAL PRIMARY KEY,
-      organization_id     BIGINT,
-      patient_id          BIGINT NOT NULL,
-      admission_id        BIGINT,
-      corporate_name      TEXT NOT NULL,
-      tpa_name            TEXT,
-      policy_number       TEXT,
-      employee_id         TEXT,
-      referral_code       TEXT,
-      pre_auth_number     TEXT,
-      pre_auth_amount     NUMERIC(12,2),
-      pre_auth_date       DATE,
-      approved_procedures TEXT,
-      referral_status     TEXT DEFAULT 'pending',  -- pending | approved | denied | expired
-      denial_reason       TEXT,
-      contacted_by        TEXT,
-      contacted_at        TIMESTAMPTZ,
-      notes               TEXT,
-      referral_data       JSONB DEFAULT '{}'::jsonb,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_corp_referral_patient ON corporate_referrals(patient_id);
-    CREATE INDEX IF NOT EXISTS idx_corp_referral_admission ON corporate_referrals(admission_id);
+import { schemaVerifier, tableNameFromSchemaRow } from '../utils/schema-guard.js';
 
-    CREATE TABLE IF NOT EXISTS corporate_eligibility_checks (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      patient_id        BIGINT NOT NULL,
-      referral_id       BIGINT,
-      corporate_name    TEXT,
-      policy_number     TEXT,
-      employee_id       TEXT,
-      check_status      TEXT NOT NULL,  -- eligible | not_eligible | error | pending
-      benefit_limit     NUMERIC(12,2),
-      used_amount       NUMERIC(12,2),
-      balance_amount    NUMERIC(12,2),
-      deductible        NUMERIC(12,2),
-      copay_percent     NUMERIC(5,2),
-      exclusions        TEXT,
-      checked_by        TEXT,
-      response_data     JSONB DEFAULT '{}'::jsonb,
-      checked_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_eligibility_patient ON corporate_eligibility_checks(patient_id);
+// Re-exported because callers and tests read information_schema rows through
+// it: with this Sequelize/Postgres pairing a row can arrive as a positional
+// array rather than an object, which once made every present table look missing.
+export { tableNameFromSchemaRow };
+const SCHEMA_TABLES = ['corporate_referrals', 'corporate_eligibility_checks', 'fitness_certificates', 'return_to_work_clearances'];
 
-    CREATE TABLE IF NOT EXISTS fitness_certificates (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      patient_id        BIGINT NOT NULL,
-      admission_id      BIGINT,
-      certificate_type  TEXT DEFAULT 'fitness',  -- fitness | pre_employment | periodic | return_to_work | sick_leave
-      issued_by         TEXT NOT NULL,
-      doctor_reg_no     TEXT,
-      patient_name      TEXT,
-      employee_id       TEXT,
-      employer_name     TEXT,
-      job_description   TEXT,
-      examination_date  DATE NOT NULL DEFAULT CURRENT_DATE,
-      fitness_status    TEXT NOT NULL,  -- fit | fit_with_restrictions | temporarily_unfit | permanently_unfit
-      restrictions      TEXT,
-      valid_from        DATE,
-      valid_until       DATE,
-      remarks           TEXT,
-      certificate_data  JSONB DEFAULT '{}'::jsonb,
-      signed_at         TIMESTAMPTZ,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_fitness_cert_patient ON fitness_certificates(patient_id);
-
-    CREATE TABLE IF NOT EXISTS return_to_work_clearances (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      patient_id        BIGINT NOT NULL,
-      admission_id      BIGINT,
-      fitness_cert_id   BIGINT,
-      issued_by         TEXT NOT NULL,
-      employer_name     TEXT,
-      return_date       DATE NOT NULL,
-      full_duty         BOOLEAN DEFAULT TRUE,
-      restricted_duty   TEXT,
-      follow_up_date    DATE,
-      clearance_notes   TEXT,
-      signed_at         TIMESTAMPTZ,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_rtw_patient ON return_to_work_clearances(patient_id);
-  `);
-}
-ensureTables().catch(e => console.warn('[corporate-hmis] table init:', e.message));
+// Schema is owned by the migration, not created here. A missing table
+// fails closed with SCHEMA_NOT_MIGRATED naming what to apply, instead of
+// this service quietly building a table the migration never shaped.
+const ensureTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004400-corporate-hmis-governance before using corporate HMIS',
+});
 
 // ── Corporate referrals ───────────────────────────────────────────────────────
 
 export async function createReferral(data) {
+  await ensureTables();
   const {
     organizationId, patientId, admissionId, corporateName, tpaName,
     policyNumber, employeeId, referralCode, preAuthNumber, preAuthAmount,
@@ -139,6 +64,7 @@ export async function createReferral(data) {
 }
 
 export async function updateReferralStatus(referralId, organizationId, { status, denialReason, preAuthNumber, preAuthAmount }) {
+  await ensureTables();
   // Sequelize's UPDATE query type returns [results, affectedRowCount] for
   // Postgres (verified: a bare number, not a { rowCount } object).
   const [, affectedRowCount] = await sequelize.query(
@@ -166,6 +92,7 @@ export async function updateReferralStatus(referralId, organizationId, { status,
 }
 
 export async function getReferralsByPatient(patientId, organizationId) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM corporate_referrals WHERE patient_id = :patientId AND organization_id = :organizationId ORDER BY created_at DESC`,
     { replacements: { patientId, organizationId }, type: QueryTypes.SELECT }
@@ -179,6 +106,7 @@ export async function recordEligibilityCheck({
   employeeId, checkStatus, benefitLimit, usedAmount, deductible, copayPercent,
   exclusions, checkedBy, responseData
 }) {
+  await ensureTables();
   const balanceAmount = parseFloat(benefitLimit || 0) - parseFloat(usedAmount || 0);
 
   const [result] = await sequelize.query(
@@ -210,6 +138,7 @@ export async function recordEligibilityCheck({
 // ── Fitness certificates ──────────────────────────────────────────────────────
 
 export async function issueFitnessCertificate(data) {
+  await ensureTables();
   const {
     organizationId, patientId, admissionId, certificateType, issuedBy,
     doctorRegNo, patientName, employeeId, employerName, jobDescription,
@@ -246,6 +175,7 @@ export async function issueFitnessCertificate(data) {
 }
 
 export async function getFitnessCertificatesByPatient(patientId, organizationId) {
+  await ensureTables();
   const rows = await sequelize.query(
     `SELECT * FROM fitness_certificates WHERE patient_id = :patientId AND organization_id = :organizationId ORDER BY created_at DESC`,
     { replacements: { patientId, organizationId }, type: QueryTypes.SELECT }
@@ -254,6 +184,7 @@ export async function getFitnessCertificatesByPatient(patientId, organizationId)
 }
 
 export async function getFitnessCertificateById(id) {
+  await ensureTables();
   const rows = await sequelize.query(
     `SELECT * FROM fitness_certificates WHERE id = :id`,
     { replacements: { id }, type: QueryTypes.SELECT }
@@ -266,6 +197,7 @@ export async function getFitnessCertificateById(id) {
  * Uses RETURNING id (read back via SELECT query type) rather than relying on a raw DELETE's
  * affected-row count, whose shape is inconsistent across Sequelize query types. */
 export async function deleteFitnessCertificate(id) {
+  await ensureTables();
   const rows = await sequelize.query(
     `DELETE FROM fitness_certificates WHERE id = :id RETURNING id`,
     { replacements: { id }, type: QueryTypes.SELECT }
@@ -275,6 +207,7 @@ export async function deleteFitnessCertificate(id) {
 
 /** A clinic doctor's own recently-issued certificates, across whichever employer each patient works for. */
 export async function getFitnessCertificatesIssuedByClinicStaff(clinicStaffId, limit = 50) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM fitness_certificates
       WHERE certificate_data->>'issuedByClinicStaffId' = :clinicStaffId
@@ -285,6 +218,7 @@ export async function getFitnessCertificatesIssuedByClinicStaff(clinicStaffId, l
 
 /** Every certificate an employer's HR should be able to see, across all their employees. */
 export async function getFitnessCertificatesForOrganization(organizationId, limit = 200) {
+  await ensureTables();
   const rows = await sequelize.query(
     `SELECT * FROM fitness_certificates WHERE organization_id = :organizationId ORDER BY created_at DESC LIMIT :limit`,
     { replacements: { organizationId, limit }, type: QueryTypes.SELECT }
@@ -294,6 +228,7 @@ export async function getFitnessCertificatesForOrganization(organizationId, limi
 
 /** An employee's own certificates, regardless of which employer/clinic issued them. */
 export async function getFitnessCertificatesForPatientOnly(patientId, limit = 100) {
+  await ensureTables();
   const rows = await sequelize.query(
     `SELECT * FROM fitness_certificates WHERE patient_id = :patientId ORDER BY created_at DESC LIMIT :limit`,
     { replacements: { patientId, limit }, type: QueryTypes.SELECT }
@@ -308,6 +243,7 @@ export async function issueReturnToWorkClearance({
   issuedBy, employerName, returnDate, fullDuty, restrictedDuty,
   followUpDate, clearanceNotes
 }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO return_to_work_clearances (
        organization_id, patient_id, admission_id, fitness_cert_id,
@@ -333,6 +269,7 @@ export async function issueReturnToWorkClearance({
 
 /** Fetch only requested certificates within the authenticated corporate. */
 export async function getCorporateCertificatesByIds(organizationId, ids) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM fitness_certificates WHERE organization_id = :organizationId AND id IN (:ids) ORDER BY id`,
     { replacements: { organizationId, ids }, type: QueryTypes.SELECT }

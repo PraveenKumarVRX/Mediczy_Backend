@@ -10,120 +10,18 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS follow_up_plans (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      patient_id        BIGINT NOT NULL,
-      admission_id      BIGINT,
-      scheduled_by      TEXT,
-      follow_up_date    DATE NOT NULL,
-      follow_up_time    TIME,
-      department        TEXT,
-      doctor_id         TEXT,
-      visit_type        TEXT DEFAULT 'outpatient',  -- outpatient | telemedicine | home_visit
-      reason            TEXT,
-      instructions      TEXT,
-      reminder_sent     BOOLEAN DEFAULT FALSE,
-      status            TEXT DEFAULT 'scheduled',   -- scheduled | completed | missed | rescheduled | cancelled
-      appointment_id    BIGINT,
-      notes             TEXT,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_followup_patient ON follow_up_plans(patient_id);
-    CREATE INDEX IF NOT EXISTS idx_followup_date    ON follow_up_plans(follow_up_date, status);
+import { schemaVerifier } from '../utils/schema-guard.js';
+const SCHEMA_TABLES = ['follow_up_plans', 'recovery_checkins', 'remote_monitoring_alerts', 'patient_feedback', 'outcome_records'];
 
-    CREATE TABLE IF NOT EXISTS recovery_checkins (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      patient_id        BIGINT NOT NULL,
-      admission_id      BIGINT,
-      follow_up_plan_id BIGINT,
-      checkin_method    TEXT DEFAULT 'app',   -- app | call | whatsapp | portal
-      pain_score        SMALLINT,             -- 0-10
-      wound_status      TEXT,                 -- healing | infection_signs | reopened | healed
-      fever             BOOLEAN,
-      bleeding          BOOLEAN,
-      mobility          TEXT,
-      medication_adherence BOOLEAN,
-      symptoms          JSONB DEFAULT '[]'::jsonb,   -- [{ symptom, severity }]
-      notes             TEXT,
-      flagged_for_review BOOLEAN DEFAULT FALSE,
-      reviewed_by       TEXT,
-      reviewed_at       TIMESTAMPTZ,
-      checkin_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_recovery_patient ON recovery_checkins(patient_id);
-    CREATE INDEX IF NOT EXISTS idx_recovery_flagged ON recovery_checkins(flagged_for_review, checkin_at);
-
-    CREATE TABLE IF NOT EXISTS remote_monitoring_alerts (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      patient_id        BIGINT NOT NULL,
-      admission_id      BIGINT,
-      checkin_id        BIGINT,
-      alert_type        TEXT NOT NULL,  -- pain_spike | wound_infection | fever | non_adherence | missed_followup | other
-      severity          TEXT DEFAULT 'medium',  -- low | medium | high | critical
-      title             TEXT NOT NULL,
-      description       TEXT,
-      triggered_by      TEXT DEFAULT 'system',
-      acknowledged      BOOLEAN DEFAULT FALSE,
-      acknowledged_by   TEXT,
-      acknowledged_at   TIMESTAMPTZ,
-      resolved          BOOLEAN DEFAULT FALSE,
-      resolved_at       TIMESTAMPTZ,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_rma_patient    ON remote_monitoring_alerts(patient_id);
-    CREATE INDEX IF NOT EXISTS idx_rma_unresolved ON remote_monitoring_alerts(resolved, severity, created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS patient_feedback (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      patient_id        BIGINT NOT NULL,
-      admission_id      BIGINT,
-      overall_rating    SMALLINT,         -- 1-5
-      doctor_rating     SMALLINT,
-      nursing_rating    SMALLINT,
-      cleanliness_rating SMALLINT,
-      food_rating       SMALLINT,
-      recommend_score   SMALLINT,         -- NPS 0-10
-      positive_feedback TEXT,
-      improvement_areas TEXT,
-      follow_up_care_rating SMALLINT,
-      feedback_channel  TEXT DEFAULT 'app',
-      submitted_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_feedback_patient ON patient_feedback(patient_id);
-
-    CREATE TABLE IF NOT EXISTS outcome_records (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      patient_id        BIGINT NOT NULL,
-      admission_id      BIGINT,
-      recorded_by       TEXT,
-      outcome_date      DATE NOT NULL DEFAULT CURRENT_DATE,
-      primary_outcome   TEXT NOT NULL,  -- recovered | improved | unchanged | deteriorated | readmitted | expired
-      readmission       BOOLEAN DEFAULT FALSE,
-      readmission_date  DATE,
-      readmission_reason TEXT,
-      complication_flag  BOOLEAN DEFAULT FALSE,
-      complications      TEXT,
-      wound_healing     TEXT,           -- excellent | good | delayed | poor
-      functional_status TEXT,           -- fully_restored | partial | dependent
-      proms_score       NUMERIC(5,2),
-      proms_tool        TEXT,
-      outcome_notes     TEXT,
-      outcome_data      JSONB DEFAULT '{}'::jsonb,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_outcomes_patient ON outcome_records(patient_id);
-    CREATE INDEX IF NOT EXISTS idx_outcomes_org     ON outcome_records(organization_id, outcome_date);
-  `);
-}
-ensureTables().catch(e => console.warn('[follow-up-hmis] table init:', e.message));
+// Schema is owned by the migration, not created here. A missing table
+// fails closed with SCHEMA_NOT_MIGRATED naming what to apply, instead of
+// this service quietly building a table the migration never shaped.
+const ensureTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20260526000001-create-hmis-phase3-5-tables before using follow-up',
+});
 
 // ── Follow-up scheduling ──────────────────────────────────────────────────────
 
@@ -131,6 +29,7 @@ export async function scheduleFollowUp({
   organizationId, patientId, admissionId, scheduledBy, followUpDate,
   followUpTime, department, doctorId, visitType, reason, instructions, notes
 }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO follow_up_plans (
        organization_id, patient_id, admission_id, scheduled_by,
@@ -155,6 +54,7 @@ export async function scheduleFollowUp({
 }
 
 export async function getFollowUpsByPatient(patientId) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM follow_up_plans WHERE patient_id = :patientId ORDER BY follow_up_date ASC`,
     { replacements: { patientId }, type: QueryTypes.SELECT }
@@ -162,6 +62,7 @@ export async function getFollowUpsByPatient(patientId) {
 }
 
 export async function updateFollowUpStatus(planId, { status, notes }) {
+  await ensureTables();
   await sequelize.query(
     `UPDATE follow_up_plans SET status = :status, notes = COALESCE(:notes, notes), updated_at = NOW() WHERE id = :id`,
     { replacements: { id: planId, status, notes: notes || null }, type: QueryTypes.UPDATE }
@@ -176,6 +77,7 @@ export async function recordRecoveryCheckin({
   painScore, woundStatus, fever, bleeding, mobility, medicationAdherence,
   symptoms, notes
 }) {
+  await ensureTables();
   const flagged = (painScore && painScore >= 7) || fever || bleeding ||
     woundStatus === 'infection_signs' || woundStatus === 'reopened' ||
     medicationAdherence === false;
@@ -219,6 +121,7 @@ export async function recordRecoveryCheckin({
 }
 
 export async function getCheckinsByPatient(patientId, { limit = 20 } = {}) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM recovery_checkins WHERE patient_id = :patientId ORDER BY checkin_at DESC LIMIT :limit`,
     { replacements: { patientId, limit }, type: QueryTypes.SELECT }
@@ -231,6 +134,7 @@ export async function raiseMonitoringAlert({
   organizationId, patientId, admissionId, checkinId,
   alertType, severity, title, description, triggeredBy
 }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO remote_monitoring_alerts (
        organization_id, patient_id, admission_id, checkin_id,
@@ -252,6 +156,7 @@ export async function raiseMonitoringAlert({
 }
 
 export async function getActiveAlerts(organizationId, { patientId, severity } = {}) {
+  await ensureTables();
   let where = 'resolved = FALSE AND organization_id = :orgId';
   const replacements = { orgId: organizationId };
   if (patientId) { where += ' AND patient_id = :patientId'; replacements.patientId = patientId; }
@@ -268,6 +173,7 @@ export async function getActiveAlerts(organizationId, { patientId, severity } = 
 }
 
 export async function acknowledgeAlert(alertId, { acknowledgedBy }) {
+  await ensureTables();
   await sequelize.query(
     `UPDATE remote_monitoring_alerts SET acknowledged = TRUE, acknowledged_by = :by, acknowledged_at = NOW() WHERE id = :id`,
     { replacements: { id: alertId, by: acknowledgedBy || null }, type: QueryTypes.UPDATE }
@@ -276,6 +182,7 @@ export async function acknowledgeAlert(alertId, { acknowledgedBy }) {
 }
 
 export async function resolveAlert(alertId) {
+  await ensureTables();
   await sequelize.query(
     `UPDATE remote_monitoring_alerts SET resolved = TRUE, resolved_at = NOW() WHERE id = :id`,
     { replacements: { id: alertId }, type: QueryTypes.UPDATE }
@@ -290,6 +197,7 @@ export async function submitPatientFeedback({
   nursingRating, cleanlinessRating, foodRating, recommendScore,
   positiveFeedback, improvementAreas, followUpCareRating, feedbackChannel
 }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO patient_feedback (
        organization_id, patient_id, admission_id, overall_rating, doctor_rating,
@@ -323,6 +231,7 @@ export async function recordOutcome({
   complicationFlag, complications, woundHealing, functionalStatus,
   promsScore, promsTool, outcomeNotes, outcomeData
 }) {
+  await ensureTables();
   const [result] = await sequelize.query(
     `INSERT INTO outcome_records (
        organization_id, patient_id, admission_id, recorded_by, outcome_date,
@@ -353,6 +262,7 @@ export async function recordOutcome({
 }
 
 export async function getOutcomesByPatient(patientId) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM outcome_records WHERE patient_id = :patientId ORDER BY outcome_date DESC`,
     { replacements: { patientId }, type: QueryTypes.SELECT }

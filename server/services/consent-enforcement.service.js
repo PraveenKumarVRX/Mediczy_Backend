@@ -12,6 +12,19 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
+
+const SCHEMA_TABLES = ['consent_enforcement_log', 'consents'];
+
+// A consent gate must not fail open. If the table is absent the service says
+// so with SCHEMA_NOT_MIGRATED rather than erroring in a way a caller might
+// mistake for "no consent restriction recorded".
+const ensureTables = schemaVerifier({
+  sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20260526000001-create-hmis-phase3-5-tables before enforcing consent',
+});
 // Roles that can override consent checks (emergency/clinical authority)
 const CONSENT_OVERRIDE_ROLES = new Set([
   'admin', 'super_admin', 'medical_director', 'surgeon', 'anesthetist', 'ot_head'
@@ -97,6 +110,7 @@ async function enforceConsent({ organizationId, patientId, action, consentType, 
  * Skip for emergency bookings.
  */
 export async function enforceOTBookingConsent({ organizationId, patientId, procedureName, admissionType, override }) {
+  await ensureTables();
   if (admissionType === 'emergency') return { allowed: true, skipped: 'emergency' };
   return enforceConsent({ organizationId, patientId, action: 'ot_booking', consentType: 'treatment', procedureName, override });
 }
@@ -106,6 +120,7 @@ export async function enforceOTBookingConsent({ organizationId, patientId, proce
  * Skip for emergency OT.
  */
 export async function enforceOTIncisionConsent({ organizationId, patientId, procedureName, isEmergency, override }) {
+  await ensureTables();
   if (isEmergency) return { allowed: true, skipped: 'emergency' };
   // Try procedure_specific first, fall back to treatment
   const specific = await findActiveConsent(patientId, 'procedure_specific', { procedureName });
@@ -121,6 +136,7 @@ export async function enforceOTIncisionConsent({ organizationId, patientId, proc
  * Skip for emergency.
  */
 export async function enforceAnesthesiaConsent({ organizationId, patientId, isEmergency, override }) {
+  await ensureTables();
   if (isEmergency) return { allowed: true, skipped: 'emergency' };
   return enforceConsent({ organizationId, patientId, action: 'anesthesia_start', consentType: 'anesthesia', override });
 }
@@ -129,6 +145,7 @@ export async function enforceAnesthesiaConsent({ organizationId, patientId, isEm
  * High-alert medication — requires signed 'treatment' consent.
  */
 export async function enforceHighAlertMedConsent({ organizationId, patientId, drugName, override }) {
+  await ensureTables();
   return enforceConsent({
     organizationId, patientId,
     action: `high_alert_medication:${drugName}`,
@@ -141,12 +158,14 @@ export async function enforceHighAlertMedConsent({ organizationId, patientId, dr
  * Discharge summary signing — requires signed 'treatment' consent.
  */
 export async function enforceDischargeSignConsent({ organizationId, patientId, override }) {
+  await ensureTables();
   return enforceConsent({ organizationId, patientId, action: 'discharge_sign', consentType: 'treatment', override });
 }
 
 // ── Audit query ───────────────────────────────────────────────────────────────
 
 export async function getConsentEnforcementLog(patientId, { limit = 50 } = {}) {
+  await ensureTables();
   return sequelize.query(
     `SELECT * FROM consent_enforcement_log WHERE patient_id = :patientId ORDER BY checked_at DESC LIMIT :limit`,
     { replacements: { patientId, limit }, type: QueryTypes.SELECT }
