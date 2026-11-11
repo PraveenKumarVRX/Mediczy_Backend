@@ -4,7 +4,7 @@ import {
   FileText, Inbox, ChevronLeft, ChevronRight, Loader2, Paperclip,
   Bold, Italic, Underline, Strikethrough, Link2, Quote, PenLine,
   RotateCcw, Maximize2, Minimize2, Plus, Bell, ShieldAlert, Search,
-  CheckCircle, Settings, Bot, LayoutTemplate, Wand2, Pencil, Trash, Save, Eye, Code2,
+  CheckCircle, Settings, Bot, LayoutTemplate, Wand2, Pencil, Trash, Save, Eye, Code2, Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -49,6 +49,14 @@ interface EmailTemplate {
   body: string;
   category: string;
   isShared: boolean;
+  createdAt: string;
+  attachmentCount?: number;
+}
+interface TemplateAttachment {
+  id: string;
+  filename: string;
+  contentType: string;
+  byteSize: number;
   createdAt: string;
 }
 
@@ -206,7 +214,11 @@ const EmailInbox: React.FC = () => {
   const [showTemplateTest, setShowTemplateTest]       = useState(false);
   const [testRecipient, setTestRecipient]             = useState('');
   const [testVariables, setTestVariables]             = useState<Record<string, string>>({});
+  const [testIncludeAttachments, setTestIncludeAttachments] = useState(true);
   const [testSending, setTestSending]                 = useState(false);
+  const [templateAttachments, setTemplateAttachments] = useState<TemplateAttachment[]>([]);
+  const [attachmentBusy, setAttachmentBusy]           = useState(false);
+  const attachmentInputRef                            = useRef<HTMLInputElement>(null);
 
   // Bot reply state
   const [botReplyLoading, setBotReplyLoading]         = useState(false);
@@ -402,6 +414,7 @@ const EmailInbox: React.FC = () => {
 
   const openTemplateModal = () => {
     setEditingTemplate(null);
+    setTemplateAttachments([]);
     setTmplForm({ name: '', subject: '', body: '', category: 'general' });
     setTemplateStudioMode('visual');
     fetchTemplates();
@@ -412,6 +425,68 @@ const EmailInbox: React.FC = () => {
     setEditingTemplate(t);
     setTmplForm({ name: t.name, subject: t.subject || '', body: t.body || '', category: t.category || 'general' });
     setTemplateStudioMode('visual');
+    fetchTemplateAttachments(t.id);
+  };
+
+  // ── Template attachments ─────────────────────────────────────────
+  // A file uploaded here is stored against the template and goes out as a real
+  // attachment with every send of it — the test send and the automated welcome
+  // email alike. Nothing is generated at send time.
+  const fetchTemplateAttachments = async (templateId: string) => {
+    setTemplateAttachments([]);
+    try {
+      const res = await api.get(`/team/emails/templates/${templateId}/attachments`);
+      if (res.data.success) setTemplateAttachments(res.data.data || []);
+    } catch (err) { console.error('fetchTemplateAttachments:', err); }
+  };
+
+  const uploadTemplateAttachment = async (file: File | undefined) => {
+    if (!file || !editingTemplate) return;
+    setAttachmentBusy(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await api.post(`/team/emails/templates/${editingTemplate.id}/attachments`, form);
+      if (res.data.success) {
+        await fetchTemplateAttachments(editingTemplate.id);
+        setTemplates(prev => prev.map(t => t.id === editingTemplate.id
+          ? { ...t, attachmentCount: (t.attachmentCount || 0) + 1 } : t));
+        toast({ title: 'File attached', description: res.data.message || `${file.name} will be sent with this template.` });
+      }
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Attachment rejected', description: error?.response?.data?.message || 'Unable to attach that file.' });
+    } finally {
+      setAttachmentBusy(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+    }
+  };
+
+  const removeTemplateAttachment = async (attachmentId: string) => {
+    if (!editingTemplate) return;
+    setAttachmentBusy(true);
+    try {
+      await api.delete(`/team/emails/templates/${editingTemplate.id}/attachments/${attachmentId}`);
+      setTemplateAttachments(prev => prev.filter(a => a.id !== attachmentId));
+      setTemplates(prev => prev.map(t => t.id === editingTemplate.id
+        ? { ...t, attachmentCount: Math.max(0, (t.attachmentCount || 1) - 1) } : t));
+      toast({ title: 'Attachment removed' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Could not remove', description: error?.response?.data?.message || 'Unable to remove the attachment.' });
+    } finally { setAttachmentBusy(false); }
+  };
+
+  const downloadTemplateAttachment = async (attachment: TemplateAttachment) => {
+    if (!editingTemplate) return;
+    try {
+      const res = await api.get(`/team/emails/templates/${editingTemplate.id}/attachments/${attachment.id}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = attachment.filename;
+      document.body.appendChild(link); link.click(); link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ variant: 'destructive', title: 'Download failed', description: 'Unable to download that attachment.' });
+    }
   };
 
   const readVisualTemplate = () => {
@@ -437,6 +512,7 @@ const EmailInbox: React.FC = () => {
     const variables = templateVariables(tmplForm.subject, body);
     setTmplForm(form => ({ ...form, body }));
     setTestVariables(existing => Object.fromEntries(variables.map(name => [name, existing[name] || ''])));
+    setTestIncludeAttachments(true);
     setShowTemplateTest(true);
   };
 
@@ -451,10 +527,11 @@ const EmailInbox: React.FC = () => {
     }
     setTestSending(true);
     try {
-      const response = await api.post(`/team/emails/templates/${editingTemplate.id}/test`, { to: testRecipient.trim(), variables: testVariables, subject: tmplForm.subject, body });
+      const response = await api.post(`/team/emails/templates/${editingTemplate.id}/test`, { to: testRecipient.trim(), variables: testVariables, subject: tmplForm.subject, body, includeAttachments: testIncludeAttachments });
       if (response.data.success) {
         setShowTemplateTest(false);
-        toast({ title: 'Test email sent', description: `A personalised [TEST] copy was sent to ${testRecipient.trim()}.` });
+        const sentFiles = response.data?.data?.attachmentCount ?? 0;
+        toast({ title: 'Test email sent', description: `A personalised [TEST] copy${sentFiles ? ` with ${sentFiles} attachment${sentFiles === 1 ? '' : 's'}` : ''} was sent to ${testRecipient.trim()}.` });
       }
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Test send failed', description: error?.response?.data?.message || 'Unable to send the test email.' });
@@ -494,7 +571,7 @@ const EmailInbox: React.FC = () => {
     try {
       await api.delete(`/team/emails/templates/${id}`);
       setTemplates(prev => prev.filter(t => t.id !== id));
-      if (editingTemplate?.id === id) { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); }
+      if (editingTemplate?.id === id) { setEditingTemplate(null); setTemplateAttachments([]); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); }
       toast({ title: 'Template deleted' });
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Delete failed', description: err?.response?.data?.message || 'Unable to delete.' });
@@ -1589,7 +1666,7 @@ const EmailInbox: React.FC = () => {
               <div className="w-64 shrink-0 border-r border-border flex flex-col">
                 <div className="p-3 border-b border-border shrink-0">
                   <button
-                    onClick={() => { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); }}
+                    onClick={() => { setEditingTemplate(null); setTemplateAttachments([]); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); }}
                     className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors"
                   >
                     <Plus className="w-4 h-4" /> New Template
@@ -1622,7 +1699,14 @@ const EmailInbox: React.FC = () => {
                           </button>
                         </div>
                         {t.subject && <p className="text-[11px] text-muted-foreground truncate mt-0.5">Sub: {t.subject}</p>}
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground mt-1 inline-block">{t.category}</span>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground inline-block">{t.category}</span>
+                          {!!t.attachmentCount && (
+                            <span className="inline-flex items-center gap-1 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
+                              <Paperclip className="h-2.5 w-2.5" />{t.attachmentCount}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
@@ -1663,6 +1747,43 @@ const EmailInbox: React.FC = () => {
                       </select>
                     </div>
 
+                    <div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label className="block text-xs font-semibold text-muted-foreground">Attachments</label>
+                        <span className="text-[10px] text-muted-foreground">PDF, PNG, JPEG, DOCX, XLSX · up to 10 MB each</span>
+                      </div>
+                      {editingTemplate ? (
+                        <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
+                          {templateAttachments.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No file attached. A file added here is sent with every copy of this template — including the automated welcome email.</p>
+                          ) : (
+                            <ul className="space-y-1.5">
+                              {templateAttachments.map(attachment => (
+                                <li key={attachment.id} className="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-2">
+                                  <Paperclip className="h-3.5 w-3.5 shrink-0 text-teal-600 dark:text-teal-300" />
+                                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{attachment.filename}</span>
+                                  <span className="shrink-0 text-[10px] text-muted-foreground">{Math.max(1, Math.round(attachment.byteSize / 1024))} KB</span>
+                                  <button type="button" onClick={() => downloadTemplateAttachment(attachment)} title="Download" className="shrink-0 p-0.5 text-muted-foreground transition hover:text-teal-600">
+                                    <Download className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button type="button" disabled={attachmentBusy} onClick={() => removeTemplateAttachment(attachment.id)} title="Remove" className="shrink-0 p-0.5 text-muted-foreground transition hover:text-red-500 disabled:opacity-40">
+                                    <Trash className="h-3.5 w-3.5" />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          <input ref={attachmentInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" onChange={event => uploadTemplateAttachment(event.target.files?.[0])} className="hidden" />
+                          <button type="button" disabled={attachmentBusy} onClick={() => attachmentInputRef.current?.click()} className="flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:opacity-50 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-200">
+                            {attachmentBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                            {templateAttachments.length ? 'Attach another file' : 'Attach a file'}
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="rounded-xl border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">Save the template first, then attach the file that should go out with it.</p>
+                      )}
+                    </div>
+
                     {templateStudioMode === 'html' ? (
                       <div>
                         <div className="mb-1 flex items-center justify-between gap-2"><label className="block text-xs font-semibold text-muted-foreground">HTML source</label><span className="text-[10px] text-muted-foreground">Keep placeholders such as {'{{employee_name}}'} intact.</span></div>
@@ -1687,7 +1808,7 @@ const EmailInbox: React.FC = () => {
                 </div>
 
                 <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
-                  {editingTemplate && <button type="button" onClick={() => { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); setTemplateStudioMode('visual'); }} className="rounded-xl border border-border px-4 py-2 text-sm text-foreground transition hover:bg-muted">Cancel</button>}
+                  {editingTemplate && <button type="button" onClick={() => { setEditingTemplate(null); setTemplateAttachments([]); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); setTemplateStudioMode('visual'); }} className="rounded-xl border border-border px-4 py-2 text-sm text-foreground transition hover:bg-muted">Cancel</button>}
                   {editingTemplate && <button type="button" onClick={openTemplateTest} className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-100 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-200 dark:hover:bg-teal-500/15"><Send className="h-3.5 w-3.5" /> Send test</button>}
                   <button onClick={saveTemplate} disabled={tmplSaveLoading} className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-teal-600/15 transition hover:bg-teal-700 disabled:opacity-60">
                     {tmplSaveLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -1732,6 +1853,15 @@ const EmailInbox: React.FC = () => {
                   </div>
                 </div>
               ) : <p className="rounded-xl border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">This template has no placeholders. The test will use its current content.</p>}
+              {templateAttachments.length > 0 && (
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-teal-200 bg-teal-50/70 p-3 text-sm dark:border-teal-500/25 dark:bg-teal-500/10">
+                  <input type="checkbox" checked={testIncludeAttachments} onChange={event => setTestIncludeAttachments(event.target.checked)} className="mt-0.5 h-4 w-4 accent-teal-600" />
+                  <span>
+                    <span className="block font-semibold text-teal-900 dark:text-teal-100">Include this template's {templateAttachments.length === 1 ? 'attachment' : `${templateAttachments.length} attachments`}</span>
+                    <span className="mt-0.5 block text-xs text-teal-700 dark:text-teal-200">{templateAttachments.map(a => a.filename).join(', ')}</span>
+                  </span>
+                </label>
+              )}
               <p className="text-xs leading-relaxed text-muted-foreground">The preview in the template studio now shows these values. Sending a test does not change the saved template or send anything to employees.</p>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-border bg-muted/20 px-5 py-4">

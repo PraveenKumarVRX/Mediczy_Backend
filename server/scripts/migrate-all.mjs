@@ -137,6 +137,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261111000300-typed-group-policies.migration.js',
   '20261111000400-policy-member-foreign-keys.migration.js',
   '20261111000500-corporate-ahc-entitlement-controls.migration.js',
+  '20261111000600-team-email-template-attachments.migration.js',
 ];
 
 function runStep(step) {

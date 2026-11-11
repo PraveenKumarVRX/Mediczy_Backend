@@ -1,6 +1,6 @@
 # Equitas AHC 2026–27 welcome communications
 
-Use the employee's actual `validTo` date for every send. It is calculated as 45 days from onboarding, capped at 31 March 2027. Do not state a generic 45-day deadline in the message because the employee needs their exact personal expiry date.
+Use the employee's actual `validFrom` and `validTo` dates for every send. The period is calculated as 45 days from onboarding, capped at 31 March 2027. Do not state a generic deadline in the message because the employee needs their exact personal start and expiry dates.
 
 **Branding:** My SmartHealth is the only employee- and corporate-facing brand for this programme. Mediczy is the underlying software platform name and must not appear in corporate communications.
 
@@ -8,7 +8,7 @@ Use the employee's actual `validTo` date for every send. It is calculated as 45 
 
 **Subject:** `Your Equitas Bank Annual Health Checkup is ready — use it by {{valid_to}}`
 
-**Preheader:** `Your personal AHC eligibility is active. Please book before {{valid_to}}.`
+**Preheader:** `Your personal AHC validity is {{valid_from}} to {{valid_to}}. Please book before the end date.`
 
 **Body:**
 
@@ -16,13 +16,39 @@ Use the employee's actual `validTo` date for every send. It is calculated as 45 
 >
 > Your {{program_name}} is now available through My SmartHealth.
 >
-> **Your personal AHC validity ends on {{valid_to}}.** Please book and complete your health checkup on or before this date. This is a one-time benefit; unused eligibility cannot be used after expiry.
+> **Your personal AHC validity period is {{valid_from}} to {{valid_to}}.** Please book and complete your health checkup on or before the end date. This is a one-time benefit; unused eligibility cannot be used after expiry.
 >
 > [Book your AHC](https://app.mediqzy.com/health-checkups)
+>
+> Download the My SmartHealth app: [Google Play](https://play.google.com/store/apps/details?id=com.mysmarthealth) · [App Store](https://apps.apple.com/in/app/smart-health/id6757312276)
 >
 > For eligibility questions, please contact your HR team. Do not reply with personal health information.
 >
 > My SmartHealth
+
+## Attaching the employer's PDF
+
+The invitation email carries whatever file the Team user has attached to the
+`corporate_ahc` email template — nothing is generated at send time, and the
+employee receives the uploaded file byte for byte.
+
+To set it up: **Team → Email → Templates →** open the `Corporate AHC` template
+→ **Attachments → Attach a file**. The file is stored against the template and
+goes out with every send of it, including the automated welcome email and the
+studio's `[TEST]` send.
+
+- PDF, PNG, JPEG, DOCX or XLSX, up to 10 MB, at most 5 files per template.
+- Every upload is virus-scanned and its signature checked against its declared
+  type, so a renamed binary cannot reach employees.
+- Re-uploading the same filename replaces it; the next send carries the new file.
+- The attachment is an employer document. It must not contain clinical
+  information or results.
+
+If no file is attached — or if two `corporate_ahc` templates both carry files,
+which is ambiguous — the email is still sent, because its body already carries
+the validity period and the booking and app-store links. That send is recorded
+as `sent_no_file` in `corporate_ahc_entitlement_notifications.email_status`
+rather than passing silently as a full send.
 
 ## Gupshup WhatsApp template submission
 

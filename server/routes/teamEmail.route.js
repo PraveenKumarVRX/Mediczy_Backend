@@ -76,6 +76,11 @@ import TeamEmailTemplate from '../models/teamEmailTemplate.model.js';
 import { processEmailFull, batchProcessInbox } from '../services/emailAutoProcessService.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { personalizeEmailTemplate } from '../services/team-email-template-personalization.service.js';
+import {
+  listTemplateAttachments, attachmentCountsByTemplate, saveTemplateAttachment,
+  readTemplateAttachment, deleteTemplateAttachment, mailAttachmentsForTemplate,
+  ALLOWED_ATTACHMENT_TYPES, MAX_ATTACHMENTS_PER_TEMPLATE,
+} from '../services/team-email-template-attachments.service.js';
 
 async function callGroq(prompt, maxTokens = 400, temperature = 0.7) {
   try {
@@ -223,7 +228,11 @@ router.get('/templates', authTeam, async (req, res) => {
       where: { teamMemberId },
       order: [['createdAt', 'DESC']],
     });
-    res.json({ success: true, data: templates });
+    const counts = await attachmentCountsByTemplate(templates.map(t => t.id));
+    res.json({
+      success: true,
+      data: templates.map(t => ({ ...t.get({ plain: true }), attachmentCount: counts[String(t.id)] || 0 })),
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -295,8 +304,13 @@ router.post('/templates/:id/test', authTeam, async (req, res) => {
     });
     if (!emailSettings?.smtpPassword) return res.status(400).json({ success: false, message: 'No active SMTP configuration is available for this Team account' });
 
+    // The files the Team user attached to this template go out with it, byte for
+    // byte. `includeAttachments: false` sends the body alone.
+    const attachments = req.body?.includeAttachments === false
+      ? []
+      : await mailAttachmentsForTemplate(template.id);
     const testSubject = `[TEST] ${rendered.subject}`.slice(0, 500);
-    const result = await emailService.sendOutboundEmail(emailSettings.id, { to, subject: testSubject, htmlContent: rendered.body }, {
+    const result = await emailService.sendOutboundEmail(emailSettings.id, { to, subject: testSubject, htmlContent: rendered.body, attachments }, {
       host: emailSettings.smtpHost, port: emailSettings.smtpPort, secure: emailSettings.smtpSecure,
       username: emailSettings.smtpUsername, password: emailSettings.smtpPassword,
       fromEmail: emailSettings.email, fromName: emailSettings.displayName || emailSettings.email, isActive: emailSettings.isActive
@@ -305,12 +319,101 @@ router.post('/templates/:id/test', authTeam, async (req, res) => {
       teamMemberId, messageId: result.messageId || `template-test-${Date.now()}`,
       from: emailSettings.email, fromName: emailSettings.displayName || emailSettings.email,
       to: [to], cc: [], bcc: [], subject: testSubject, body: rendered.body, htmlBody: rendered.body,
+      attachments: attachments.map(({ filename, contentType, content }) => ({ filename, contentType, size: content?.length ?? null })),
       isRead: true, labels: ['sent', 'template-test'], priority: 'normal', receivedAt: new Date()
     });
-    return res.json({ success: true, message: 'Personalised test email sent', data: { to, subject: testSubject, placeholders: rendered.placeholders } });
+    return res.json({ success: true, message: 'Personalised test email sent', data: { to, subject: testSubject, placeholders: rendered.placeholders, attachmentCount: attachments.length } });
   } catch (error) {
     console.error('Error sending email template test:', error.message);
     return res.status(500).json({ success: false, message: 'Unable to send the test email' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE ATTACHMENTS
+// A file uploaded here is stored against the template and sent as a real mail
+// attachment with every send of it — the template studio's test send and the
+// automated AHC welcome email alike. Nothing is generated at send time.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Resolve a template the caller owns, or null. */
+async function ownedTemplate(req) {
+  const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
+  return TeamEmailTemplate.findOne({ where: { id: req.params.id, teamMemberId } });
+}
+
+/** GET /api/team/emails/templates/:id/attachments – metadata only, never the bytes */
+router.get('/templates/:id/attachments', authTeam, async (req, res) => {
+  try {
+    const template = await ownedTemplate(req);
+    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+    const attachments = await listTemplateAttachments(template.id);
+    return res.json({
+      success: true,
+      data: attachments,
+      meta: { maxFiles: MAX_ATTACHMENTS_PER_TEMPLATE, allowedTypes: ALLOWED_ATTACHMENT_TYPES },
+    });
+  } catch (error) {
+    console.error('Error listing template attachments:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to list the template attachments' });
+  }
+});
+
+/** POST /api/team/emails/templates/:id/attachments – upload one file (field name: file) */
+router.post('/templates/:id/attachments', authTeam, attachUpload.single('file'), async (req, res) => {
+  try {
+    const template = await ownedTemplate(req);
+    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+    if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Attach a file to upload' });
+
+    const saved = await saveTemplateAttachment({
+      templateId: template.id,
+      filename: req.body?.filename || req.file.originalname,
+      contentType: req.file.mimetype,
+      buffer: req.file.buffer,
+      uploadedByUserId: (req.teamUser || req.user)?.id || null,
+    });
+    return res.status(201).json({ success: true, message: `${saved.filename} will be attached to this template`, data: saved });
+  } catch (error) {
+    const status = Number(error?.status) || 500;
+    if (status >= 500) console.error('Error saving template attachment:', error.message);
+    return res.status(status).json({
+      success: false,
+      message: status >= 500 ? 'Unable to save the attachment' : error.message,
+      code: error?.code,
+    });
+  }
+});
+
+/** GET /api/team/emails/templates/:id/attachments/:attachmentId – download it back */
+router.get('/templates/:id/attachments/:attachmentId', authTeam, async (req, res) => {
+  try {
+    const template = await ownedTemplate(req);
+    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+    const attachment = await readTemplateAttachment(template.id, req.params.attachmentId);
+    if (!attachment) return res.status(404).json({ success: false, message: 'Attachment not found' });
+    res.setHeader('Content-Type', attachment.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${attachment.filename.replace(/"/g, '')}"`);
+    res.setHeader('Content-Length', String(attachment.byteSize));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.end(attachment.content);
+  } catch (error) {
+    console.error('Error downloading template attachment:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to download the attachment' });
+  }
+});
+
+/** DELETE /api/team/emails/templates/:id/attachments/:attachmentId */
+router.delete('/templates/:id/attachments/:attachmentId', authTeam, async (req, res) => {
+  try {
+    const template = await ownedTemplate(req);
+    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+    const removed = await deleteTemplateAttachment(template.id, req.params.attachmentId);
+    if (!removed) return res.status(404).json({ success: false, message: 'Attachment not found' });
+    return res.json({ success: true, message: 'Attachment removed' });
+  } catch (error) {
+    console.error('Error removing template attachment:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to remove the attachment' });
   }
 });
 
