@@ -14,6 +14,7 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import { packageDisplayName } from '../utils/health-package-tests.js';
 import { getEmployeeBenefitWallet, listBenefitNetworkProviders } from '../services/corporate-benefit-wallet.service.js';
+import * as policyWallet from '../services/corporate-policy-wallet.service.js';
 
 // insurance_claims.claim_type is CHECK-constrained to cashless/reimbursement/
 // emergency -- the human-readable claim type (opd/dental/etc, from
@@ -548,7 +549,12 @@ router.get('/benefits', authUser, async (req, res) => {
         corporateId: null,
         corporateName: null,
         plans: [],
-        healthCheckups: []
+        healthCheckups: [],
+        policies: [],
+        policyGroups: [],
+        policySummary: null,
+        policyLadders: [],
+        policiesUnavailable: null
       });
     }
 
@@ -675,13 +681,44 @@ router.get('/benefits', authUser, async (req, res) => {
       };
     });
 
+    // The typed group policies, alongside the employer's benefit plans. Kept
+    // as its own key rather than folded into plans[]: plans[] is the employer's
+    // own benefit configuration, while these are insurance policies with
+    // different fields, claim routes and cards, and a client reading plans[]
+    // today must keep working unchanged.
+    //
+    // A wallet that cannot be read does not fail the whole screen: the
+    // benefit plans and check-ups above are what this endpoint has always
+    // returned, and losing them to an insurance-side error would blank the
+    // Benefits hub.
+    let policies = [];
+    let policyGroups = [];
+    let policySummary = null;
+    let policyLadders = [];
+    let policiesUnavailable = null;
+    try {
+      const wallet = await policyWallet.getPolicyWallet(req.user.id);
+      policies = wallet.policies;
+      policyGroups = wallet.groups;
+      policySummary = wallet.summary;
+      policyLadders = wallet.ladders;
+    } catch (policyError) {
+      policiesUnavailable = policyError.code || 'POLICY_WALLET_UNAVAILABLE';
+      console.error('[employee] benefits: policy wallet unavailable:', policyError.message);
+    }
+
     return res.json({
       success: true,
       isCorporateEmployee: true,
       corporateId: corp.corporateId,
       corporateName: corp.companyName,
       plans: [...healthCheckupPlans, ...plans],
-      healthCheckups: healthCheckupPlans
+      healthCheckups: healthCheckupPlans,
+      policies,
+      policyGroups,
+      policySummary,
+      policyLadders,
+      policiesUnavailable
     });
   } catch (err) {
     console.error('GET /benefits error:', err);
@@ -693,6 +730,130 @@ router.get('/benefits', authUser, async (req, res) => {
  * GET /api/employee/claims
  * Returns employee insurance claims for SmartBenefitsHub.
  */
+/**
+ * The policy wallet.
+ *
+ * An employee can hold up to seven group policies at once — GHI, its top-up,
+ * Parents GHI, its top-up, GPA, GTLI and OPD — each with a different claim
+ * route. /benefits returns the employer's benefit plans and health check-ups;
+ * these endpoints return the insurance policies themselves, typed, so the app
+ * can show the right card, the right terms and the right way to claim instead
+ * of one generic "Insurance" tile.
+ *
+ * Every response is scoped to req.user.id, and the service filters each member
+ * list to the caller's own family. A group policy covers every employee of the
+ * corporate, so an unscoped member list would disclose other families'
+ * dependants.
+ *
+ * The fixed paths are registered before /policies/:policyId so that "types"
+ * and "coverage-matrix" are not read as policy ids.
+ *
+ * GET /api/employee/policies/types
+ */
+router.get('/policies/types', authUser, (req, res) => {
+  res.json({
+    success: true,
+    types: policyWallet.POLICY_TYPES,
+    groups: policyWallet.POLICY_GROUPS,
+  });
+});
+
+/**
+ * GET /api/employee/policies
+ */
+router.get('/policies', authUser, async (req, res) => {
+  try {
+    const wallet = await policyWallet.getPolicyWallet(req.user.id);
+    res.json({ success: true, ...wallet });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[employee] policy wallet error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not load your policies' });
+  }
+});
+
+/**
+ * GET /api/employee/policies/coverage-matrix
+ */
+router.get('/policies/coverage-matrix', authUser, async (req, res) => {
+  try {
+    const matrix = await policyWallet.getCoverageMatrix(req.user.id);
+    res.json({ success: true, ...matrix });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[employee] coverage matrix error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not load your coverage' });
+  }
+});
+
+/**
+ * GET /api/employee/policies/:policyId
+ */
+router.get('/policies/:policyId', authUser, async (req, res) => {
+  try {
+    const detail = await policyWallet.getPolicyDetail(req.user.id, req.params.policyId);
+    if (!detail) {
+      return res.status(404).json({ success: false, code: 'POLICY_NOT_FOUND', message: 'No policy of yours has that id' });
+    }
+    res.json({ success: true, ...detail });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[employee] policy detail error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not load that policy' });
+  }
+});
+
+/**
+ * GET /api/employee/policies/:policyId/claims
+ */
+router.get('/policies/:policyId/claims', authUser, async (req, res) => {
+  try {
+    const result = await policyWallet.listPolicyClaims(req.user.id, req.params.policyId);
+    if (!result) {
+      return res.status(404).json({ success: false, code: 'POLICY_NOT_FOUND', message: 'No policy of yours has that id' });
+    }
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[employee] policy claims error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not load claims for that policy' });
+  }
+});
+
+/**
+ * GET /api/employee/policies/:policyId/members/:memberId/e-card
+ *
+ * The card for one covered person — a parent on the parents' policy, the
+ * employee on the base policy. An accident or life policy has no card at all
+ * and says so, rather than handing someone an unusable one at an admission
+ * desk.
+ */
+router.get('/policies/:policyId/members/:memberId/e-card', authUser, async (req, res) => {
+  try {
+    const result = await policyWallet.getMemberECard(req.user.id, req.params.policyId, req.params.memberId);
+    if (result?.error === 'POLICY_NOT_FOUND') {
+      return res.status(404).json({ success: false, code: result.error, message: 'No policy of yours has that id' });
+    }
+    if (result?.error === 'MEMBER_NOT_FOUND') {
+      return res.status(404).json({ success: false, code: result.error, message: 'Nobody in your family is covered under that member id' });
+    }
+    if (result?.error === 'POLICY_HAS_NO_CARD') {
+      return res.status(409).json({
+        success: false,
+        code: result.error,
+        policyType: result.policyType,
+        actions: result.actions,
+        message: 'This policy is not claimed with a card. A claim is made through your HR team with documents.',
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[employee] member e-card error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not load that card' });
+  }
+});
+
 router.get('/claims', authUser, async (req, res) => {
   try {
     const corp = await getUserCorporate(req.user.id);
