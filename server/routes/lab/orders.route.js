@@ -103,15 +103,54 @@ router.patch('/:orderId/status', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
 
+    // A patient result may not be released on a QC material that has not been
+    // released itself. The analytical run behind the number is only trustworthy
+    // if its quality control passed, so completing against a locked material is
+    // refused and the transaction rolled back rather than letting an
+    // unvalidated result reach a clinician.
+    const qcMaterialId = req.body.qcMaterialId ?? null;
+    const qcRunId = req.body.qcRunId ?? null;
+    let qcReleased = false;
+    if (nextStatus === 'completed' && qcMaterialId) {
+      const qcMaterial = await client.query(
+        `SELECT id, release_status FROM lab_qc_materials WHERE id = $1 AND lab_id = $2`,
+        [qcMaterialId, labId]
+      );
+      const releaseStatus = qcMaterial.rows[0]?.release_status;
+      if (releaseStatus !== 'released') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          code: 'qc_not_released',
+          message: qcMaterial.rows[0]
+            ? `Quality control for this run is ${releaseStatus}. Release the QC material before completing the order.`
+            : 'The quality-control material for this run was not found.',
+        });
+      }
+      qcReleased = true;
+      if (qcRunId) {
+        await client.query(
+          `SELECT id FROM lab_qc_runs WHERE id = $1 AND lab_id = $2 AND material_id = $3`,
+          [qcRunId, labId, qcMaterialId]
+        );
+      }
+    }
+
+    // Releasing on validated QC cuts a new result version, so an amended result
+    // is distinguishable from the one already reported.
     const update = await client.query(
       `UPDATE lab_orders
        SET status = $1,
            results = COALESCE($2, results),
            sample_collected_at = CASE WHEN $1 = 'sample_collected' THEN COALESCE(sample_collected_at, NOW()) ELSE sample_collected_at END,
+           release_status = CASE WHEN $5 THEN 'released' ELSE release_status END,
+           result_version = CASE WHEN $5 THEN COALESCE(result_version, 0) + 1 ELSE result_version END,
+           qc_material_id = COALESCE($6, qc_material_id),
+           qc_run_id = COALESCE($7, qc_run_id),
            updated_at = NOW()
        WHERE id = $3 AND lab_id = $4
        RETURNING *`,
-      [nextStatus, results ? JSON.stringify(results) : null, orderId, labId]
+      [nextStatus, results ? JSON.stringify(results) : null, orderId, labId, qcReleased, qcMaterialId, qcRunId]
     );
 
     let billing = null;

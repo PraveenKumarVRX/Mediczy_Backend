@@ -47,10 +47,16 @@ describe('entitlement action per endpoint — least privilege', () => {
   it('reads need "view", creates "create", reversals/closes/approvals/reposts "edit", CSV export "export"', () => {
     const count = (a) => registered.filter((c) => c[1] === a).length;
     expect(count('view')).toBe(12);     // accounts, vendors, expenses, budgets, tax-codes, journal, periods, 4 reports, reconciliation
-    expect(count('create')).toBe(4);    // vendors, expenses, journal-entries, fiscal-periods
+    // vendors, expenses, budgets, journal-entries, fiscal-periods. /budgets was
+    // added after this count was written, which is the only reason it drifted.
+    expect(count('create')).toBe(5);
     expect(count('edit')).toBe(4);      // reverse, close period, approve expense, repost
     expect(count('export')).toBe(1);
-    expect(registered).toHaveLength(21);
+    // The total is the sum of the four actions above, so a new endpoint fails
+    // on the action it was given rather than only on a count that says nothing
+    // about which one drifted.
+    expect(registered).toHaveLength(count('view') + count('create') + count('edit') + count('export'));
+    expect(registered).toHaveLength(22);
   });
 
   it('an un-entitled tenant is refused on a read and a write, and the service is never reached', async () => {
