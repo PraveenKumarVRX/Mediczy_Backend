@@ -29,7 +29,7 @@ import crypto from 'crypto';
 import hpp from "hpp";
 import rateLimit from "express-rate-limit";
 import fileUpload from 'express-fileupload';
-import { NURSING_IMAGE_UPLOAD_PATHS } from './utils/nursing-upload-paths.js';
+import { usesMulter } from './utils/multer-upload-paths.js';
 import compression from 'compression';
 import orchestrator from "./db/orchestrator.js";
 import userRouter from "./routes/user.route.js";
@@ -993,45 +993,9 @@ const globalFileUploadMiddleware = fileUpload({
 });
 
 app.use((req, res, next) => {
-  // Skip express-fileupload for routes that use multer (memoryStorage/diskStorage)
-  // These routes handle their own multipart parsing via multer
-  const multerPaths = [
-    ...NURSING_IMAGE_UPLOAD_PATHS,
-    '/api/offline-scribe/transcribe',
-    '/api/offline-scribe/full-pipeline',
-    '/api/recordings/upload',
-    '/api/ai/vision/analyze',
-    '/api/scribe/transcribe',
-    '/api/v3/ai-brain/documents',
-    '/api/cdss/knowledge/upload',
-    '/api/corporate-bookings/reports/upload',
-    '/api/team/emails/send',
-    '/api/crm/rfqs/upload-excel',
-    '/api/crm/rfqs',
-    '/api/clinic/register',
-    '/api/lab/register',
-    '/api/pharmacy/register',
-    '/api/homecare/register',
-    '/api/ambulance/register',
-    '/api/hospital/register',
-    '/api/corporate/register',
-    '/api/doctor/chat/upload',
-    '/api/doctors/imaging/upload',
-    '/api/lab/ris/upload',
-    '/api/hypergrid/dicom/studies', // STOW-RS multer — express-fileupload must not drain body first
-    '/api/voice-assistant/stt',   // multer memoryStorage — must not be pre-consumed by express-fileupload
-  ];
-  if (multerPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {
-    return next();
-  }
-  // POST /api/reports (root) uses multer, but /api/reports/upload uses express-fileupload
-  if (req.method === 'POST' && req.path === '/api/reports') {
-    return next();
-  }
-  // Doctor media upload uses multer
-  if (req.path.match(/^\/api\/doctors\/upload\/[^/]+$/) && req.method === 'POST') {
-    return next();
-  }
+  // Routes that parse their own multipart body with multer must not have the
+  // stream drained first — see utils/multer-upload-paths.js.
+  if (usesMulter(req.path, req.method)) return next();
   return globalFileUploadMiddleware(req, res, next);
 });
 

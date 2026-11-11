@@ -13,16 +13,19 @@ const attachUpload = multer({
 
 // Graceful multer wrapper:
 //  • Normal multipart with boundary → multer parses files + fields as usual.
-//  • Multipart WITHOUT boundary → buffer body, auto-detect boundary from the
-//    first line, repair Content-Type, then re-pipe to multer so req.body fields
-//    AND req.files are both populated correctly. The app's service worker
-//    re-issues requests and drops the boundary, so this is the normal case in
-//    production, not an edge case.
+//  • Multipart WITHOUT boundary (an old cached frontend that set Content-Type
+//    explicitly) → buffer body, auto-detect boundary from the first line,
+//    repair Content-Type, then re-pipe to multer so req.body fields AND
+//    req.files are both populated correctly.
 //  • Non-multipart (JSON etc.) → skip multer, proceed with express-parsed body.
 //
 // A multer failure is never passed to next(err): Express's default handler
 // answers that with an HTML 500, which tells the user nothing. The reason is
 // recorded on req.uploadError for the route to report instead.
+//
+// None of this helps if express-fileupload has already drained the stream —
+// busboy then reports "Unexpected end of form". Every path reaching multer
+// must be listed in utils/multer-upload-paths.js.
 function makeOptionalUpload(runMulter, label) {
   return function optionalUpload(req, res, next) {
     const ct = req.headers['content-type'] || '';

@@ -68,9 +68,9 @@ describe('POST /templates/:id/attachments', () => {
   });
 
   it('accepts the upload when the boundary is missing from Content-Type', async () => {
-    // The app's service worker re-issues the request and drops the boundary.
-    // Bare multer answers that by handing Express an error, which becomes an
-    // HTML 500 — this is the regression this wrapper exists to prevent.
+    // An old cached frontend that sets Content-Type explicitly loses the
+    // boundary. Bare multer answers that by handing Express an error, which
+    // becomes an HTML 500 — this wrapper exists to prevent that.
     saveTemplateAttachment.mockResolvedValue({ id: 'a2', filename: 'Letter.pdf' });
     const boundary = '----probeBoundary1234';
     const body = Buffer.concat([
