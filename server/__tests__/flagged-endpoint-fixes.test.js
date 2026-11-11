@@ -21,7 +21,7 @@ describe('a denial says which kind of denial it is', () => {
 
   it('answers not-found for a path no router serves', () => {
     expect(middleware).toContain("code: 'ENDPOINT_NOT_FOUND'");
-    expect(middleware).toContain('const mounted = isPathMounted(req.app, requestPath)');
+    expect(middleware).toContain('const mounted = isPathMounted(req.app, requestPath, req.method)');
   });
 
   it('still refuses a real endpoint the caller may not use', () => {
@@ -47,15 +47,30 @@ describe('isPathMounted', () => {
     ({ isPathMounted } = await import('../middleware/ringFencing.js'));
   });
 
+  // Mounted routers carry a route each. A router with no routes at all is
+  // treated as serving whatever matches its prefix — it is middleware-only and
+  // may answer anything, and a wrong 404 that hides a working endpoint is
+  // worse than the 403 this replaces.
+  const mountLayer = (prefix, routePaths) => ({
+    regexp: {
+      fast_slash: false,
+      test: (p) => p === prefix || p.startsWith(`${prefix}/`),
+      exec: (p) => (p === prefix || p.startsWith(`${prefix}/`) ? [prefix] : null),
+    },
+    handle: {
+      stack: routePaths.map((routePath) => ({
+        route: { path: routePath, methods: { get: true } },
+        regexp: { test: (rest) => rest === routePath, fast_slash: false },
+      })),
+    },
+  });
+
   const appWith = (...mounts) => ({
     _router: {
       stack: [
         // root-level middleware: matches everything, must not count
         { regexp: { fast_slash: true, test: () => true }, handle: {} },
-        ...mounts.map((prefix) => ({
-          regexp: { fast_slash: false, test: (p) => p === prefix || p.startsWith(`${prefix}/`) },
-          handle: { stack: [] },
-        })),
+        ...mounts.map((prefix) => mountLayer(prefix, ['/', '/dashboard', '/instruments'])),
       ],
     },
   });
@@ -64,6 +79,8 @@ describe('isPathMounted', () => {
     const app = appWith('/api/programs', '/api/wellness');
     expect(isPathMounted(app, '/api/programs/instruments')).toBe(true);
     expect(isPathMounted(app, '/api/wellness/dashboard')).toBe(true);
+    // a path under a mounted prefix that no route declares is still absent
+    expect(isPathMounted(app, '/api/programs/not-a-route')).toBe(false);
   });
 
   it('does not find a prefix nothing mounts', () => {
@@ -79,6 +96,68 @@ describe('isPathMounted', () => {
   it('ignores a matching layer that is neither a route nor a router', () => {
     const app = { _router: { stack: [{ regexp: { fast_slash: false, test: () => true }, handle: {} }] } };
     expect(isPathMounted(app, '/api/anything')).toBe(false);
+  });
+
+  it('treats a router that declares no routes as serving whatever it mounts', () => {
+    // It is middleware-only and may answer anything. A wrong 404 hides a
+    // working endpoint; the 403 it would otherwise give is merely unhelpful.
+    const app = { _router: { stack: [{
+      regexp: { fast_slash: false, test: () => true, exec: () => ['/api/opaque'] },
+      handle: { stack: [{ regexp: { test: () => false }, handle: () => {} }] },
+    }] } };
+    expect(isPathMounted(app, '/api/opaque/anything')).toBe(true);
+  });
+
+  it('ignores a wildcard route registered for another method', () => {
+    // app.options('*') is registered for CORS preflight and matches every
+    // path. Counting it made every path look served, which is why the first
+    // version of this check never fired at all.
+    const preflight = {
+      route: { path: '*', methods: { options: true } },
+      regexp: { test: () => true },
+    };
+    const real = {
+      route: { path: '/api/thing', methods: { get: true } },
+      regexp: { test: (p) => p === '/api/thing' },
+    };
+    const app = { _router: { stack: [preflight, real] } };
+    expect(isPathMounted(app, '/api/nowhere', 'GET')).toBe(false);
+    expect(isPathMounted(app, '/api/nowhere', 'OPTIONS')).toBe(true);
+    expect(isPathMounted(app, '/api/thing', 'GET')).toBe(true);
+    expect(isPathMounted(app, '/api/thing', 'DELETE')).toBe(false);
+  });
+
+  it('serves HEAD wherever GET is declared', () => {
+    const app = { _router: { stack: [{
+      route: { path: '/api/thing', methods: { get: true } },
+      regexp: { test: (p) => p === '/api/thing' },
+    }] } };
+    expect(isPathMounted(app, '/api/thing', 'HEAD')).toBe(true);
+  });
+
+  it('honours a route declared for all methods', () => {
+    const app = { _router: { stack: [{
+      route: { path: '/api/thing', methods: { _all: true } },
+      regexp: { test: (p) => p === '/api/thing' },
+    }] } };
+    expect(isPathMounted(app, '/api/thing', 'PATCH')).toBe(true);
+  });
+
+  it('passes the request method through from the middleware', () => {
+    const middleware = read('middleware/ringFencing.js');
+    expect(middleware).toContain('isPathMounted(req.app, requestPath, req.method)');
+  });
+
+  it('descends into a router rather than stopping at its mount', () => {
+    // Two routers are mounted at bare '/api', so matching mount prefixes alone
+    // claimed every path this middleware guards and the check never fired.
+    const api = {
+      regexp: { fast_slash: false, test: (p) => p.startsWith('/api'), exec: () => ['/api'] },
+      handle: { stack: [{ route: { path: '/hospitals', methods: { get: true } }, regexp: { test: (rest) => rest === '/hospitals' } }] },
+    };
+    const app = { _router: { stack: [api] } };
+    expect(isPathMounted(app, '/api/hospitals')).toBe(true);
+    expect(isPathMounted(app, '/api/mental-health/moods')).toBe(false);
   });
 
   it('errs towards mounted when the stack cannot be read', () => {
@@ -125,12 +204,12 @@ describe('the e-card answers from wherever the cover actually is', () => {
   const load = async (handlers = {}) => {
     jest.resetModules();
     const calls = [];
-    const query = jest.fn(async (sql) => {
+    const query = jest.fn(async (sql, options) => {
       const flat = sql.replace(/\s+/g, ' ').trim();
       const shape = /FROM policy_members/.test(flat) ? 'policy'
         : /FROM tpa_member_enrollments/.test(flat) ? 'pending'
         : 'other';
-      calls.push({ shape, sql: flat });
+      calls.push({ shape, sql: flat, replacements: options?.replacements });
       const handler = handlers[shape];
       if (typeof handler === 'function') return handler();
       return handler ?? [];
@@ -150,7 +229,7 @@ describe('the e-card answers from wherever the cover actually is', () => {
     memberRowId: 12, relationship: 'self', sumInsured: '500000.00', used: '25000.00',
     remaining: '475000.00', validFrom: '2026-04-01', validTill: '2027-03-31',
     policyNumber: 'GRP-2026-0001', planName: 'Group Health', policyType: 'group',
-    policySumInsured: '500000.00', insurer: 'Star Health', ...over,
+    policySumInsured: '500000.00', insurer: 'Star Health', policyType: 'GHI', ...over,
   });
 
   it('prefers the TPA membership, which is the administrator\'s own record', async () => {
@@ -172,6 +251,34 @@ describe('the e-card answers from wherever the cover actually is', () => {
       policyNumber: 'GRP-2026-0001', insurer: 'Star Health',
       coverageAmount: 500000, availableBalance: 475000,
     });
+  });
+
+  it('only ever offers a policy a hospital can use the card for', async () => {
+    const { resolveMemberCard, calls } = await load({ policy: [] });
+    await resolveMemberCard(19);
+    const sql = calls.find((c) => c.shape === 'policy').sql;
+    // Ordered by coverage end date alone, the fallback handed back whichever
+    // policy came first — in practice an outpatient one, so "my insurance
+    // card" showed a ₹25,000 OPD balance instead of ₹5,00,000 of hospital
+    // cover. An accident or life policy would be worse: no card exists.
+    expect(sql).toContain('= ANY(ARRAY[:cardTypes]::text[])');
+    expect(sql).toContain('array_position(ARRAY[:rank]::text[]');
+  });
+
+  it('asks for exactly the types the wallet says have cards', async () => {
+    const { resolveMemberCard, calls } = await load({ policy: [] });
+    await resolveMemberCard(19);
+    const { cardTypes, rank } = calls.find((c) => c.shape === 'policy').replacements;
+    expect(new Set(cardTypes)).toEqual(new Set(['GHI', 'GHI_TOPUP', 'PARENTS_GHI', 'PARENTS_TOPUP']));
+    for (const noCard of ['GPA', 'GTLI', 'OPD']) expect(cardTypes).not.toContain(noCard);
+    // Base cover before its top-up, the member's own before their parents'.
+    expect(rank[0]).toBe('GHI');
+    expect(rank.indexOf('GHI')).toBeLessThan(rank.indexOf('GHI_TOPUP'));
+  });
+
+  it('reports which type the card belongs to', async () => {
+    const { resolveMemberCard } = await load({ policy: [policyRow({ policyType: 'GHI' })] });
+    expect((await resolveMemberCard(19)).ecard.policyType).toBe('GHI');
   });
 
   it('computes the balance itself when the stored remaining is null', async () => {

@@ -20,6 +20,7 @@
 import { QueryTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import tpaClaimsLifecycleService from './tpa-claims-lifecycle.service.js';
+import { POLICY_TYPES } from './corporate-policy-wallet.service.js';
 
 export const ECARD_REASON = {
   PENDING_APPROVAL: 'ECARD_PENDING_APPROVAL',
@@ -57,6 +58,24 @@ const money = (value) => {
  * never by name. Only active membership of an active policy counts: a lapsed
  * policy must not render as a usable card at an admission desk.
  */
+/**
+ * Only the policy types a hospital can actually use a card for, most
+ * card-worthy first. Taken from the wallet's own registry so the two cannot
+ * disagree about which policies have cards.
+ *
+ * Without this the fallback ordered by coverage end date and handed back
+ * whatever came first — which in practice was an outpatient policy, so a
+ * member opening "my insurance card" saw a ₹25,000 OPD balance instead of
+ * their ₹5,00,000 hospital cover. An accident or life policy would have been
+ * worse: those are claimed through HR with documents and have no card at all.
+ */
+const CARD_TYPES = Object.entries(POLICY_TYPES)
+  .filter(([, spec]) => spec.hasECard)
+  .map(([type]) => type);
+
+/** Base cover before its top-up, and the member's own before their parents'. */
+const CARD_TYPE_RANK = ['GHI', 'PARENTS_GHI', 'GHI_TOPUP', 'PARENTS_TOPUP'];
+
 const cardFromPolicyRoster = async (userId) =>
   tolerateMissingSchema(async () => {
     const rows = await sequelize.query(
@@ -79,9 +98,11 @@ const cardFromPolicyRoster = async (userId) =>
           AND m."isActive" = true
           AND lower(COALESCE(p.status, 'active')) IN ('active', 'in_force')
           AND (m."coverageEndDate" IS NULL OR m."coverageEndDate" >= CURRENT_DATE)
-        ORDER BY m."coverageEndDate" DESC NULLS FIRST, m.id DESC
+          AND upper(COALESCE(p."policyType", '')) = ANY(ARRAY[:cardTypes]::text[])
+        ORDER BY array_position(ARRAY[:rank]::text[], upper(COALESCE(p."policyType", ''))) NULLS LAST,
+                 m."coverageEndDate" DESC NULLS FIRST, m.id DESC
         LIMIT 1`,
-      { replacements: { userId }, type: QueryTypes.SELECT }
+      { replacements: { userId, cardTypes: CARD_TYPES, rank: CARD_TYPE_RANK }, type: QueryTypes.SELECT }
     );
     if (!rows.length) return null;
 
@@ -94,6 +115,7 @@ const cardFromPolicyRoster = async (userId) =>
         cardNumber: `POL-${row.policyNumber}-${row.memberRowId}`,
         memberId: String(row.memberRowId),
         policyNumber: row.policyNumber,
+        policyType: row.policyType || null,
         planName: row.planName || row.policyType || 'Health policy',
         insurer: row.insurer || null,
         relation: row.relationship || 'self',

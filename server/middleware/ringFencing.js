@@ -727,7 +727,7 @@ const isPathAllowed = (requestPath, allowedPath) => {
 };
 
 /**
- * Does any mounted router serve this path?
+ * Does any route actually serve this path?
  *
  * This middleware runs before routing, so a denial cannot otherwise tell a
  * path the caller may not use from a path that does not exist. Both came back
@@ -735,25 +735,73 @@ const isPathAllowed = (requestPath, allowedPath) => {
  * whoever is debugging it to the allow-list for an endpoint that was never
  * written.
  *
- * Reads Express's own layer stack: every `app.use('/api/x', router)` leaves a
- * layer whose regexp matches that prefix. Layers mounted at the root
- * (`express.json`, this middleware, error handlers) match everything, so they
- * are skipped via `fast_slash` — counting them would make every path look
- * mounted and give back the old behaviour.
+ * It has to descend into mounted routers rather than stop at the mount. Two
+ * routers are mounted at bare '/api' (activity logs, the hospital directory),
+ * so testing mount prefixes alone matched every path this middleware guards
+ * and the check never fired. For a matching mount the prefix is stripped and
+ * the remainder tested against that router's own layers, recursively.
  *
- * Errs towards "mounted": if the stack cannot be read on some future Express,
- * the caller gets the 403 it used to get rather than a wrong 404.
+ * A matching router that declares no routes anywhere is treated as serving the
+ * path: it is middleware-only and may answer anything, and a wrong 404 that
+ * hides a working endpoint is far worse than the 403 this replaces. The same
+ * caution applies if the stack cannot be read at all.
  */
-const isPathMounted = (app, requestPath) => {
-  const stack = app?._router?.stack || app?.router?.stack;
+const ROUTER_DEPTH_LIMIT = 8;
+
+const hasAnyRoute = (stack, depth = 0) => {
+  if (depth > ROUTER_DEPTH_LIMIT || !Array.isArray(stack)) return false;
+  return stack.some((layer) => layer?.route || (layer?.handle?.stack && hasAnyRoute(layer.handle.stack, depth + 1)));
+};
+
+/**
+ * A route serves a path only for the methods it declares. app.options('*') is
+ * registered for CORS preflight and matches every path — counting it made
+ * every path look served, which is why the first version of this check never
+ * fired.
+ */
+const routeServes = (layer, method) => {
+  const methods = layer.route?.methods;
+  if (!methods) return false;
+  if (methods._all) return true;
+  const verb = String(method || 'GET').toLowerCase();
+  return Boolean(methods[verb] || (verb === 'head' && methods.get));
+};
+
+const matchesRoute = (stack, path, method, depth = 0) => {
+  if (depth > ROUTER_DEPTH_LIMIT || !Array.isArray(stack)) return false;
+  for (const layer of stack) {
+    if (!layer?.regexp) continue;
+
+    if (layer.route) {
+      if (layer.regexp.test(path) && routeServes(layer, method)) return true;
+      continue;
+    }
+
+    // Not a route and not a router: plain middleware, which decides nothing
+    // about whether a path exists.
+    if (!layer.handle?.stack) continue;
+
+    // Mounted at '/' — no prefix to strip.
+    if (layer.regexp.fast_slash) {
+      if (matchesRoute(layer.handle.stack, path, method, depth + 1)) return true;
+      continue;
+    }
+
+    const match = layer.regexp.exec(path);
+    if (!match) continue;
+    const rest = path.slice(match[0].length) || '/';
+    if (!hasAnyRoute(layer.handle.stack, depth + 1)) return true; // opaque: assume it serves
+    if (matchesRoute(layer.handle.stack, rest.startsWith('/') ? rest : `/${rest}`, method, depth + 1)) return true;
+  }
+  return false;
+};
+
+export const isPathMounted = (app, requestPath, method = 'GET') => {
+  // app.router is a getter that THROWS on Express 4, so it is never touched.
+  const stack = app?._router?.stack;
   if (!Array.isArray(stack)) return true;
   try {
-    return stack.some((layer) => {
-      if (!layer?.regexp || layer.regexp.fast_slash) return false;
-      // Only mounted routers and routes count, not root-level middleware.
-      if (!layer.route && !layer.handle?.stack) return false;
-      return layer.regexp.test(requestPath);
-    });
+    return matchesRoute(stack, requestPath, method);
   } catch {
     return true;
   }
@@ -1140,7 +1188,7 @@ const ringFencingMiddleware = (req, res, next) => {
       // would have changed nothing. Saying which it is costs nothing — the
       // caller is already authenticated — and a missing feature stops looking
       // like a missing grant.
-      const mounted = isPathMounted(req.app, requestPath);
+      const mounted = isPathMounted(req.app, requestPath, req.method);
       if (!mounted) {
         console.log(`🚫 Ring-fencing: ${userType} requested ${requestPath}, which no router serves`);
         return res.status(404).json({
@@ -1523,8 +1571,6 @@ export const withPatientRelationship = (relationshipModel) => {
   }
   return verifyPatientRelationship(relationshipModel);
 };
-
-export { isPathMounted };
 
 export {
   ringFencingMiddleware,
