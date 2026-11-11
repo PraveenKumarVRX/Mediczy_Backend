@@ -39,6 +39,7 @@ class WhatsAppProductionService {
       prescription: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_PRESCRIPTION : process.env.WHATSAPP_TEMPLATE_PRESCRIPTION),
       otp: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_OTP : process.env.WHATSAPP_TEMPLATE_OTP),
       checkupReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_CHECKUP_REMINDER : process.env.WHATSAPP_TEMPLATE_CHECKUP_REMINDER),
+      ahcWelcome: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_AHC_WELCOME : process.env.WHATSAPP_TEMPLATE_AHC_WELCOME),
       healthCheckupReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_HEALTH_CHECKUP_REMINDER : process.env.WHATSAPP_TEMPLATE_HEALTH_CHECKUP_REMINDER),
       membershipRenewalReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER : process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER),
       membershipRenewalPayment: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT : process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT),
@@ -175,6 +176,13 @@ class WhatsAppProductionService {
       `Please carry a valid photo ID and arrive 10 minutes early.\n\n` +
       `_My SmartHealth Wellness Team_`;
     return await this.sendMessageParams(messageParams, 'healthCheckupReminder');
+  }
+
+  /** A business-initiated AHC invitation must use an approved provider template. */
+  async sendAhcWelcome({ to, employeeName, corporateName, validTo }) {
+    if (this.provider !== 'gupshup') throw new Error('AHC welcome delivery is configured for Gupshup templates only');
+    if (!this.templates.ahcWelcome) throw new Error('GUPSHUP_TEMPLATE_AHC_WELCOME is not configured');
+    return gupshup.sendTemplate({ to, templateId: this.templates.ahcWelcome, params: [employeeName, corporateName, validTo] });
   }
 
   /**

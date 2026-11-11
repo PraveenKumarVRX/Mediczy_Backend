@@ -42,6 +42,11 @@ describe('real Gupshup transport', () => {
     expect(JSON.parse(new URLSearchParams(post.mock.calls[0][1]).get('template')))
       .toEqual({ id: 'approved-template-id', params: ['A', '123456'] });
   });
+  it('accepts Gupshup\'s documented success response for a template send', async () => {
+    post.mockResolvedValueOnce({ data: { status: 'success', messageId: 'gs-message-2' } });
+    await expect(sender.sendTemplate({ to: '9000000001', templateId: 'approved-template-id', params: ['A'] }))
+      .resolves.toMatchObject({ sid: 'gs-message-2', status: 'submitted' });
+  });
   it('rejects Twilio templates and incomplete configuration without an HTTP request', async () => {
     expect(() => sender.sendTemplate({ to: '9000000001', templateId: 'HXold-template' })).toThrow(/Twilio/);
     await expect(new GupshupWhatsAppService({ config: {} }).sendText({ to: '9000000001', body: 'hello' })).rejects.toThrow(/configured/);

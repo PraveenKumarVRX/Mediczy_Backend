@@ -44,7 +44,7 @@ export class GupshupWhatsAppService {
         { code: status ? 'GUPSHUP_REQUEST_REJECTED' : 'GUPSHUP_DELIVERY_UNCERTAIN', status,
           definitelyNotSent: Boolean(status && status >= 400 && status < 500 && status !== 408) });
     }
-    if (data?.status !== 'submitted' || !data?.messageId) {
+    if (!['submitted', 'success'].includes(String(data?.status || '').toLowerCase()) || !data?.messageId) {
       throw Object.assign(new Error('Gupshup did not confirm message submission'), { code: 'GUPSHUP_INVALID_RESPONSE' });
     }
     return { sid: data.messageId, messageId: data.messageId, provider: 'gupshup', status: 'submitted',
