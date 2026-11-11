@@ -2,6 +2,7 @@ import { QueryTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 
 import { schemaVerifier } from '../utils/schema-guard.js';
+import { linkColumns, resolveCorporate } from './tpa-member-link.service.js';
 const PAGE_LIMIT_MAX = 100;
 
 const toNumber = (value, fallback = 0) => {
@@ -1365,18 +1366,44 @@ class TPAClaimsLifecycleService {
     const enrollmentNumber = body.enrollmentNumber || `ENR-${Date.now()}`;
     const memberIdGenerated = !body.memberId;
     const memberId = body.memberId || `MEM-${String(tpaId || 'TPA').padStart(3, '0')}-${Date.now()}`;
+
+    // Approving an enrolment is what creates the member row, so this is where
+    // a human is already deciding who this person is — the account link
+    // belongs here rather than being reconstructed from a name afterwards.
+    // Both columns arrive with 20261111000200; before it is applied the
+    // enrolment is written exactly as it was.
+    const columns = await linkColumns();
+    const corporateName = body.corporateName || body.corporate || 'Corporate not mapped';
+    let corporateId = Number.isSafeInteger(Number(body.corporateId)) && Number(body.corporateId) > 0
+      ? Number(body.corporateId)
+      : null;
+    if (!corporateId && columns.enrolmentCorporate) {
+      const resolved = await resolveCorporate(corporateName);
+      // A name that matches two employers is left unresolved rather than
+      // guessed; the desk picks one on the linking screen.
+      if (resolved && !resolved.candidates) corporateId = resolved.corporateId;
+    }
+    const userId = Number.isSafeInteger(Number(body.userId)) && Number(body.userId) > 0 ? Number(body.userId) : null;
+
+    const extraCols = [];
+    const extraVals = [];
+    if (columns.enrolmentUser) { extraCols.push('user_id'); extraVals.push(':userId'); }
+    if (columns.enrolmentCorporate) { extraCols.push('corporate_id'); extraVals.push(':corporateId'); }
+
     const rows = await sequelize.query(
       `INSERT INTO tpa_member_enrollments
        (enrollment_number, tpa_id, corporate_name, policy_number, member_id, employee_id, employee_name,
-        relation, endorsement_type, dependents, coverage_amount, status)
+        relation, endorsement_type, dependents, coverage_amount, status${extraCols.length ? ', ' + extraCols.join(', ') : ''})
        VALUES (:enrollmentNumber, :tpaId, :corporateName, :policyNumber, :memberId, :employeeId, :employeeName,
-        :relation, :endorsementType, :dependents::jsonb, :coverageAmount, :status)
+        :relation, :endorsementType, :dependents::jsonb, :coverageAmount, :status${extraVals.length ? ', ' + extraVals.join(', ') : ''})
        RETURNING *`,
       {
         replacements: {
           enrollmentNumber,
           tpaId,
-          corporateName: body.corporateName || body.corporate || 'Corporate not mapped',
+          ...(columns.enrolmentUser ? { userId } : {}),
+          ...(columns.enrolmentCorporate ? { corporateId } : {}),
+          corporateName,
           policyNumber: body.policyNumber,
           memberId,
           employeeId: body.employeeId || null,
@@ -1444,13 +1471,38 @@ class TPAClaimsLifecycleService {
         throw error;
       }
       ecardVerificationCode = `ECARD-${enrollment.member_id}-${Date.now()}`;
+
+      // The approved enrolment's account and corporate carry onto the member
+      // row, so a membership created this way is born linked and the
+      // member-facing e-card resolves without a second manual step. On a
+      // re-approval an existing link is kept rather than overwritten:
+      // changing who a membership belongs to is an explicit unlink.
+      const columns = await linkColumns();
+      const linkCols = [];
+      const linkVals = [];
+      const linkUpdates = [];
+      if (columns.memberUser && columns.enrolmentUser) {
+        linkCols.push('user_id'); linkVals.push(':linkUserId');
+        linkUpdates.push('user_id = COALESCE(tpa_members.user_id, EXCLUDED.user_id)');
+      }
+      if (columns.memberCorporate && columns.enrolmentCorporate) {
+        linkCols.push('corporate_id'); linkVals.push(':linkCorporateId');
+        linkUpdates.push('corporate_id = COALESCE(tpa_members.corporate_id, EXCLUDED.corporate_id)');
+      }
+      if (columns.memberUser && columns.enrolmentUser && enrollment.user_id) {
+        linkCols.push('link_method', 'linked_by_user_id', 'linked_at');
+        linkVals.push("'enrolment'", ':actorId', 'NOW()');
+        linkUpdates.push("link_method = COALESCE(tpa_members.link_method, 'enrolment')");
+      }
+
       await sequelize.query(
         `INSERT INTO tpa_members
          (member_id, tpa_id, employee_id, employee_name, relation, corporate_name, policy_number,
-          policy_start_date, policy_end_date, coverage_amount, used_amount, dependents, status, ecard_verification_code, metadata)
+          policy_start_date, policy_end_date, coverage_amount, used_amount, dependents, status, ecard_verification_code, metadata${linkCols.length ? ', ' + linkCols.join(', ') : ''})
          VALUES (:memberId, :tpaId, :employeeId, :employeeName, :relation, :corporateName, :policyNumber,
-          CURRENT_DATE, CURRENT_DATE + interval '1 year', :coverageAmount, 0, :dependents::jsonb, 'active', :ecardCode, :metadata::jsonb)
+          CURRENT_DATE, CURRENT_DATE + interval '1 year', :coverageAmount, 0, :dependents::jsonb, 'active', :ecardCode, :metadata::jsonb${linkVals.length ? ', ' + linkVals.join(', ') : ''})
          ON CONFLICT (member_id) DO UPDATE SET
+          ${linkUpdates.length ? linkUpdates.join(',\n          ') + ',' : ''}
           status = 'active',
           coverage_amount = EXCLUDED.coverage_amount,
           dependents = EXCLUDED.dependents,
@@ -1469,6 +1521,8 @@ class TPAClaimsLifecycleService {
             coverageAmount: enrollment.coverage_amount,
             dependents: JSON.stringify(enrollment.dependents || []),
             ecardCode: ecardVerificationCode,
+            ...(columns.memberUser && columns.enrolmentUser ? { linkUserId: enrollment.user_id ?? null, actorId: actorId ?? null } : {}),
+            ...(columns.memberCorporate && columns.enrolmentCorporate ? { linkCorporateId: enrollment.corporate_id ?? null } : {}),
             metadata: JSON.stringify({ enrollmentNumber, source: 'member_enrollment_decision', ecardGeneratedAt: new Date().toISOString() }),
           },
         }

@@ -15,6 +15,7 @@ import mdIndiaTPA from '../services/mdindia-tpa.service.js';
 import healthIndiaTPA from '../services/healthindia-tpa.service.js';
 import tpaAggregator from '../services/tpa-aggregator.service.js';
 import tpaClaimsLifecycleService from '../services/tpa-claims-lifecycle.service.js';
+import * as memberLink from '../services/tpa-member-link.service.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
@@ -1341,6 +1342,94 @@ router.post('/member-enrollments/:enrollmentNumber/decision', authUser, requireR
   } catch (error) {
     console.error('TPA enrollment decision error:', error);
     res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Failed to decide member enrollment', error: error.message });
+  }
+});
+
+/**
+ * Member -> account linking.
+ *
+ * Until a membership names an account there is no safe way to answer "which
+ * e-card is mine": the row holds a name, the employer's staff code and four
+ * digits of a phone number, and resolving on any of those collides. These
+ * endpoints make the link an explicit, recorded act, matched against the
+ * corporate roster rather than guessed.
+ *
+ * The specific routes are registered before /:memberId so that "proposals"
+ * and "auto" are not read as member ids.
+ *
+ * GET /api/tpa/member-links/proposals
+ */
+router.get('/member-links/proposals', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await memberLink.proposeLinksForTpa({
+      tpaId: req.user.id,
+      corporateId: req.query.corporateId,
+      limit: req.query.limit,
+      includeLinked: String(req.query.includeLinked || '') === 'true',
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('TPA member link proposals error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Failed to build link proposals' });
+  }
+});
+
+/**
+ * POST /api/tpa/member-links/auto
+ *
+ * Dry by default: nothing is written unless the body asks for it, so the desk
+ * reads what would happen before it happens.
+ */
+router.post('/member-links/auto', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await memberLink.autoLink({
+      tpaId: req.user.id,
+      corporateId: req.body?.corporateId,
+      actorId: req.user.id,
+      apply: req.body?.apply === true,
+      limit: req.body?.limit,
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('TPA member auto-link error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Failed to auto-link members' });
+  }
+});
+
+/**
+ * POST /api/tpa/member-links/:memberId   body: { userId }
+ */
+router.post('/member-links/:memberId', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await memberLink.applyLink({
+      tpaId: req.user.id,
+      memberId: req.params.memberId,
+      userId: req.body?.userId,
+      corporateId: req.body?.corporateId,
+      actorId: req.user.id,
+      method: memberLink.LINK_METHOD.MANUAL,
+    });
+    if (!result) return res.status(404).json({ success: false, message: 'Member not found for this TPA' });
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('TPA member link error:', error);
+    res.status(500).json({ success: false, message: 'Failed to link member' });
+  }
+});
+
+/**
+ * DELETE /api/tpa/member-links/:memberId
+ */
+router.delete('/member-links/:memberId', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await memberLink.removeLink({ tpaId: req.user.id, memberId: req.params.memberId });
+    if (!result) return res.status(404).json({ success: false, message: 'Member not found for this TPA' });
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('TPA member unlink error:', error);
+    res.status(500).json({ success: false, message: 'Failed to unlink member' });
   }
 });
 

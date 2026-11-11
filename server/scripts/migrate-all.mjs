@@ -133,6 +133,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261110000100-mental-wellness-instruments.migration.js',
   '20261110000300-order-delivery-fee.migration.js',
   '20261111000100-tpa-member-user-link.migration.js',
+  '20261111000200-tpa-member-corporate-link.migration.js',
 ];
 
 function runStep(step) {

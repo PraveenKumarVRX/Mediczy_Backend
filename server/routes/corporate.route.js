@@ -20,6 +20,7 @@ import { body } from 'express-validator';
 import { patientAccountOnly } from '../middleware/patient-account.middleware.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authCorporate } from '../middleware/corporate.middleware.js';
+import * as tpaMemberLink from '../services/tpa-member-link.service.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import {
   corporateLogin,
@@ -4828,4 +4829,78 @@ router.use(createCorporateProgramsRouter({
     return action();
   },
 }));
+/**
+ * Insurance membership -> employee account linking (HR side).
+ *
+ * The gap analysis gave HR the member roster from the start ("HR view ...
+ * bulk member upload, endorsement requests"), and the employer is the only
+ * party that actually knows which staff code belongs to which person. Until a
+ * membership names an account, the member-facing e-card has nothing safe to
+ * resolve and reports that no card is linked.
+ *
+ * Every query here is scoped to req.corporateUser.corporateId, and a
+ * membership whose corporate is not yet set is shown only when its own
+ * corporate name resolves to this employer.
+ *
+ * GET /api/corporate/insurance-members
+ */
+router.get('/insurance-members', authCorporate, async (req, res) => {
+  try {
+    const result = await tpaMemberLink.proposeLinksForCorporate({
+      corporateId: req.corporateUser.corporateId,
+      limit: req.query.limit,
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[corporate] insurance member list error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not load insurance memberships' });
+  }
+});
+
+/**
+ * POST /api/corporate/insurance-members/:memberId/link   body: { userId }
+ */
+router.post('/insurance-members/:memberId/link', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.corporateUser.corporateId;
+    const result = await tpaMemberLink.applyLink({
+      memberId: req.params.memberId,
+      userId: req.body?.userId,
+      corporateId,
+      requireCorporateId: corporateId,
+      actorId: req.user?.userId || corporateId,
+      method: tpaMemberLink.LINK_METHOD.ROSTER,
+    });
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        code: 'MEMBER_NOT_IN_CORPORATE',
+        message: 'No insurance membership of your company carries that member id. If the membership is new, ask the TPA desk to map it to your company first.',
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[corporate] insurance member link error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not link that membership' });
+  }
+});
+
+/**
+ * DELETE /api/corporate/insurance-members/:memberId/link
+ */
+router.delete('/insurance-members/:memberId/link', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.corporateUser.corporateId;
+    const result = await tpaMemberLink.removeLink({ memberId: req.params.memberId, requireCorporateId: corporateId });
+    if (!result) return res.status(404).json({ success: false, message: 'No insurance membership of your company carries that member id' });
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[corporate] insurance member unlink error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not unlink that membership' });
+  }
+});
+
 export default router;
