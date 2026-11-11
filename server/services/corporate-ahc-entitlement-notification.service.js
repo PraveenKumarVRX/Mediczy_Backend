@@ -17,19 +17,22 @@ export async function notifyAhcEntitlement({packageId,userId,eventType='invitati
   const name=[member.firstName,member.lastName].filter(Boolean).join(' ')||'Employee';
   const start=member.validFrom?new Date(`${String(member.validFrom).slice(0,10)}T00:00:00Z`).toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}):'';
   const expiry=new Date(`${validTo}T00:00:00Z`).toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
-  const invitation=ahcInvitationMessage({employeeName:name,corporateName:member.corporateName,programName:member.name,validFrom:start,validTo:expiry});
+  // The attachment is resolved BEFORE the body is composed, because the body
+  // only refers to the attached booking manual when a file is really going out.
+  // Files the Team user attached to the `corporate_ahc` email template ride
+  // along with the welcome email. A missing or ambiguous template is not a
+  // reason to withhold the notice — the body carries the validity and the
+  // booking and app links — but the downgrade is recorded, not silent.
+  let attachedFiles=[];
+  if(eventType==='invitation'&&member.email) {
+    try { const resolved=await mailAttachmentsForCategory('corporate_ahc'); attachedFiles=resolved.attachments; if(resolved.reason!=='ok') console.warn(`[ahc-notify] no template attachment for user ${userId}: ${resolved.reason}`); }
+    catch (error) { console.warn('[ahc-notify] template attachment lookup failed:',error.message); }
+  }
+  const invitation=ahcInvitationMessage({employeeName:name,corporateName:member.corporateName,programName:member.name,validFrom:start,validTo:expiry,attachmentName:attachedFiles[0]?.filename||null});
   const subject=eventType==='invitation'?invitation.subject:(title[eventType]||title.invitation);
   const text=eventType==='invitation'?invitation.text:`Dear ${name}, your ${member.name} is available for one use only. Please book and complete it on or before ${expiry}. After this date it cannot be used. Open https://app.mediqzy.com/health-checkups`;
-  let emailStatus='not_applicable',whatsappStatus='not_applicable',attachedFiles=[];
+  let emailStatus='not_applicable',whatsappStatus='not_applicable';
   if(member.email) {
-    // Files the Team user attached to the `corporate_ahc` email template ride
-    // along with the welcome email. A missing or ambiguous template is not a
-    // reason to withhold the notice — the body carries the validity and the
-    // booking and app links — but the downgrade is recorded, not silent.
-    if(eventType==='invitation') {
-      try { const resolved=await mailAttachmentsForCategory('corporate_ahc'); attachedFiles=resolved.attachments; if(resolved.reason!=='ok') console.warn(`[ahc-notify] no template attachment for user ${userId}: ${resolved.reason}`); }
-      catch (error) { console.warn('[ahc-notify] template attachment lookup failed:',error.message); }
-    }
     try {
       await emailService.sendOutboundEmail(1,{to:member.email,subject,htmlContent:eventType==='invitation'?invitation.html:`<p>${esc(text)}</p>`,attachments:attachedFiles.length?attachedFiles:undefined});
       emailStatus=eventType==='invitation'&&!attachedFiles.length?'sent_no_file':'sent';

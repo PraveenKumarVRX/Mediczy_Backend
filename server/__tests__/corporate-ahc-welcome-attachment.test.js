@@ -95,6 +95,43 @@ describe('the AHC welcome email carries the file attached to the template', () =
     expect(payload.htmlContent).toContain('My SmartHealth');
   });
 
+  it('names the attached manual in the body, and only when one is attached', async () => {
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [{ ...LETTER, filename: 'AHC Appointment Booking Manual.pdf' }], templateId: 't1', reason: 'ok' });
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    let [, payload] = sendOutboundEmail.mock.calls[0];
+    expect(payload.htmlContent).toContain('AHC appointment booking manual attached with this email');
+    expect(payload.htmlContent).toContain('AHC Appointment Booking Manual.pdf');
+
+    // Without a file the same body must not mention an attachment.
+    sendOutboundEmail.mockClear();
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [], templateId: null, reason: 'no_attachments' });
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    [, payload] = sendOutboundEmail.mock.calls[0];
+    expect(payload.htmlContent).not.toMatch(/attached with this email/);
+  });
+
+  it('resolves the attachment before composing the body', async () => {
+    // If the order flipped, the body could never name the file.
+    const order = [];
+    arm();
+    mailAttachmentsForCategory.mockImplementation(async () => { order.push('resolve'); return { attachments: [LETTER], templateId: 't1', reason: 'ok' }; });
+    sendOutboundEmail.mockImplementation(async () => { order.push('send'); return { messageId: 'm1' }; });
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    expect(order).toEqual(['resolve', 'send']);
+  });
+
+  it('carries the process steps and the care desk sign-off', async () => {
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [], templateId: null, reason: 'no_attachments' });
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    const [, payload] = sendOutboundEmail.mock.calls[0];
+    expect(payload.htmlContent).toContain('How to use your checkup');
+    expect(payload.htmlContent).toContain('care@mysmarthealth.in');
+    expect(payload.htmlContent).toContain('Team SmartHealth');
+  });
+
   it('stays idempotent — a duplicate claim sends nothing', async () => {
     dbQuery.mockReset();
     dbQuery.mockImplementationOnce(async () => []);
