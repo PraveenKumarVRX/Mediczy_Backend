@@ -2,8 +2,29 @@ import { jest } from '@jest/globals';
 
 const mockQuery = jest.fn();
 const mockTransaction = jest.fn((work) => work({ id: 'tx' }));
+// Models on the route's import path call sequelize.define at module load, so a
+// stub without it throws before the graph is built and the suite cannot run.
+const stubModel = () => ({
+  findByPk: jest.fn(async () => null), findOne: jest.fn(async () => null),
+  findAll: jest.fn(async () => []), create: jest.fn(async (v) => v),
+  update: jest.fn(async () => [0]), destroy: jest.fn(async () => 0),
+  count: jest.fn(async () => 0), belongsTo: jest.fn(), hasMany: jest.fn(),
+  hasOne: jest.fn(), belongsToMany: jest.fn(), addHook: jest.fn(),
+  sync: jest.fn(async () => undefined), prototype: {},
+});
+
 jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({
-  postgresSequelize: { query: mockQuery, transaction: mockTransaction },
+  postgresSequelize: {
+    query: mockQuery,
+    transaction: mockTransaction,
+    define: jest.fn(() => stubModel()),
+    model: jest.fn(() => stubModel()),
+    literal: jest.fn((v) => v),
+    fn: jest.fn((...a) => a),
+    col: jest.fn((v) => v),
+    where: jest.fn((...a) => a),
+    authenticate: jest.fn(async () => undefined),
+  },
 }));
 
 const getDischargeReadiness = jest.fn();

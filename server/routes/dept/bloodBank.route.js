@@ -8,6 +8,7 @@ import { bloodBankScope } from '../../services/dept-tenant-scope.service.js';
 import { orgFromToken, orgRequiredResponse } from '../../services/tenant-scope.service.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
 
+import { requireStaffPrivilege } from '../../middleware/hrms-privilege.middleware.js';
 const router = safeRouter(express.Router());
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -739,7 +740,7 @@ router.post('/requisitions', authBloodBank, async (req, res) => {
   }
 });
 
-router.post('/requisitions/:id/issue', authBloodBank, async (req, res) => {
+router.post('/requisitions/:id/issue', authBloodBank, requireStaffPrivilege('blood_issue'), async (req, res) => {
   const db = await ensureTables(req, res);
   const client = await db.connect();
   try {
@@ -786,7 +787,7 @@ router.post('/requisitions/:id/issue', authBloodBank, async (req, res) => {
 });
 
 
-router.post('/cross-match', authBloodBank, async (req, res) => {
+router.post('/cross-match', authBloodBank, requireStaffPrivilege('blood_crossmatch'), async (req, res) => {
   try {
     const { bloodGroup, component = 'whole_blood', unitsRequested = 1 } = req.body;
     if (!BLOOD_GROUPS.includes(bloodGroup)) return res.status(400).json({ success: false, message: 'Valid bloodGroup is required' });
@@ -808,6 +809,71 @@ router.post('/cross-match', authBloodBank, async (req, res) => {
     res.json({ success: true, data: { compatible: rows.length >= Number(unitsRequested), compatibleGroups, units: rows } });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to cross-match units' });
+  }
+});
+
+/**
+ * Records the cross-match performed for a specific requisition. The generic
+ * /cross-match above only answers "what is compatible"; nothing wrote the
+ * result down, so blood_crossmatches stayed empty and a unit could be issued
+ * with no record that compatibility had ever been established.
+ */
+router.post('/requisitions/:id/cross-match', authBloodBank, requireStaffPrivilege('blood_crossmatch'), async (req, res) => {
+  const db = await ensureTables(req, res);
+  if (!db) return;
+  try {
+    const { patientId, patientBloodGroup, component = 'whole_blood', status = 'compatible', notes } = req.body || {};
+    if (!BLOOD_GROUPS.includes(patientBloodGroup)) {
+      return res.status(400).json({ success: false, message: 'A valid patientBloodGroup is required' });
+    }
+    if (!['compatible', 'incompatible', 'pending'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'status must be compatible, incompatible or pending' });
+    }
+    const { rows } = await db.query(
+      `INSERT INTO blood_crossmatches
+         (requisition_id, patient_id, patient_blood_group, component, status, tested_by, tested_at, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7) RETURNING *`,
+      [req.params.id, patientId || null, patientBloodGroup, component, status,
+       req.bloodBankUser?.id || req.user?.id || null, notes || null]
+    );
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (error) {
+    console.error('[blood-bank] cross-match record failed:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to record the cross-match' });
+  } finally {
+    await db?.release?.();
+  }
+});
+
+/**
+ * Records a transfusion, including any reaction. blood_transfusions existed but
+ * nothing ever wrote to it, so a transfusion — and a reaction to one — left no
+ * trace in the system at all.
+ */
+router.post('/transfusions', authBloodBank, requireStaffPrivilege('transfusion_record'), async (req, res) => {
+  const db = await ensureTables(req, res);
+  if (!db) return;
+  try {
+    const { requisitionId, unitId, patientId, status = 'in_progress', reaction, startedAt, completedAt } = req.body || {};
+    if (!unitId || !patientId) {
+      return res.status(400).json({ success: false, message: 'unitId and patientId are required' });
+    }
+    if (!['in_progress', 'completed', 'stopped'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'status must be in_progress, completed or stopped' });
+    }
+    const { rows } = await db.query(
+      `INSERT INTO blood_transfusions
+         (requisition_id, unit_id, patient_id, status, started_at, completed_at, reaction, recorded_by)
+       VALUES ($1,$2,$3,$4,COALESCE($5::timestamptz, NOW()),$6::timestamptz,$7,$8) RETURNING *`,
+      [requisitionId || null, unitId, patientId, status, startedAt || null,
+       completedAt || null, reaction || null, req.bloodBankUser?.id || req.user?.id || null]
+    );
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (error) {
+    console.error('[blood-bank] transfusion record failed:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to record the transfusion' });
+  } finally {
+    await db?.release?.();
   }
 });
 

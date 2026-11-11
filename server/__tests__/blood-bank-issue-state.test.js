@@ -12,6 +12,13 @@ jest.unstable_mockModule('../db/postgres.js', () => ({ connectPostgres }));
 jest.unstable_mockModule('../controllers/dept/bloodBank.controller.js', () => ({ loginBloodBank: jest.fn() }));
 jest.unstable_mockModule('../config/auth.config.js', () => ({ JWT_CONFIG: { SECRET: 'blood-bank-test-secret' } }));
 jest.unstable_mockModule('../utils/safeRouter.js', () => ({ safeRouter: (router) => router }));
+// Issue and cross-match are gated on the HRMS qualification decision. That gate
+// is covered by clinical-privilege-route-coverage; this suite is about the
+// issue state machine, so it runs with the privilege already granted.
+jest.unstable_mockModule('../middleware/hrms-privilege.middleware.js', () => ({
+  requireStaffPrivilege: () => (_req, _res, next) => next(),
+  default: { requireStaffPrivilege: () => (_req, _res, next) => next() },
+}));
 jest.unstable_mockModule('../services/dept-tenant-scope.service.js', () => ({
   bloodBankScope: { ensure: scopeEnsure, scopedDb: scopeDb },
 }));
