@@ -13,62 +13,92 @@ const attachUpload = multer({
 
 // Graceful multer wrapper:
 //  • Normal multipart with boundary → multer parses files + fields as usual.
-//  • Multipart WITHOUT boundary (old cached frontend) → buffer body, auto-detect
-//    boundary from first line, repair Content-Type header, then re-pipe to multer
-//    so req.body fields AND req.files are both populated correctly.
+//  • Multipart WITHOUT boundary → buffer body, auto-detect boundary from the
+//    first line, repair Content-Type, then re-pipe to multer so req.body fields
+//    AND req.files are both populated correctly. The app's service worker
+//    re-issues requests and drops the boundary, so this is the normal case in
+//    production, not an edge case.
 //  • Non-multipart (JSON etc.) → skip multer, proceed with express-parsed body.
-function optionalAttachUpload(req, res, next) {
-  const ct = req.headers['content-type'] || '';
+//
+// A multer failure is never passed to next(err): Express's default handler
+// answers that with an HTML 500, which tells the user nothing. The reason is
+// recorded on req.uploadError for the route to report instead.
+function makeOptionalUpload(runMulter, label) {
+  return function optionalUpload(req, res, next) {
+    const ct = req.headers['content-type'] || '';
 
-  if (!ct.includes('multipart/form-data')) {
-    // JSON or urlencoded — express already parsed req.body, no files
-    req.files = [];
-    return next();
-  }
-
-  if (ct.includes('boundary=')) {
-    // Normal multipart — let multer handle everything
-    return attachUpload.array('attachments', 10)(req, res, (err) => {
+    const done = (next_) => (err) => {
       if (err) {
-        console.warn('[send] multer warning:', err.message);
+        console.warn(`[${label}] multer warning:`, err.message);
         req.files = [];
+        req.uploadError = err;
       }
-      next();
-    });
-  }
+      next_();
+    };
 
-  // Multipart without boundary (browser stripped it via explicit Content-Type override):
-  // Buffer the raw body, extract the real boundary from the first line, fix the
-  // header, then override req.pipe so multer's internal req.pipe(busboy) call
-  // reads from our buffered Readable instead of the already-drained stream.
-  const chunks = [];
-  req.on('error', () => { req.files = []; next(); });
-  req.on('data', chunk => chunks.push(chunk));
-  req.on('end', () => {
-    const rawBody = Buffer.concat(chunks);
-
-    // First line of a multipart body is "--<boundary>\r\n"
-    const crlfIdx = rawBody.indexOf('\r\n');
-    const firstLine = rawBody.slice(0, crlfIdx > 2 ? crlfIdx : 256).toString('latin1');
-    if (firstLine.startsWith('--') && firstLine.length > 2) {
-      const boundary = firstLine.slice(2).replace(/\s+$/, '');
-      req.headers['content-type'] = `multipart/form-data; boundary=${boundary}`;
+    if (!ct.includes('multipart/form-data')) {
+      // JSON or urlencoded — express already parsed req.body, no files
+      req.files = [];
+      return next();
     }
 
-    // Multer calls req.pipe(busboy) — override it to pipe our buffered data
-    const savedPipe = req.pipe.bind(req);
-    req.pipe = (dest, opts) => Readable.from([rawBody]).pipe(dest, opts);
+    if (ct.includes('boundary=')) {
+      // Normal multipart — let multer handle everything
+      return runMulter(req, res, done(next));
+    }
 
-    attachUpload.array('attachments', 10)(req, res, (err) => {
-      req.pipe = savedPipe; // restore
-      if (err) {
-        console.warn('[send] multer boundary-patch warning:', err.message);
-        req.files = [];
+    // Multipart without boundary: buffer the raw body, extract the real boundary
+    // from the first line, fix the header, then override req.pipe so multer's
+    // internal req.pipe(busboy) reads our buffered Readable rather than the
+    // already-drained stream.
+    const chunks = [];
+    req.on('error', () => { req.files = []; next(); });
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      const rawBody = Buffer.concat(chunks);
+
+      // First line of a multipart body is "--<boundary>\r\n"
+      const crlfIdx = rawBody.indexOf('\r\n');
+      const firstLine = rawBody.slice(0, crlfIdx > 2 ? crlfIdx : 256).toString('latin1');
+      if (firstLine.startsWith('--') && firstLine.length > 2) {
+        const boundary = firstLine.slice(2).replace(/\s+$/, '');
+        req.headers['content-type'] = `multipart/form-data; boundary=${boundary}`;
       }
-      next();
+
+      const savedPipe = req.pipe.bind(req);
+      req.pipe = (dest, opts) => Readable.from([rawBody]).pipe(dest, opts);
+
+      runMulter(req, res, (err) => {
+        req.pipe = savedPipe; // restore
+        done(next)(err);
+      });
     });
-  });
+  };
 }
+
+const optionalAttachUpload = makeOptionalUpload(
+  (req, res, cb) => attachUpload.array('attachments', 10)(req, res, cb),
+  'send',
+);
+
+// A template attachment is posted as `file`, but accept any field name so a
+// cached client cannot 500 on a name mismatch.
+const optionalTemplateFileUpload = makeOptionalUpload(
+  (req, res, cb) => attachUpload.any()(req, res, cb),
+  'template-attachment',
+);
+
+/** The one uploaded file, whatever field name the client used. */
+const uploadedFile = (req) =>
+  req.file || (req.files || []).find(f => f.fieldname === 'file') || (req.files || [])[0] || null;
+
+/** Turn a multer failure into something the user can act on. */
+const uploadErrorResponse = (error) => {
+  if (error?.code === 'LIMIT_FILE_SIZE') return { status: 413, message: 'Attachments must be 10 MB or smaller' };
+  if (error?.code === 'LIMIT_FILE_COUNT') return { status: 400, message: 'Attach one file at a time' };
+  return { status: 400, message: 'The upload could not be read. Please try attaching the file again.' };
+};
+
 import EmailInbox from '../models/emailInbox.model.js';
 import EmailSettings from '../models/emailSettings.model.js';
 import TeamMember from '../models/postgres/team-member.model.postgres.js';
@@ -360,17 +390,22 @@ router.get('/templates/:id/attachments', authTeam, async (req, res) => {
 });
 
 /** POST /api/team/emails/templates/:id/attachments – upload one file (field name: file) */
-router.post('/templates/:id/attachments', authTeam, attachUpload.single('file'), async (req, res) => {
+router.post('/templates/:id/attachments', authTeam, optionalTemplateFileUpload, async (req, res) => {
   try {
     const template = await ownedTemplate(req);
     if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
-    if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Attach a file to upload' });
+    if (req.uploadError) {
+      const { status, message } = uploadErrorResponse(req.uploadError);
+      return res.status(status).json({ success: false, message, code: req.uploadError.code });
+    }
+    const file = uploadedFile(req);
+    if (!file?.buffer) return res.status(400).json({ success: false, message: 'Attach a file to upload' });
 
     const saved = await saveTemplateAttachment({
       templateId: template.id,
-      filename: req.body?.filename || req.file.originalname,
-      contentType: req.file.mimetype,
-      buffer: req.file.buffer,
+      filename: req.body?.filename || file.originalname,
+      contentType: file.mimetype,
+      buffer: file.buffer,
       uploadedByUserId: (req.teamUser || req.user)?.id || null,
     });
     return res.status(201).json({ success: true, message: `${saved.filename} will be attached to this template`, data: saved });
