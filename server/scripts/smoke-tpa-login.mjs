@@ -1,5 +1,7 @@
 import express from 'express';
+import { QueryTypes } from 'sequelize';
 import request from 'supertest';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 import tpaRouter from '../routes/tpa.route.js';
 
 const email = process.env.TPA_SMOKE_EMAIL || process.argv[2] || 'tpa@mediczy.com';
@@ -7,6 +9,21 @@ const password = process.env.TPA_SMOKE_PASSWORD || process.argv[3];
 
 if (!password) {
   console.error('Usage: TPA_SMOKE_PASSWORD=<password> node server/scripts/smoke-tpa-login.mjs [email]');
+  process.exit(2);
+}
+
+// This smoke pass does not only read: it POSTs enrolments, claims, documents
+// and shortfalls, and approves them. Run against production under
+// ssm-env-loader it leaves that behind as real rows — three "Enrollment Smoke
+// Member" memberships of "Mediqzy QA Corporate" were found in the production
+// TPA tables on 2026-11-11, alongside the three the service used to seed.
+// They are indistinguishable from a real membership to every screen that reads
+// them, including the member-facing e-card.
+const [{ db }] = await postgresSequelize.query('SELECT current_database() AS db', { type: QueryTypes.SELECT });
+if (/prod/i.test(db) && !process.argv.includes('--allow-production')) {
+  console.error(`Refusing to run the TPA smoke pass against "${db}": it writes enrolments and claims.`);
+  console.error('Point it at a non-production database, or pass --allow-production if that is genuinely what you want.');
+  await postgresSequelize.close().catch(() => {});
   process.exit(2);
 }
 
