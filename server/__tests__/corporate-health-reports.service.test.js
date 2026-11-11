@@ -6,7 +6,7 @@ jest.unstable_mockModule('../services/minio-upload.service.js',()=>({uploadToMin
 jest.unstable_mockModule('../services/corporate-report-storage-client.js',()=>({getCorporateReportClient:()=>({}),corporateStoredFileUrl:()=>'',deleteCorporateReportObject:remove}));
 const {saveCorporateHealthReports:save}=await import('../services/corporate-health-reports.service.js');
 const file={originalname:'test.pdf',mimetype:'application/pdf',buffer:Buffer.from('%PDF-test'),size:9};
-const input={corporateId:45,employeeId:9,uploadedBy:7,files:Array.from({length:7},()=>({...file})),reportName:'Pre employment',reportType:'pre_employment',reportDate:'2026-10-28',notes:'',corporateName:'Corporate',reportLabel:'Pre employment',checkupCompletedAt:new Date('2026-10-28'),deliveredAt:new Date('2026-10-28'),sla:{dueAt:new Date('2026-10-30'),status:'on_time'},patientReportType:()=> 'lab'};
+const input={corporateId:45,employeeId:9,uploadedBy:7,files:Array.from({length:7},()=>({...file})),reportName:'Annual health checkup',reportType:'annual_health_checkup',reportDate:'2026-10-28',notes:'',corporateName:'Corporate',reportLabel:'Annual health checkup',checkupCompletedAt:new Date('2026-10-28'),deliveredAt:new Date('2026-10-28'),sla:{dueAt:new Date('2026-10-30'),status:'on_time'},patientReportType:()=> 'lab'};
 beforeEach(()=>{
  query.mockReset();transaction.mockClear();upload.mockReset();remove.mockReset().mockResolvedValue({});ensure.mockReset().mockResolvedValue({bucket:'pacs-entity-001'});
  let id=0,index=0;query.mockImplementation(async(sql)=>sql.startsWith('INSERT')?[{id:++id}]:sql.includes('user_associations')?[{exists:1}]:[]);
@@ -32,4 +32,21 @@ test('employees outside the corporate never trigger a storage upload',async()=>{
 });
 test.each([{reportDate:'2026-02-30'},{employeeId:0},{files:[]},{files:Array(11).fill(file)},{files:[{...file,size:51*1024*1024}]}])('validates batch before opening a transaction: %j',async patch=>{
  await expect(save({...input,...patch})).rejects.toBeDefined();expect(transaction).not.toHaveBeenCalled();
+});
+
+// Pre-employment screening has its own candidate workflow (PEME). Routing one
+// through the corporate employee pipeline would file a candidate's report
+// against an employee record that may not exist yet, so the service refuses it
+// outright — before any upload, transaction or insert.
+test('a pre-employment report is sent to the PEME workflow, not filed here', async () => {
+  await expect(save({ ...input, reportType: 'pre_employment' }))
+    .rejects.toMatchObject({ status: 409, code: 'peme_case_required' });
+  expect(upload).not.toHaveBeenCalled();
+  expect(transaction).not.toHaveBeenCalled();
+});
+
+test('the refusal matches the type however it is written', async () => {
+  for (const reportType of ['pre_employment', 'PRE_EMPLOYMENT', 'candidate_pre_employment_screening']) {
+    await expect(save({ ...input, reportType })).rejects.toMatchObject({ code: 'peme_case_required' });
+  }
 });
