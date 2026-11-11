@@ -13,6 +13,7 @@ import { DOCTOR_SENSITIVE_FIELDS } from '../utils/doctorSanitizer.js';
 // above all `documents`, the multi-megabyte KYC blob this fix exists to stop locking.
 const DOCTOR_BOOKING_EXCLUDE_FIELDS = DOCTOR_SENSITIVE_FIELDS.filter((field) => field !== 'unique_id');
 import { createMeetingInfo } from '../utils/videoProvider.js';
+import { getTeleconsultEntitlement, consumeTeleconsult } from '../services/teleconsult-entitlement.service.js';
 import {
   sendAppointmentConfirmation,
   scheduleAppointmentReminder
@@ -246,6 +247,7 @@ export const createAppointment = async (req, res) => {
     let consultationFee = 500;
     let paymentStatus = 'pending';
     let freeReviewApplied = false;
+    let planTeleconsultApplied = false;
     let freeReviewSourceAppointmentId = null;
     const transaction = await postgresSequelize.transaction();
     try {
@@ -372,6 +374,31 @@ export const createAppointment = async (req, res) => {
       if (consultationFee === null) fail(503, { success: false, message: 'Could not confirm the consultation price. Please try another doctor or contact support.' });
       if (consultationFee === 0) paymentStatus = 'paid';
 
+      // A plan that includes teleconsults must actually pay for one. This was
+      // applied on the online-consultation route but never here, so a member
+      // with free teleconsults who booked through the appointment flow was
+      // still charged the full fee — the benefit existed and was never spent.
+      // The entitlement service covers 'online' only and says so itself, so the
+      // condition matches rather than widening it.
+      if (consultationFee > 0 && requestedConsultationType === 'online') {
+        const entitlement = await getTeleconsultEntitlement(userId, { consultationType: 'online' });
+        if (entitlement?.covered) {
+          const consumed = await consumeTeleconsult(
+            userId,
+            doctor.specialization || 'general',
+            1,
+            { transaction }
+          );
+          // Only waive the fee if the allowance was actually decremented, so a
+          // failed write cannot hand out an unlimited free consultation.
+          if (consumed) {
+            consultationFee = 0;
+            paymentStatus = 'paid';
+            planTeleconsultApplied = true;
+          }
+        }
+      }
+
       if (requestedConsultationType === 'review') {
         const eligibleSource = await findEligibleFreeReviewSourceAppointment({
           userId,
@@ -422,6 +449,7 @@ export const createAppointment = async (req, res) => {
           requestedConsultationType: requestedConsultationType || null,
           doctorPublicId: doctor.unique_id || null,
           freeReviewApplied,
+          planTeleconsultApplied,
           freeReviewSourceAppointmentId,
           reviewBenefit: requestedConsultationType === 'review'
             ? undefined
@@ -819,6 +847,9 @@ export const createAppointment = async (req, res) => {
         status: appointment.status,
         paymentStatus: appointment.paymentStatus,
         freeReviewApplied,
+        // Tells the app the fee was covered by the member's plan, so it can
+        // say so instead of showing a price that is not being charged.
+        planTeleconsultApplied,
         qmsToken: qmsToken
           ? {
               tokenNumber: qmsToken.tokenNumber || null,
@@ -846,6 +877,9 @@ export const createAppointment = async (req, res) => {
         status: appointment.status,
         paymentStatus: appointment.paymentStatus,
         freeReviewApplied,
+        // Tells the app the fee was covered by the member's plan, so it can
+        // say so instead of showing a price that is not being charged.
+        planTeleconsultApplied,
         qmsToken: qmsToken
           ? {
               tokenNumber: qmsToken.tokenNumber || null,
