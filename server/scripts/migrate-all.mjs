@@ -135,6 +135,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261111000100-tpa-member-user-link.migration.js',
   '20261111000200-tpa-member-corporate-link.migration.js',
   '20261111000300-typed-group-policies.migration.js',
+  '20261111000400-policy-member-foreign-keys.migration.js',
 ];
 
 function runStep(step) {

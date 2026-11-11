@@ -552,27 +552,53 @@ export async function getMemberECard(userId, policyId, memberId) {
 }
 
 /**
- * This member's claims on one policy. insurance_claims already carries
- * policyId; the policy is checked against the member's own first, so the
- * endpoint cannot be used to read another family's claims.
+ * This member's claims on one policy.
+ *
+ * insurance_claims is snake_case and had no policy id at all — only a
+ * free-text policy_number — so there was nothing to list a claim under. The
+ * Sequelize InsuranceClaim model declares camelCase "policyId"/"patientId"
+ * that the live table does not have; querying those names returned 42703, and
+ * tolerating that would have reported "no claims" for a member who had some.
+ * Migration 20261111000400 adds policy_id; these are the live column names.
+ *
+ * The policy is checked against the member's own first, so the endpoint cannot
+ * be used to read another family's claims.
  */
 export async function listPolicyClaims(userId, policyId) {
   const detail = await getPolicyDetail(userId, policyId);
   if (!detail) return null;
 
-  const rows = await sequelize.query(
-    `SELECT "claimNumber", "claimType", "treatmentType", diagnosis,
-            "claimedAmount", "approvedAmount", "settledAmount", status,
-            "admissionDate", "dischargeDate", "intimationDate", "settlementDate"
-       FROM insurance_claims
-      WHERE "policyId" = :policyId AND "patientId" = :userId
-      ORDER BY COALESCE("intimationDate", "admissionDate") DESC NULLS LAST, id DESC
-      LIMIT 100`,
-    { replacements: { policyId: Number(policyId), userId }, type: QueryTypes.SELECT }
-  ).catch((error) => {
-    if (MISSING_SCHEMA.includes(errorCode(error))) return [];
+  let rows;
+  try {
+    rows = await sequelize.query(
+      `SELECT claim_number     AS "claimNumber",
+              claim_type       AS "claimType",
+              diagnosis,
+              claim_amount     AS "claimedAmount",
+              approved_amount  AS "approvedAmount",
+              settled_amount   AS "settledAmount",
+              deducted_amount  AS "deductedAmount",
+              status,
+              settlement_status AS "settlementStatus",
+              submitted_at     AS "submittedAt",
+              approved_at      AS "approvedAt",
+              rejected_at      AS "rejectedAt",
+              settlement_date  AS "settlementDate",
+              hospitalization_details AS "hospitalization"
+         FROM insurance_claims
+        WHERE policy_id = :policyId AND patient_id = :userId
+        ORDER BY COALESCE(submitted_at, created_at) DESC NULLS LAST, id DESC
+        LIMIT 100`,
+      { replacements: { policyId: Number(policyId), userId }, type: QueryTypes.SELECT }
+    );
+  } catch (error) {
+    // Only the column arriving with 20261111000400 is tolerated, and it is
+    // reported rather than passed off as an empty claim history.
+    if (MISSING_SCHEMA.includes(errorCode(error))) {
+      return { policyId: detail.policy.id, policyType: detail.policy.policyType, claims: [], unavailable: SCHEMA_NOT_MIGRATED };
+    }
     throw error;
-  });
+  }
 
   return { policyId: detail.policy.id, policyType: detail.policy.policyType, claims: rows };
 }

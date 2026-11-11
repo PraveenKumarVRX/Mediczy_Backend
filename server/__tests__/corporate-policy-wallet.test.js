@@ -377,19 +377,78 @@ describe('the per-member e-card', () => {
 });
 
 describe('claims per policy', () => {
-  it('reads only this member\'s claims on a policy they hold', async () => {
+  it('uses the column names the live table actually has', async () => {
+    // insurance_claims is snake_case. The Sequelize model declares camelCase
+    // "policyId"/"patientId" that the table does not have, so those names
+    // returned 42703 — and a tolerated 42703 reports "no claims" to a member
+    // who has some.
     const { listPolicyClaims, calls } = await load({
       policies: [policyRow()], members: [memberRow()], claims: [],
     });
     await listPolicyClaims(19, '1');
     const sql = calls.find((c) => c.shape === 'claims').sql;
-    expect(sql).toContain('"policyId" = :policyId');
-    expect(sql).toContain('"patientId" = :userId');
+    expect(sql).toContain('policy_id = :policyId');
+    expect(sql).toContain('patient_id = :userId');
+    expect(sql).not.toContain('"policyId"');
+    expect(sql).not.toContain('"patientId"');
+  });
+
+  it('says the column is unmigrated rather than passing it off as no claims', async () => {
+    const { listPolicyClaims } = await load({
+      policies: [policyRow()], members: [memberRow()],
+      claims: () => {
+        const error = new Error('column "policy_id" does not exist');
+        error.original = { code: '42703' };
+        throw error;
+      },
+    });
+    const result = await listPolicyClaims(19, '1');
+    expect(result.claims).toEqual([]);
+    expect(result.unavailable).toBe('SCHEMA_NOT_MIGRATED');
   });
 
   it('answers nothing for a policy the caller is not on', async () => {
     const { listPolicyClaims } = await load({ policies: [], members: [] });
     await expect(listPolicyClaims(19, '1')).resolves.toBeNull();
+  });
+});
+
+describe('the foreign keys the seed exposed', () => {
+  const migration = read('migrations/20261111000400-policy-member-foreign-keys.migration.js');
+
+  it('repoints both tables at the policies table, not the product catalogue', () => {
+    // routes/insurance-policy.route.js — their only writer — inserts an
+    // insurance_policies id into both, so neither insert could ever succeed.
+    expect(migration).toContain("{ table: 'policy_members', constraint: 'policy_members_policyId_fkey'");
+    expect(migration).toContain("{ table: 'policy_rules', constraint: 'policy_rules_policyId_fkey'");
+    expect(migration).toContain('REFERENCES insurance_policies (id) ON DELETE ${onDelete}');
+  });
+
+  it('leaves user_insurances pointing at the catalogue, where it belongs', () => {
+    // A patient holds a product, and insurance_claims.user_insurance_id
+    // completes that chain.
+    expect(migration).not.toContain('user_insurances_policyId_fkey');
+    expect(migration).toMatch(/user_insurances also references the catalogue and is left alone/);
+  });
+
+  it('aborts rather than deleting a row the new key would reject', () => {
+    expect(migration).toMatch(/if \(orphans > 0\)/);
+    expect(migration).toMatch(/will not delete data/);
+  });
+
+  it('gives a claim a policy id, nullable, and keeps the claim if the policy goes', () => {
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS policy_id INTEGER');
+    expect(migration).toContain('REFERENCES insurance_policies (id) ON DELETE SET NULL');
+  });
+
+  it('backfills only where the policy number identifies one policy', () => {
+    // Attaching a claim to the wrong policy moves money against the wrong
+    // sum insured.
+    expect(migration).toMatch(/\(SELECT count\(\*\) FROM insurance_policies x[\s\S]{0,160}= 1/);
+  });
+
+  it('is registered so a new environment gets it', () => {
+    expect(read('scripts/migrate-all.mjs')).toContain('20261111000400-policy-member-foreign-keys');
   });
 });
 
