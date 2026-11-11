@@ -27,7 +27,7 @@
  * how a test fixture becomes something somebody plans their mother's surgery
  * around.
  */
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import crypto from 'node:crypto';
 import { QueryTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
@@ -265,7 +265,7 @@ const seed = async (corporateId) => {
         `INSERT INTO users ("firstName", "lastName", email, password, "phoneNumber", role, status,
                             "dateOfBirth", gender, metadata, "createdAt", "updatedAt")
          VALUES ('[TEST] Policy', 'Employee', :email, :password, :phone, 'user', 'active',
-                 :dob, 'other', :metadata::jsonb, NOW(), NOW())
+                 :dob, 'Other', :metadata::jsonb, NOW(), NOW())
          RETURNING id`,
         {
           email: TEST_EMAIL,
