@@ -916,6 +916,6 @@ router.get('/directory/published', async (req, res) => {
 
 // Exported for tests: the parsing and QC rules are where a real spreadsheet
 // succeeds or fails, so they are checked directly rather than only through HTTP.
-export { normalizeRecord, computeQc, foldKey, normalizeProviderType, REQUIRED_FIELDS, RECOMMENDED_FIELDS };
+export { normalizeRecord, computeQc, foldKey, normalizeProviderType, runQc, publishBatch, REQUIRED_FIELDS, RECOMMENDED_FIELDS };
 
 export default router;
