@@ -136,6 +136,30 @@ export const POLICY_GROUPS = [
   { key: 'parents', label: 'Parents', emptyLine: "Your employer hasn't added cover for parents." },
 ];
 
+/**
+ * The relationships policy_members actually accepts — its CHECK constraint
+ * lists self, spouse, son, daughter, father, mother, other — mapped to the
+ * four groups the app asks in. The hospital-emergency journey starts with
+ * "who needs care?" and then has to pick the right policy: a parent's bill
+ * goes to Parents GHI, everyone else's to GHI. It cannot do that from a
+ * literal "son" unless something tells it that son is a child.
+ *
+ * Exported so the app groups by this rather than hardcoding a second copy of
+ * the enum that drifts when the constraint changes.
+ */
+export const RELATION_GROUPS = {
+  self: 'self',
+  spouse: 'spouse',
+  son: 'child',
+  daughter: 'child',
+  father: 'parent',
+  mother: 'parent',
+  other: 'other',
+};
+
+const relationGroupOf = (relationship) =>
+  RELATION_GROUPS[String(relationship || '').trim().toLowerCase()] || 'other';
+
 const positiveInt = (value) => {
   const n = Number(value);
   return Number.isSafeInteger(n) && n > 0 ? n : null;
@@ -231,7 +255,11 @@ const loadMembers = async (userId, policyIds) => {
         AND m."policyId" = ANY(ARRAY[:policyIds]::int[])
         AND COALESCE(m."isActive", true) = true
       ORDER BY CASE lower(m.relationship)
-                 WHEN 'self' THEN 0 WHEN 'spouse' THEN 1 WHEN 'child' THEN 2 ELSE 3 END,
+                 WHEN 'self' THEN 0
+                 WHEN 'spouse' THEN 1
+                 WHEN 'son' THEN 2 WHEN 'daughter' THEN 2
+                 WHEN 'father' THEN 3 WHEN 'mother' THEN 3
+                 ELSE 4 END,
                m.id ASC`,
     { replacements: { userId, policyIds }, type: QueryTypes.SELECT }
   );
@@ -242,6 +270,7 @@ const loadMembers = async (userId, policyIds) => {
       memberId: String(row.memberId),
       name: row.name || null,
       relation: String(row.relationship || '').toLowerCase() || null,
+      relationGroup: relationGroupOf(row.relationship),
       dob: toISODate(row.dob),
       sumInsured: numberOrNull(row.sumInsured),
       used: numberOrNull(row.used),
@@ -477,7 +506,11 @@ export async function getCoverageMatrix(userId) {
       // because a dependant has no account id to key on.
       const key = `${member.relation || 'other'}::${(member.name || '').toLowerCase()}`;
       if (!people.has(key)) {
-        people.set(key, { key, name: member.name, relation: member.relation, dob: member.dob, isSelf: member.isSelf, cover: {} });
+        people.set(key, {
+          key, name: member.name, relation: member.relation,
+          relationGroup: member.relationGroup, dob: member.dob,
+          isSelf: member.isSelf, cover: {},
+        });
       }
       const person = people.get(key);
       person.isSelf = person.isSelf || member.isSelf;
@@ -535,6 +568,7 @@ export async function getMemberECard(userId, policyId, memberId) {
       memberId: member.memberId,
       memberName: member.name,
       relation: member.relation,
+      relationGroup: member.relationGroup,
       dob: member.dob,
       validFrom: policy.validFrom,
       validTill: policy.validTo,
@@ -604,6 +638,6 @@ export async function listPolicyClaims(userId, policyId) {
 }
 
 export default {
-  POLICY_TYPES, POLICY_GROUPS, SCHEMA_NOT_MIGRATED,
+  POLICY_TYPES, POLICY_GROUPS, RELATION_GROUPS, SCHEMA_NOT_MIGRATED,
   getPolicyWallet, getPolicyDetail, getCoverageMatrix, getMemberECard, listPolicyClaims,
 };

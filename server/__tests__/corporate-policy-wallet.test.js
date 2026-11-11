@@ -223,7 +223,7 @@ describe('the top-up ladder', () => {
         policyRow({ id: 5, policyType: 'PARENTS_GHI', sumInsured: '300000', copayPercent: '20' }),
         policyRow({ id: 6, policyType: 'PARENTS_TOPUP', sumInsured: '500000', deductible: '300000', linkedBasePolicyId: 5, copayPercent: '20' }),
       ],
-      members: [memberRow({ policyId: 5, relationship: 'parent' }), memberRow({ memberId: 12, policyId: 6, relationship: 'parent' })],
+      members: [memberRow({ policyId: 5, relationship: 'father' }), memberRow({ memberId: 12, policyId: 6, relationship: 'mother' })],
     });
     const { ladders } = await getPolicyWallet(19);
     expect(ladders).toHaveLength(1);
@@ -295,7 +295,7 @@ describe('the coverage matrix', () => {
       members: (r) => ([
         memberRow({ policyId: 1, relationship: 'self', name: 'Asha Menon' }),
         memberRow({ memberId: 11, policyId: 1, userId: null, relationship: 'spouse', name: 'Ravi Menon' }),
-        memberRow({ memberId: 12, policyId: 5, userId: null, relationship: 'parent', name: 'Leela Menon' }),
+        memberRow({ memberId: 12, policyId: 5, userId: null, relationship: 'mother', name: 'Leela Menon' }),
       ]),
     });
     const matrix = await getCoverageMatrix(19);
@@ -320,6 +320,58 @@ describe('the coverage matrix', () => {
       members: [memberRow({ sumInsured: '200000' })],
     });
     expect((await getCoverageMatrix(19)).rows[0].cover['1'].sumInsured).toBe(200000);
+  });
+});
+
+describe('the relationship vocabulary', () => {
+  it('maps the column\'s own values onto the groups the app asks in', async () => {
+    const { RELATION_GROUPS } = await load();
+    // policy_members.relationship accepts self, spouse, son, daughter,
+    // father, mother, other. 'child' and 'parent' are groupings, not values —
+    // writing them rolled the first seed back.
+    expect(RELATION_GROUPS).toEqual({
+      self: 'self', spouse: 'spouse',
+      son: 'child', daughter: 'child',
+      father: 'parent', mother: 'parent',
+      other: 'other',
+    });
+  });
+
+  it('tells the app a son is a child, so it can pick the right policy', async () => {
+    // The hospital-emergency journey picks the person, then the policy: a
+    // parent's bill goes to Parents GHI, everyone else's to GHI. It cannot do
+    // that from a literal "son".
+    const { getPolicyWallet } = await load({
+      policies: [policyRow()],
+      members: [
+        memberRow({ relationship: 'self' }),
+        memberRow({ memberId: 11, userId: null, relationship: 'daughter', name: 'Meera' }),
+        memberRow({ memberId: 12, userId: null, relationship: 'mother', name: 'Leela' }),
+      ],
+    });
+    const [policy] = (await getPolicyWallet(19)).policies;
+    expect(policy.members.map((m) => [m.relation, m.relationGroup])).toEqual([
+      ['self', 'self'], ['daughter', 'child'], ['mother', 'parent'],
+    ]);
+  });
+
+  it('orders the family by the values the column really holds', async () => {
+    const { getPolicyWallet, calls } = await load({ policies: [policyRow()], members: [memberRow()] });
+    await getPolicyWallet(19);
+    const sql = calls.find((c) => c.shape === 'members').sql;
+    for (const value of ['self', 'spouse', 'son', 'daughter', 'father', 'mother']) {
+      expect(sql).toContain(`WHEN '${value}'`);
+    }
+    expect(sql).not.toContain("WHEN 'child'");
+  });
+
+  it('groups anything unexpected rather than dropping it', async () => {
+    const { getPolicyWallet } = await load({
+      policies: [policyRow()],
+      members: [memberRow({ relationship: 'brother-in-law' })],
+    });
+    const [policy] = (await getPolicyWallet(19)).policies;
+    expect(policy.members[0].relationGroup).toBe('other');
   });
 });
 
@@ -611,6 +663,14 @@ describe('the test policies', () => {
   it('supplies no uid, leaving it to the database trigger', () => {
     // CLAUDE.md rule 1: never supply unique_id on INSERT.
     expect(script).not.toMatch(/INSERT INTO (users|corporate_employees|insurance_companies)[^;]*unique_id/);
+  });
+
+  it('uses only relationships the column accepts', () => {
+    const allowed = ['self', 'spouse', 'son', 'daughter', 'father', 'mother', 'other'];
+    const family = script.slice(script.indexOf('const FAMILY = {'), script.indexOf('const findSeeded'));
+    for (const match of family.matchAll(/relation: '([a-z-]+)'/g)) {
+      expect(allowed).toContain(match[1]);
+    }
   });
 
   it('writes a floater with no per-person sum insured', () => {

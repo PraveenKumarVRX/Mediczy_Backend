@@ -148,13 +148,20 @@ const policySpecs = (corporateName) => [
   },
 ];
 
-/** The family. Only the employee gets an account; dependants are name rows. */
+/**
+ * The family. Only the employee gets an account; dependants are name rows.
+ *
+ * `relation` must be one of what policy_members.relationship accepts — its
+ * CHECK lists self, spouse, son, daughter, father, mother, other. 'child' and
+ * 'parent' are the app's groupings, not the column's values, and using them
+ * here rolled the first seed back.
+ */
 const FAMILY = {
   self: { relation: 'self', name: null, dob: '1988-04-12' },
   spouse: { relation: 'spouse', name: '[TEST] Spouse Of Test', dob: '1990-09-03' },
-  child: { relation: 'child', name: '[TEST] Child Of Test', dob: '2017-01-22' },
-  father: { relation: 'parent', name: '[TEST] Father Of Test', dob: '1958-06-30' },
-  mother: { relation: 'parent', name: '[TEST] Mother Of Test', dob: '1961-11-15' },
+  child: { relation: 'son', name: '[TEST] Child Of Test', dob: '2017-01-22' },
+  father: { relation: 'father', name: '[TEST] Father Of Test', dob: '1958-06-30' },
+  mother: { relation: 'mother', name: '[TEST] Mother Of Test', dob: '1961-11-15' },
 };
 
 const findSeeded = async () => {
