@@ -28,7 +28,12 @@ export const ALLOWED_ATTACHMENT_TYPES = Object.freeze(Object.keys(ALLOWED_TYPES)
 
 let tableReadyPromise = null;
 
-/** Memoised — the probe runs once per process, not once per send. */
+/**
+ * Memoised, but only a *positive* answer is kept: the table cannot disappear,
+ * while a negative one is temporary — the code ships before the migration is
+ * applied, so a process that probed first would otherwise stay inert until it
+ * was restarted. Re-probing while absent costs one cheap catalogue lookup.
+ */
 export async function attachmentsTableReady() {
   if (!tableReadyPromise) {
     tableReadyPromise = pool
@@ -36,7 +41,9 @@ export async function attachmentsTableReady() {
       .then(({ rowCount }) => rowCount > 0)
       .catch(() => false);
   }
-  return tableReadyPromise;
+  const ready = await tableReadyPromise;
+  if (!ready) tableReadyPromise = null;
+  return ready;
 }
 
 /** Test seam — forget the probe result so a fixture can change the schema underneath. */

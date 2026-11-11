@@ -53,6 +53,19 @@ describe('schema probe', () => {
     expect(probes).toHaveLength(1);
   });
 
+  it('re-probes while the table is absent, so the migration needs no restart', async () => {
+    // The code ships before the migration runs. A process that cached "absent"
+    // for its lifetime would stay inert until someone restarted it.
+    query.mockReset();
+    query.mockImplementationOnce(async () => ({ rowCount: 0, rows: [] }));
+    expect(await attachmentsTableReady()).toBe(false);
+    query.mockImplementation(async () => ({ rowCount: 1, rows: [{}] }));
+    expect(await attachmentsTableReady()).toBe(true);
+    expect(await attachmentsTableReady()).toBe(true);
+    // Two probes before it was there, then one that found it — and no more.
+    expect(query.mock.calls.filter(([sql]) => /information_schema\.tables/.test(sql))).toHaveLength(2);
+  });
+
   it('treats a probe failure as "not available" rather than throwing', async () => {
     query.mockReset();
     query.mockRejectedValue(new Error('connection refused'));
