@@ -47,18 +47,32 @@ export const schemaError = (message, missingTables = []) => {
  * clears the memo, so applying the migration fixes the service without a
  * restart.
  */
-export const schemaVerifier = ({ sequelize, tables, message, code = SCHEMA_NOT_MIGRATED }) => {
+export const schemaVerifier = ({ sequelize, pool, tables, message, code = SCHEMA_NOT_MIGRATED }) => {
   let pending = null;
+
+  // Services reach the database two ways here: a Sequelize instance, which takes
+  // named replacements and returns rows directly, and a raw pg Pool, which takes
+  // positional parameters and returns a result object. Passing one API's call
+  // shape to the other throws at the first use, so the handle decides the shape.
+  const lookup = () => (sequelize
+    ? sequelize.query(
+        `SELECT table_name AS "tableName"
+           FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND table_name = ANY(ARRAY[:tables]::text[])`,
+        { replacements: { tables }, type: QueryTypes.SELECT }
+      )
+    : pool.query(
+        `SELECT table_name AS "tableName"
+           FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND table_name = ANY($1::text[])`,
+        [tables]
+      ).then((result) => result.rows));
+
   return async function ensureSchema() {
     if (!pending) {
-      pending = sequelize
-        .query(
-          `SELECT table_name AS "tableName"
-             FROM information_schema.tables
-            WHERE table_schema = current_schema()
-              AND table_name = ANY(ARRAY[:tables]::text[])`,
-          { replacements: { tables }, type: QueryTypes.SELECT }
-        )
+      pending = lookup()
         .then((rows) => {
           const present = new Set(rows.map(tableNameFromSchemaRow).filter(Boolean));
           const missingTables = tables.filter((table) => !present.has(table));

@@ -19,64 +19,19 @@
 
 import pool from '../db/pgPool.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
 // ── DB bootstrap ──────────────────────────────────────────────────────────────
-export async function ensureNabhjciTables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS compliance_standards (
-      id           SERIAL PRIMARY KEY,
-      framework    VARCHAR(20) NOT NULL,
-      version      VARCHAR(20),
-      chapter_code VARCHAR(10) NOT NULL,
-      chapter_name TEXT NOT NULL,
-      description  TEXT,
-      UNIQUE(framework, chapter_code)
-    );
-    CREATE TABLE IF NOT EXISTS compliance_checkpoints (
-      id               SERIAL PRIMARY KEY,
-      standard_id      INTEGER REFERENCES compliance_standards(id),
-      checkpoint_code  VARCHAR(30) UNIQUE NOT NULL,
-      description      TEXT NOT NULL,
-      measurable_element TEXT,
-      criticality      VARCHAR(10) DEFAULT 'standard',
-      auto_collectable BOOLEAN DEFAULT FALSE,
-      auto_query       TEXT
-    );
-    CREATE TABLE IF NOT EXISTS compliance_evidence (
-      id             BIGSERIAL PRIMARY KEY,
-      tenant_id      INTEGER NOT NULL,
-      checkpoint_id  INTEGER REFERENCES compliance_checkpoints(id),
-      status         VARCHAR(20) DEFAULT 'not_assessed',
-      evidence_text  TEXT,
-      evidence_url   TEXT,
-      assessed_by    INTEGER,
-      assessed_at    TIMESTAMPTZ,
-      score          INTEGER DEFAULT 0,
-      notes          TEXT,
-      created_at     TIMESTAMPTZ DEFAULT NOW(),
-      updated_at     TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(tenant_id, checkpoint_id)
-    );
-    CREATE TABLE IF NOT EXISTS compliance_incidents (
-      id               BIGSERIAL PRIMARY KEY,
-      tenant_id        INTEGER NOT NULL,
-      framework        VARCHAR(20) DEFAULT 'NABH',
-      incident_type    VARCHAR(50),
-      severity         VARCHAR(20),
-      description      TEXT,
-      patient_id       INTEGER,
-      occurred_at      TIMESTAMPTZ,
-      reported_by      INTEGER,
-      root_cause       TEXT,
-      corrective_action TEXT,
-      status           VARCHAR(20) DEFAULT 'open',
-      closed_at        TIMESTAMPTZ,
-      created_at       TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_evidence_tenant_cp ON compliance_evidence(tenant_id, checkpoint_id);
-    CREATE INDEX IF NOT EXISTS idx_incidents_tenant    ON compliance_incidents(tenant_id, created_at DESC);
-  `);
-  await seedStandards();
-}
+const SCHEMA_TABLES = ['compliance_standards', 'compliance_checkpoints', 'compliance_evidence', 'compliance_incidents'];
+
+// Owned by the migration, verified here. A missing table fails closed with
+// SCHEMA_NOT_MIGRATED instead of this service creating a table the
+// migration never shaped.
+export const ensureNabhjciTables = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015003300-nabh-jci-compliance-governance before using NABH/JCI compliance',
+});
 
 // ── Standards catalogue ───────────────────────────────────────────────────────
 const NABH_CHAPTERS = [
@@ -246,6 +201,7 @@ async function seedStandards() {
 // ── Dashboard / scoring ───────────────────────────────────────────────────────
 
 export async function getComplianceDashboard(tenantId, framework) {
+  await ensureNabhjciTables();
   const fw = framework?.toUpperCase();
   const { rows: standards } = await pool.query(
     `SELECT cs.id, cs.framework, cs.chapter_code, cs.chapter_name,
@@ -283,6 +239,7 @@ export async function getComplianceDashboard(tenantId, framework) {
 }
 
 export async function getChapterCheckpoints(tenantId, framework, chapterCode) {
+  await ensureNabhjciTables();
   const { rows } = await pool.query(
     `SELECT cp.id, cp.checkpoint_code, cp.description, cp.measurable_element, cp.criticality,
             cp.auto_collectable,
@@ -300,6 +257,7 @@ export async function getChapterCheckpoints(tenantId, framework, chapterCode) {
 }
 
 export async function upsertEvidence(tenantId, checkpointId, data) {
+  await ensureNabhjciTables();
   const { status, evidenceText, evidenceUrl, score, notes, assessedBy } = data;
   const { rows } = await pool.query(
     `INSERT INTO compliance_evidence (tenant_id, checkpoint_id, status, evidence_text, evidence_url, score, notes, assessed_by, assessed_at, updated_at)
@@ -318,6 +276,7 @@ export async function upsertEvidence(tenantId, checkpointId, data) {
 
 // ── Incident management ───────────────────────────────────────────────────────
 export async function logIncident(tenantId, data) {
+  await ensureNabhjciTables();
   const { incidentType, severity, description, patientId, occurredAt, reportedBy } = data;
   const { rows } = await pool.query(
     `INSERT INTO compliance_incidents (tenant_id, incident_type, severity, description, patient_id, occurred_at, reported_by)
@@ -329,6 +288,7 @@ export async function logIncident(tenantId, data) {
 }
 
 export async function listIncidents(tenantId, filters = {}) {
+  await ensureNabhjciTables();
   const { status, severity, limit = 50 } = filters;
   const conds = ['tenant_id = $1'];
   const vals  = [tenantId];
@@ -345,6 +305,7 @@ export async function listIncidents(tenantId, filters = {}) {
 }
 
 export async function updateIncident(id, tenantId, updates) {
+  await ensureNabhjciTables();
   const { rootCause, correctiveAction, status } = updates;
   const { rows } = await pool.query(
     `UPDATE compliance_incidents

@@ -20,41 +20,21 @@ import { archiveCase, flagReadmissionIfRecent } from './careos/hospital-memory.s
 import { dispatchEvent } from './workflow-ai-orchestrator.service.js';
 import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
 // ── B4: Discharge readiness table bootstrap ───────────────────────────────────
 
-async function ensureDischargeReadinessTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS discharge_readiness_items (
-      id              BIGSERIAL PRIMARY KEY,
-      admission_id    BIGINT NOT NULL,
-      organization_id BIGINT,
-      dimension       TEXT NOT NULL,   -- clinical | nursing_education | medication_reconciliation | billing | tpa | discharge_summary
-      label           TEXT NOT NULL,
-      is_complete     BOOLEAN NOT NULL DEFAULT FALSE,
-      completed_by    TEXT,
-      completed_at    TIMESTAMPTZ,
-      notes           TEXT,
-      mandatory       BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_discharge_readiness_admission
-      ON discharge_readiness_items(admission_id);
+const SCHEMA_TABLES = ['discharge_readiness_items', 'discharge_overrides'];
 
-    CREATE TABLE IF NOT EXISTS discharge_overrides (
-      id              BIGSERIAL PRIMARY KEY,
-      admission_id    BIGINT NOT NULL,
-      organization_id BIGINT,
-      missing_items   JSONB DEFAULT '[]'::jsonb,
-      reason_code     TEXT NOT NULL,
-      approver_id     TEXT NOT NULL,
-      approver_role   TEXT,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-}
+// Owned by the migration, verified here. A missing table fails closed with
+// SCHEMA_NOT_MIGRATED instead of this service creating a table the
+// migration never shaped.
+const ensureDischargeReadinessTables = schemaVerifier({
+  sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015003100-discharge-readiness-governance before using discharge readiness',
+});
 
-ensureDischargeReadinessTables().catch(e => console.warn('[adt] discharge readiness table init:', e.message));
 
 // Mandatory discharge dimensions
 const MANDATORY_DISCHARGE_DIMENSIONS = [
@@ -69,6 +49,7 @@ const MANDATORY_DISCHARGE_DIMENSIONS = [
 // ── Discharge readiness helpers ───────────────────────────────────────────────
 
 export async function initDischargeReadiness(admissionId, organizationId) {
+  await ensureDischargeReadinessTables();
   const defaults = [
     { dimension: 'clinical',                label: 'Clinician signed discharge order',          mandatory: true },
     { dimension: 'nursing_education',       label: 'Nurse completed patient discharge education', mandatory: true },
@@ -92,6 +73,7 @@ export async function initDischargeReadiness(admissionId, organizationId) {
 }
 
 export async function getDischargeReadiness(admissionId, organizationId) {
+  await ensureDischargeReadinessTables();
   const items = await sequelize.query(
     `SELECT * FROM discharge_readiness_items WHERE admission_id = :admId ORDER BY mandatory DESC, dimension`,
     { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
@@ -106,6 +88,7 @@ export async function getDischargeReadiness(admissionId, organizationId) {
 }
 
 export async function updateReadinessItem(admissionId, dimension, { completedBy, notes } = {}) {
+  await ensureDischargeReadinessTables();
   await sequelize.query(
     `UPDATE discharge_readiness_items
      SET is_complete = TRUE, completed_by = :by, completed_at = NOW(), notes = :notes, updated_at = NOW()
@@ -207,6 +190,7 @@ export async function admitPatient({
   notes,
   performedBy
 }) {
+  await ensureDischargeReadinessTables();
   // B1: Validate reservation token before entering transaction.
   // Emergency admissions bypass the token requirement.
   if (bedId && admissionType !== 'emergency') {
@@ -321,6 +305,7 @@ export async function transferPatient({
   reason,
   performedBy
 }) {
+  await ensureDischargeReadinessTables();
   const tx = await sequelize.transaction();
   try {
     const [current] = await sequelize.query(
@@ -371,6 +356,7 @@ export async function dischargePatient({
   reason,
   override = null   // B4: { reasonCode, approverId, approverRole }
 }) {
+  await ensureDischargeReadinessTables();
   // Reconciliation is a separate hard gate: a readiness checkbox must not be able to
   // stand in for a signed clinician/pharmacist reconciliation.
   if (await reconciliationRequired(organizationId)) {
@@ -530,6 +516,7 @@ export async function convertOpToIp({
   notes,
   performedBy
 }) {
+  await ensureDischargeReadinessTables();
   return admitPatient({
     organizationId, patientId, admittingDoctorId, admissionDiagnosis,
     wardId, bedId, admissionType, insuranceClaimId, corporateAccountId,
@@ -552,6 +539,7 @@ export async function convertErToIp({
   notes,
   performedBy
 }) {
+  await ensureDischargeReadinessTables();
   return admitPatient({
     organizationId, patientId, admittingDoctorId, admissionDiagnosis,
     wardId, bedId, admissionType: 'emergency',
@@ -561,6 +549,7 @@ export async function convertErToIp({
 }
 
 export async function getAdmission(admissionId, organizationId) {
+  await ensureDischargeReadinessTables();
   const [row] = await sequelize.query(
     `SELECT a.*, w.name as ward_name, b.bed_number FROM ip_admissions a
      LEFT JOIN wards w ON w.id = a.ward_id
@@ -572,6 +561,7 @@ export async function getAdmission(admissionId, organizationId) {
 }
 
 export async function getActiveAdmissions(organizationId, { wardId, status, limit = 50, offset = 0 } = {}) {
+  await ensureDischargeReadinessTables();
   let where = 'a.organization_id = :orgId AND a.status != \'discharged\'';
   const replacements = { orgId: organizationId, limit, offset };
   if (wardId) { where += ' AND a.ward_id = :wardId'; replacements.wardId = wardId; }
@@ -602,6 +592,7 @@ export async function getActiveAdmissions(organizationId, { wardId, status, limi
 }
 
 export async function getPatientAdtHistory(patientId, organizationId) {
+  await ensureDischargeReadinessTables();
   return sequelize.query(
     `SELECT e.*, a.admission_number FROM adt_events e
      JOIN ip_admissions a ON a.id = e.admission_id
@@ -612,6 +603,7 @@ export async function getPatientAdtHistory(patientId, organizationId) {
 }
 
 export async function cancelAdmit(admissionId, organizationId, performedBy, reason) {
+  await ensureDischargeReadinessTables();
   const tx = await sequelize.transaction();
   try {
     const [current] = await sequelize.query(

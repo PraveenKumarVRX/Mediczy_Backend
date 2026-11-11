@@ -27,6 +27,7 @@
 import pool from '../db/pgPool.js';
 import { abdmCircuitBreaker } from '../utils/circuit-breaker.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
 // ── Config ────────────────────────────────────────────────────────────────────
 const ABDM_BASE       = (process.env.ABDM_BASE_URL    || 'https://dev.abdm.gov.in/gateway').replace(/\/$/, '');
 const ABDM_CLIENT_ID  = process.env.ABDM_CLIENT_ID    || '';
@@ -54,93 +55,24 @@ const ABDM_HPR_REGISTER_PATH = process.env.ABDM_HPR_REGISTER_PATH || '/v1/hpr/re
 const ABDM_HPR_STATUS_PATH   = process.env.ABDM_HPR_STATUS_PATH   || '/v1/hpr/status';
 
 // ── DB bootstrap ──────────────────────────────────────────────────────────────
-export async function ensureAbdmTables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS abha_registrations (
-      id              BIGSERIAL PRIMARY KEY,
-      tenant_id       INTEGER NOT NULL,
-      patient_id      INTEGER,
-      abha_number     VARCHAR(20) UNIQUE,
-      abha_address    VARCHAR(100),
-      health_id       VARCHAR(100),
-      mobile          VARCHAR(15),
-      name            TEXT,
-      gender          VARCHAR(5),
-      date_of_birth   DATE,
-      verification_status VARCHAR(20) DEFAULT 'pending',
-      linked_at       TIMESTAMPTZ,
-      abdm_token      TEXT,
-      abdm_token_exp  TIMESTAMPTZ,
-      profile_json    JSONB,
-      created_at      TIMESTAMPTZ DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS abdm_consents (
-      id              BIGSERIAL PRIMARY KEY,
-      tenant_id       INTEGER NOT NULL,
-      patient_id      INTEGER,
-      abha_number     VARCHAR(20),
-      consent_id      VARCHAR(100) UNIQUE,
-      consent_status  VARCHAR(20) DEFAULT 'requested',
-      purpose_code    VARCHAR(20),
-      hip_id          VARCHAR(100),
-      hiu_id          VARCHAR(100),
-      date_range_from DATE,
-      date_range_to   DATE,
-      expiry          TIMESTAMPTZ,
-      hi_types        TEXT[],
-      granted_at      TIMESTAMPTZ,
-      revoked_at      TIMESTAMPTZ,
-      artifact_json   JSONB,
-      created_at      TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS abdm_phi_requests (
-      id              BIGSERIAL PRIMARY KEY,
-      tenant_id       INTEGER NOT NULL,
-      consent_id      VARCHAR(100) REFERENCES abdm_consents(consent_id),
-      transaction_id  VARCHAR(100) UNIQUE,
-      request_status  VARCHAR(20) DEFAULT 'initiated',
-      care_context    TEXT,
-      fhir_bundle     JSONB,
-      requested_at    TIMESTAMPTZ DEFAULT NOW(),
-      received_at     TIMESTAMPTZ
-    );
-    CREATE TABLE IF NOT EXISTS hfr_facility_registrations (
-      id                BIGSERIAL PRIMARY KEY,
-      tenant_id         INTEGER NOT NULL UNIQUE,
-      facility_id       VARCHAR(50),
-      facility_name     TEXT NOT NULL,
-      registration_status VARCHAR(20) DEFAULT 'pending',
-      response_json     JSONB,
-      registered_at     TIMESTAMPTZ,
-      created_at        TIMESTAMPTZ DEFAULT NOW(),
-      updated_at        TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS hpr_provider_registrations (
-      id                BIGSERIAL PRIMARY KEY,
-      tenant_id         INTEGER NOT NULL,
-      doctor_id         INTEGER,
-      hpr_id            VARCHAR(50),
-      provider_name     TEXT NOT NULL,
-      registration_status VARCHAR(20) DEFAULT 'pending',
-      response_json     JSONB,
-      registered_at     TIMESTAMPTZ,
-      created_at        TIMESTAMPTZ DEFAULT NOW(),
-      updated_at        TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (tenant_id, doctor_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_abha_tenant     ON abha_registrations(tenant_id, abha_number);
-    CREATE INDEX IF NOT EXISTS idx_abdm_consent_pat ON abdm_consents(patient_id, consent_status);
-    CREATE INDEX IF NOT EXISTS idx_abdm_phi_consent ON abdm_phi_requests(consent_id, request_status);
-    CREATE INDEX IF NOT EXISTS idx_hpr_tenant ON hpr_provider_registrations(tenant_id, registration_status);
-  `);
-}
+const SCHEMA_TABLES = ['abha_registrations', 'abdm_consents', 'abdm_phi_requests', 'hfr_facility_registrations', 'hpr_provider_registrations'];
+
+// Owned by the migration, verified here. A missing table fails closed with
+// SCHEMA_NOT_MIGRATED instead of this service creating a table the
+// migration never shaped.
+export const ensureAbdmTables = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004300-abdm-hfr-hpr-governance before using ABDM',
+});
 
 // ── Token management ──────────────────────────────────────────────────────────
 let _cachedToken = null;
 let _tokenExpiry = null;
 
 export async function getAccessToken() {
+  await ensureAbdmTables();
   if (_cachedToken && _tokenExpiry && Date.now() < _tokenExpiry) return _cachedToken;
 
   if (!ABDM_CLIENT_ID || !ABDM_CLIENT_SEC) {
@@ -219,6 +151,7 @@ async function abdmPost(path, body) {
 // ── ABHA Registration ─────────────────────────────────────────────────────────
 
 export async function initiateAbhaRegistration(tenantId, opts) {
+  await ensureAbdmTables();
   const { mobile, name, gender, dateOfBirth, patientId } = opts;
   if (!mobile) throw new Error('mobile is required');
 
@@ -240,6 +173,7 @@ export async function initiateAbhaRegistration(tenantId, opts) {
 }
 
 export async function verifyAbhaOtp(tenantId, opts) {
+  await ensureAbdmTables();
   const { txnId, otp, mobile } = opts;
   if (!txnId || !otp) throw new Error('txnId and otp are required');
 
@@ -282,6 +216,7 @@ export async function verifyAbhaOtp(tenantId, opts) {
 }
 
 export async function fetchAbhaProfile(abhaNumber, tenantId) {
+  await ensureAbdmTables();
   const { rows } = await pool.query(
     'SELECT * FROM abha_registrations WHERE abha_number = $1 AND tenant_id = $2',
     [abhaNumber, tenantId]
@@ -306,6 +241,7 @@ export async function fetchAbhaProfile(abhaNumber, tenantId) {
 }
 
 export async function listAbhaRegistrations(tenantId, patientId = null) {
+  await ensureAbdmTables();
   const cond = patientId ? 'tenant_id = $1 AND patient_id = $2' : 'tenant_id = $1';
   const vals = patientId ? [tenantId, patientId] : [tenantId];
   const { rows } = await pool.query(
@@ -319,6 +255,7 @@ export async function listAbhaRegistrations(tenantId, patientId = null) {
 
 // ── Consent management ────────────────────────────────────────────────────────
 export async function requestConsent(tenantId, opts) {
+  await ensureAbdmTables();
   const { abhaNumber, patientId, purposeCode, hiTypes, dateFrom, dateTo, expiryDays = 30, hiuId } = opts;
   if (!abhaNumber) throw new Error('abhaNumber is required');
   if (!hiTypes || !hiTypes.length) throw new Error('hiTypes array is required');
@@ -362,6 +299,7 @@ export async function requestConsent(tenantId, opts) {
 }
 
 export async function listConsents(tenantId, filters = {}) {
+  await ensureAbdmTables();
   const { patientId, status, abhaNumber } = filters;
   const conds = ['tenant_id = $1'];
   const vals  = [tenantId];
@@ -379,6 +317,7 @@ export async function listConsents(tenantId, filters = {}) {
 }
 
 export async function revokeConsent(tenantId, consentId) {
+  await ensureAbdmTables();
   const { rows } = await pool.query(
     `SELECT id, consent_id, consent_status FROM abdm_consents WHERE consent_id = $1 AND tenant_id = $2`,
     [consentId, tenantId]
@@ -401,6 +340,7 @@ export async function revokeConsent(tenantId, consentId) {
 
 // ── Consent callback handler (from NHA gateway) ───────────────────────────────
 export async function handleConsentCallback(payload) {
+  await ensureAbdmTables();
   const { consentRequestId, status, consentArtefacts = [] } = payload?.notification || {};
   if (!consentRequestId) return { ignored: true };
 
@@ -420,6 +360,7 @@ export async function handleConsentCallback(payload) {
 
 // ── PHI data request ──────────────────────────────────────────────────────────
 export async function requestPhi(tenantId, consentId) {
+  await ensureAbdmTables();
   const { rows } = await pool.query(
     `SELECT * FROM abdm_consents WHERE consent_id = $1 AND tenant_id = $2 AND consent_status = 'granted'`,
     [consentId, tenantId]
@@ -459,6 +400,7 @@ export async function requestPhi(tenantId, consentId) {
 }
 
 export async function handlePhiCallback(payload) {
+  await ensureAbdmTables();
   const { transactionId, entries = [] } = payload || {};
   if (!transactionId) return { ignored: true };
 
@@ -474,6 +416,7 @@ export async function handlePhiCallback(payload) {
 }
 
 export async function listPhiRequests(tenantId, consentId = null) {
+  await ensureAbdmTables();
   const cond = consentId
     ? 'pr.tenant_id = $1 AND pr.consent_id = $2'
     : 'pr.tenant_id = $1';
@@ -491,6 +434,7 @@ export async function listPhiRequests(tenantId, consentId = null) {
 
 // ── ABHA care context linking ─────────────────────────────────────────────────
 export async function linkCareContext(abhaNumber, careContext) {
+  await ensureAbdmTables();
   const { referenceNumber, display } = careContext;
   if (!referenceNumber) throw new Error('referenceNumber is required');
 
@@ -548,6 +492,7 @@ export async function registerFacilityOnHfr(tenantId, { facilityName, address, o
 }
 
 export async function getFacilityRegistryStatus(tenantId) {
+  await ensureAbdmTables();
   const { rows } = await pool.query(`SELECT * FROM hfr_facility_registrations WHERE tenant_id = $1`, [tenantId]);
   const local = rows[0];
   if (!local?.facility_id) return local || null;
@@ -601,6 +546,7 @@ export async function registerProviderOnHpr(tenantId, { doctorId, providerName, 
 }
 
 export async function getProviderRegistryStatus(tenantId, doctorId) {
+  await ensureAbdmTables();
   const { rows } = await pool.query(
     `SELECT * FROM hpr_provider_registrations WHERE tenant_id = $1 AND doctor_id = $2`,
     [tenantId, doctorId]
