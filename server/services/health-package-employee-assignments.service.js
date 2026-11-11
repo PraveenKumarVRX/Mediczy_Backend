@@ -1,5 +1,6 @@
 import { postgresSequelize as db } from '../db/postgres-sequelize.js';
 import { validityPeriodToInterval } from './health-package-policy.js';
+import { ahcWindow } from './corporate-ahc-entitlement-policy.service.js';
 const error=(message,status=400)=>Object.assign(new Error(message),{status});
 export function assignmentIds(value){
   if(!Array.isArray(value)||value.length>10000||value.some(id=>!/^\d+$/.test(String(id))||!Number.isSafeInteger(Number(id))||Number(id)<1))throw error('Provide linked employee IDs');
@@ -26,10 +27,18 @@ export async function updatePackageEmployeeAssignments(packageId,{addEmployeeIds
     const enrolled=active.size-removals.length+additions.length;
     if(additions.length&&enrolled>p.max_users)throw error('Package employee capacity exceeded. Remove assignments or increase this package capacity.',409);
     if(removals.length)await q(`UPDATE user_health_packages SET status='inactive',"updatedAt"=NOW() WHERE "packageId"=:packageId AND corporate_id=:corporateId AND "userId" IN (:ids) RETURNING "userId"`,{packageId,corporateId:p.corporate_id,ids:removals});
-    const validityInterval=validityPeriodToInterval(p.metadata.validityPeriod);
+    const metadata=typeof p.metadata==='string'?JSON.parse(p.metadata):p.metadata||{};
+    const entitlement=metadata.corporateValidFrom&&metadata.corporateValidTo?ahcWindow({
+      assignedOn:new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),
+      validityPeriod:metadata.individualValidityPeriod||metadata.validityPeriod,
+      corporateValidFrom:metadata.corporateValidFrom,
+      corporateValidTo:metadata.corporateValidTo,
+    }):null;
+    const validityInterval=validityPeriodToInterval(metadata.validityPeriod);
     for(const userId of additions){
-      const rows=await q(`INSERT INTO user_health_packages ("userId",corporate_id,"packageId","packageName","packageDetails","validFrom","validTo",status,"createdAt","updatedAt") VALUES (:userId,:corporateId,:packageId,:name,:details,CURRENT_DATE,CASE WHEN :years = 0 AND :days = 0 THEN NULL ELSE CURRENT_DATE+make_interval(years=>:years,days=>:days) END,'active',NOW(),NOW())
-        ON CONFLICT ("userId","packageId") DO UPDATE SET "packageName"=EXCLUDED."packageName","packageDetails"=EXCLUDED."packageDetails",status='active',"updatedAt"=NOW() WHERE user_health_packages.corporate_id=EXCLUDED.corporate_id RETURNING "userId"`,{userId,corporateId:p.corporate_id,packageId,name:p.name,details:JSON.stringify(p.features),years:validityInterval.years,days:validityInterval.days});
+      const defaultValidTo=(validityInterval.years||validityInterval.days)?new Date(Date.now()+((validityInterval.years*365+validityInterval.days)*86400000)).toISOString().slice(0,10):null;
+      const rows=await q(`INSERT INTO user_health_packages ("userId",corporate_id,"packageId","packageName","packageDetails","validFrom","validTo",status,"createdAt","updatedAt") VALUES (:userId,:corporateId,:packageId,:name,:details,:validFrom,:validTo,'active',NOW(),NOW())
+        ON CONFLICT ("userId","packageId") DO UPDATE SET "packageName"=EXCLUDED."packageName","packageDetails"=EXCLUDED."packageDetails",status='active',"updatedAt"=NOW() WHERE user_health_packages.corporate_id=EXCLUDED.corporate_id RETURNING "userId"`,{userId,corporateId:p.corporate_id,packageId,name:p.name,details:JSON.stringify(p.features),validFrom:entitlement?.validFrom||new Date().toISOString().slice(0,10),validTo:entitlement?.validTo||defaultValidTo});
       if(!rows.length)throw error('Employee assignment belongs to another corporate',409);
     }
     return {added:additions.length,removed:removals.length,enrolled};

@@ -110,6 +110,9 @@ const CorporateHealthPackages = () => {
     tests: '',
     frequency: 'Annual',
     validityPeriod: '1 Year',
+    corporateValidFrom: '',
+    corporateValidTo: '',
+    maxExtensionDays: '15',
     costPerEmployee: '',
     maxEmployees: '',
     status: 'Active',
@@ -213,6 +216,9 @@ const CorporateHealthPackages = () => {
       tests: pkg.tests.join(', '),
       frequency: pkg.frequency,
       validityPeriod: pkg.validityPeriod,
+      corporateValidFrom: pkg.corporateValidFrom || '',
+      corporateValidTo: pkg.corporateValidTo || '',
+      maxExtensionDays: String(pkg.maxExtensionDays || 15),
       costPerEmployee: pkg.costPerEmployee.toString(),
       maxEmployees: pkg.maxEmployees.toString(),
       status: pkg.status,
@@ -302,6 +308,7 @@ const CorporateHealthPackages = () => {
       tests: '',
       frequency: 'Annual',
       validityPeriod: '1 Year',
+      corporateValidFrom: '', corporateValidTo: '', maxExtensionDays: '15',
       costPerEmployee: '',
       maxEmployees: '',
       status: 'Active',
@@ -704,6 +711,18 @@ const CorporateHealthPackages = () => {
                           ))}
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div>
+                      <Label>Corporate AHC starts</Label>
+                      <Input type="date" value={newPackage.corporateValidFrom} onChange={(e) => setNewPackage({...newPackage, corporateValidFrom:e.target.value})} />
+                    </div>
+                    <div>
+                      <Label>Corporate AHC ends</Label>
+                      <Input type="date" value={newPackage.corporateValidTo} onChange={(e) => setNewPackage({...newPackage, corporateValidTo:e.target.value})} />
+                    </div>
+                    <div>
+                      <Label>Maximum HR extension</Label>
+                      <Input value="15 days (one time)" readOnly aria-label="Maximum AHC extension" />
                     </div>
                     <div>
                       <Label>Cost Per Employee (₹) *</Label>

@@ -1483,6 +1483,16 @@ router.post('/checkups/:id/complete', authUser, requireTeamOrAdmin, async (req, 
       { replacements: { id: booking.id }, type: postgresSequelize.QueryTypes.SELECT }
     );
     if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
+    // A completed corporate AHC consumes the employee's one-time entitlement.
+    // Keeping the historical row active preserves reporting; usedAt is the durable
+    // booking guard consulted by the employee AHC API.
+    if (row.corporate_id && row.user_id && row.package_id) {
+      await postgresSequelize.query(
+        `UPDATE user_health_packages SET "usedAt"=COALESCE("usedAt",NOW()),"updatedAt"=NOW()
+          WHERE "userId"=:userId AND corporate_id=:corporateId AND "packageId"=:packageId`,
+        { replacements:{userId:row.user_id,corporateId:row.corporate_id,packageId:String(row.package_id)}, type:postgresSequelize.QueryTypes.UPDATE }
+      );
+    }
     void notifyBooking(row, 'completed').catch((e) => console.error('[corporate-bookings] complete notify failed', e.message));
     return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
   } catch (err) {

@@ -5,6 +5,8 @@ import { eligibleRelations, validRelations, BENEFICIARY_RELATIONS, isValidValidi
 import crypto from 'node:crypto';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { postgresSequelize as db } from '../db/postgres-sequelize.js';
+import { ahcExtension, ahcWindow, validityDays } from '../services/corporate-ahc-entitlement-policy.service.js';
+import { notifyAhcEntitlement } from '../services/corporate-ahc-entitlement-notification.service.js';
 const router = express.Router();
 router.use(authUser, requireRole(['admin', 'team']), (req, res, next) => {
     if (req.user?.isAdmin || ['admin','system_admin','super_admin'].includes(req.userRole || req.user?.role)) return next();
@@ -20,7 +22,7 @@ const select = `SELECT p.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('partn
   WHERE p.metadata->>'kind'='health_checkup'`;
 const view = p => ({ id: String(p.id), corporateId: String(p.metadata.corporateId), corporateName: p.corporateName,
     eligibleRelations: eligibleRelations(p.metadata), venues: p.venues || [], venueMode: p.metadata.venueMode || 'inherit', packageName: p.name, description: p.description || '', tests: p.features?.tests || [], frequency: p.metadata.frequency,
-    validityPeriod: p.metadata.validityPeriod, costPerEmployee: Number(p.price), maxEmployees: Number(p.max_users || 0),
+    validityPeriod: p.metadata.validityPeriod, corporateValidFrom: p.metadata.corporateValidFrom || null, corporateValidTo: p.metadata.corporateValidTo || null, maxExtensionDays: Number(p.metadata.maxExtensionDays || 0), costPerEmployee: Number(p.price), maxEmployees: Number(p.max_users || 0),
     currentEnrolled: p.enrolled || 0, status: p.metadata.status || (p.is_active ? 'Active' : 'Inactive'), createdAt: p.created_at });
 const query = (sql, replacements = {}, transaction) => db.query(sql, { replacements, transaction, type: db.QueryTypes.SELECT });
 const fail = (res, e) => { console.error('[admin-health-packages]', e); return res.status(500).json({ success: false, message: 'Unable to save or load health packages' }); };
@@ -56,8 +58,43 @@ router.get('/:id/employee-options', async (req,res) => {
 });
 router.patch('/:id/assignments',async(req,res)=>{
     if(!req.body||(!Array.isArray(req.body.addEmployeeIds)&&!Array.isArray(req.body.removeEmployeeIds)))return res.status(400).json({success:false,message:'Provide employee additions or removals'});
-    try{return res.json({success:true,data:await updatePackageEmployeeAssignments(req.params.id,req.body)});}
+    try{
+      const data=await updatePackageEmployeeAssignments(req.params.id,req.body);
+      const additions=[...new Set((req.body.addEmployeeIds||[]).map(Number).filter(Number.isInteger))];
+      if(additions.length){
+        const [p]=await query(`SELECT metadata FROM corporate_health_package_catalog WHERE id=:id`,{id:req.params.id});
+        const metadata=typeof p?.metadata==='string'?JSON.parse(p.metadata):p?.metadata||{};
+        if(metadata.corporateValidFrom&&metadata.corporateValidTo){
+          const window=ahcWindow({assignedOn:new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),validityPeriod:metadata.individualValidityPeriod||metadata.validityPeriod,corporateValidFrom:metadata.corporateValidFrom,corporateValidTo:metadata.corporateValidTo});
+          void Promise.allSettled(additions.map(userId=>notifyAhcEntitlement({packageId:req.params.id,userId,eventType:'invitation',validTo:window.validTo})));
+        }
+      }
+      return res.json({success:true,data});
+    }
     catch(e){return e.status?res.status(e.status).json({success:false,message:e.message}):fail(res,e);}
+});
+/** One audited HR-requested extension per employee; never beyond the corporate AHC end date. */
+router.post('/:id/extensions', async (req,res) => {
+  const userId=Number(req.body?.userId), reason=String(req.body?.reason||'').trim(), hrRequestReference=String(req.body?.hrRequestReference||'').trim();
+  if (!Number.isInteger(userId)||userId<1||!reason||!hrRequestReference) return res.status(400).json({success:false,message:'userId, HR request reference and reason are required'});
+  try {
+    const data=await db.transaction(async transaction => {
+      const [p]=await query(`SELECT * FROM corporate_health_package_catalog WHERE id=:id AND metadata->>'kind'='health_checkup' FOR UPDATE`,{id:req.params.id},transaction);
+      if(!p||!p.is_active) throw Object.assign(new Error('Active AHC package not found'),{status:404});
+      const metadata=typeof p.metadata==='string'?JSON.parse(p.metadata):p.metadata||{};
+      if(!metadata.corporateValidTo||Number(metadata.maxExtensionDays)!==15) throw Object.assign(new Error('This package does not permit AHC extensions'),{status:400});
+      const [entitlement]=await query(`SELECT * FROM user_health_packages WHERE "packageId"=:id AND corporate_id=:corporateId AND "userId"=:userId FOR UPDATE`,{id:String(p.id),corporateId:p.corporate_id,userId},transaction);
+      if(!entitlement||String(entitlement.status).toLowerCase()!=='active'||entitlement.usedAt) throw Object.assign(new Error('Only an active, unused AHC entitlement may be extended'),{status:409});
+      const prior=await query(`SELECT id FROM corporate_ahc_entitlement_extensions WHERE package_id=:id AND user_id=:userId FOR UPDATE`,{id:String(p.id),userId},transaction);
+      if(prior.length) throw Object.assign(new Error('This employee has already received the maximum AHC extension'),{status:409});
+      const extension=ahcExtension({currentValidTo:String(entitlement.validTo).slice(0,10),corporateValidTo:metadata.corporateValidTo,extensionDays:req.body?.days||15,maxExtensionDays:metadata.maxExtensionDays});
+      await query(`UPDATE user_health_packages SET "validTo"=:validTo,"updatedAt"=NOW() WHERE id=:id RETURNING id`,{id:entitlement.id,validTo:extension.newValidTo},transaction);
+      await query(`INSERT INTO corporate_ahc_entitlement_extensions(package_id,corporate_id,user_id,old_valid_to,new_valid_to,granted_days,hr_request_reference,reason,granted_by) VALUES(:packageId,:corporateId,:userId,:oldValidTo,:newValidTo,:grantedDays,:hrRequestReference,:reason,:grantedBy) RETURNING id`,{packageId:String(p.id),corporateId:p.corporate_id,userId,oldValidTo:extension.oldValidTo,newValidTo:extension.newValidTo,grantedDays:extension.grantedDays,hrRequestReference,reason,grantedBy:req.user?.id||null},transaction);
+      return extension;
+    });
+    void notifyAhcEntitlement({packageId:req.params.id,userId,eventType:'extension',validTo:data.newValidTo});
+    return res.json({success:true,data});
+  } catch(e) { return e.status?res.status(e.status).json({success:false,message:e.message}):fail(res,e); }
 });
 router.get('/:id/assignments', async (req,res) => {
     try {const rows=await query(`SELECT u."userId",u.status,u."validFrom",u."validTo",u."usedAt" FROM user_health_packages u JOIN corporate_health_package_catalog p ON p.id=u."packageId" AND p.corporate_id=u.corporate_id WHERE p.id=:id`,req.params);return res.json({success:true,data:rows});} catch(e){return fail(res,e);}
@@ -74,6 +111,12 @@ async function save(req, res) {
     const b = req.body || {}, price = Number(b.costPerEmployee), capacity = Number(b.maxEmployees);
     if (!/^\d+$/.test(String(b.corporateId)) || !String(b.packageName || '').trim() || String(b.packageName).trim().length > 255 || !Array.isArray(b.tests) || !b.tests.length || b.tests.some(t => typeof t !== 'string' || !t.trim()) || !Number.isFinite(price) || price < 0 || !Number.isInteger(capacity) || capacity < 1 || !['Active', 'Inactive', 'Draft', 'Expired'].includes(b.status) || !['Annual', 'Bi-Annual', 'Quarterly', 'Monthly'].includes(b.frequency) || !isValidValidityPeriod(b.validityPeriod))
         return res.status(400).json({ success: false, message: 'Provide a corporate, package name, tests, valid status, frequency, validity, nonnegative cost and positive employee capacity' });
+    const hasCorporateWindow=Boolean(b.corporateValidFrom||b.corporateValidTo);
+    if (hasCorporateWindow) {
+      try { ahcWindow({assignedOn:b.corporateValidFrom,validityPeriod:b.individualValidityPeriod||b.validityPeriod,corporateValidFrom:b.corporateValidFrom,corporateValidTo:b.corporateValidTo}); validityDays(b.individualValidityPeriod||b.validityPeriod); }
+      catch (e) { return res.status(e.status||400).json({success:false,message:e.message}); }
+      if (Number(b.maxExtensionDays ?? 15)!==15) return res.status(400).json({success:false,message:'AHC extensions are limited to 15 days'});
+    }
     if ((b.eligibleRelations !== undefined && !validRelations(b.eligibleRelations)) || (b.venueMode !== undefined && !['inherit','restricted'].includes(b.venueMode)) || (b.venues !== undefined && (!Array.isArray(b.venues) || b.venues.some(v => !/^\d+$/.test(String(v.partnerId)) || !['lab','hospital'].includes(v.partnerType) || !['all',...BENEFICIARY_RELATIONS].includes(v.relation))))) return res.status(400).json({success:false,message:'Provide valid eligible relations and network venues'});
     if (b.venueMode === 'restricted' && !b.venues?.length) return res.status(400).json({success:false,message:'Select at least one venue for restricted packages'});
     if (req.params.id && !/^[A-Za-z0-9_-]{1,150}$/.test(req.params.id))
@@ -82,7 +125,7 @@ async function save(req, res) {
         const [corporate] = await query('SELECT id FROM corporates WHERE id=:id', { id: b.corporateId });
         if (!corporate)
             return res.status(404).json({ success: false, message: 'Corporate not found' });
-        const metadata = JSON.stringify({ kind: 'health_checkup', corporateId: String(corporate.id), frequency: b.frequency, validityPeriod: b.validityPeriod, status: b.status, eligibleRelations: b.eligibleRelations || ['self'], venueMode: b.venueMode || 'inherit' });
+        const metadata = JSON.stringify({ kind: 'health_checkup', corporateId: String(corporate.id), frequency: b.frequency, validityPeriod: b.validityPeriod, individualValidityPeriod: b.individualValidityPeriod || b.validityPeriod, corporateValidFrom: b.corporateValidFrom || null, corporateValidTo: b.corporateValidTo || null, maxExtensionDays: hasCorporateWindow ? 15 : 0, status: b.status, eligibleRelations: b.eligibleRelations || ['self'], venueMode: b.venueMode || 'inherit' });
         const replacements = { id: req.params.id, corporateId: corporate.id, name: b.packageName.trim(), description: String(b.description || ''), price, capacity, active: b.status === 'Active', features: JSON.stringify({ tests: b.tests, price, description: String(b.description || '') }), metadata, slug: `hc-${crypto.randomUUID()}` };
         const result = await db.transaction(async (transaction) => {
             async function saveVenues(id) {
