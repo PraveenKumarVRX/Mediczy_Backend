@@ -661,51 +661,78 @@ const EmailInbox: React.FC = () => {
       {/* Hidden file input – shared between compose & reply */}
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => handleFileAdd(e.target.files)} />
 
-      {/* ── 3-pane layout ── */}
-      <div className="flex min-h-[calc(100dvh-8rem)] flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_20px_60px_-35px_rgba(15,23,42,0.7)] lg:h-[calc(100vh-10rem)] lg:min-h-[40rem] lg:flex-row">
+      {/* ── Mail workspace ── */}
+      <div className="flex min-h-[calc(100dvh-8rem)] flex-col overflow-hidden rounded-[26px] border border-slate-200/80 bg-card shadow-[0_28px_80px_-42px_rgba(15,23,42,0.9)] dark:border-slate-700/70 lg:h-[calc(100vh-10rem)] lg:min-h-[42rem]">
+        <header className="flex shrink-0 flex-col gap-4 border-b border-slate-200/80 bg-gradient-to-r from-white via-white to-teal-50/60 px-5 py-4 dark:border-slate-700/70 dark:from-slate-950 dark:via-slate-950 dark:to-teal-950/20 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/20">
+              <Mail className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">Mail center</h1>
+                <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-teal-700 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">Team workspace</span>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Triage, respond, and turn important conversations into action.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button onClick={syncEmails} disabled={syncing} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-teal-500/50 dark:hover:text-teal-300">
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} /> {syncing ? 'Syncing' : 'Sync'}
+            </button>
+            <button onClick={openTemplateModal} className="hidden h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 sm:inline-flex">
+              <LayoutTemplate className="h-3.5 w-3.5" /> Templates
+            </button>
+            <button onClick={openCompose} className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-4 text-sm font-semibold text-white shadow-lg shadow-teal-600/20 transition hover:from-teal-700 hover:to-cyan-700">
+              <Plus className="h-4 w-4" /> Compose
+            </button>
+          </div>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* ─── SIDEBAR ─── */}
-        <aside className={`${selectedEmail || composerOpen ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-b border-border bg-muted/20 lg:w-56 lg:border-b-0 lg:border-r lg:overflow-y-auto`}>
+        <aside className={`${selectedEmail || composerOpen ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-b border-slate-700/70 bg-slate-950 text-slate-300 lg:w-[13rem] lg:border-b-0 lg:border-r lg:overflow-y-auto`}>
           {/* Compose button */}
-          <div className="p-3 border-b border-border shrink-0">
+          <div className="p-3.5 border-b border-slate-800 shrink-0">
             <button
               onClick={openCompose}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm transition-colors shadow-sm"
+              className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white font-semibold text-sm transition-all shadow-lg shadow-cyan-950/30"
             >
               <Plus className="w-4 h-4" /> Compose
             </button>
           </div>
 
           {/* Folder nav */}
-          <nav className="flex shrink-0 gap-1 overflow-x-auto px-2 py-2 lg:block lg:px-0">
+          <nav className="flex shrink-0 gap-1 overflow-x-auto px-2 py-3 lg:block lg:px-2">
             {FOLDERS.map(({ key, label, Icon }) => (
               <button
                 key={key}
                 onClick={() => { setFolder(key); setPage(1); setSelectedEmail(null); setComposerOpen(false); }}
-                className={`flex min-w-max items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:mx-1 lg:mb-0.5 lg:w-full ${
+                className={`flex min-w-max items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors lg:mb-1 lg:w-full ${
                   folder === key
-                    ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    ? 'bg-teal-400/15 text-teal-200 ring-1 ring-inset ring-teal-300/15'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="flex-1 text-left">{label}</span>
                 {key === 'inbox' && (stats?.unread ?? 0) > 0 && (
-                  <span className="text-[10px] font-bold bg-blue-500 text-white rounded-full px-1.5 py-0.5 leading-none">
+                  <span className="text-[10px] font-bold bg-teal-400 text-slate-950 rounded-full px-1.5 py-0.5 leading-none">
                     {stats!.unread > 99 ? '99+' : stats!.unread}
                   </span>
                 )}
               </button>
             ))}
-            <div className="mx-2 hidden w-px self-stretch bg-border lg:mx-3 lg:my-2 lg:block lg:h-px lg:w-auto" />
+            <div className="mx-2 hidden w-px self-stretch bg-border lg:mx-2 lg:my-3 lg:block lg:h-px lg:w-auto lg:bg-slate-800" />
             <RouterLink
               to="/team/settings"
-              className="flex min-w-max items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:mx-1 lg:w-full"
+              className="flex min-w-max items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 lg:w-full"
             >
               <Settings className="w-4 h-4 shrink-0" /> SMTP Settings
             </RouterLink>
             <button
               onClick={openTemplateModal}
-              className="flex min-w-max items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:mx-1 lg:w-full"
+              className="flex min-w-max items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 lg:w-full"
             >
               <LayoutTemplate className="w-4 h-4 shrink-0" /> Email Templates
             </button>
@@ -714,28 +741,28 @@ const EmailInbox: React.FC = () => {
           {/* Stats + AI actions */}
           {stats && (
             <div className="mt-auto hidden px-3 pb-3 lg:block">
-              <div className="border-t border-border pt-3 mb-2">
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60 mb-2">Statistics</p>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+                <p className="text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-500 mb-2">Mailbox health</p>
                 <div className="grid grid-cols-2 gap-1.5 mb-3">
-                  <div className="rounded-lg bg-background border border-border p-2 text-center">
-                    <div className="text-lg font-bold text-foreground leading-none">{stats.total}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">Total</div>
+                  <div className="rounded-xl bg-slate-950 border border-slate-800 p-2 text-center">
+                    <div className="text-lg font-bold text-slate-100 leading-none">{stats.total}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">Total</div>
                   </div>
-                  <div className="rounded-lg bg-background border border-border p-2 text-center">
-                    <div className="text-lg font-bold text-blue-600 leading-none">{stats.unread}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">Unread</div>
+                  <div className="rounded-xl bg-slate-950 border border-slate-800 p-2 text-center">
+                    <div className="text-lg font-bold text-teal-300 leading-none">{stats.unread}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">Unread</div>
                   </div>
                 </div>
                 {Object.keys(stats.bySentiment).length > 0 && (
                   <div className="space-y-1.5">
-                    <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">Sentiment</p>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Sentiment</p>
                     {Object.entries(stats.bySentiment).map(([s, c]) => (
                       <div key={s}>
                         <div className="flex justify-between text-[10px] mb-0.5">
-                          <span className="capitalize text-muted-foreground">{s}</span>
-                          <span className="font-semibold text-foreground">{c}</span>
+                          <span className="capitalize text-slate-400">{s}</span>
+                          <span className="font-semibold text-slate-200">{c}</span>
                         </div>
-                        <div className="h-1 rounded-full bg-muted overflow-hidden">
+                        <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
                           <div
                             className={`h-full rounded-full ${SENTIMENT_DOT[s] || 'bg-blue-400'}`}
                             style={{ width: `${Math.min(100, (c / Math.max(stats.total, 1)) * 100)}%` }}
@@ -746,18 +773,18 @@ const EmailInbox: React.FC = () => {
                   </div>
                 )}
               </div>
-              <div className="border-t border-border pt-2 space-y-1">
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60 mb-1">AI Actions</p>
+              <div className="border-t border-slate-800 mt-3 pt-2 space-y-1">
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Productivity</p>
                 <button
                   onClick={syncEmails} disabled={syncing}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-100 transition-colors disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${syncing ? 'animate-spin' : ''}`} />
                   {syncing ? 'Syncing…' : 'Sync Emails'}
                 </button>
                 <button
                   onClick={processAllEmails} disabled={processing}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium text-orange-600 hover:bg-orange-500/10 transition-colors disabled:opacity-50"
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium text-amber-300 hover:bg-amber-400/10 transition-colors disabled:opacity-50"
                 >
                   <Zap className={`w-3.5 h-3.5 shrink-0 ${processing ? 'animate-pulse' : ''}`} />
                   {processing ? 'Processing…' : 'AI Process All'}
@@ -773,15 +800,15 @@ const EmailInbox: React.FC = () => {
         </aside>
 
         {/* ─── EMAIL LIST ─── */}
-        <div className={`${selectedEmail || composerOpen ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-b border-border min-w-0 overflow-hidden lg:w-[360px] lg:border-b-0 lg:border-r`}>
+        <div className={`${selectedEmail || composerOpen ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-b border-slate-200 bg-background min-w-0 overflow-hidden dark:border-slate-800 lg:w-[20rem] xl:w-[22rem] lg:border-b-0 lg:border-r`}>
           {/* Search + filter bar */}
-          <div className="shrink-0 p-3 border-b border-border space-y-2 bg-background">
+          <div className="shrink-0 space-y-3 border-b border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-foreground">{FOLDERS.find(item => item.key === folder)?.label || 'Inbox'}</p>
-                <p className="text-xs text-muted-foreground">{stats?.unread ? `${stats.unread} need attention` : 'All caught up'}</p>
+                <p className="text-base font-semibold tracking-tight text-foreground">{FOLDERS.find(item => item.key === folder)?.label || 'Inbox'}</p>
+                <p className="text-xs text-muted-foreground">{stats?.unread ? `${stats.unread.toLocaleString()} conversations need attention` : 'You are all caught up'}</p>
               </div>
-              <button onClick={fetchInbox} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground" aria-label="Refresh email list">
+              <button onClick={fetchInbox} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-slate-200 px-2.5 text-xs font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-teal-500/40 dark:hover:bg-teal-500/10 dark:hover:text-teal-300" aria-label="Refresh email list">
                 <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
               </button>
             </div>
@@ -792,14 +819,14 @@ const EmailInbox: React.FC = () => {
                 placeholder="Search emails…"
                 value={searchTerm}
                 onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
-                className="w-full pl-8 pr-3 py-1.5 text-sm bg-muted/50 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:bg-background placeholder:text-muted-foreground/60 transition-colors"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-foreground transition-colors placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-900/70 dark:placeholder:text-slate-500 dark:focus:bg-slate-900"
               />
             </div>
             <div className="flex gap-1.5">
               <button
                 onClick={() => { setUnreadOnly(!unreadOnly); setPage(1); }}
-                className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
-                  unreadOnly ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300' : 'bg-muted text-muted-foreground hover:text-foreground'
+                className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-colors ${
+                  unreadOnly ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300' : 'bg-slate-100 text-slate-500 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
                 }`}
               >
                 Unread {stats?.unread ? `(${stats.unread})` : ''}
@@ -832,36 +859,36 @@ const EmailInbox: React.FC = () => {
                     role="button"
                     tabIndex={0}
                     aria-current={isSelected ? 'true' : undefined}
-                    className={`group relative px-3 py-3 border-b border-border cursor-pointer transition-all select-none ${
+                    className={`group relative cursor-pointer select-none border-b border-slate-100 px-4 py-4 transition-all dark:border-slate-800 ${
                       isSelected
-                        ? 'bg-blue-500/10 border-l-[3px] border-l-blue-500'
+                        ? 'border-l-[3px] border-l-teal-500 bg-teal-500/[0.08] shadow-[inset_0_1px_0_rgba(20,184,166,.08)]'
                         : email.isRead
-                        ? 'hover:bg-muted/40'
-                        : 'bg-blue-500/5 hover:bg-blue-500/10'
+                        ? 'hover:bg-slate-50 dark:hover:bg-slate-900/60'
+                        : 'bg-teal-500/[0.035] hover:bg-teal-500/[0.08]'
                     }`}
                   >
                     {!email.isRead && !isSelected && (
-                      <div className="absolute left-[3px] top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-blue-500" />
+                      <div className="absolute left-2 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-teal-500" />
                     )}
-                    <div className="flex items-start gap-2.5 pl-1">
+                    <div className="flex items-start gap-3 pl-1">
                       <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5"
+                        className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white shadow-sm"
                         style={{ backgroundColor: color }}
                       >
                         {getInitials(email.fromName || email.from)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <span className={`text-sm truncate leading-snug ${email.isRead ? 'font-medium text-foreground' : 'font-bold text-foreground'}`}>
+                          <span className={`truncate text-sm leading-snug ${email.isRead ? 'font-medium text-foreground' : 'font-bold text-foreground'}`}>
                             {email.fromName || email.from}
                           </span>
-                          <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(email.receivedAt)}</span>
+                          <span className="shrink-0 text-[10px] font-medium text-muted-foreground">{timeAgo(email.receivedAt)}</span>
                         </div>
-                        <p className={`text-xs truncate mb-1 ${email.isRead ? 'text-muted-foreground' : 'text-foreground font-medium'}`}>
+                        <p className={`mb-1 truncate text-xs ${email.isRead ? 'text-muted-foreground' : 'font-medium text-foreground'}`}>
                           {email.subject}
                         </p>
                         {(email.aiSummary || email.body) && (
-                          <p className="mb-1 truncate text-[11px] text-muted-foreground/80">
+                          <p className="mb-1 truncate text-[11px] leading-relaxed text-muted-foreground/80">
                             {(email.aiSummary || email.body).replace(/\s+/g, ' ').trim()}
                           </p>
                         )}
@@ -896,7 +923,7 @@ const EmailInbox: React.FC = () => {
           </div>
 
           {/* Pagination */}
-          <div className="shrink-0 flex items-center justify-between px-3 py-2 border-t border-border bg-muted/10">
+          <div className="shrink-0 flex items-center justify-between border-t border-slate-200 bg-slate-50/80 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-950/60">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
               className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
@@ -914,12 +941,12 @@ const EmailInbox: React.FC = () => {
         </div>
 
         {/* ─── DETAIL PANE ─── */}
-        <div className={`${!selectedEmail && !composerOpen ? 'hidden lg:flex' : 'flex'} flex-1 flex-col min-w-0 overflow-hidden`}>
+        <div className={`${!selectedEmail && !composerOpen ? 'hidden lg:flex' : 'flex'} min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/50 dark:bg-slate-950/30`}>
 
           {/* COMPOSE MODE */}
           {composerOpen && !selectedEmail && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-border bg-muted/10">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-950">
+              <div className="shrink-0 flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
                 <h3 className="font-semibold text-sm text-foreground">New Message</h3>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setComposerExpanded(!composerExpanded)}
@@ -978,17 +1005,17 @@ const EmailInbox: React.FC = () => {
 
           {/* EMPTY STATE */}
           {!composerOpen && !selectedEmail && (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-foreground p-8">
-              <div className="w-20 h-20 rounded-full bg-muted/40 flex items-center justify-center">
-                <Mail className="w-10 h-10 opacity-20" />
+            <div className="flex-1 flex flex-col items-center justify-center gap-5 text-muted-foreground p-8">
+              <div className="flex h-20 w-20 items-center justify-center rounded-[28px] bg-gradient-to-br from-teal-100 to-cyan-100 text-teal-600 shadow-lg shadow-teal-900/5 dark:from-teal-500/15 dark:to-cyan-500/10 dark:text-teal-300">
+                <Mail className="h-9 w-9" />
               </div>
               <div className="text-center">
-                <p className="font-semibold text-foreground text-base">Select an email to read</p>
-                <p className="text-sm mt-1">or start composing a new message</p>
+                <p className="font-semibold text-foreground text-lg">Your mailbox, with room to think</p>
+                <p className="text-sm mt-1 max-w-xs">Select a conversation to review its details, or start a new message.</p>
               </div>
               <button
                 onClick={openCompose}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 font-medium text-sm transition-colors"
+                className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-600/20 transition-colors hover:bg-teal-700"
               >
                 <Plus className="w-4 h-4" /> Compose Email
               </button>
@@ -999,11 +1026,12 @@ const EmailInbox: React.FC = () => {
           {selectedEmail && (
             <>
               {/* Header */}
-              <div className="shrink-0 px-5 py-4 border-b border-border bg-background">
+              <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-5 dark:border-slate-800 dark:bg-slate-950 sm:px-6">
                 <button onClick={() => { setSelectedEmail(null); setComposerOpen(false); }} className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-primary lg:hidden">
                   <ChevronLeft className="h-3.5 w-3.5" /> Back to inbox
                 </button>
-                <div className="flex items-start gap-3">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
                   <div
                     className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
                     style={{ backgroundColor: avatarColor(selectedEmail.fromName || selectedEmail.from) }}
@@ -1029,8 +1057,9 @@ const EmailInbox: React.FC = () => {
                       {new Date(selectedEmail.receivedAt).toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short' })}
                     </p>
                   </div>
+                  </div>
                   {/* Action buttons */}
-                  <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                  <div className="flex items-center gap-1 self-end shrink-0 flex-wrap justify-end xl:self-auto">
                     {selectedEmail.ticketId ? (
                       <span className="flex items-center gap-1 px-2 py-1 rounded bg-blue-500/10 text-blue-600 text-xs font-medium border border-blue-400/20">
                         <TicketIcon className="w-3.5 h-3.5" />{selectedEmail.ticketId}
@@ -1068,7 +1097,7 @@ const EmailInbox: React.FC = () => {
                     </button>
                   </div>
                 </div>
-                <h2 className="font-semibold text-foreground mt-3 text-base leading-snug">{selectedEmail.subject}</h2>
+                <h2 className="mt-4 text-lg font-semibold leading-snug tracking-tight text-foreground">{selectedEmail.subject}</h2>
                 {selectedEmail.aiProcessed && (
                   <div className="flex flex-wrap items-center gap-1.5 mt-2">
                     {selectedEmail.aiIntent && (
@@ -1086,22 +1115,22 @@ const EmailInbox: React.FC = () => {
               </div>
 
               {/* Body (scrollable) */}
-              <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
                 {selectedEmail.aiSummary && (
-                  <div className="mb-4 px-3 py-2.5 rounded-lg bg-purple-500/5 border border-purple-400/20 text-xs text-purple-700 dark:text-purple-300 leading-relaxed">
-                    <span className="font-semibold">AI Summary: </span>{selectedEmail.aiSummary}
+                  <div className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-3 text-xs leading-relaxed text-violet-800 dark:border-violet-400/20 dark:bg-violet-500/10 dark:text-violet-200">
+                    <span className="font-semibold">AI briefing · </span>{selectedEmail.aiSummary}
                   </div>
                 )}
                 <div className="text-sm text-foreground leading-relaxed">
                   {selectedEmail.htmlBody ? (
                     <div
-                      className="email-html-body overflow-x-auto"
+                      className="email-html-body overflow-x-auto rounded-2xl border border-slate-200 shadow-sm dark:border-slate-700"
                       style={{
                         colorScheme: 'light',
                         backgroundColor: '#ffffff',
                         color: '#111111',
-                        borderRadius: '0.5rem',
-                        padding: '1rem',
+                          borderRadius: '1rem',
+                          padding: '1.5rem',
                       }}
                       dangerouslySetInnerHTML={{ __html: sanitize(selectedEmail.htmlBody) }}
                     />
@@ -1206,6 +1235,7 @@ const EmailInbox: React.FC = () => {
               )}
             </>
           )}
+        </div>
         </div>
       </div>
 
