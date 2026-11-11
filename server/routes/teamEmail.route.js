@@ -75,6 +75,7 @@ import TeamMember from '../models/postgres/team-member.model.postgres.js';
 import TeamEmailTemplate from '../models/teamEmailTemplate.model.js';
 import { processEmailFull, batchProcessInbox } from '../services/emailAutoProcessService.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import { personalizeEmailTemplate } from '../services/team-email-template-personalization.service.js';
 
 async function callGroq(prompt, maxTokens = 400, temperature = 0.7) {
   try {
@@ -265,6 +266,51 @@ router.delete('/templates/:id', authTeam, async (req, res) => {
     res.json({ success: true, message: 'Template deleted' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/** Send a personalised, clearly-labelled test copy of an owned email template. */
+router.post('/templates/:id/test', authTeam, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
+    const template = await TeamEmailTemplate.findOne({ where: { id: req.params.id, teamMemberId } });
+    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+
+    const to = String(req.body?.to || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return res.status(400).json({ success: false, message: 'Provide one valid test email address' });
+    const variables = req.body?.variables;
+    if (variables !== undefined && (!variables || Array.isArray(variables) || typeof variables !== 'object' || Object.keys(variables).length > 30)) {
+      return res.status(400).json({ success: false, message: 'Provide a valid set of template variables' });
+    }
+    const subject = String(req.body?.subject ?? template.subject ?? '').slice(0, 500);
+    const body = String(req.body?.body ?? template.body ?? '');
+    if (!subject || !body || body.length > 100000) return res.status(400).json({ success: false, message: 'A subject and HTML body are required for the test send' });
+    const rendered = personalizeEmailTemplate({ subject, body, variables });
+    const missing = rendered.placeholders.filter(key => !(key in (variables || {})) || !String(variables[key] ?? '').trim());
+    if (missing.length) return res.status(400).json({ success: false, message: `Fill all placeholders before sending: ${missing.join(', ')}` });
+
+    const authUserId = (req.teamUser || req.user)?.id;
+    const emailSettings = await EmailSettings.findOne({
+      where: { userId: authUserId, isActive: true, isDefault: true, smtpUsername: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] } }
+    });
+    if (!emailSettings?.smtpPassword) return res.status(400).json({ success: false, message: 'No active SMTP configuration is available for this Team account' });
+
+    const testSubject = `[TEST] ${rendered.subject}`.slice(0, 500);
+    const result = await emailService.sendOutboundEmail(emailSettings.id, { to, subject: testSubject, htmlContent: rendered.body }, {
+      host: emailSettings.smtpHost, port: emailSettings.smtpPort, secure: emailSettings.smtpSecure,
+      username: emailSettings.smtpUsername, password: emailSettings.smtpPassword,
+      fromEmail: emailSettings.email, fromName: emailSettings.displayName || emailSettings.email, isActive: emailSettings.isActive
+    });
+    await EmailInbox.create({
+      teamMemberId, messageId: result.messageId || `template-test-${Date.now()}`,
+      from: emailSettings.email, fromName: emailSettings.displayName || emailSettings.email,
+      to: [to], cc: [], bcc: [], subject: testSubject, body: rendered.body, htmlBody: rendered.body,
+      isRead: true, labels: ['sent', 'template-test'], priority: 'normal', receivedAt: new Date()
+    });
+    return res.json({ success: true, message: 'Personalised test email sent', data: { to, subject: testSubject, placeholders: rendered.placeholders } });
+  } catch (error) {
+    console.error('Error sending email template test:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to send the test email' });
   }
 });
 

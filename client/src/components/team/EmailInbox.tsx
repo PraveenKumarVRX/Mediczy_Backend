@@ -122,6 +122,15 @@ const FOLDERS = [
 ];
 const SIG_KEY = 'team_email_sig_v2';
 const DEFAULT_SIG = '-- \nBest regards,\nMediqzy Team';
+const TEMPLATE_VARIABLE = /{{\s*([A-Za-z][A-Za-z0-9_.-]{0,79})\s*}}/g;
+const templateVariables = (...parts: string[]) => {
+  const names = new Set<string>();
+  parts.forEach(part => Array.from(String(part || '').matchAll(TEMPLATE_VARIABLE)).forEach(match => names.add(match[1])));
+  return [...names];
+};
+const escapeTemplateValue = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
+const personalizeTemplatePreview = (body: string, values: Record<string, string>) => String(body || '').replace(TEMPLATE_VARIABLE, (_match, key) => key in values ? escapeTemplateValue(values[key] || '') : `{{${key}}}`);
+const variableLabel = (key: string) => key.replace(/[_.-]+/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
 
 // ── FormatButton (outside component to prevent remount) ─────────────
 const FormatButton: React.FC<{
@@ -194,6 +203,10 @@ const EmailInbox: React.FC = () => {
   const [tmplSaveLoading, setTmplSaveLoading]         = useState(false);
   const [templateStudioMode, setTemplateStudioMode]   = useState<'visual' | 'html'>('visual');
   const templateCanvasRef                              = useRef<HTMLIFrameElement>(null);
+  const [showTemplateTest, setShowTemplateTest]       = useState(false);
+  const [testRecipient, setTestRecipient]             = useState('');
+  const [testVariables, setTestVariables]             = useState<Record<string, string>>({});
+  const [testSending, setTestSending]                 = useState(false);
 
   // Bot reply state
   const [botReplyLoading, setBotReplyLoading]         = useState(false);
@@ -413,6 +426,39 @@ const EmailInbox: React.FC = () => {
   const switchTemplateStudioMode = (mode: 'visual' | 'html') => {
     if (templateStudioMode === 'visual') setTmplForm(form => ({ ...form, body: readVisualTemplate() }));
     setTemplateStudioMode(mode);
+  };
+
+  const openTemplateTest = () => {
+    if (!editingTemplate) {
+      toast({ variant: 'destructive', title: 'Save the template first', description: 'Save a new template before sending a test email.' });
+      return;
+    }
+    const body = templateStudioMode === 'visual' ? readVisualTemplate() : tmplForm.body;
+    const variables = templateVariables(tmplForm.subject, body);
+    setTmplForm(form => ({ ...form, body }));
+    setTestVariables(existing => Object.fromEntries(variables.map(name => [name, existing[name] || ''])));
+    setShowTemplateTest(true);
+  };
+
+  const sendTemplateTest = async () => {
+    if (!editingTemplate) return;
+    const body = templateStudioMode === 'visual' ? readVisualTemplate() : tmplForm.body;
+    const required = templateVariables(tmplForm.subject, body);
+    const missing = required.filter(name => !testVariables[name]?.trim());
+    if (!testRecipient.trim() || missing.length) {
+      toast({ variant: 'destructive', title: 'Complete the test details', description: missing.length ? `Fill: ${missing.map(variableLabel).join(', ')}` : 'Enter a test email address.' });
+      return;
+    }
+    setTestSending(true);
+    try {
+      const response = await api.post(`/team/emails/templates/${editingTemplate.id}/test`, { to: testRecipient.trim(), variables: testVariables, subject: tmplForm.subject, body });
+      if (response.data.success) {
+        setShowTemplateTest(false);
+        toast({ title: 'Test email sent', description: `A personalised [TEST] copy was sent to ${testRecipient.trim()}.` });
+      }
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Test send failed', description: error?.response?.data?.message || 'Unable to send the test email.' });
+    } finally { setTestSending(false); }
   };
 
   const saveTemplate = async () => {
@@ -1635,19 +1681,64 @@ const EmailInbox: React.FC = () => {
                   <div className="flex min-w-0 flex-col">
                     <div className="mb-1 flex items-center justify-between"><label className="text-xs font-semibold text-muted-foreground">Live email preview</label><span className="text-[10px] text-muted-foreground">Rendered as the recipient sees it</span></div>
                     <div className="flex-1 overflow-hidden rounded-xl border border-border bg-slate-100 p-2 dark:bg-slate-950">
-                      <iframe key={`preview-${editingTemplate?.id || 'new'}-${tmplForm.body.length}`} srcDoc={tmplForm.body || '<p style="font-family:Arial,sans-serif;color:#64748b;padding:24px">Your rendered email preview will appear here.</p>'} sandbox="allow-same-origin" title="Email template preview" className="h-[480px] w-full rounded-lg bg-white" />
+                      <iframe key={`preview-${editingTemplate?.id || 'new'}-${tmplForm.body.length}-${showTemplateTest ? 'personalised' : 'standard'}`} srcDoc={(showTemplateTest ? personalizeTemplatePreview(tmplForm.body, testVariables) : tmplForm.body) || '<p style="font-family:Arial,sans-serif;color:#64748b;padding:24px">Your rendered email preview will appear here.</p>'} sandbox="allow-same-origin" title="Email template preview" className="h-[480px] w-full rounded-lg bg-white" />
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
                   {editingTemplate && <button type="button" onClick={() => { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); setTemplateStudioMode('visual'); }} className="rounded-xl border border-border px-4 py-2 text-sm text-foreground transition hover:bg-muted">Cancel</button>}
+                  {editingTemplate && <button type="button" onClick={openTemplateTest} className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-100 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-200 dark:hover:bg-teal-500/15"><Send className="h-3.5 w-3.5" /> Send test</button>}
                   <button onClick={saveTemplate} disabled={tmplSaveLoading} className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-teal-600/15 transition hover:bg-teal-700 disabled:opacity-60">
                     {tmplSaveLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                     {editingTemplate ? 'Save changes' : 'Save template'}
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTemplateTest && editingTemplate && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-background shadow-2xl">
+            <div className="flex items-start justify-between border-b border-border bg-gradient-to-r from-teal-50 to-cyan-50 px-5 py-4 dark:from-teal-500/10 dark:to-cyan-500/10">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white shadow-lg shadow-teal-600/20"><Send className="h-4 w-4" /></div>
+                <div><h3 className="text-sm font-semibold text-foreground">Send personalised test</h3><p className="mt-0.5 text-xs text-muted-foreground">A clearly marked <strong>[TEST]</strong> copy will be sent using your Team SMTP account.</p></div>
+              </div>
+              <button onClick={() => setShowTemplateTest(false)} className="rounded-lg p-1 text-muted-foreground transition hover:bg-background hover:text-foreground"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="max-h-[70vh] space-y-4 overflow-y-auto p-5">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">Test recipient *</label>
+                <input type="email" value={testRecipient} onChange={event => setTestRecipient(event.target.value)} placeholder="you@example.com" className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-teal-400/50" />
+              </div>
+              <div className="rounded-xl border border-border bg-muted/30 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Test subject</p>
+                <p className="mt-1 text-sm font-medium text-foreground">[TEST] {tmplForm.subject || 'No subject'}</p>
+              </div>
+              {templateVariables(tmplForm.subject, tmplForm.body).length > 0 ? (
+                <div>
+                  <div className="mb-2 flex items-center justify-between"><label className="text-xs font-semibold text-muted-foreground">Personalisation values</label><span className="text-[10px] text-teal-600 dark:text-teal-300">Preview updates as you type</span></div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {templateVariables(tmplForm.subject, tmplForm.body).map(variable => (
+                      <div key={variable}>
+                        <label className="mb-1 block text-xs font-medium text-foreground">{variableLabel(variable)} <span className="font-normal text-muted-foreground">{'{{'}{variable}{'}}'}</span></label>
+                        <input value={testVariables[variable] || ''} onChange={event => setTestVariables(values => ({ ...values, [variable]: event.target.value }))} placeholder={`Enter ${variableLabel(variable).toLowerCase()}`} className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-teal-400/50" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : <p className="rounded-xl border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">This template has no placeholders. The test will use its current content.</p>}
+              <p className="text-xs leading-relaxed text-muted-foreground">The preview in the template studio now shows these values. Sending a test does not change the saved template or send anything to employees.</p>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border bg-muted/20 px-5 py-4">
+              <button onClick={() => setShowTemplateTest(false)} className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted">Cancel</button>
+              <button onClick={sendTemplateTest} disabled={testSending} className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-teal-600/20 transition hover:bg-teal-700 disabled:opacity-60">
+                {testSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} {testSending ? 'Sending test…' : 'Send test email'}
+              </button>
             </div>
           </div>
         </div>
