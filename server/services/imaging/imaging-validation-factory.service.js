@@ -19,7 +19,7 @@
  */
 import pool from '../../db/pgPool.js';
 
-import { schemaVerifier } from '../../utils/schema-guard.js';
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 const SCHEMA_TABLES = ['imaging_validation_cases', 'imaging_validation_annotations', 'imaging_validation_adjudications'];
 
 // Owned by the migration, verified here. Creating these on demand would let a
@@ -31,9 +31,14 @@ const ensureTable = schemaVerifier({
   message: 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging validation factory',
 });
 
+// Queries fail closed on a missing table, and the check above also runs at
+// startup so an unmigrated environment shows up in the log rather than only
+// when a request arrives.
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging validation factory');
+ensureTable().catch((err) => console.error('[imaging-validation-factory] schema check failed:', err.message, err.details || ''));
+
 export async function registerCase({ studyId, tenantId, addedBy, addedByName, notes }) {
-  await ensureTable();
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `INSERT INTO imaging_validation_cases (study_id, tenant_id, added_by, added_by_name, notes)
      VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (study_id) DO NOTHING
@@ -44,15 +49,14 @@ export async function registerCase({ studyId, tenantId, addedBy, addedByName, no
 }
 
 export async function recordAnnotation({ caseId, readerId, readerName, annotationData }) {
-  await ensureTable();
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `INSERT INTO imaging_validation_annotations (case_id, reader_id, reader_name, annotation_data)
      VALUES ($1,$2,$3,$4::jsonb)
      ON CONFLICT (case_id, reader_id) DO UPDATE SET annotation_data = EXCLUDED.annotation_data, created_at = NOW()
      RETURNING *`,
     [caseId, readerId, readerName || null, JSON.stringify(annotationData)],
   );
-  await pool.query(
+  await guardedPool(
     `UPDATE imaging_validation_cases SET case_status = 'annotated' WHERE id = $1 AND case_status = 'pending'`,
     [caseId],
   );
@@ -60,24 +64,22 @@ export async function recordAnnotation({ caseId, readerId, readerName, annotatio
 }
 
 export async function recordAdjudication({ caseId, adjudicatorId, adjudicatorName, goldLabel, agreementNotes, readerAgreement }) {
-  await ensureTable();
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `INSERT INTO imaging_validation_adjudications (case_id, adjudicator_id, adjudicator_name, gold_label, agreement_notes, reader_agreement)
      VALUES ($1,$2,$3,$4::jsonb,$5,$6)
      ON CONFLICT (case_id) DO UPDATE SET gold_label = EXCLUDED.gold_label, agreement_notes = EXCLUDED.agreement_notes, reader_agreement = EXCLUDED.reader_agreement, adjudicated_at = NOW()
      RETURNING *`,
     [caseId, adjudicatorId, adjudicatorName || null, JSON.stringify(goldLabel), agreementNotes || null, readerAgreement ?? null],
   );
-  await pool.query(`UPDATE imaging_validation_cases SET case_status = 'adjudicated' WHERE id = $1`, [caseId]);
+  await guardedPool(`UPDATE imaging_validation_cases SET case_status = 'adjudicated' WHERE id = $1`, [caseId]);
   return rows[0];
 }
 
 export async function getCaseWithAnnotations(caseId) {
-  await ensureTable();
   const [caseRow, annotations, adjudication] = await Promise.all([
-    pool.query(`SELECT * FROM imaging_validation_cases WHERE id = $1`, [caseId]),
-    pool.query(`SELECT * FROM imaging_validation_annotations WHERE case_id = $1 ORDER BY created_at`, [caseId]),
-    pool.query(`SELECT * FROM imaging_validation_adjudications WHERE case_id = $1`, [caseId]),
+    guardedPool(`SELECT * FROM imaging_validation_cases WHERE id = $1`, [caseId]),
+    guardedPool(`SELECT * FROM imaging_validation_annotations WHERE case_id = $1 ORDER BY created_at`, [caseId]),
+    guardedPool(`SELECT * FROM imaging_validation_adjudications WHERE case_id = $1`, [caseId]),
   ]);
   if (!caseRow.rows[0]) return null;
   return { ...caseRow.rows[0], annotations: annotations.rows, adjudication: adjudication.rows[0] || null };
@@ -87,8 +89,7 @@ export async function getCaseWithAnnotations(caseId) {
  * on a fresh deployment is the honest, correct answer, not a bug. This
  * function existing is not evidence a validation program is running. */
 export async function getValidationFactoryStatus(tenantId) {
-  await ensureTable();
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT case_status, COUNT(*)::int AS count
      FROM imaging_validation_cases
      WHERE tenant_id = $1

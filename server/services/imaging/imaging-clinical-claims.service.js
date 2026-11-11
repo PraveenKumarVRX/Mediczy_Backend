@@ -19,7 +19,7 @@
  */
 import pool from '../../db/pgPool.js';
 
-import { schemaVerifier } from '../../utils/schema-guard.js';
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 const SCHEMA_TABLES = ['imaging_clinical_claims'];
 
 // Owned by the migration, verified here. Creating these on demand would let a
@@ -30,6 +30,12 @@ const ensureTable = schemaVerifier({
   code: 'SCHEMA_NOT_MIGRATED',
   message: 'Apply migration 20261015004600-imaging-ops-governance before using imaging clinical claims',
 });
+
+// Queries fail closed on a missing table, and the check above also runs at
+// startup so an unmigrated environment shows up in the log rather than only
+// when a request arrives.
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004600-imaging-ops-governance before using imaging clinical claims');
+ensureTable().catch((err) => console.error('[imaging-clinical-claims] schema check failed:', err.message, err.details || ''));
 
 const STATE_TO_STATUS = {
   POSITIVE: 'validated',
@@ -63,9 +69,8 @@ export function buildClinicalClaims(clinicalFactModel, { inferenceBackend = null
 }
 
 export async function persistClinicalClaims({ draftId, studyId, tenantId, claims }) {
-  await ensureTable();
   for (const c of claims) {
-    await pool.query(
+    await guardedPool(
       `INSERT INTO imaging_clinical_claims
          (draft_id, study_id, tenant_id, claim_id, fact_id, subject, predicate, object_value, object_unit, source, confidence, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -79,8 +84,7 @@ export async function persistClinicalClaims({ draftId, studyId, tenantId, claims
  * say about this subject" — used to verify a report sentence's claim
  * against the atomic ground truth, not the other way around. */
 export async function getClaimsForSubject(draftId, subject) {
-  await ensureTable();
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT * FROM imaging_clinical_claims WHERE draft_id = $1 AND subject = $2`,
     [draftId, subject],
   );

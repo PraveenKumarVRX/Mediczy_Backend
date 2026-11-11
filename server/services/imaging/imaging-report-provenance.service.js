@@ -13,7 +13,7 @@
  */
 import pool from '../../db/pgPool.js';
 
-import { schemaVerifier } from '../../utils/schema-guard.js';
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 const SCHEMA_TABLES = ['imaging_report_provenance'];
 
 // Owned by the migration, verified here. Creating these on demand would let a
@@ -24,6 +24,12 @@ const ensureTable = schemaVerifier({
   code: 'SCHEMA_NOT_MIGRATED',
   message: 'Apply migration 20261015004500-imaging-evidence-governance before using imaging report provenance',
 });
+
+// Queries fail closed on a missing table, and the check above also runs at
+// startup so an unmigrated environment shows up in the log rather than only
+// when a request arrives.
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004500-imaging-evidence-governance before using imaging report provenance');
+ensureTable().catch((err) => console.error('[imaging-report-provenance] schema check failed:', err.message, err.details || ''));
 
 export async function recordProvenance({
   draftId,
@@ -40,7 +46,6 @@ export async function recordProvenance({
   confidence,
   routingDecision = null,
 }) {
-  await ensureTable();
   const inferenceBackend = findings?.inference_backend || null;
   const findingsSource = findings?.source || null;
   const measurements = findings?.measurements || [];
@@ -55,7 +60,7 @@ export async function recordProvenance({
     retrieved_at: r.retrieved_at,
   }));
 
-  const r = await pool.query(
+  const r = await guardedPool(
     `INSERT INTO imaging_report_provenance
        (draft_id, study_id, study_instance_uid, tenant_id, inference_backend, findings_source,
         measurements, knowledge_used, report_drafter_version, template_id, llm_model, llm_provider,
@@ -87,8 +92,7 @@ export async function recordProvenance({
 }
 
 export async function getProvenanceForDraft(draftId) {
-  await ensureTable();
-  const r = await pool.query(
+  const r = await guardedPool(
     `SELECT * FROM imaging_report_provenance WHERE draft_id = $1 ORDER BY created_at DESC LIMIT 1`,
     [draftId],
   );

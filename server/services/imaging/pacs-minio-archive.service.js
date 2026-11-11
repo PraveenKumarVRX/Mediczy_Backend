@@ -32,7 +32,7 @@ import pool from '../../db/pgPool.js';
 import logger from '../../config/logger.js';
 import { getPacsMinioBucket } from '../../utils/s3-storage.js';
 
-import { schemaVerifier } from '../../utils/schema-guard.js';
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
 const SOURCE_BUCKET = process.env.PACS_ARCHIVE_SOURCE_BUCKET || getPacsMinioBucket() || 'mediczy-pacs-storage';
 const CONCURRENCY = Math.max(1, Number(process.env.PACS_MINIO_ARCHIVE_CONCURRENCY || 4));
@@ -76,6 +76,12 @@ const ensureLogTable = schemaVerifier({
   code: 'SCHEMA_NOT_MIGRATED',
   message: 'Apply migration 20261015004600-imaging-ops-governance before using the PACS archive',
 });
+
+// Queries fail closed on a missing table, and the check above also runs at
+// startup so an unmigrated environment shows up in the log rather than only
+// when a request arrives.
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004600-imaging-ops-governance before using the PACS archive');
+ensureLogTable().catch((err) => console.error('[pacs-minio-archive] schema check failed:', err.message, err.details || ''));
 
 async function* listAllKeys(client, bucket) {
   let token;
@@ -134,7 +140,7 @@ async function copyOne({ src, dst, key, size, force }) {
 }
 
 async function recordResult(row) {
-  await pool.query(
+  await guardedPool(
     `INSERT INTO pacs_minio_archive_log (object_key, size_bytes, status, error_message, deleted_from_source, archived_at)
      VALUES ($1, $2, $3, $4, $5, NOW())
      ON CONFLICT (object_key) DO UPDATE SET
@@ -153,7 +159,7 @@ async function hydrateOrthancOnlyInstances() {
   }
 
   const limitSql = HYDRATE_LIMIT > 0 ? `LIMIT ${HYDRATE_LIMIT}` : '';
-  const r = await pool.query(
+  const r = await guardedPool(
     `SELECT DISTINCT regexp_replace(file_path, '^orthanc://', '') AS orthanc_instance_id
        FROM hg_dicom_instances
       WHERE file_path LIKE 'orthanc://%'
@@ -196,11 +202,9 @@ async function hydrateOrthancOnlyInstances() {
 
 /** @param {{ dryRun?: boolean, force?: boolean }} [opts] */
 export async function archivePacsBucketToMinio(opts = {}) {
-  await ensureLogTable();
   if (!isPacsArchiveMinioConfigured()) {
     throw new Error('Configure PACS_ARCHIVE_MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET for the PACS archive job');
   }
-  await ensureLogTable();
 
   const src = sourceClient();
   const dst = destClient();
@@ -275,12 +279,11 @@ export async function archivePacsBucketToMinio(opts = {}) {
 }
 
 export async function getPacsArchiveStatus(limit = 50) {
-  await ensureLogTable();
-  const recent = await pool.query(
+  const recent = await guardedPool(
     `SELECT * FROM pacs_minio_archive_log ORDER BY archived_at DESC LIMIT $1`,
     [limit],
   ).catch(() => ({ rows: [] }));
-  const counts = await pool.query(
+  const counts = await guardedPool(
     `SELECT status, COUNT(*)::int AS n FROM pacs_minio_archive_log GROUP BY status`,
   ).catch(() => ({ rows: [] }));
   return {

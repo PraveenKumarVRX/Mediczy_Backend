@@ -21,7 +21,7 @@
  */
 import pool from '../../db/pgPool.js';
 
-import { schemaVerifier } from '../../utils/schema-guard.js';
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 const SCHEMA_TABLES = ['imaging_guidelines'];
 
 // Owned by the migration, verified here. Creating these on demand would let a
@@ -32,6 +32,12 @@ const ensureTable = schemaVerifier({
   code: 'SCHEMA_NOT_MIGRATED',
   message: 'Apply migration 20261015004600-imaging-ops-governance before using imaging guidelines',
 });
+
+// Queries fail closed on a missing table, and the check above also runs at
+// startup so an unmigrated environment shows up in the log rather than only
+// when a request arrives.
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004600-imaging-ops-governance before using imaging guidelines');
+ensureTable().catch((err) => console.error('[imaging-guidelines] schema check failed:', err.message, err.details || ''));
 
 const SEED_GUIDELINES = [
   {
@@ -57,9 +63,8 @@ const SEED_GUIDELINES = [
 ];
 
 export async function seedGuidelines() {
-  await ensureTable();
   for (const g of SEED_GUIDELINES) {
-    await pool.query(
+    await guardedPool(
       `INSERT INTO imaging_guidelines
          (guideline_id, pathway, title, organization, publication_date, version, jurisdiction, population, review_status, source_url, summary, retrieved_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -75,8 +80,7 @@ export async function seedGuidelines() {
 }
 
 export async function getGuidelinesForPathway(pathway) {
-  await ensureTable();
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT * FROM imaging_guidelines WHERE pathway = $1 AND review_status = 'current'`,
     [pathway],
   );

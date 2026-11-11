@@ -27,7 +27,7 @@ import axios from 'axios';
 import pool from '../../db/pgPool.js';
 import { routeEvidence } from './imaging-knowledge-router.service.js';
 
-import { schemaVerifier } from '../../utils/schema-guard.js';
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 // Item 7 — hybrid retrieval reuses the platform's existing embedding infra
 // (SIB's ClinicalBERT /embed endpoint, already used by ai-brain/rag-pipeline.js
 // for the general-purpose EHR/document RAG) rather than merging imaging
@@ -47,6 +47,12 @@ const ensureTable = schemaVerifier({
   code: 'SCHEMA_NOT_MIGRATED',
   message: 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging knowledge base',
 });
+
+// Queries fail closed on a missing table, and the check above also runs at
+// startup so an unmigrated environment shows up in the log rather than only
+// when a request arrives.
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging knowledge base');
+ensureTable().catch((err) => console.error('[imaging-knowledge-base] schema check failed:', err.message, err.details || ''));
 
 /** Real embedding call to SIB's ClinicalBERT endpoint — same function every
  * other RAG consumer in this codebase uses, not a separate implementation.
@@ -528,10 +534,9 @@ const SEED_RELATIONSHIPS = [
 ];
 
 export async function seedKnowledgeBase() {
-  await ensureTable();
   for (const row of SEED_ROWS) {
     const vector = await embed(`${row.preferredName}. ${row.content}`);
-    await pool.query(
+    await guardedPool(
       `INSERT INTO imaging_knowledge_base
          (canonical_id, kind, preferred_name, modality, anatomy_tags, content, source_title, source_url, source_type, retrieved_at, embedding, laterality, parent_structure, differentials, generation_safe_summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::vector,$12,$13,$14,$15)
@@ -560,7 +565,7 @@ export async function seedKnowledgeBase() {
   }
 
   for (const rel of SEED_RELATIONSHIPS) {
-    await pool.query(
+    await guardedPool(
       `INSERT INTO imaging_anatomy_relationships (parent_canonical_id, child_canonical_id, relationship_type, source_title, source_url)
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (parent_canonical_id, child_canonical_id, relationship_type) DO NOTHING`,
@@ -585,8 +590,7 @@ export { SEED_ROWS };
  * than this function silently walking an arbitrary depth.
  */
 export async function getAnatomyRelationships(canonicalId) {
-  await ensureTable();
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT r.relationship_type, r.parent_canonical_id, r.child_canonical_id,
             p.preferred_name AS parent_name, c.preferred_name AS child_name
      FROM imaging_anatomy_relationships r
@@ -620,7 +624,6 @@ export async function getAnatomyRelationships(canonicalId) {
  * Deliberately simple — see module docstring for why no embeddings.
  */
 export async function retrieveKnowledgeForEvidence({ measurements = [], findings = [] } = {}) {
-  await ensureTable();
   // Domain derivation now lives in imaging-knowledge-router.service.js (P4
   // of the roadmap) — a dedicated, inspectable stage, not logic buried
   // inside retrieval. Kept as the single source of truth so this function
@@ -629,7 +632,7 @@ export async function retrieveKnowledgeForEvidence({ measurements = [], findings
   const tags = new Set(routeEvidence({ measurements, findings }).knowledgeDomains);
   if (!tags.size) return [];
 
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT canonical_id, kind, preferred_name, content, source_title, source_url, source_type, retrieved_at,
             laterality, parent_structure, differentials, generation_safe_summary
      FROM imaging_knowledge_base
@@ -664,14 +667,13 @@ function buildQueryTextFromEvidence(measurements, findings) {
  * than silently substituting a fake similarity score.
  */
 export async function hybridRetrieveKnowledge({ measurements = [], findings = [] } = {}, { topK = 5 } = {}) {
-  await ensureTable();
   const tags = new Set(routeEvidence({ measurements, findings }).knowledgeDomains);
   if (!tags.size) return [];
 
   const queryText = buildQueryTextFromEvidence(measurements, findings);
   const queryVector = await embed(queryText);
 
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT canonical_id, kind, preferred_name, content, source_title, source_url, source_type, retrieved_at,
             laterality, parent_structure, differentials, generation_safe_summary,
             ts_rank(content_tsv, plainto_tsquery('english', $2)) AS lexical_score,

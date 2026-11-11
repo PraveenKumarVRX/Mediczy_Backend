@@ -15,7 +15,7 @@ import {
 import pool from '../../db/pgPool.js';
 import logger from '../../config/logger.js';
 import { getS3Region } from '../../utils/s3-storage.js';
-import { schemaVerifier } from '../../utils/schema-guard.js';
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 import {
   getTenantIsolationMode,
   getImagingDailyBucketForTenant,
@@ -59,8 +59,14 @@ const ensureTransferTable = schemaVerifier({
   message: 'Apply migration 20261015004600-imaging-ops-governance before using the imaging daily transfer',
 });
 
+// Queries fail closed on a missing table, and the check above also runs at
+// startup so an unmigrated environment shows up in the log rather than only
+// when a request arrives.
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004600-imaging-ops-governance before using the imaging daily transfer');
+ensureTransferTable().catch((err) => console.error('[imaging-daily-minio-transfer] schema check failed:', err.message, err.details || ''));
+
 async function alreadyTransferred(destBucket, key) {
-  const r = await pool.query(
+  const r = await guardedPool(
     `SELECT 1 FROM imaging_daily_transfer_log
      WHERE dest_bucket = $1 AND object_key = $2 AND status = 'copied' LIMIT 1`,
     [destBucket, key],
@@ -69,7 +75,7 @@ async function alreadyTransferred(destBucket, key) {
 }
 
 async function recordTransfer(row) {
-  await pool.query(
+  await guardedPool(
     `INSERT INTO imaging_daily_transfer_log
        (source_bucket, dest_bucket, object_key, tenant_id, archive_provider, size_bytes, etag, status, error_message, deleted_from_source)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -172,7 +178,7 @@ async function discoverTenantIds(explicitTenantId) {
   const mode = getTenantIsolationMode();
   if (mode === 'prefix') return [null];
 
-  const r = await pool.query(`
+  const r = await guardedPool(`
     SELECT DISTINCT tid FROM (
       SELECT tenant_id::text AS tid FROM hg_dicom_instances WHERE tenant_id IS NOT NULL
       UNION
@@ -218,7 +224,7 @@ async function transferTenantBucket({
       const keyTenant = parseTenantIdFromKey(obj.Key) || tenantId;
       summary.scanned += 1;
 
-      const already = await pool.query(
+      const already = await guardedPool(
         `SELECT 1 FROM imaging_daily_transfer_log
          WHERE object_key = $1 AND status = 'copied' LIMIT 1`,
         [obj.Key],
@@ -278,7 +284,6 @@ async function transferTenantBucket({
  * @param {{ lookbackHours?: number, dryRun?: boolean, force?: boolean, tenantId?: string|number }} [opts]
  */
 export async function transferImagingDailyToMinio(opts = {}) {
-  await ensureTransferTable();
   if (!isMinioConfigured() && !isWasabiConfigured()) {
     throw new Error('Configure MinIO and/or Wasabi for imaging archive transfer');
   }
@@ -288,8 +293,6 @@ export async function transferImagingDailyToMinio(opts = {}) {
   const archiveTargets = getArchiveTargets();
   const since = new Date(Date.now() - lookbackHours * 3600 * 1000);
   const mode = getTenantIsolationMode();
-
-  await ensureTransferTable();
   const tenants = await discoverTenantIds(opts.tenantId);
 
   const summary = {
@@ -335,12 +338,11 @@ export async function transferImagingDailyToMinio(opts = {}) {
 }
 
 export async function getTransferStatus(limit = 50) {
-  await ensureTransferTable();
-  const recent = await pool.query(
+  const recent = await guardedPool(
     `SELECT * FROM imaging_daily_transfer_log ORDER BY transferred_at DESC LIMIT $1`,
     [limit],
   ).catch(() => ({ rows: [] }));
-  const counts = await pool.query(
+  const counts = await guardedPool(
     `SELECT status, COUNT(*)::int AS n FROM imaging_daily_transfer_log GROUP BY status`,
   ).catch(() => ({ rows: [] }));
   return {

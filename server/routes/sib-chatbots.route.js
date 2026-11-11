@@ -4,6 +4,7 @@ import express from 'express';
 import unifiedConversationService from '../services/unified-conversation.service.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import pool from '../db/pgPool.js';
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 
 const router = express.Router();
 router.use(authUser, requireRole(['admin', 'team']));
@@ -14,34 +15,20 @@ router.use((req, res, next) => {
   next();
 });
 
-async function ensureTables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS sib_chatbot_configs (
-      bot_id TEXT PRIMARY KEY,
-      system_prompt TEXT,
-      status TEXT DEFAULT 'active',
-      channels JSONB DEFAULT '[]'::jsonb,
-      settings JSONB DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS sib_chatbot_interactions (
-      id BIGSERIAL PRIMARY KEY,
-      bot_id TEXT NOT NULL,
-      session_id TEXT,
-      user_id TEXT,
-      response_time_ms INTEGER,
-      provider TEXT,
-      intent TEXT,
-      success BOOLEAN DEFAULT TRUE,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_sib_bot_interactions_bot_id ON sib_chatbot_interactions(bot_id);
-    CREATE INDEX IF NOT EXISTS idx_sib_bot_interactions_created ON sib_chatbot_interactions(created_at DESC);
-  `);
-}
+const SCHEMA_TABLES = ['sib_chatbot_configs', 'sib_chatbot_interactions'];
 
-ensureTables().catch(err => console.warn('[sib-chatbots] table init error:', err.message));
+// Owned by the migration; verified here, never created on demand.
+const ensureTables = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004100-provider-network-chatbot-governance before using the SIB chatbots',
+});
+
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004100-provider-network-chatbot-governance before using the SIB chatbots');
+
+// Reported at startup; each query below also fails closed on its own.
+ensureTables().catch(err => console.error('[sib-chatbots] schema check failed:', err.message, err.details || ''));
 
 // Compose admin auth middleware
 const authAdmin = [authUser, requireRole('admin')];
@@ -247,7 +234,7 @@ router.post('/:botId/chat', async (req, res) => {
     });
     const responseTimeMs = Date.now() - t0;
 
-    pool.query(
+    guardedPool(
       `INSERT INTO sib_chatbot_interactions (bot_id, session_id, user_id, response_time_ms, provider, intent, success)
        VALUES ($1, $2, $3, $4, $5, $6, TRUE)`,
       [botId, sessionId, userId || null, responseTimeMs, unifiedResponse.provider || null, unifiedResponse.intentType || null]
@@ -280,7 +267,7 @@ router.post('/:botId/chat', async (req, res) => {
     });
 
   } catch (error) {
-    pool.query(
+    guardedPool(
       `INSERT INTO sib_chatbot_interactions (bot_id, session_id, success) VALUES ($1, $2, FALSE)`,
       [req.params.botId, req.body?.conversationId || null]
     ).catch(() => {});
@@ -475,7 +462,7 @@ router.get('/:botId/stats', authAdmin, async (req, res) => {
       });
     }
 
-    const { rows } = await pool.query(
+    const { rows } = await guardedPool(
       `SELECT
          COUNT(*)::int AS interactions,
          COUNT(*) FILTER (WHERE success = TRUE)::int AS successes,
@@ -536,7 +523,7 @@ router.put('/:botId/config', authAdmin, async (req, res) => {
       botConfig.systemPrompt = systemPrompt;
     }
 
-    await pool.query(
+    await guardedPool(
       `INSERT INTO sib_chatbot_configs (bot_id, system_prompt, status, channels, settings, updated_at)
        VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, NOW())
        ON CONFLICT (bot_id) DO UPDATE SET

@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import XLSX from '../utils/excel-compat.js';
 import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import pool from '../db/pgPool.js';
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 import { createHash } from 'crypto';
 
 const router = Router();
@@ -226,91 +227,30 @@ function computeQc(provider) {
   return { status, score, missing, missingRequired, missingRecommended };
 }
 
-async function ensureTables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS provider_network_batches (
-      batch_id TEXT PRIMARY KEY,
-      source_type TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'ingested',
-      total_records INTEGER NOT NULL DEFAULT 0,
-      qc_pass INTEGER NOT NULL DEFAULT 0,
-      qc_fail INTEGER NOT NULL DEFAULT 0,
-      published_count INTEGER NOT NULL DEFAULT 0,
-      created_by INTEGER,
-      notes TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+const SCHEMA_TABLES = ['provider_network_batches', 'provider_network_entries', 'smarthealth_provider_network'];
 
-    CREATE TABLE IF NOT EXISTS provider_network_entries (
-      id BIGSERIAL PRIMARY KEY,
-      batch_id TEXT NOT NULL REFERENCES provider_network_batches(batch_id) ON DELETE CASCADE,
-      source_type TEXT NOT NULL,
-      provider_type TEXT NOT NULL,
-      name TEXT,
-      website TEXT,
-      phone TEXT,
-      email TEXT,
-      address TEXT,
-      city TEXT,
-      state TEXT,
-      pincode TEXT,
-      latitude TEXT,
-      longitude TEXT,
-      contact_person TEXT,
-      services JSONB NOT NULL DEFAULT '[]'::jsonb,
-      source_url TEXT,
-      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-      qc_status TEXT NOT NULL DEFAULT 'PENDING',
-      qc_score INTEGER,
-      qc_missing_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
-      publish_status TEXT NOT NULL DEFAULT 'draft',
-      published_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+// The migration owns these tables. The route verifies them rather than
+// creating them, so a skipped migration is reported instead of being papered
+// over with tables that lack its indexes and constraints.
+const ensureTables = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004100-provider-network-chatbot-governance before using the provider network',
+});
 
-    CREATE INDEX IF NOT EXISTS idx_provider_network_entries_batch ON provider_network_entries(batch_id);
-    CREATE INDEX IF NOT EXISTS idx_provider_network_entries_publish ON provider_network_entries(publish_status);
-    CREATE INDEX IF NOT EXISTS idx_provider_network_entries_provider_type ON provider_network_entries(provider_type);
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004100-provider-network-chatbot-governance before using the provider network');
 
-    CREATE TABLE IF NOT EXISTS smarthealth_provider_network (
-      id BIGSERIAL PRIMARY KEY,
-      provider_fingerprint TEXT NOT NULL UNIQUE,
-      provider_type TEXT NOT NULL,
-      name TEXT,
-      website TEXT,
-      phone TEXT,
-      email TEXT,
-      address TEXT,
-      city TEXT,
-      state TEXT,
-      pincode TEXT,
-      latitude TEXT,
-      longitude TEXT,
-      contact_person TEXT,
-      services JSONB NOT NULL DEFAULT '[]'::jsonb,
-      source_url TEXT,
-      latest_batch_id TEXT,
-      latest_qc_score INTEGER,
-      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-      published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_shpn_provider_type ON smarthealth_provider_network(provider_type);
-    CREATE INDEX IF NOT EXISTS idx_shpn_city ON smarthealth_provider_network(city);
-    CREATE INDEX IF NOT EXISTS idx_shpn_name ON smarthealth_provider_network(name);
-  `);
-}
-
+// Checked once at startup so a missing migration is visible in the log rather
+// than only when the first upload fails. Boot is not blocked: the rest of the
+// API stays up, and every query below still fails closed on its own.
 ensureTables().catch((err) => {
-  console.warn('[provider-network-bot] table init error:', err.message);
+  console.error('[provider-network-bot] schema check failed:', err.message, err.details || '');
 });
 
 async function createBatch({ sourceType, userId, notes }) {
   const batchId = `pnb-${Date.now()}-${randomUUID().slice(0, 8)}`;
-  await pool.query(
+  await guardedPool(
     `INSERT INTO provider_network_batches (batch_id, source_type, created_by, notes)
      VALUES ($1, $2, $3, $4)`,
     [batchId, sourceType, userId || null, notes || null]
@@ -332,7 +272,7 @@ async function persistRecords(batchId, sourceType, records) {
   `;
 
   for (const rec of records) {
-    await pool.query(query, [
+    await guardedPool(query, [
       batchId,
       sourceType,
       rec.provider_type,
@@ -353,7 +293,7 @@ async function persistRecords(batchId, sourceType, records) {
     ]);
   }
 
-  await pool.query(
+  await guardedPool(
     `UPDATE provider_network_batches
      SET total_records = (
        SELECT COUNT(*) FROM provider_network_entries WHERE batch_id = $1
@@ -365,7 +305,7 @@ async function persistRecords(batchId, sourceType, records) {
 }
 
 async function runQc(batchId) {
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT id, provider_type, name, website, phone, email, address, city, state, pincode, latitude, longitude
      FROM provider_network_entries
      WHERE batch_id = $1`,
@@ -382,7 +322,7 @@ async function runQc(batchId) {
     else if (qc.status === 'WARN') warnCount += 1;
     else failCount += 1;
 
-    await pool.query(
+    await guardedPool(
       `UPDATE provider_network_entries
        SET qc_status = $2,
            qc_score = $3,
@@ -393,7 +333,7 @@ async function runQc(batchId) {
     );
   }
 
-  await pool.query(
+  await guardedPool(
     `UPDATE provider_network_batches
      SET status = 'qc_completed',
          qc_pass = $2,
@@ -731,7 +671,7 @@ async function publishBatch(batchId, { force = false } = {}) {
   // so they publish normally. Only FAIL needs the explicit force.
   const publishFilter = force ? '' : `AND qc_status IN ('PASS', 'WARN')`;
 
-    const { rows: entries } = await pool.query(
+    const { rows: entries } = await guardedPool(
       `SELECT *
        FROM provider_network_entries
        WHERE batch_id = $1
@@ -742,7 +682,7 @@ async function publishBatch(batchId, { force = false } = {}) {
     let publishedCount = 0;
     for (const row of entries) {
       const fingerprint = providerFingerprint(row);
-      await pool.query(
+      await guardedPool(
         `INSERT INTO smarthealth_provider_network (
           provider_fingerprint, provider_type, name, website, phone, email, address, city, state,
           pincode, latitude, longitude, contact_person, services, source_url, latest_batch_id,
@@ -801,7 +741,7 @@ async function publishBatch(batchId, { force = false } = {}) {
         ]
       );
 
-      await pool.query(
+      await guardedPool(
         `UPDATE provider_network_entries
          SET publish_status = 'published',
              published_at = NOW(),
@@ -813,7 +753,7 @@ async function publishBatch(batchId, { force = false } = {}) {
       publishedCount += 1;
     }
 
-    await pool.query(
+    await guardedPool(
       `UPDATE provider_network_batches
        SET status = 'published',
            published_count = (
@@ -847,7 +787,7 @@ router.post('/publish/:batchId', authTeam, requireProviderNetworkAccess, async (
 router.get('/batches/:batchId', authTeam, requireProviderNetworkAccess, async (req, res) => {
   try {
     const { batchId } = req.params;
-    const { rows: batchRows } = await pool.query(
+    const { rows: batchRows } = await guardedPool(
       `SELECT * FROM provider_network_batches WHERE batch_id = $1`,
       [batchId]
     );
@@ -855,7 +795,7 @@ router.get('/batches/:batchId', authTeam, requireProviderNetworkAccess, async (r
       return res.status(404).json({ success: false, error: 'Batch not found' });
     }
 
-    const { rows: sampleRows } = await pool.query(
+    const { rows: sampleRows } = await guardedPool(
       `SELECT id, provider_type, name, city, state, qc_status, qc_score, qc_missing_fields, publish_status
        FROM provider_network_entries
        WHERE batch_id = $1
@@ -892,7 +832,7 @@ router.get('/directory/published', async (req, res) => {
     params.push(limit);
     params.push(offset);
     const whereClause = conditions.join(' AND ');
-    const { rows } = await pool.query(
+    const { rows } = await guardedPool(
       `SELECT id, provider_type, name, website, phone, email, address, city, state, pincode,
               latitude, longitude, contact_person, services, source_url, published_at, updated_at
        FROM smarthealth_provider_network

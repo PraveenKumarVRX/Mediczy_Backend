@@ -18,7 +18,7 @@
  */
 import pool from '../../db/pgPool.js';
 
-import { schemaVerifier } from '../../utils/schema-guard.js';
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 const SCHEMA_TABLES = ['imaging_evidence_facts', 'imaging_evidence_claims', 'imaging_evidence_claim_facts'];
 
 // Owned by the migration, verified here. Creating these on demand would let a
@@ -30,12 +30,17 @@ const ensureTable = schemaVerifier({
   message: 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging evidence graph',
 });
 
+// Queries fail closed on a missing table, and the check above also runs at
+// startup so an unmigrated environment shows up in the log rather than only
+// when a request arrives.
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging evidence graph');
+ensureTable().catch((err) => console.error('[imaging-evidence-graph] schema check failed:', err.message, err.details || ''));
+
 /** Persists the compiled model + matched rules as linked rows. Called after
  * the draft row itself exists (needs a real draft_id/study_id). Best-effort
  * — a persistence failure here shouldn't block report generation, same
  * resilience pattern as recordProvenance. */
 export async function persistEvidenceGraph({ draftId, studyId, tenantId, model, matchedRules = [] }) {
-  await ensureTable();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -106,11 +111,10 @@ export async function persistEvidenceGraph({ draftId, studyId, tenantId, model, 
 /** Full graph for one draft, reconstructed from the linked rows — not the
  * original in-memory object, a genuine round-trip through Postgres. */
 export async function getEvidenceGraphForDraft(draftId) {
-  await ensureTable();
   const [facts, claims, edges] = await Promise.all([
-    pool.query(`SELECT * FROM imaging_evidence_facts WHERE draft_id = $1 ORDER BY fact_id`, [draftId]),
-    pool.query(`SELECT * FROM imaging_evidence_claims WHERE draft_id = $1 ORDER BY statement_id`, [draftId]),
-    pool.query(`SELECT statement_id, fact_id FROM imaging_evidence_claim_facts WHERE draft_id = $1`, [draftId]),
+    guardedPool(`SELECT * FROM imaging_evidence_facts WHERE draft_id = $1 ORDER BY fact_id`, [draftId]),
+    guardedPool(`SELECT * FROM imaging_evidence_claims WHERE draft_id = $1 ORDER BY statement_id`, [draftId]),
+    guardedPool(`SELECT statement_id, fact_id FROM imaging_evidence_claim_facts WHERE draft_id = $1`, [draftId]),
   ]);
   const factsByClaim = new Map();
   for (const e of edges.rows) {
@@ -129,8 +133,7 @@ export async function getEvidenceGraphForDraft(draftId) {
  * doc's "Evidence Click-through" UI concept (§38) — no UI built here,
  * just the query it would call. */
 export async function getClaimsSupportedByFact(draftId, factId) {
-  await ensureTable();
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT c.* FROM imaging_evidence_claims c
      JOIN imaging_evidence_claim_facts e ON e.draft_id = c.draft_id AND e.statement_id = c.statement_id
      WHERE c.draft_id = $1 AND e.fact_id = $2`,
