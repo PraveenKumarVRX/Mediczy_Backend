@@ -4859,6 +4859,64 @@ router.get('/insurance-members', authCorporate, async (req, res) => {
 });
 
 /**
+ * POST /api/corporate/insurance-members/bulk
+ *
+ * The employer submits its own insurance roster. Each row becomes a
+ * `submitted` enrolment for the TPA desk to approve; the desk's approval is
+ * what creates the membership, and because the enrolment already carries the
+ * account and the corporate, that membership is born linked.
+ *
+ * Pass dryRun to see what would be submitted, and what would link, first.
+ *
+ * body: { members: [{ employeeId, memberName, policyNumber, relation?,
+ *                     coverageAmount?, dependents? }], dryRun? }
+ */
+router.post('/insurance-members/bulk', authCorporate, async (req, res) => {
+  try {
+    const result = await tpaMemberLink.submitEnrolments({
+      corporateId: req.corporateUser.corporateId,
+      rows: req.body?.members,
+      actorId: req.user?.userId || req.corporateUser.corporateId,
+      dryRun: req.body?.dryRun === true,
+    });
+    res.status(result.dryRun ? 200 : 201).json(result);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[corporate] insurance enrolment upload error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not submit those enrolments' });
+  }
+});
+
+/**
+ * GET /api/corporate/insurance-members/enrolments
+ */
+router.get('/insurance-members/enrolments', authCorporate, async (req, res) => {
+  try {
+    const result = await tpaMemberLink.listEnrolmentsForCorporate({
+      corporateId: req.corporateUser.corporateId,
+      status: req.query.status,
+      limit: req.query.limit,
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    console.error('[corporate] insurance enrolment list error:', error.message);
+    res.status(500).json({ success: false, message: 'Could not load your insurance enrolments' });
+  }
+});
+
+/**
+ * GET /api/corporate/insurance-members/template
+ */
+router.get('/insurance-members/template', authCorporate, (req, res) => {
+  const csv = 'employeeId,memberName,policyNumber,relation,coverageAmount\n'
+    + 'EMP001,Asha Menon,GRP-2026-0001,self,500000\n';
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="insurance_members_template.csv"');
+  res.send(csv);
+});
+
+/**
  * POST /api/corporate/insurance-members/:memberId/link   body: { userId }
  */
 router.post('/insurance-members/:memberId/link', authCorporate, async (req, res) => {

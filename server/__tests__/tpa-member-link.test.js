@@ -26,6 +26,9 @@ const shapeOf = (sql) => {
   const flat = sql.replace(/\s+/g, ' ').trim();
   if (/information_schema\.columns/.test(flat)) return 'schemaProbe';
   if (/UPDATE tpa_members/.test(flat)) return 'update';
+  if (/INSERT INTO tpa_member_enrollments/.test(flat)) return 'enrolmentInsert';
+  if (/FROM tpa_member_enrollments/.test(flat)) return 'enrolmentSelect';
+  if (/FROM corporates WHERE id = :id/.test(flat)) return 'corporateById';
   if (/FROM corporates WHERE lower/.test(flat)) return 'corporateExact';
   if (/FROM corporates$/.test(flat)) return 'corporateAll';
   if (/FROM corporate_employees/.test(flat)) return 'roster';
@@ -379,6 +382,148 @@ describe('the bulk pass', () => {
   });
 });
 
+describe('an employer submits its own insurance roster', () => {
+  const asTpaClient = { id: 49, companyName: 'Equitas Small Finance Bank Ltd', tpaId: 3, aggregatorType: 'tpa' };
+  const ready = {
+    corporateById: [asTpaClient],
+    schemaProbe: [{ ref: 'tpa_members.user_id' }, { ref: 'tpa_members.corporate_id' },
+      { ref: 'tpa_member_enrollments.user_id' }, { ref: 'tpa_member_enrollments.corporate_id' }],
+    roster: [{ userId: 7641 }],
+    enrolmentInsert: (r) => [{ enrollment_number: r.enrollmentNumber, member_id: r.memberId }],
+  };
+  const row = (over = {}) => ({ employeeId: 'EQ-4821', memberName: 'Asha Menon', policyNumber: 'GRP-2026-0001', ...over });
+
+  it('refuses an empty upload', async () => {
+    const { submitEnrolments } = await load();
+    await expect(submitEnrolments({ corporateId: 49, rows: [] })).rejects.toThrow(/must not be empty/);
+    await expect(submitEnrolments({ corporateId: 49, rows: null })).rejects.toThrow(/required/);
+  });
+
+  it('refuses a company with no TPA instead of guessing one', async () => {
+    // Guessing would put one employer's roster in another administrator's queue.
+    const { submitEnrolments } = await load({
+      corporateById: [{ ...asTpaClient, aggregatorType: 'broker', tpaId: 3 }],
+      schemaProbe: ready.schemaProbe,
+    });
+    await expect(submitEnrolments({ corporateId: 49, rows: [row()] }))
+      .rejects.toMatchObject({ code: 'CORPORATE_HAS_NO_TPA' });
+  });
+
+  it('rejects an incomplete row by line number and keeps going', async () => {
+    const { submitEnrolments } = await load(ready);
+    const result = await submitEnrolments({
+      corporateId: 49,
+      rows: [row(), { memberName: 'No Code' }, row({ employeeId: 'EQ-9' })],
+    });
+    expect(result.results[1]).toMatchObject({ line: 2, status: 'rejected' });
+    expect(result.results[1].reason).toContain('employeeId');
+    expect(result.results[1].reason).toContain('policyNumber');
+    expect(result.summary.submitted).toBe(2);
+  });
+
+  it('links the account its own roster names', async () => {
+    const { submitEnrolments } = await load(ready);
+    const result = await submitEnrolments({ corporateId: 49, rows: [row()] });
+    expect(result.results[0]).toMatchObject({ status: 'submitted', userId: 7641 });
+    expect(result.linked).toBe(1);
+  });
+
+  it('still submits a row it cannot link, and says why', async () => {
+    const { submitEnrolments } = await load({ ...ready, roster: [] });
+    const result = await submitEnrolments({ corporateId: 49, rows: [row()] });
+    expect(result.results[0]).toMatchObject({ status: 'submitted', userId: null });
+    expect(result.results[0].reason).toMatch(/not on your employee roster/);
+  });
+
+  it('attaches no account when the staff code matches two of them', async () => {
+    const { submitEnrolments } = await load({ ...ready, roster: [{ userId: 1 }, { userId: 2 }] });
+    const result = await submitEnrolments({ corporateId: 49, rows: [row()] });
+    expect(result.results[0].userId).toBeNull();
+    expect(result.results[0].reason).toMatch(/2 accounts on your roster/);
+  });
+
+  it('namespaces the member id by TPA and employer, so two employers may share a staff code', async () => {
+    const { submitEnrolments } = await load(ready);
+    const result = await submitEnrolments({ corporateId: 49, rows: [row()] });
+    expect(result.results[0].memberId).toBe('MEM-3-C49-EQ-4821');
+    expect(result.results[0].enrollmentNumber).toBe('ENR-C49-EQ-4821');
+  });
+
+  it('reports a re-upload as already submitted rather than enrolling twice', async () => {
+    const { submitEnrolments } = await load({
+      ...ready,
+      enrolmentInsert: () => {
+        const error = new Error('duplicate key value violates unique constraint');
+        error.original = { code: '23505' };
+        throw error;
+      },
+    });
+    const result = await submitEnrolments({ corporateId: 49, rows: [row()] });
+    expect(result.results[0]).toMatchObject({ status: 'duplicate' });
+    expect(result.submitted).toBe(0);
+  });
+
+  it('writes nothing on a dry run', async () => {
+    const { submitEnrolments, calls } = await load(ready);
+    const result = await submitEnrolments({ corporateId: 49, rows: [row()], dryRun: true });
+    expect(result.results[0].status).toBe('would_submit');
+    expect(result.submitted).toBe(0);
+    expect(calls.some((c) => c.shape === 'enrolmentInsert')).toBe(false);
+  });
+
+  it('submits for approval, never pre-approved', async () => {
+    // The desk's approval is what creates the membership. An employer enrolling
+    // straight to active would mint insurance cover nobody underwrote.
+    const { submitEnrolments, calls } = await load(ready);
+    await submitEnrolments({ corporateId: 49, rows: [row()] });
+    const insert = calls.find((c) => c.shape === 'enrolmentInsert');
+    expect(insert.sql).toContain("'submitted'");
+    expect(insert.sql).not.toContain("'approved'");
+    expect(insert.replacements.corporateId).toBe(49);
+    expect(insert.replacements.tpaId).toBe(3);
+  });
+
+  it('caps one upload, so a bad export cannot enrol a city', async () => {
+    const { submitEnrolments } = await load(ready);
+    const rows = Array.from({ length: 2001 }, (_, i) => row({ employeeId: `EQ-${i}` }));
+    await expect(submitEnrolments({ corporateId: 49, rows })).rejects.toThrow(/at most 2000/);
+  });
+
+  it('answers that the feature is unmigrated rather than 500ing', async () => {
+    const { submitEnrolments } = await load({
+      ...ready,
+      enrolmentInsert: () => {
+        const error = new Error('relation "tpa_member_enrollments" does not exist');
+        error.original = { code: '42P01' };
+        throw error;
+      },
+    });
+    await expect(submitEnrolments({ corporateId: 49, rows: [row()] }))
+      .rejects.toMatchObject({ statusCode: 503, code: 'SCHEMA_NOT_MIGRATED' });
+  });
+});
+
+describe('the employer-side enrolment queue', () => {
+  it('shows only this employer\'s rows', async () => {
+    const { listEnrolmentsForCorporate, calls } = await load({ enrolmentSelect: [] });
+    await listEnrolmentsForCorporate({ corporateId: 49 });
+    const sql = calls.find((c) => c.shape === 'enrolmentSelect').sql;
+    expect(sql).toContain('corporate_id = :id');
+  });
+
+  it('reports an unmigrated database as nothing to show', async () => {
+    const { listEnrolmentsForCorporate } = await load({
+      enrolmentSelect: () => {
+        const error = new Error('column "corporate_id" does not exist');
+        error.original = { code: '42703' };
+        throw error;
+      },
+    });
+    await expect(listEnrolmentsForCorporate({ corporateId: 49 }))
+      .resolves.toMatchObject({ migrated: false, total: 0 });
+  });
+});
+
 describe('the migration', () => {
   const migration = read('migrations/20261111000200-tpa-member-corporate-link.migration.js');
 
@@ -428,6 +573,17 @@ describe('the endpoints', () => {
     expect(block).toContain('corporateId: req.corporateUser.corporateId');
     expect(block).toContain('requireCorporateId: corporateId');
     expect(block).not.toMatch(/requireCorporateId:\s*req\.(body|query|params)/);
+  });
+
+  it('scope the bulk upload and the queue to the caller too', () => {
+    const bulk = corporateRoute.slice(
+      corporateRoute.indexOf("'/insurance-members/bulk'"),
+      corporateRoute.indexOf("'/insurance-members/enrolments'")
+    );
+    expect(bulk).toContain('corporateId: req.corporateUser.corporateId');
+    expect(bulk).toContain('rows: req.body?.members');
+    expect(bulk).toContain('dryRun: req.body?.dryRun === true');
+    expect(bulk).not.toMatch(/corporateId:\s*req\.(body|query|params)/);
   });
 
   it('take the member id from the path and the account from the body, never a corporate from either', () => {

@@ -504,8 +504,191 @@ export async function autoLink({ tpaId, corporateId = null, actorId = null, appl
   };
 }
 
+/**
+ * The employer submits its own insurance roster.
+ *
+ * The gap analysis gave HR this from the start — "HR view ... bulk member
+ * upload, endorsement requests" — and it was never built, so the only way a
+ * membership could be created was the TPA desk typing it in one at a time.
+ * That is also why every membership found in production on 2026-11-11 was
+ * fabricated: nothing real had any way in.
+ *
+ * An employer submits enrolments, not memberships: each row lands in
+ * tpa_member_enrollments as `submitted`, and the TPA desk approves it. The
+ * desk's approval is what creates the membership, and because the enrolment
+ * already carries the account and the corporate, the membership it creates is
+ * born linked.
+ *
+ * The account is resolved from this employer's own roster, by exact staff
+ * code. A row whose code matches nothing, or matches two accounts, is still
+ * submitted — with no account attached and the reason reported — because an
+ * enrolment the desk can see and fix is more use than a silent rejection.
+ */
+export async function submitEnrolments({ corporateId, rows, actorId = null, dryRun = false } = {}) {
+  const id = positiveInt(corporateId);
+  if (!id) throw badRequest('A corporate id is required');
+  if (!Array.isArray(rows) || !rows.length) throw badRequest('members array is required and must not be empty');
+  if (rows.length > 2000) throw badRequest('Submit at most 2000 members per upload');
+
+  const columns = await linkColumns();
+
+  const corporate = await sequelize.query(
+    `SELECT id, "companyName" AS "companyName", aggregator_id AS "tpaId", aggregator_type AS "aggregatorType"
+       FROM corporates WHERE id = :id LIMIT 1`,
+    { replacements: { id }, type: QueryTypes.SELECT }
+  );
+  if (!corporate.length) throw badRequest('Corporate not found', 'CORPORATE_NOT_FOUND');
+
+  const { companyName, tpaId, aggregatorType } = corporate[0];
+  // Without this the enrolment has no desk to go to. Guessing a TPA would put
+  // one employer's roster in another administrator's queue.
+  if (String(aggregatorType || '').toLowerCase() !== 'tpa' || !positiveInt(tpaId)) {
+    throw badRequest(
+      'Your company is not associated with a TPA yet, so there is no claims desk to send these enrolments to. Ask Mediqzy to link your company to its TPA first.',
+      'CORPORATE_HAS_NO_TPA'
+    );
+  }
+
+  const results = [];
+  let accepted = 0;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index] || {};
+    const line = index + 1;
+    const employeeCode = String(row.employeeId ?? row.employeeCode ?? '').trim();
+    const memberName = String(row.memberName ?? row.employeeName ?? row.name ?? '').trim();
+    const policyNumber = String(row.policyNumber ?? '').trim();
+
+    const missing = [
+      !employeeCode && 'employeeId',
+      !memberName && 'memberName',
+      !policyNumber && 'policyNumber',
+    ].filter(Boolean);
+    if (missing.length) {
+      results.push({ line, employeeId: employeeCode || null, status: 'rejected', reason: `Missing ${missing.join(', ')}` });
+      continue;
+    }
+
+    // Namespaced by TPA and employer, so two employers may use the same staff
+    // code and a second upload of the same row is reported rather than
+    // creating a duplicate membership.
+    const slug = employeeCode.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const memberId = `MEM-${tpaId}-C${id}-${slug}`;
+    const enrollmentNumber = `ENR-C${id}-${slug}`;
+
+    let userId = null;
+    let linkNote = 'No account linked: the staff code is not on your employee roster.';
+    const candidates = await findRosterCandidates({ corporateId: id, employeeId: employeeCode });
+    if (candidates.length === 1) {
+      userId = Number(candidates[0].userId);
+      linkNote = `Linked to the account on your roster under ${employeeCode}.`;
+    } else if (candidates.length > 1) {
+      linkNote = `No account linked: ${candidates.length} accounts on your roster carry ${employeeCode}.`;
+    }
+
+    if (dryRun) {
+      results.push({ line, employeeId: employeeCode, memberId, enrollmentNumber, status: 'would_submit', userId, reason: linkNote });
+      accepted += 1;
+      continue;
+    }
+
+    const extraCols = [];
+    const extraVals = [];
+    if (columns.enrolmentUser) { extraCols.push('user_id'); extraVals.push(':userId'); }
+    if (columns.enrolmentCorporate) { extraCols.push('corporate_id'); extraVals.push(':corporateId'); }
+
+    try {
+      const inserted = await sequelize.query(
+        `INSERT INTO tpa_member_enrollments
+         (enrollment_number, tpa_id, corporate_name, policy_number, member_id, employee_id, employee_name,
+          relation, endorsement_type, dependents, coverage_amount, status${extraCols.length ? ', ' + extraCols.join(', ') : ''})
+         VALUES (:enrollmentNumber, :tpaId, :corporateName, :policyNumber, :memberId, :employeeCode, :memberName,
+          :relation, :endorsementType, :dependents::jsonb, :coverageAmount, 'submitted'${extraVals.length ? ', ' + extraVals.join(', ') : ''})
+         RETURNING enrollment_number, member_id`,
+        {
+          replacements: {
+            enrollmentNumber, tpaId, corporateName: companyName, policyNumber, memberId,
+            employeeCode, memberName,
+            relation: String(row.relation || 'self').trim().toLowerCase(),
+            endorsementType: String(row.endorsementType || 'new_enrollment').trim(),
+            dependents: JSON.stringify(Array.isArray(row.dependents) ? row.dependents : []),
+            coverageAmount: Number.isFinite(Number(row.coverageAmount)) ? Number(row.coverageAmount) : 0,
+            ...(columns.enrolmentUser ? { userId } : {}),
+            ...(columns.enrolmentCorporate ? { corporateId: id } : {}),
+          },
+          type: QueryTypes.SELECT,
+        }
+      );
+      accepted += 1;
+      results.push({
+        line, employeeId: employeeCode, status: 'submitted',
+        enrollmentNumber: inserted[0].enrollment_number, memberId: inserted[0].member_id,
+        userId, reason: linkNote,
+      });
+    } catch (error) {
+      if (errorCode(error) === UNIQUE_VIOLATION) {
+        results.push({ line, employeeId: employeeCode, enrollmentNumber, status: 'duplicate', reason: 'Already submitted for this employee; the TPA desk has it.' });
+        continue;
+      }
+      if (MISSING_SCHEMA.includes(errorCode(error))) {
+        throw schemaNotMigrated();
+      }
+      results.push({ line, employeeId: employeeCode, status: 'failed', reason: error.message });
+    }
+  }
+
+  const summary = results.reduce((acc, r) => {
+    acc[r.status] = (acc[r.status] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    success: true, dryRun, corporateId: id, tpaId: Number(tpaId),
+    submitted: dryRun ? 0 : accepted, total: rows.length, summary, results,
+    linked: results.filter((r) => r.userId).length,
+  };
+}
+
+const schemaNotMigrated = () => {
+  const error = new Error('Insurance enrolment is not available in this environment yet: the TPA enrolment columns have not been migrated.');
+  error.statusCode = 503;
+  error.code = 'SCHEMA_NOT_MIGRATED';
+  return error;
+};
+
+/** The employer's own enrolment queue, whatever stage each row has reached. */
+export async function listEnrolmentsForCorporate({ corporateId, status = null, limit = 200 } = {}) {
+  const id = positiveInt(corporateId);
+  if (!id) throw badRequest('A corporate id is required');
+
+  const filters = ['corporate_id = :id'];
+  const replacements = { id, limit: Math.min(Math.max(parseInt(limit, 10) || 200, 1), 1000) };
+  if (status && status !== 'all') {
+    filters.push('status = :status');
+    replacements.status = String(status).trim().toLowerCase();
+  }
+
+  try {
+    const rows = await sequelize.query(
+      `SELECT enrollment_number AS "enrollmentNumber", member_id AS "memberId",
+              employee_id AS "employeeId", employee_name AS "memberName", relation,
+              policy_number AS "policyNumber", coverage_amount AS "coverageAmount",
+              status, user_id AS "userId", decision_reason AS "decisionReason",
+              submitted_at AS "submittedAt", decided_at AS "decidedAt"
+         FROM tpa_member_enrollments
+        WHERE ${filters.join(' AND ')}
+        ORDER BY submitted_at DESC NULLS LAST, id DESC
+        LIMIT :limit`,
+      { replacements, type: QueryTypes.SELECT }
+    );
+    return { migrated: true, enrolments: rows, total: rows.length };
+  } catch (error) {
+    if (MISSING_SCHEMA.includes(errorCode(error))) return { migrated: false, enrolments: [], total: 0 };
+    throw error;
+  }
+}
+
 export default {
   LINK_METHOD, DECISION, normalizeCompanyName, resolveCorporate,
   findRosterCandidates, proposeLink, proposeLinksForTpa, proposeLinksForCorporate, linkColumns,
-  applyLink, removeLink, autoLink,
+  applyLink, removeLink, autoLink, submitEnrolments, listEnrolmentsForCorporate,
 };
