@@ -22,6 +22,10 @@ jest.unstable_mockModule('../services/icu.service.js', () => ({
   getScoreHistory:      jest.fn(),
   logICUEvent:          jest.fn(),
   getICUEvents:         jest.fn(),
+  // The route imports this too. It was added with the ICU progress-note drafter
+  // and never added here, so the router could not be linked and the whole suite
+  // failed to run — not one assertion in it had been executing since.
+  generateICUProgressNoteDraft: jest.fn(),
 }));
 
 const { default: request } = await import('supertest');

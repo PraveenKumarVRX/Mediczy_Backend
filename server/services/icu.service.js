@@ -59,11 +59,17 @@ export async function dischargeFromICU(icuAdmissionId, { dischargeDestination, d
   return { success: true };
 }
 
+// The patient's name, date of birth and sex live on `users`, reached through
+// patients."userId". These queries read p.first_name / p.last_name / p.date_of_birth
+// / p.gender straight off `patients`, which has none of those columns, so every
+// one failed with "column p.first_name does not exist".
 export async function getActiveICUAdmission(admissionId) {
   await ensureTables();
   const [row] = await sequelize.query(
-    `SELECT ia.*, p.first_name || ' ' || p.last_name as patient_name
-     FROM icu_admissions ia LEFT JOIN patients p ON p.id = ia.patient_id
+    `SELECT ia.*, NULLIF(TRIM(CONCAT_WS(' ', u."firstName", u."lastName")), '') AS patient_name
+     FROM icu_admissions ia
+     LEFT JOIN patients p ON p.id = ia.patient_id
+     LEFT JOIN users u ON u.id = p."userId"
      WHERE ia.admission_id = :admId AND ia.status = 'active' LIMIT 1`,
     { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
   );
@@ -72,13 +78,18 @@ export async function getActiveICUAdmission(admissionId) {
 
 export async function getICUCensus(organizationId, icuUnit) {
   await ensureTables();
-  let where = `organization_id = :orgId AND status = 'active'`;
+  // Qualified with ia.: `users` also has organization_id, so an unqualified
+  // reference is ambiguous once the name join is in place.
+  let where = `ia.organization_id = :orgId AND ia.status = 'active'`;
   const replacements = { orgId: organizationId };
-  if (icuUnit) { where += ' AND icu_unit = :unit'; replacements.unit = icuUnit; }
+  if (icuUnit) { where += ' AND ia.icu_unit = :unit'; replacements.unit = icuUnit; }
 
   return sequelize.query(
-    `SELECT ia.*, p.first_name || ' ' || p.last_name as patient_name, p.date_of_birth, p.gender
-     FROM icu_admissions ia LEFT JOIN patients p ON p.id = ia.patient_id
+    `SELECT ia.*, NULLIF(TRIM(CONCAT_WS(' ', u."firstName", u."lastName")), '') AS patient_name,
+            u."dateOfBirth" AS date_of_birth, u."gender" AS gender
+     FROM icu_admissions ia
+     LEFT JOIN patients p ON p.id = ia.patient_id
+     LEFT JOIN users u ON u.id = p."userId"
      WHERE ${where} ORDER BY ia.admitted_at ASC`,
     { replacements, type: QueryTypes.SELECT }
   );
@@ -260,11 +271,13 @@ export async function getICUEvents(icuAdmissionId) {
 export async function getICUSummary(icuAdmissionId) {
   await ensureTables();
   const [admission] = await sequelize.query(
-    `SELECT ia.*, p.first_name || ' ' || p.last_name as patient_name
-     FROM icu_admissions ia LEFT JOIN patients p ON p.id = ia.patient_id
+    `SELECT ia.*, NULLIF(TRIM(CONCAT_WS(' ', u."firstName", u."lastName")), '') AS patient_name
+     FROM icu_admissions ia
+     LEFT JOIN patients p ON p.id = ia.patient_id
+     LEFT JOIN users u ON u.id = p."userId"
      WHERE ia.id = :id LIMIT 1`,
     { replacements: { id: icuAdmissionId }, type: QueryTypes.SELECT }
-  ).catch(() => [null]);
+  );
 
   const [latestVent] = await getVentilatorCharts(icuAdmissionId, { limit: 1 });
   const activeDrips  = await getActiveDrips(icuAdmissionId);
