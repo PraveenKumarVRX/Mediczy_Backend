@@ -1,5 +1,6 @@
 // @jest-environment node
 import request from 'supertest';
+
 import app from '../app.js'; // Adjust if your Express app export path differs
 
 describe('Mobile Social Auth Endpoints', () => {

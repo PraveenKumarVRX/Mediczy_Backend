@@ -8,6 +8,19 @@ import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 
 const mrd = { listMrdRecords: jest.fn(), createMrdRecord: jest.fn(), queueForDigitization: jest.fn(), assignUhid: jest.fn(), assignMissingUhids: jest.fn(), getMrdRecord: jest.fn() };
+jest.unstable_mockModule('../utils/schema-guard.js', () => ({
+  // This suite mocks every query as empty, which the schema probe would read as
+  // "no tables". Schema verification is covered by schema-guard.test.js and the
+  // per-area schema suites; here it is a cross-cutting concern, not the subject.
+  schemaVerifier: () => async () => undefined,
+  guardedQuery: (handle) => (...args) => handle.query(...args),
+  schemaGuard: () => (e) => { throw e; },
+  schemaError: (m) => Object.assign(new Error(m), { code: 'SCHEMA_NOT_MIGRATED', status: 503 }),
+  isMissingSchema: () => false,
+  tableNameFromSchemaRow: (r) => r?.tableName || r?.table_name || r?.[0] || null,
+  SCHEMA_NOT_MIGRATED: 'SCHEMA_NOT_MIGRATED',
+  default: {},
+}));
 jest.unstable_mockModule('../services/hospital-mrd.service.js', () => mrd);
 const summaries = { saveSummary: jest.fn(), updateSummary: jest.fn(), assertScope: jest.fn() };
 jest.unstable_mockModule('../services/discharge-summary.service.js', () => summaries);

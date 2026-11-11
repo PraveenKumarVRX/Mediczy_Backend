@@ -37,7 +37,7 @@ const SCHEMA_TABLES = ['cda_documents'];
 // Owned by the migration and only verified here: creating these on demand
 // would let a skipped migration look healthy on tables without its indexes
 // and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
-const ensureCdaTables = schemaVerifier({
+export const ensureCdaTables = schemaVerifier({
   pool: pool,
   tables: SCHEMA_TABLES,
   code: 'SCHEMA_NOT_MIGRATED',

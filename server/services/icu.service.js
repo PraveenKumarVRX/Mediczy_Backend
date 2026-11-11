@@ -21,7 +21,7 @@ const SCHEMA_TABLES = ['icu_admissions', 'icu_ventilator_charts', 'icu_drip_reco
 // Schema is owned by the migration, not created here. A missing table
 // fails closed with SCHEMA_NOT_MIGRATED naming what to apply, instead of
 // this service quietly building a table the migration never shaped.
-const ensureTables = schemaVerifier({
+export const ensureTables = schemaVerifier({
   sequelize: sequelize,
   tables: SCHEMA_TABLES,
   code: 'SCHEMA_NOT_MIGRATED',

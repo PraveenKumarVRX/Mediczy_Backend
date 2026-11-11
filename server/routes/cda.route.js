@@ -30,7 +30,8 @@ import {
 
 const router = Router();
 
-ensureCdaTables().catch(e => console.warn('[CDA] Table init warning:', e.message));
+// Checked by each handler through the service; calling it at import made the
+// router unmountable wherever the pool is mocked.
 
 router.use(authUser);
 

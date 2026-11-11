@@ -23,7 +23,7 @@ const SCHEMA_TABLES = ['imaging_evidence_facts', 'imaging_evidence_claims', 'ima
 
 // Owned by the migration, verified here. Creating these on demand would let a
 // skipped migration look healthy on tables without its indexes and constraints.
-const ensureTable = schemaVerifier({
+export const ensureTable = schemaVerifier({
   pool,
   tables: SCHEMA_TABLES,
   code: 'SCHEMA_NOT_MIGRATED',

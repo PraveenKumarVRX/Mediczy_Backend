@@ -25,7 +25,7 @@ const SCHEMA_TABLES = ['iso27001_controls', 'iso27001_evidence', 'iso27001_risk_
 // Owned by the migration and only verified here: creating these on demand
 // would let a skipped migration look healthy on tables without its indexes
 // and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
-const ensureIso27001Tables = schemaVerifier({
+export const ensureIso27001Tables = schemaVerifier({
   pool: pool,
   tables: SCHEMA_TABLES,
   code: 'SCHEMA_NOT_MIGRATED',
