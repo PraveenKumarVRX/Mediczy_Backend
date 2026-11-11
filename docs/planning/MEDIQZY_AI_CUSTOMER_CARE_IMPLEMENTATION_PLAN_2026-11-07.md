@@ -1,4 +1,4 @@
-# Mediqzy AI Customer-Care: Final Implementation Plan
+Mediqzy AI Customer-Care: Final Implementation Plan
 
 Date: 2026-11-07
 

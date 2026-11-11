@@ -10,10 +10,13 @@ describe('corporate AHC invitation templates', () => {
   });
 
   it('renders the employee-specific expiry consistently across channels', () => {
-    const message = ahcInvitationMessage({ employeeName: 'Aarav', corporateName: 'Equitas Bank', programName: 'Equitas Bank Managers AHC 2026', validTo: '15 December 2026' });
+    const message = ahcInvitationMessage({ employeeName: 'Aarav', corporateName: 'Equitas Bank', programName: 'Equitas Bank Managers AHC 2026', validFrom: '1 November 2026', validTo: '15 December 2026' });
     expect(message.subject).toContain('15 December 2026');
     expect(message.text).toContain('one-time benefit');
     expect(message.html).toContain('Book your AHC');
+    expect(message.text).toContain('1 November 2026 to 15 December 2026');
+    expect(message.html).toContain('Google Play');
+    expect(message.html).toContain('App Store');
     expect(message.text).toContain('My SmartHealth');
     expect(message.html).toContain('My SmartHealth');
     expect(message.html).not.toContain('through Mediczy');
