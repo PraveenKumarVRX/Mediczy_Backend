@@ -14,6 +14,7 @@ import * as queueNotify from './queue-notify.service.js';
 import greenChannel from './green-channel.service.js';
 import hospitalBranch from './hospital-branch.service.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
 const DEPT_PREFIX = { opd: 'A', pharmacy: 'P', lab: 'L', er: 'ER', radiology: 'R' };
 // Display SSE reaches public waiting-room screens. The green-channel marker is
 // staff-only in every display mode, so it is stripped from anything pushed there.
@@ -57,18 +58,29 @@ const ESI_PRIORITY = {
 
 let _tablesReady = false;
 
+const SCHEMA_TABLES = [
+  'hospital_queue_entries', 'hospital_uhid_sequences',
+  'hospital_queue_token_sequences', 'hospital_queue_journey_sequences',
+];
+
+const verifyQueueSchema = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the hospital queue migrations (20260617-hospital-queue-os, 20260801-qms-hardening, 20260807-qms-journey-token) before using the queue',
+});
+
+/**
+ * Verifies the queue schema; it used to run three migrations on the first
+ * check-in of each process. Running migrations from the request path meant a
+ * patient walking up to the desk could trigger DDL — an ACCESS EXCLUSIVE lock
+ * on the very table every queue read uses — and two of the three were wrapped
+ * in an empty catch, so a failed hardening or journey-token migration left the
+ * queue running on a half-built schema with nothing logged.
+ */
 export async function ensureQueueTables() {
   if (_tablesReady) return;
-  const { up } = await import('../migrations/20260617-hospital-queue-os.migration.js');
-  await up();
-  try {
-    const { up: harden } = await import('../migrations/20260801-qms-hardening.migration.js');
-    await harden(pool);
-  } catch (_) { /* best-effort */ }
-  try {
-    const { up: journey } = await import('../migrations/20260807-qms-journey-token.migration.js');
-    await journey(pool);
-  } catch (_) { /* best-effort */ }
+  await verifyQueueSchema();
   _tablesReady = true;
 }
 
@@ -89,6 +101,38 @@ function todayDateStr() {
 // a quiet re-ordering, or a separate physical space) is an unresolved UX
 // question per the design doc; this is the backend hook only.
 const CORPORATE_FAST_TRACK_BONUS = 5;
+
+/**
+ * A retried check-in must not create a second queue entry. The caller supplies
+ * an idempotency key; the key identifies the attempt and the request hash proves
+ * the retry is the same attempt, so a key reused for a different patient is
+ * refused rather than answering with someone else's token.
+ */
+export function normalizeQueueIdempotencyKey(key) {
+  if (key === undefined || key === null || key === '') return null;
+  const value = String(key).trim();
+  if (value.length < 8 || value.length > 128) {
+    throw Object.assign(new Error('Idempotency key must be 8-128 characters'), { status: 400, code: 'invalid_idempotency_key' });
+  }
+  if (!/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw Object.assign(new Error('Idempotency key may contain only A-Za-z0-9 and . _ : -'), { status: 400, code: 'invalid_idempotency_key' });
+  }
+  return value;
+}
+
+/**
+ * Hashes the fields that decide who is being checked in and where. Derived
+ * values are excluded, so a retry differing only in a recomputed wait estimate
+ * still counts as the same request.
+ */
+export function buildQueueCheckInRequestHash(input = {}) {
+  const canonical = [
+    'organizationId', 'department', 'queueZone', 'patientId', 'patientName',
+    'appointmentId', 'doctorId', 'queueType', 'triageLevel', 'chiefComplaint',
+    'journeyId', 'journeyToken', 'parentEntryId', 'stepOrder', 'nextDepartment',
+  ].map((k) => `${k}=${input[k] === undefined || input[k] === null ? '' : String(input[k])}`).join('|');
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
 
 export function computePriorityScore({ esiLevel, triageLevel, queueType, priority, isCorporateFastTrack = false }) {
   if (priority != null) return priority;
@@ -296,7 +340,8 @@ export async function assignCounter(organizationId, queueZone) {
   return counters[idx];
 }
 
-export async function checkIn({
+export async function checkIn(checkInRequest) {
+  const {
   organizationId,
   department = 'opd',
   queueZone = 'opd-waiting',
@@ -320,9 +365,33 @@ export async function checkIn({
   nextDepartment = null,
   /** Optional multi-branch tag; validated against the caller's organization, NULL if invalid */
   branchId = null,
-}) {
+  /** Supplied by the caller so a retry replays instead of enqueuing twice */
+  idempotencyKey = null,
+  } = checkInRequest;
   await ensureQueueTables();
   const org = defaultOrgId(organizationId);
+  // Replay check first: a retry must not take a token, open a transaction or
+  // notify anyone a second time.
+  const idemKey = normalizeQueueIdempotencyKey(idempotencyKey);
+  // Hashed as the caller sent it. Hashing post-default values would make a
+  // retry that omits an optional field hash differently from the attempt stored.
+  const requestHash = idemKey ? buildQueueCheckInRequestHash(checkInRequest) : null;
+  if (idemKey) {
+    const { rows: prior } = await pool.query(
+      `SELECT * FROM hospital_queue_entries WHERE organization_id = $1 AND idempotency_key = $2 LIMIT 1`,
+      [org, idemKey]
+    );
+    if (prior.length) {
+      if (prior[0].request_hash && prior[0].request_hash !== requestHash) {
+        throw Object.assign(
+          new Error('That idempotency key was already used for a different check-in'),
+          { status: 422, code: 'idempotency_key_reuse' }
+        );
+      }
+      return mapRow(prior[0]);
+    }
+  }
+
   const resolvedBranchId = await hospitalBranch.resolveBranchId(branchId, org);
   // Prefer per-doctor OPD zone when doctor is known (multi-OPD hospitals)
   let zone = queueZone || DEFAULT_ZONE_BY_DEPT[department] || 'opd-waiting';
@@ -352,19 +421,21 @@ export async function checkIn({
     queueType, triageLevel || null, resolvedPriority, chiefComplaint || null,
     estimatedWaitMinutes, consentVersion || null, JSON.stringify(entryMetadata),
     resolvedJourneyId, tokenNumber, parentEntryId || null, stepOrder || 1, nextDepartment || null,
+    idemKey, requestHash,
   ];
   // branch_id is only part of the statement when a valid branch was resolved, so
   // the no-branch path is byte-identical to before (and safe if the column is absent).
   const branchCol = resolvedBranchId ? ', branch_id' : '';
-  const branchVal = resolvedBranchId ? ',$23' : '';
+  const branchVal = resolvedBranchId ? ',$25' : '';
   if (resolvedBranchId) insertParams.push(resolvedBranchId);
   const { rows } = await pool.query(
     `INSERT INTO hospital_queue_entries (
       organization_id, department, token_number, queue_zone, patient_id, patient_name,
       appointment_id, doctor_id, doctor_name, counter_id, queue_type, triage_level,
       priority_score, chief_complaint, status, estimated_wait_minutes, consent_version, metadata,
-      journey_id, journey_token, parent_entry_id, step_order, next_department${branchCol}
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'waiting',$15,$16,$17,$18,$19,$20,$21,$22${branchVal})
+      journey_id, journey_token, parent_entry_id, step_order, next_department,
+      idempotency_key, request_hash${branchCol}
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'waiting',$15,$16,$17,$18,$19,$20,$21,$22,$23,$24${branchVal})
     RETURNING *`,
     insertParams
   );

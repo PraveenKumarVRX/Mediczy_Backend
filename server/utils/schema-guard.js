@@ -47,6 +47,19 @@ export const schemaError = (message, missingTables = []) => {
  * clears the memo, so applying the migration fixes the service without a
  * restart.
  */
+/**
+ * Reads rows out of whatever the handle returned. A probe that comes back in an
+ * unreadable shape is not evidence that a table is absent, so it yields null and
+ * the check declines to judge rather than taking a working service down over a
+ * driver quirk. A genuinely missing table still fails on the real query, where
+ * 42P01 is translated.
+ */
+const rowsOf = (result) => {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.rows)) return result.rows;
+  return null;
+};
+
 export const schemaVerifier = ({ sequelize, pool, tables, message, code = SCHEMA_NOT_MIGRATED }) => {
   let pending = null;
 
@@ -54,7 +67,9 @@ export const schemaVerifier = ({ sequelize, pool, tables, message, code = SCHEMA
   // named replacements and returns rows directly, and a raw pg Pool, which takes
   // positional parameters and returns a result object. Passing one API's call
   // shape to the other throws at the first use, so the handle decides the shape.
-  const lookup = () => (sequelize
+  // Promise.resolve: a stubbed handle may answer synchronously, and calling
+  // .then on a plain value throws before the check can decline gracefully.
+  const lookup = () => Promise.resolve(sequelize
     ? sequelize.query(
         `SELECT table_name AS "tableName"
            FROM information_schema.tables
@@ -68,12 +83,13 @@ export const schemaVerifier = ({ sequelize, pool, tables, message, code = SCHEMA
           WHERE table_schema = current_schema()
             AND table_name = ANY($1::text[])`,
         [tables]
-      ).then((result) => result.rows));
+      )).then(rowsOf);
 
   return async function ensureSchema() {
     if (!pending) {
       pending = lookup()
         .then((rows) => {
+          if (rows === null) return; // indeterminate probe — see rowsOf
           const present = new Set(rows.map(tableNameFromSchemaRow).filter(Boolean));
           const missingTables = tables.filter((table) => !present.has(table));
           if (missingTables.length) {

@@ -64,6 +64,24 @@ describe('the verifier asks the database what exists', () => {
   });
 });
 
+describe('an unreadable probe', () => {
+  // A response in a shape we cannot read is not evidence that a table is
+  // absent. Declaring it missing would take a working service down over a
+  // driver quirk; the real query still fails loudly if the table is gone.
+  it('declines to judge rather than reporting the schema missing', async () => {
+    for (const result of [undefined, null, {}, { rows: null }, 'nonsense']) {
+      const pool = { query: jest.fn(async () => result) };
+      await expect(schemaVerifier({ pool, tables: ['a'], message: 'x' })()).resolves.toBeUndefined();
+    }
+  });
+
+  it('still reports missing when the probe is readable and the table is absent', async () => {
+    const pool = { query: jest.fn(async () => ({ rows: [] })) };
+    await expect(schemaVerifier({ pool, tables: ['a'], message: 'x' })())
+      .rejects.toMatchObject({ code: SCHEMA_NOT_MIGRATED });
+  });
+});
+
 describe('it speaks to both database handles', () => {
   // Sequelize takes named replacements and returns rows; a pg Pool takes
   // positional parameters and returns a result object. Binding one shape to the
