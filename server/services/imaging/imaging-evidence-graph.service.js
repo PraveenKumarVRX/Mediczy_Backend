@@ -18,71 +18,24 @@
  */
 import pool from '../../db/pgPool.js';
 
-const ensureTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS imaging_evidence_facts (
-      id             BIGSERIAL PRIMARY KEY,
-      draft_id       BIGINT NOT NULL,
-      study_id       BIGINT NOT NULL,
-      tenant_id      BIGINT,
-      fact_id        VARCHAR(50) NOT NULL,
-      structure      VARCHAR(255),
-      kind           VARCHAR(20),
-      location       VARCHAR(255),
-      volume_mm3     NUMERIC,
-      size_mm        NUMERIC,
-      certainty      VARCHAR(20),
-      confidence     NUMERIC,
-      certainty_reason TEXT,
-      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (draft_id, fact_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_evidence_facts_draft ON imaging_evidence_facts (draft_id);
-    CREATE INDEX IF NOT EXISTS idx_imaging_evidence_facts_study ON imaging_evidence_facts (study_id);
-    -- Item 9/QA-3 spatial evidence, added after the table already existed in
-    -- production (item 6 deployed first) — CREATE TABLE IF NOT EXISTS above
-    -- is a no-op against the live table, so these columns need their own
-    -- ALTER TABLE ADD COLUMN IF NOT EXISTS, same as every other table this
-    -- session that grew columns after its first deployment (imaging_knowledge_base
-    -- is the other example). Found by actually running this end-to-end
-    -- against the live, already-deployed table, not just syntax-checking.
-    ALTER TABLE imaging_evidence_facts ADD COLUMN IF NOT EXISTS centroid_voxel JSONB;
-    ALTER TABLE imaging_evidence_facts ADD COLUMN IF NOT EXISTS bounding_box_voxel JSONB;
+import { schemaVerifier } from '../../utils/schema-guard.js';
+const SCHEMA_TABLES = ['imaging_evidence_facts', 'imaging_evidence_claims', 'imaging_evidence_claim_facts'];
 
-    CREATE TABLE IF NOT EXISTS imaging_evidence_claims (
-      id              BIGSERIAL PRIMARY KEY,
-      draft_id        BIGINT NOT NULL,
-      study_id        BIGINT NOT NULL,
-      tenant_id       BIGINT,
-      statement_id    VARCHAR(50) NOT NULL,
-      statement_type  VARCHAR(30),
-      subject         VARCHAR(255),
-      certainty       VARCHAR(20),
-      matched_rule_id VARCHAR(50),
-      pathway         VARCHAR(100),
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (draft_id, statement_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_evidence_claims_draft ON imaging_evidence_claims (draft_id);
-
-    CREATE TABLE IF NOT EXISTS imaging_evidence_claim_facts (
-      id           BIGSERIAL PRIMARY KEY,
-      draft_id     BIGINT NOT NULL,
-      statement_id VARCHAR(50) NOT NULL,
-      fact_id      VARCHAR(50) NOT NULL,
-      UNIQUE (draft_id, statement_id, fact_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_evidence_claim_facts_draft ON imaging_evidence_claim_facts (draft_id);
-    CREATE INDEX IF NOT EXISTS idx_imaging_evidence_claim_facts_fact ON imaging_evidence_claim_facts (draft_id, fact_id);
-  `);
-};
-ensureTable().catch((e) => console.error('[ImagingEvidenceGraph] Table init error:', e.message));
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureTable = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging evidence graph',
+});
 
 /** Persists the compiled model + matched rules as linked rows. Called after
  * the draft row itself exists (needs a real draft_id/study_id). Best-effort
  * — a persistence failure here shouldn't block report generation, same
  * resilience pattern as recordProvenance. */
 export async function persistEvidenceGraph({ draftId, studyId, tenantId, model, matchedRules = [] }) {
+  await ensureTable();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -153,6 +106,7 @@ export async function persistEvidenceGraph({ draftId, studyId, tenantId, model, 
 /** Full graph for one draft, reconstructed from the linked rows — not the
  * original in-memory object, a genuine round-trip through Postgres. */
 export async function getEvidenceGraphForDraft(draftId) {
+  await ensureTable();
   const [facts, claims, edges] = await Promise.all([
     pool.query(`SELECT * FROM imaging_evidence_facts WHERE draft_id = $1 ORDER BY fact_id`, [draftId]),
     pool.query(`SELECT * FROM imaging_evidence_claims WHERE draft_id = $1 ORDER BY statement_id`, [draftId]),
@@ -175,6 +129,7 @@ export async function getEvidenceGraphForDraft(draftId) {
  * doc's "Evidence Click-through" UI concept (§38) — no UI built here,
  * just the query it would call. */
 export async function getClaimsSupportedByFact(draftId, factId) {
+  await ensureTable();
   const { rows } = await pool.query(
     `SELECT c.* FROM imaging_evidence_claims c
      JOIN imaging_evidence_claim_facts e ON e.draft_id = c.draft_id AND e.statement_id = c.statement_id

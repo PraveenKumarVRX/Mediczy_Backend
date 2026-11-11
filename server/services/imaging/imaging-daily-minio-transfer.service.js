@@ -15,6 +15,7 @@ import {
 import pool from '../../db/pgPool.js';
 import logger from '../../config/logger.js';
 import { getS3Region } from '../../utils/s3-storage.js';
+import { schemaVerifier } from '../../utils/schema-guard.js';
 import {
   getTenantIsolationMode,
   getImagingDailyBucketForTenant,
@@ -47,27 +48,16 @@ function awsS3() {
   return new S3Client({ region: process.env.AWS_REGION || getS3Region() || 'ap-south-1' });
 }
 
-async function ensureTransferTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS imaging_daily_transfer_log (
-      id BIGSERIAL PRIMARY KEY,
-      source_bucket TEXT NOT NULL,
-      dest_bucket TEXT NOT NULL,
-      object_key TEXT NOT NULL,
-      tenant_id TEXT,
-      archive_provider TEXT,
-      size_bytes BIGINT,
-      etag TEXT,
-      status TEXT NOT NULL DEFAULT 'copied',
-      error_message TEXT,
-      deleted_from_source BOOLEAN NOT NULL DEFAULT FALSE,
-      transferred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (dest_bucket, object_key)
-    )
-  `).catch(() => {});
-  await pool.query(`ALTER TABLE imaging_daily_transfer_log ADD COLUMN IF NOT EXISTS tenant_id TEXT`).catch(() => {});
-  await pool.query(`ALTER TABLE imaging_daily_transfer_log ADD COLUMN IF NOT EXISTS archive_provider TEXT`).catch(() => {});
-}
+const SCHEMA_TABLES = ['imaging_daily_transfer_log'];
+
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureTransferTable = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004600-imaging-ops-governance before using the imaging daily transfer',
+});
 
 async function alreadyTransferred(destBucket, key) {
   const r = await pool.query(
@@ -288,6 +278,7 @@ async function transferTenantBucket({
  * @param {{ lookbackHours?: number, dryRun?: boolean, force?: boolean, tenantId?: string|number }} [opts]
  */
 export async function transferImagingDailyToMinio(opts = {}) {
+  await ensureTransferTable();
   if (!isMinioConfigured() && !isWasabiConfigured()) {
     throw new Error('Configure MinIO and/or Wasabi for imaging archive transfer');
   }

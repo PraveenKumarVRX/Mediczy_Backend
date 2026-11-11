@@ -21,28 +21,17 @@
  */
 import pool from '../../db/pgPool.js';
 
-const ensureTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS imaging_guidelines (
-      id                BIGSERIAL PRIMARY KEY,
-      guideline_id      VARCHAR(100) NOT NULL UNIQUE,
-      pathway           VARCHAR(100) NOT NULL,
-      title             TEXT NOT NULL,
-      organization      VARCHAR(150) NOT NULL,
-      publication_date  DATE,
-      version           VARCHAR(40),
-      jurisdiction      VARCHAR(40) NOT NULL DEFAULT 'US',
-      population        VARCHAR(100),
-      review_status     VARCHAR(30) NOT NULL DEFAULT 'current',
-      source_url        TEXT NOT NULL,
-      summary           TEXT NOT NULL,
-      retrieved_at      TIMESTAMPTZ NOT NULL,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_guidelines_pathway ON imaging_guidelines (pathway);
-  `);
-};
-ensureTable().catch((e) => console.error('[ImagingGuidelines] Table init error:', e.message));
+import { schemaVerifier } from '../../utils/schema-guard.js';
+const SCHEMA_TABLES = ['imaging_guidelines'];
+
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureTable = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004600-imaging-ops-governance before using imaging guidelines',
+});
 
 const SEED_GUIDELINES = [
   {
@@ -68,6 +57,7 @@ const SEED_GUIDELINES = [
 ];
 
 export async function seedGuidelines() {
+  await ensureTable();
   for (const g of SEED_GUIDELINES) {
     await pool.query(
       `INSERT INTO imaging_guidelines
@@ -85,6 +75,7 @@ export async function seedGuidelines() {
 }
 
 export async function getGuidelinesForPathway(pathway) {
+  await ensureTable();
   const { rows } = await pool.query(
     `SELECT * FROM imaging_guidelines WHERE pathway = $1 AND review_status = 'current'`,
     [pathway],

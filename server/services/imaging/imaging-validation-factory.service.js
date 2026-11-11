@@ -19,52 +19,20 @@
  */
 import pool from '../../db/pgPool.js';
 
-const ensureTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS imaging_validation_cases (
-      id            BIGSERIAL PRIMARY KEY,
-      study_id      BIGINT NOT NULL,
-      tenant_id     BIGINT,
-      case_status   VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (case_status IN ('pending','annotated','adjudicated','excluded')),
-      added_by      BIGINT,
-      added_by_name VARCHAR(255),
-      notes         TEXT,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (study_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_validation_cases_status ON imaging_validation_cases (case_status);
+import { schemaVerifier } from '../../utils/schema-guard.js';
+const SCHEMA_TABLES = ['imaging_validation_cases', 'imaging_validation_annotations', 'imaging_validation_adjudications'];
 
-    CREATE TABLE IF NOT EXISTS imaging_validation_annotations (
-      id              BIGSERIAL PRIMARY KEY,
-      case_id         BIGINT NOT NULL REFERENCES imaging_validation_cases(id) ON DELETE CASCADE,
-      reader_id       BIGINT NOT NULL,
-      reader_name     VARCHAR(255),
-      -- Free-form per case type (a findings list, measurements, an accept/
-      -- reject of the AI draft, etc.) — deliberately not over-specified
-      -- before a real validation protocol defines what a reader actually
-      -- records.
-      annotation_data JSONB NOT NULL,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (case_id, reader_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_validation_annotations_case ON imaging_validation_annotations (case_id);
-
-    CREATE TABLE IF NOT EXISTS imaging_validation_adjudications (
-      id                BIGSERIAL PRIMARY KEY,
-      case_id           BIGINT NOT NULL REFERENCES imaging_validation_cases(id) ON DELETE CASCADE,
-      adjudicator_id    BIGINT NOT NULL,
-      adjudicator_name  VARCHAR(255),
-      gold_label        JSONB NOT NULL,
-      agreement_notes   TEXT,
-      reader_agreement  BOOLEAN,
-      adjudicated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (case_id)
-    );
-  `);
-};
-ensureTable().catch((e) => console.error('[ImagingValidationFactory] Table init error:', e.message));
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureTable = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging validation factory',
+});
 
 export async function registerCase({ studyId, tenantId, addedBy, addedByName, notes }) {
+  await ensureTable();
   const { rows } = await pool.query(
     `INSERT INTO imaging_validation_cases (study_id, tenant_id, added_by, added_by_name, notes)
      VALUES ($1,$2,$3,$4,$5)
@@ -76,6 +44,7 @@ export async function registerCase({ studyId, tenantId, addedBy, addedByName, no
 }
 
 export async function recordAnnotation({ caseId, readerId, readerName, annotationData }) {
+  await ensureTable();
   const { rows } = await pool.query(
     `INSERT INTO imaging_validation_annotations (case_id, reader_id, reader_name, annotation_data)
      VALUES ($1,$2,$3,$4::jsonb)
@@ -91,6 +60,7 @@ export async function recordAnnotation({ caseId, readerId, readerName, annotatio
 }
 
 export async function recordAdjudication({ caseId, adjudicatorId, adjudicatorName, goldLabel, agreementNotes, readerAgreement }) {
+  await ensureTable();
   const { rows } = await pool.query(
     `INSERT INTO imaging_validation_adjudications (case_id, adjudicator_id, adjudicator_name, gold_label, agreement_notes, reader_agreement)
      VALUES ($1,$2,$3,$4::jsonb,$5,$6)
@@ -103,6 +73,7 @@ export async function recordAdjudication({ caseId, adjudicatorId, adjudicatorNam
 }
 
 export async function getCaseWithAnnotations(caseId) {
+  await ensureTable();
   const [caseRow, annotations, adjudication] = await Promise.all([
     pool.query(`SELECT * FROM imaging_validation_cases WHERE id = $1`, [caseId]),
     pool.query(`SELECT * FROM imaging_validation_annotations WHERE case_id = $1 ORDER BY created_at`, [caseId]),
@@ -116,6 +87,7 @@ export async function getCaseWithAnnotations(caseId) {
  * on a fresh deployment is the honest, correct answer, not a bug. This
  * function existing is not evidence a validation program is running. */
 export async function getValidationFactoryStatus(tenantId) {
+  await ensureTable();
   const { rows } = await pool.query(
     `SELECT case_status, COUNT(*)::int AS count
      FROM imaging_validation_cases

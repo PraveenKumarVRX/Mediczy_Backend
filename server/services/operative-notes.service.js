@@ -9,54 +9,20 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS operative_notes (
-      id                  BIGSERIAL PRIMARY KEY,
-      organization_id     BIGINT,
-      ot_booking_id       BIGINT NOT NULL,
-      admission_id        BIGINT,
-      patient_id          BIGINT,
-      surgeon_id          TEXT,
-      assistant_surgeon   TEXT,
-      scrub_nurse         TEXT,
-      anesthetist_id      TEXT,
-      procedure_name      TEXT NOT NULL,
-      incision_type       TEXT,
-      position_used       TEXT,
-      anesthesia_type     TEXT,
-      preop_diagnosis     TEXT,
-      postop_diagnosis    TEXT,
-      findings            TEXT,
-      procedure_steps     TEXT,
-      specimens_sent      TEXT,
-      drains_placed       TEXT,
-      closure_details     TEXT,
-      blood_loss_ml       INTEGER,
-      fluids_given        TEXT,
-      complications       TEXT,
-      implants_used       TEXT,
-      special_instructions TEXT,
-      follow_up_plan      TEXT,
-      dictation_source    TEXT DEFAULT 'manual',  -- manual | voice | ai_draft
-      draft_content       TEXT,
-      final_content       TEXT,
-      signed_by           TEXT,
-      signed_at           TIMESTAMPTZ,
-      status              TEXT DEFAULT 'draft',   -- draft | signed
-      note_data           JSONB DEFAULT '{}'::jsonb,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_op_note_booking
-      ON operative_notes(ot_booking_id) WHERE status = 'signed';
-    CREATE INDEX IF NOT EXISTS idx_op_note_booking_all ON operative_notes(ot_booking_id);
-    CREATE INDEX IF NOT EXISTS idx_op_note_patient     ON operative_notes(patient_id);
-  `);
-}
-ensureTables().catch(e => console.warn('[operative-notes] table init:', e.message));
+import { schemaVerifier } from '../utils/schema-guard.js';
+const SCHEMA_TABLES = ['operative_notes'];
+
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureTables = schemaVerifier({
+  sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015003000-operative-notes-governance before using operative notes',
+});
 
 export async function createOperativeNote(data) {
+  await ensureTables();
   const {
     organizationId, otBookingId, admissionId, patientId, surgeonId,
     assistantSurgeon, scrubNurse, anesthetistId, procedureName, incisionType,
@@ -106,6 +72,7 @@ export async function createOperativeNote(data) {
 }
 
 export async function getOperativeNoteByBooking(otBookingId) {
+  await ensureTables();
   const [row] = await sequelize.query(
     `SELECT on2.*, p.first_name || ' ' || p.last_name as patient_name
      FROM operative_notes on2
@@ -118,6 +85,7 @@ export async function getOperativeNoteByBooking(otBookingId) {
 }
 
 export async function updateOperativeNote(noteId, updates) {
+  await ensureTables();
   const allowed = [
     'findings', 'procedure_steps', 'postop_diagnosis', 'specimens_sent',
     'drains_placed', 'closure_details', 'blood_loss_ml', 'fluids_given',
@@ -141,6 +109,7 @@ export async function updateOperativeNote(noteId, updates) {
 }
 
 export async function signOperativeNote(noteId, { signedBy, finalContent }) {
+  await ensureTables();
   await sequelize.query(
     `UPDATE operative_notes
      SET status = 'signed', signed_by = :by, signed_at = NOW(),

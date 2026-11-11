@@ -13,29 +13,20 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import { dispatchEvent } from './workflow-ai-orchestrator.service.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
 // ── B2: Override audit table bootstrap ───────────────────────────────────────
 
-async function ensureOTSafetyTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS ot_safety_overrides (
-      id              BIGSERIAL PRIMARY KEY,
-      ot_booking_id   BIGINT NOT NULL,
-      organization_id BIGINT,
-      override_type   TEXT NOT NULL,   -- 'checklist_bypass'
-      blocked_transition TEXT,         -- e.g. 'incision'
-      missing_items   JSONB DEFAULT '[]'::jsonb,
-      reason_code     TEXT NOT NULL,
-      approver_id     TEXT NOT NULL,
-      approver_role   TEXT,
-      context         JSONB DEFAULT '{}'::jsonb,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ot_safety_overrides_booking
-      ON ot_safety_overrides(ot_booking_id);
-  `);
-}
+const SCHEMA_TABLES = ['ot_safety_overrides'];
 
-ensureOTSafetyTables().catch(e => console.warn('[ot-scheduling] safety table init:', e.message));
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureOTSafetyTables = schemaVerifier({
+  sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015002900-ot-safety-governance before using OT safety overrides',
+});
+
 
 // Roles allowed to override OT hard-stops
 const OVERRIDE_ALLOWED_ROLES = new Set(['surgeon', 'anesthetist', 'ot_head', 'admin', 'super_admin']);
@@ -91,6 +82,7 @@ export async function bookOT({
   anesthesiaType,
   notes
 }) {
+  await ensureOTSafetyTables();
   // Check for conflicts
   const conflicts = await checkConflicts(organizationId, otRoomId, scheduledStart, scheduledEnd);
   if (conflicts.length > 0 && bookingType !== 'emergency') {
@@ -133,6 +125,7 @@ export async function emergencyActivateOT({
   anesthesiaType,
   notes
 }) {
+  await ensureOTSafetyTables();
   // Find the first available OT room (emergency rooms first)
   const [room] = await sequelize.query(
     `SELECT * FROM ot_rooms
@@ -158,6 +151,7 @@ export async function updateOTStatus(organizationId, bookingId, status, {
   performedBy,
   override = null    // { reasonCode, approverId, approverRole } — emergency bypass
 } = {}) {
+  await ensureOTSafetyTables();
   const validStatuses = ['scheduled','patient_in','prep','incision','closure','completed','cancelled','postponed'];
   if (!validStatuses.includes(status)) throw new Error('Invalid OT status');
 
@@ -193,8 +187,35 @@ export async function updateOTStatus(organizationId, bookingId, status, {
         );
       } else {
         const labels = missing.map(m => WHO_CHECKLISTS[m]?.map(i => i.required ? i.label : null).filter(Boolean).join(', ')).join(' | ');
-        throw new Error(`Cannot advance to '${status}': incomplete required checklists [${missing.join(', ')}]. Missing items: ${labels}`);
+        const blocked = new Error(`Cannot advance to '${status}': incomplete required checklists [${missing.join(', ')}]. Missing items: ${labels}`);
+        // A machine-readable code so the theatre screen can tell a safety stop
+        // from a validation slip, rather than both arriving as a bare 400.
+        blocked.code = 'OT_STATUS_BLOCKED';
+        blocked.status = 409;
+        blocked.details = { missingChecklists: missing, attemptedTransition: status };
+        throw blocked;
       }
+    }
+  }
+
+  // A case cannot be closed on an unwritten note. The operative note is the
+  // clinical record of what was done; completing without one leaves the
+  // procedure undocumented at exactly the point the record is relied upon for
+  // coding, claims and any later review. The override path above covers the
+  // emergency case for checklists; a note is written after the fact, so the
+  // transition waits for it rather than bypassing it.
+  if (status === 'completed') {
+    const [signedNote] = await sequelize.query(
+      `SELECT id FROM operative_notes
+        WHERE ot_booking_id = :bookingId AND status = 'signed' LIMIT 1`,
+      { replacements: { bookingId }, type: QueryTypes.SELECT }
+    );
+    if (!signedNote) {
+      const error = new Error('A signed operative note is required before an OT case can be marked completed.');
+      error.code = 'OPERATIVE_NOTE_REQUIRED';
+      error.status = 409;
+      error.details = { bookingId };
+      throw error;
     }
   }
 
@@ -237,6 +258,7 @@ export async function updateOTStatus(organizationId, bookingId, status, {
 }
 
 export async function submitChecklist(organizationId, bookingId, checklistType, items, completedBy) {
+  await ensureOTSafetyTables();
   if (!WHO_CHECKLISTS[checklistType]) throw new Error('Invalid checklist type');
 
   const isComplete = WHO_CHECKLISTS[checklistType]
@@ -265,6 +287,7 @@ export async function submitChecklist(organizationId, bookingId, checklistType, 
 }
 
 export async function getChecklistStatus(organizationId, bookingId) {
+  await ensureOTSafetyTables();
   const checklists = await sequelize.query(
     `SELECT checklist_type, is_complete, completed_at FROM ot_checklists WHERE ot_booking_id = :bookingId`,
     { replacements: { bookingId }, type: QueryTypes.SELECT }
@@ -278,6 +301,7 @@ export async function getChecklistStatus(organizationId, bookingId) {
 }
 
 export async function getOTSchedule(organizationId, date, roomId) {
+  await ensureOTSafetyTables();
   const dayStart = new Date(date);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(date);
@@ -300,6 +324,7 @@ export async function getOTSchedule(organizationId, date, roomId) {
 }
 
 export async function checkConflicts(organizationId, roomId, start, end) {
+  await ensureOTSafetyTables();
   if (!roomId) return [];
   return sequelize.query(
     `SELECT id FROM ot_bookings

@@ -27,6 +27,7 @@ import axios from 'axios';
 import pool from '../../db/pgPool.js';
 import { routeEvidence } from './imaging-knowledge-router.service.js';
 
+import { schemaVerifier } from '../../utils/schema-guard.js';
 // Item 7 — hybrid retrieval reuses the platform's existing embedding infra
 // (SIB's ClinicalBERT /embed endpoint, already used by ai-brain/rag-pipeline.js
 // for the general-purpose EHR/document RAG) rather than merging imaging
@@ -36,75 +37,16 @@ import { routeEvidence } from './imaging-knowledge-router.service.js';
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 const EMBEDDING_DIM = 768;
 
-const ensureTable = async () => {
-  await pool.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS imaging_knowledge_base (
-      id               BIGSERIAL PRIMARY KEY,
-      canonical_id     VARCHAR(100) NOT NULL UNIQUE,
-      kind             VARCHAR(20) NOT NULL CHECK (kind IN ('anatomy','pathology')),
-      preferred_name   VARCHAR(255) NOT NULL,
-      modality         TEXT[] NOT NULL DEFAULT '{}',
-      anatomy_tags     TEXT[] NOT NULL DEFAULT '{}',
-      content          TEXT NOT NULL,
-      source_title     TEXT NOT NULL,
-      source_url       TEXT NOT NULL,
-      source_type      VARCHAR(40) NOT NULL,
-      retrieved_at     TIMESTAMPTZ NOT NULL,
-      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_kb_tags ON imaging_knowledge_base USING GIN (anatomy_tags);
-    ALTER TABLE imaging_knowledge_base ADD COLUMN IF NOT EXISTS embedding vector(${EMBEDDING_DIM});
-    ALTER TABLE imaging_knowledge_base ADD COLUMN IF NOT EXISTS content_tsv tsvector
-      GENERATED ALWAYS AS (to_tsvector('english', preferred_name || ' ' || content)) STORED;
-    CREATE INDEX IF NOT EXISTS idx_imaging_kb_tsv ON imaging_knowledge_base USING GIN (content_tsv);
-    -- Item 8 — structural anatomy/pathology relationships (laterality,
-    -- parent structure, differentials). Only populated where the source
-    -- material genuinely supports it, not added preemptively for structures
-    -- this pipeline doesn't detect (see module docstring).
-    ALTER TABLE imaging_knowledge_base ADD COLUMN IF NOT EXISTS laterality VARCHAR(20);
-    ALTER TABLE imaging_knowledge_base ADD COLUMN IF NOT EXISTS parent_structure VARCHAR(100);
-    ALTER TABLE imaging_knowledge_base ADD COLUMN IF NOT EXISTS differentials TEXT[] NOT NULL DEFAULT '{}';
-    -- Generation-safe summary: a separate, curated representation of this
-    -- row's clinical content for the report-GENERATION prompt only. content
-    -- (above) and differentials stay intact as the real retrieval/provenance
-    -- record — never edited to hide anything — but content/differentials
-    -- prose can itself contain the exact phrases a matched rule's
-    -- prohibitedInferences forbids (e.g. this row's own differentials array
-    -- contains "obstructive hydrocephalus"), and showing that raw text to
-    -- the LLM primes it to echo those words regardless of any "do not
-    -- conclude X" instruction placed next to it — the real, observed cause
-    -- of study 11's captured bad output. A row with a non-empty summary here
-    -- has that summary rendered to the generation prompt INSTEAD of
-    -- content/differentials; a row without one keeps today's raw-content
-    -- behavior unchanged (most rows — curating this is real, reviewed work,
-    -- not done in bulk).
-    ALTER TABLE imaging_knowledge_base ADD COLUMN IF NOT EXISTS generation_safe_summary TEXT[] NOT NULL DEFAULT '{}';
+const SCHEMA_TABLES = ['imaging_knowledge_base', 'imaging_anatomy_relationships'];
 
-    -- Item 3 — real ontology layer. parent_structure (above) is a flat
-    -- string; this is a genuine graph: typed, directional edges between KB
-    -- entries, queryable both ways ("what is X part of" / "what relates to
-    -- X"). Only two relationship types exist because only two are actually
-    -- sourced below — anatomical containment (parent_of) and CSF-flow
-    -- communication (communicates_with, e.g. lateral ventricle -> third
-    -- ventricle via the foramen of Monro). Not a general-purpose ontology
-    -- vocabulary; extend the CHECK constraint only when a new relationship
-    -- type has real sourced content behind it.
-    CREATE TABLE IF NOT EXISTS imaging_anatomy_relationships (
-      id                    BIGSERIAL PRIMARY KEY,
-      parent_canonical_id   VARCHAR(100) NOT NULL REFERENCES imaging_knowledge_base(canonical_id) ON DELETE CASCADE,
-      child_canonical_id    VARCHAR(100) NOT NULL REFERENCES imaging_knowledge_base(canonical_id) ON DELETE CASCADE,
-      relationship_type     VARCHAR(30) NOT NULL CHECK (relationship_type IN ('parent_of', 'communicates_with')),
-      source_title          TEXT,
-      source_url            TEXT,
-      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (parent_canonical_id, child_canonical_id, relationship_type)
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_anatomy_rel_parent ON imaging_anatomy_relationships (parent_canonical_id);
-    CREATE INDEX IF NOT EXISTS idx_imaging_anatomy_rel_child ON imaging_anatomy_relationships (child_canonical_id);
-  `);
-};
-ensureTable().catch((e) => console.error('[ImagingKB] Table init error:', e.message));
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureTable = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging knowledge base',
+});
 
 /** Real embedding call to SIB's ClinicalBERT endpoint — same function every
  * other RAG consumer in this codebase uses, not a separate implementation.
@@ -586,6 +528,7 @@ const SEED_RELATIONSHIPS = [
 ];
 
 export async function seedKnowledgeBase() {
+  await ensureTable();
   for (const row of SEED_ROWS) {
     const vector = await embed(`${row.preferredName}. ${row.content}`);
     await pool.query(
@@ -642,6 +585,7 @@ export { SEED_ROWS };
  * than this function silently walking an arbitrary depth.
  */
 export async function getAnatomyRelationships(canonicalId) {
+  await ensureTable();
   const { rows } = await pool.query(
     `SELECT r.relationship_type, r.parent_canonical_id, r.child_canonical_id,
             p.preferred_name AS parent_name, c.preferred_name AS child_name
@@ -676,6 +620,7 @@ export async function getAnatomyRelationships(canonicalId) {
  * Deliberately simple — see module docstring for why no embeddings.
  */
 export async function retrieveKnowledgeForEvidence({ measurements = [], findings = [] } = {}) {
+  await ensureTable();
   // Domain derivation now lives in imaging-knowledge-router.service.js (P4
   // of the roadmap) — a dedicated, inspectable stage, not logic buried
   // inside retrieval. Kept as the single source of truth so this function
@@ -719,6 +664,7 @@ function buildQueryTextFromEvidence(measurements, findings) {
  * than silently substituting a fake similarity score.
  */
 export async function hybridRetrieveKnowledge({ measurements = [], findings = [] } = {}, { topK = 5 } = {}) {
+  await ensureTable();
   const tags = new Set(routeEvidence({ measurements, findings }).knowledgeDomains);
   if (!tags.size) return [];
 

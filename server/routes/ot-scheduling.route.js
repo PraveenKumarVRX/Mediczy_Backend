@@ -144,7 +144,18 @@ router.put('/:id/status', authUser, requireModule('ot'), async (req, res) => {
     });
     res.json(result);
   } catch (err) {
-    res.status(403).json({ success: false, message: err.message, consentBlocked: err.consentBlocked || false });
+    // Every refusal here is a safety stop of some kind, but they are not the
+    // same stop: an incomplete WHO checklist, a missing signed operative note
+    // and a consent block each need a different response from the theatre
+    // screen, so the code travels with the message instead of all three
+    // arriving as an indistinguishable 403.
+    res.status(err.status || 403).json({
+      success: false,
+      message: err.message,
+      code: err.code || 'OT_STATUS_BLOCKED',
+      details: err.details || null,
+      consentBlocked: err.consentBlocked || false,
+    });
   }
 });
 

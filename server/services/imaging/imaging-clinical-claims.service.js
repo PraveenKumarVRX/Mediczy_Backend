@@ -19,30 +19,17 @@
  */
 import pool from '../../db/pgPool.js';
 
-const ensureTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS imaging_clinical_claims (
-      id             BIGSERIAL PRIMARY KEY,
-      draft_id       BIGINT NOT NULL,
-      study_id       BIGINT NOT NULL,
-      tenant_id      BIGINT,
-      claim_id       VARCHAR(50) NOT NULL,
-      fact_id        VARCHAR(50),
-      subject        VARCHAR(255) NOT NULL,
-      predicate      VARCHAR(50) NOT NULL,
-      object_value   NUMERIC,
-      object_unit    VARCHAR(20),
-      source         VARCHAR(150),
-      confidence     NUMERIC,
-      status         VARCHAR(20) NOT NULL,
-      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (draft_id, claim_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_clinical_claims_draft ON imaging_clinical_claims (draft_id);
-    CREATE INDEX IF NOT EXISTS idx_imaging_clinical_claims_subject ON imaging_clinical_claims (subject);
-  `);
-};
-ensureTable().catch((e) => console.error('[ImagingClinicalClaims] Table init error:', e.message));
+import { schemaVerifier } from '../../utils/schema-guard.js';
+const SCHEMA_TABLES = ['imaging_clinical_claims'];
+
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureTable = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004600-imaging-ops-governance before using imaging clinical claims',
+});
 
 const STATE_TO_STATUS = {
   POSITIVE: 'validated',
@@ -76,6 +63,7 @@ export function buildClinicalClaims(clinicalFactModel, { inferenceBackend = null
 }
 
 export async function persistClinicalClaims({ draftId, studyId, tenantId, claims }) {
+  await ensureTable();
   for (const c of claims) {
     await pool.query(
       `INSERT INTO imaging_clinical_claims
@@ -91,6 +79,7 @@ export async function persistClinicalClaims({ draftId, studyId, tenantId, claims
  * say about this subject" — used to verify a report sentence's claim
  * against the atomic ground truth, not the other way around. */
 export async function getClaimsForSubject(draftId, subject) {
+  await ensureTable();
   const { rows } = await pool.query(
     `SELECT * FROM imaging_clinical_claims WHERE draft_id = $1 AND subject = $2`,
     [draftId, subject],

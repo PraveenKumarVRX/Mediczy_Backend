@@ -13,42 +13,17 @@
  */
 import pool from '../../db/pgPool.js';
 
-const ensureTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS imaging_report_provenance (
-      id                      BIGSERIAL PRIMARY KEY,
-      draft_id                BIGINT NOT NULL,
-      study_id                BIGINT NOT NULL,
-      study_instance_uid      VARCHAR(128),
-      tenant_id                BIGINT,
-      inference_backend        VARCHAR(100),
-      findings_source           VARCHAR(150),
-      measurements              JSONB NOT NULL DEFAULT '[]',
-      knowledge_used            JSONB NOT NULL DEFAULT '[]',
-      report_drafter_version    VARCHAR(50),
-      template_id               BIGINT,
-      llm_model                 VARCHAR(150),
-      llm_provider               VARCHAR(100),
-      qa_gate_result             JSONB,
-      qa_passed                  BOOLEAN,
-      qa_severity                 VARCHAR(20),
-      confidence_score             NUMERIC,
-      created_at                    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_imaging_report_provenance_draft ON imaging_report_provenance (draft_id);
-    CREATE INDEX IF NOT EXISTS idx_imaging_report_provenance_study ON imaging_report_provenance (study_id);
-    -- "Why heuristic" — real reason MR inference didn't run a real backend
-    -- (governance lock / applicability abstain / fetch gap), from
-    -- inference/engine.py::mr_backend_status(). Table pre-existed this
-    -- column (see the imaging_evidence_facts lesson from item 9), so this
-    -- needs its own ALTER, not just the CREATE TABLE above.
-    ALTER TABLE imaging_report_provenance ADD COLUMN IF NOT EXISTS applicability JSONB;
-    -- Knowledge Router (P4) decision — real, persisted, inspectable, not a
-    -- fact only known transiently inside a retrieval call.
-    ALTER TABLE imaging_report_provenance ADD COLUMN IF NOT EXISTS routing_decision JSONB;
-  `);
-};
-ensureTable().catch((e) => console.error('[ImagingProvenance] Table init error:', e.message));
+import { schemaVerifier } from '../../utils/schema-guard.js';
+const SCHEMA_TABLES = ['imaging_report_provenance'];
+
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureTable = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004500-imaging-evidence-governance before using imaging report provenance',
+});
 
 export async function recordProvenance({
   draftId,
@@ -65,6 +40,7 @@ export async function recordProvenance({
   confidence,
   routingDecision = null,
 }) {
+  await ensureTable();
   const inferenceBackend = findings?.inference_backend || null;
   const findingsSource = findings?.source || null;
   const measurements = findings?.measurements || [];
@@ -111,6 +87,7 @@ export async function recordProvenance({
 }
 
 export async function getProvenanceForDraft(draftId) {
+  await ensureTable();
   const r = await pool.query(
     `SELECT * FROM imaging_report_provenance WHERE draft_id = $1 ORDER BY created_at DESC LIMIT 1`,
     [draftId],

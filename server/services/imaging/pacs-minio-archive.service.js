@@ -32,6 +32,7 @@ import pool from '../../db/pgPool.js';
 import logger from '../../config/logger.js';
 import { getPacsMinioBucket } from '../../utils/s3-storage.js';
 
+import { schemaVerifier } from '../../utils/schema-guard.js';
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
 const SOURCE_BUCKET = process.env.PACS_ARCHIVE_SOURCE_BUCKET || getPacsMinioBucket() || 'mediczy-pacs-storage';
 const CONCURRENCY = Math.max(1, Number(process.env.PACS_MINIO_ARCHIVE_CONCURRENCY || 4));
@@ -65,24 +66,16 @@ function sourceClient() {
   return new S3Client({ region: AWS_REGION });
 }
 
-async function ensureLogTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS pacs_minio_archive_log (
-      id BIGSERIAL PRIMARY KEY,
-      object_key TEXT NOT NULL,
-      size_bytes BIGINT,
-      status TEXT NOT NULL,
-      error_message TEXT,
-      deleted_from_source BOOLEAN NOT NULL DEFAULT FALSE,
-      archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (object_key)
-    )
-  `).catch(() => {});
-  await pool.query(
-    `ALTER TABLE pacs_minio_archive_log
-     ADD COLUMN IF NOT EXISTS deleted_from_source BOOLEAN NOT NULL DEFAULT FALSE`,
-  ).catch(() => {});
-}
+const SCHEMA_TABLES = ['pacs_minio_archive_log'];
+
+// Owned by the migration, verified here. Creating these on demand would let a
+// skipped migration look healthy on tables without its indexes and constraints.
+const ensureLogTable = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004600-imaging-ops-governance before using the PACS archive',
+});
 
 async function* listAllKeys(client, bucket) {
   let token;
@@ -203,6 +196,7 @@ async function hydrateOrthancOnlyInstances() {
 
 /** @param {{ dryRun?: boolean, force?: boolean }} [opts] */
 export async function archivePacsBucketToMinio(opts = {}) {
+  await ensureLogTable();
   if (!isPacsArchiveMinioConfigured()) {
     throw new Error('Configure PACS_ARCHIVE_MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET for the PACS archive job');
   }

@@ -16,7 +16,11 @@ test('imaging operations services are migration-owned and fail closed when absen
     const source = fs.readFileSync(path.join(root, relative), 'utf8');
     expect(source).not.toMatch(/CREATE\s+(TABLE|INDEX)|ALTER\s+TABLE|CREATE\s+EXTENSION/i);
     expect(source).toContain('SCHEMA_NOT_MIGRATED');
-    expect(source).toContain('information_schema.tables');
+    // The information_schema lookup moved into the shared verifier so every
+    // service checks the same way and the awkward row shape is handled once.
+    // schema-guard.test.js asserts that it really queries information_schema.
+    expect(source).toContain('schema-guard.js');
+    expect(source).toMatch(/schemaVerifier\(\{/);
   }
 });
 
