@@ -2,6 +2,8 @@ import paymentService from '../services/payment.service.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import kafkaEvents from '../services/kafka-events.service.js';
 import { getIntelligentDB } from '../db/intelligent-db-adapter.js';
+import { QueryTypes } from 'sequelize';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const db = getIntelligentDB();
 
@@ -273,51 +275,78 @@ class PaymentController {
    */
   async getTransactions(req, res) {
     try {
-      const {
-        status,
-        clientType,
-        gatewayId,
-        startDate,
-        endDate,
-        limit = 100,
-        offset = 0
-      } = req.query;
+      const { status, startDate, endDate } = req.query;
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
-      // Build filter criteria
-      const filter = {};
-      if (status) filter.status = status;
-      if (clientType) filter.clientType = clientType;
-      if (gatewayId) filter.gatewayId = gatewayId;
+      // This read used to go to db.PaymentTransaction, an in-memory adapter
+      // whose backing map was never initialised, so every call threw
+      // "Cannot read properties of undefined (reading 'has')" and answered
+      // 500. There is no payment_transactions table either; the real history
+      // is in `payments`.
+      //
+      // The crash was also the only thing keeping this endpoint private. It is
+      // gated by authUser alone and filtered by nothing, so a working version
+      // of the old code would have handed every payment in the system —
+      // amounts, emails, phones, card last-four, gateway ids — to any
+      // logged-in patient who asked. It is now scoped to the caller, and only
+      // an admin sees past their own.
+      const role = String(req.user?.role || req.user?.userType || '').toLowerCase();
+      const isAdmin = ['admin', 'super_admin', 'superadmin'].includes(role);
+      const userId = Number(req.user?.id || req.user?.userId);
+      if (!isAdmin && !Number.isSafeInteger(userId)) {
+        return res.status(401).json({ success: false, message: 'Not authenticated' });
+      }
 
-      // Fetch transactions
-      const transactions = await db.PaymentTransaction.findAll({
-        where: filter,
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        order: [['createdAt', 'DESC']]
-      });
+      const filters = [];
+      const replacements = { limit, offset };
+      if (!isAdmin) { filters.push('p."userId" = :userId'); replacements.userId = userId; }
+      if (status) { filters.push('p.status::text = :status'); replacements.status = String(status); }
+      if (startDate) { filters.push('p."createdAt" >= :startDate'); replacements.startDate = startDate; }
+      if (endDate) { filters.push('p."createdAt" <= :endDate'); replacements.endDate = endDate; }
+      const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
-      // Calculate statistics
-      const allTransactions = await db.PaymentTransaction.findAll();
-      const stats = this.calculateStatistics(allTransactions);
+      // Deliberately narrow: no gatewaySignature and no gatewayResponse, which
+      // carry the signing material and the gateway's full payload.
+      const transactions = await postgresSequelize.query(
+        `SELECT p.id, p."paymentId", p."orderId", p.amount, p.currency,
+                p.gateway::text AS gateway, p.status::text AS status, p.method,
+                p."cardLast4", p."cardBrand", p."refundedAmount",
+                p."errorCode", p."errorMessage", p."createdAt", p."updatedAt"
+           FROM payments p
+           ${where}
+          ORDER BY p."createdAt" DESC
+          LIMIT :limit OFFSET :offset`,
+        { replacements, type: QueryTypes.SELECT }
+      );
+
+      const [totals] = await postgresSequelize.query(
+        `SELECT COUNT(*)::int AS "total",
+                COALESCE(SUM(p.amount), 0)::float AS "totalAmount",
+                COUNT(*) FILTER (WHERE p.status::text IN ('captured', 'paid', 'success'))::int AS "successful",
+                COUNT(*) FILTER (WHERE p.status::text IN ('failed', 'error'))::int AS "failed",
+                COALESCE(SUM(p."refundedAmount"), 0)::float AS "refundedAmount"
+           FROM payments p
+           ${where}`,
+        { replacements, type: QueryTypes.SELECT }
+      );
 
       res.json({
         success: true,
+        scope: isAdmin ? 'all' : 'own',
         transactions,
-        stats,
-        pagination: {
-          limit: parseInt(limit),
-          offset: parseInt(offset),
-          total: transactions.length
-        }
+        stats: {
+          total: totals?.total ?? 0,
+          totalAmount: totals?.totalAmount ?? 0,
+          successful: totals?.successful ?? 0,
+          failed: totals?.failed ?? 0,
+          refundedAmount: totals?.refundedAmount ?? 0,
+        },
+        pagination: { limit, offset, total: totals?.total ?? 0 },
       });
     } catch (error) {
       console.error('❌ Error fetching transactions:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: error.message
-      });
+      res.status(500).json({ success: false, message: 'Could not load payment history' });
     }
   }
 

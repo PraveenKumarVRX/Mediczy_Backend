@@ -643,7 +643,7 @@ describe('the test policies', () => {
     expect(script).toContain('testData: true');
     expect(script).toContain("seededBy: MARKER");
     expect(script).toMatch(/\[TEST\]/);
-    expect(script).toContain("'TEST-MSH-GHI-001'");
+    expect(script).toMatch(/TEST-C\$\{corporateId\}-GHI-001/);
   });
 
   it('invents no insurer that exists', () => {

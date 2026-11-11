@@ -6,6 +6,7 @@
  *   node scripts/ssm-env-loader.mjs scripts/seed-test-group-policies.mjs --corporate=4            # report
  *   node scripts/ssm-env-loader.mjs scripts/seed-test-group-policies.mjs --corporate=4 --apply
  *   ... --password='<for the test employee>'   # optional; otherwise a random hash is set
+ *   ... --employee=7641                        # attach to an existing account instead of making one
  *   ... --remove --apply                       # delete everything this script created
  *
  * Reports by default. Nothing is written without --apply.
@@ -34,7 +35,7 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 
 const MARKER = 'seed-test-group-policies';
 const TEST_EMAIL = 'test.policy.employee@example.invalid';
-const TEST_EMPLOYEE_CODE = 'TEST-POL-01';
+const employeeCodeFor = (corporateId) => `TEST-POL-C${corporateId}`;
 const INSURER_NAME = '[TEST] Demo Insurer';
 
 const APPLY = process.argv.includes('--apply');
@@ -61,12 +62,12 @@ const meta = (extra = {}) => JSON.stringify({ testData: true, seededBy: MARKER, 
  * numbers are illustrative and the names say so; nothing here claims to be a
  * real product.
  */
-const policySpecs = (corporateName) => [
+const policySpecs = (corporateName, corporateId) => [
   {
     key: 'GHI',
     policyType: 'GHI',
     policyName: `[TEST] Group Health Insurance — ${corporateName}`,
-    policyNumber: 'TEST-MSH-GHI-001',
+    policyNumber: `TEST-C${corporateId}-GHI-001`,
     sumInsured: 500000, floater: true, copayPercent: 0, roomRentLimit: 5000,
     maternityCovered: true, voluntary: false,
     waitingPeriods: { preExisting: '24 months', specificAilments: '12 months', maternity: '9 months' },
@@ -78,7 +79,7 @@ const policySpecs = (corporateName) => [
     key: 'GHI_TOPUP',
     policyType: 'GHI_TOPUP',
     policyName: '[TEST] Health top-up',
-    policyNumber: 'TEST-MSH-TOPUP-001',
+    policyNumber: `TEST-C${corporateId}-TOPUP-001`,
     sumInsured: 1000000, floater: true, voluntary: true, premiumPerYear: 4800,
     deductibleFrom: 'GHI',
     family: ['self', 'spouse', 'child'],
@@ -88,7 +89,7 @@ const policySpecs = (corporateName) => [
     key: 'PARENTS_GHI',
     policyType: 'PARENTS_GHI',
     policyName: '[TEST] Parents health insurance',
-    policyNumber: 'TEST-MSH-PAR-001',
+    policyNumber: `TEST-C${corporateId}-PAR-001`,
     sumInsured: 300000, floater: true, copayPercent: 20, voluntary: true, premiumPerYear: 18500,
     waitingPeriods: { preExisting: '24 months' },
     family: ['father', 'mother'],
@@ -98,7 +99,7 @@ const policySpecs = (corporateName) => [
     key: 'PARENTS_TOPUP',
     policyType: 'PARENTS_TOPUP',
     policyName: '[TEST] Parents top-up',
-    policyNumber: 'TEST-MSH-PARTOP-001',
+    policyNumber: `TEST-C${corporateId}-PARTOP-001`,
     sumInsured: 500000, floater: true, copayPercent: 20, voluntary: true, premiumPerYear: 7200,
     deductibleFrom: 'PARENTS_GHI',
     // An open enrolment window, so the app's "Add during enrolment" card has
@@ -111,7 +112,7 @@ const policySpecs = (corporateName) => [
     key: 'GPA',
     policyType: 'GPA',
     policyName: '[TEST] Group Personal Accident',
-    policyNumber: 'TEST-MSH-GPA-001',
+    policyNumber: `TEST-C${corporateId}-GPA-001`,
     coverAmount: 2000000, voluntary: false,
     benefitSchedule: [
       { event: 'Accidental death', percent: 100 },
@@ -126,7 +127,7 @@ const policySpecs = (corporateName) => [
     key: 'GTLI',
     policyType: 'GTLI',
     policyName: '[TEST] Group Term Life Insurance',
-    policyNumber: 'TEST-MSH-GTLI-001',
+    policyNumber: `TEST-C${corporateId}-GTLI-001`,
     coverAmount: 3000000, voluntary: false,
     family: ['self'],
     nominee: { name: '[TEST] Spouse Of Test', relation: 'spouse' },
@@ -135,7 +136,7 @@ const policySpecs = (corporateName) => [
     key: 'OPD',
     policyType: 'OPD',
     policyName: '[TEST] Outpatient cover',
-    policyNumber: 'TEST-MSH-OPD-001',
+    policyNumber: `TEST-C${corporateId}-OPD-001`,
     sumInsured: 25000, floater: true, voluntary: false,
     opLimits: [
       { category: 'Consultation', limit: 8000, used: 1200 },
@@ -164,11 +165,15 @@ const FAMILY = {
   mother: { relation: 'mother', name: '[TEST] Mother Of Test', dob: '1961-11-15' },
 };
 
-const findSeeded = async () => {
+const findSeeded = async (corporateId = null) => {
+  // Scoped by corporate when one is named, so a set seeded for one employer
+  // neither blocks nor is removed by work on another.
   const policies = await q(
-    `SELECT id, "policyNumber", "policyName", "policyType" FROM insurance_policies
-      WHERE metadata->>'seededBy' = :marker ORDER BY id`,
-    { marker: MARKER }
+    `SELECT id, "policyNumber", "policyName", "policyType", "corporateId" FROM insurance_policies
+      WHERE metadata->>'seededBy' = :marker
+        AND (:corporateId IS NULL OR "corporateId" = :corporateId)
+      ORDER BY id`,
+    { marker: MARKER, corporateId }
   );
   const members = policies.length
     ? await q(
@@ -177,13 +182,21 @@ const findSeeded = async () => {
         { ids: policies.map((p) => p.id) }
       )
     : [];
-  const [user] = await q('SELECT id, "firstName", "lastName" FROM users WHERE email = :email LIMIT 1', { email: TEST_EMAIL });
+  // Only an account this script created. One borrowed with --employee belongs
+  // to somebody else and must survive --remove.
+  const [user] = await q(
+    `SELECT id, "firstName", "lastName" FROM users
+      WHERE email = :email AND metadata->>'seededBy' = :marker LIMIT 1`,
+    { email: TEST_EMAIL, marker: MARKER }
+  );
   const [insurer] = await q('SELECT id FROM insurance_companies WHERE "companyName" = :name LIMIT 1', { name: INSURER_NAME });
   return { policies, members, user: user || null, insurer: insurer || null };
 };
 
 const remove = async () => {
-  const found = await findSeeded();
+  const scope = Number(arg('corporate')) || null;
+  const found = await findSeeded(scope);
+  if (scope) console.log(`scoped to corporate #${scope}`);
   console.log(`to remove: ${found.policies.length} policies, ${found.members.length} member rows`
     + `${found.user ? `, test account #${found.user.id}` : ''}${found.insurer ? ', the test insurer' : ''}`);
   for (const p of found.policies) console.log(`  ${p.policyNumber}  ${p.policyName}`);
@@ -202,7 +215,13 @@ const remove = async () => {
       await exec('DELETE FROM users WHERE id = :id', { id: found.user.id }, transaction);
     }
     if (found.insurer) {
-      await exec('DELETE FROM insurance_companies WHERE id = :id', { id: found.insurer.id }, transaction);
+      // Shared across corporates — only remove it once no seeded policy points
+      // at it any more.
+      const [stillUsed] = await q(
+        'SELECT 1 AS used FROM insurance_policies WHERE "insuranceCompanyId" = :id LIMIT 1',
+        { id: found.insurer.id }, transaction
+      );
+      if (!stillUsed) await exec('DELETE FROM insurance_companies WHERE id = :id', { id: found.insurer.id }, transaction);
     }
     await transaction.commit();
   } catch (error) {
@@ -221,9 +240,9 @@ const seed = async (corporateId) => {
   );
   if (!corporate) { console.error(`No corporate #${corporateId}`); return 1; }
 
-  const specs = policySpecs(corporate.companyName);
+  const specs = policySpecs(corporate.companyName, corporate.id);
   console.log(`corporate: #${corporate.id} ${corporate.companyName} (${corporate.unique_id})`);
-  console.log(`test employee: ${TEST_EMAIL} (code ${TEST_EMPLOYEE_CODE})`);
+  console.log(`test employee: ${arg('employee') ? '#' + arg('employee') + ' (existing)' : TEST_EMAIL + ' (code ' + employeeCodeFor(corporate.id) + ')'}`);
   console.log(`insurer: ${INSURER_NAME}\n`);
   console.log('policies:');
   for (const spec of specs) {
@@ -240,9 +259,9 @@ const seed = async (corporateId) => {
   console.log('\nNot set, on purpose: tpaId, policyDocumentUrl and claimFormUrl stay NULL, so the app');
   console.log('exercises its "not provided by your employer" path instead of showing an invented link.');
 
-  const existing = await findSeeded();
+  const existing = await findSeeded(corporate.id);
   if (existing.policies.length) {
-    console.log(`\nAlready seeded: ${existing.policies.length} policies exist. Re-run with --remove --apply first to replace them.`);
+    console.log(`\nAlready seeded for this corporate: ${existing.policies.length} policies. Re-run with --remove --corporate=${corporate.id} --apply first to replace them.`);
     if (!APPLY) return 0;
     return 0;
   }
@@ -264,9 +283,38 @@ const seed = async (corporateId) => {
       );
     }
 
-    // 2. the test employee account
-    let [user] = await q('SELECT id FROM users WHERE email = :email LIMIT 1', { email: TEST_EMAIL }, transaction);
+    // 2. the employee whose family the policies hang off.
+    //
+    // --employee borrows an account that already exists, so a tester can see
+    // the wallet on the login they already use. It must be an active employee
+    // of this corporate: attaching a family's insurance to an account that is
+    // not on the roster would show one company's cover inside another's.
+    const borrowedId = Number(arg('employee'));
+    let user = null;
     const supplied = arg('password');
+
+    if (arg('employee')) {
+      if (!Number.isSafeInteger(borrowedId) || borrowedId < 1) {
+        throw new Error('--employee must be a positive account id');
+      }
+      const [roster] = await q(
+        `SELECT u.id, u.email
+           FROM users u
+           JOIN user_associations ua ON ua."userId" = u.id
+            AND ua."entityType" = 'corporate' AND ua.role = 'employee' AND ua.status = 'active'
+          WHERE u.id = :id AND ua."entityId" = :corporateId
+          LIMIT 1`,
+        { id: borrowedId, corporateId: corporate.id },
+        transaction
+      );
+      if (!roster) {
+        throw new Error(`Account #${borrowedId} is not an active employee of corporate #${corporate.id}`);
+      }
+      user = { id: roster.id };
+      console.log(`using existing account #${roster.id} (${roster.email})`);
+    }
+
+    if (!user) [user] = await q('SELECT id FROM users WHERE email = :email LIMIT 1', { email: TEST_EMAIL }, transaction);
     if (!user) {
       [user] = await q(
         `INSERT INTO users ("firstName", "lastName", email, password, "phoneNumber", role, status,
@@ -290,14 +338,16 @@ const seed = async (corporateId) => {
         { password: await bcrypt.hash(supplied, 10), id: user.id }, transaction);
     }
 
-    // 3. the roster row and the association the employee endpoints read
+    // 3. the roster row and the association the employee endpoints read.
+    // A borrowed account already has both — that is what --employee checked.
+    if (!arg('employee')) {
     const [employeeRow] = await q(
       `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, department, designation,
                                         "isActive", metadata, "createdAt", "updatedAt")
        VALUES (:corporateId, :userId, :code, :email, 'Test', 'Test Employee', true, :metadata::jsonb, NOW(), NOW())
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      { corporateId: corporate.id, userId: user.id, code: TEST_EMPLOYEE_CODE, email: TEST_EMAIL, metadata: meta() },
+      { corporateId: corporate.id, userId: user.id, code: employeeCodeFor(corporate.id), email: TEST_EMAIL, metadata: meta() },
       transaction
     );
     // getUserCorporate() reads user_associations, not corporate_employees, so
@@ -314,6 +364,7 @@ const seed = async (corporateId) => {
       { userId: user.id, corporateId: corporate.id, metadata: meta(), corpUid: corporate.unique_id },
       transaction
     );
+    }
 
     // 4. the policies, base before top-up so a top-up can point at its base
     const idByKey = new Map();
@@ -389,6 +440,8 @@ const seed = async (corporateId) => {
             userId: isSelf ? user.id : null,
             primary: user.id,
             relation: person.relation,
+            // The employee's own row takes its name from their account; only
+            // dependants carry a name on the membership row.
             name: isSelf ? null : person.name,
             dob: person.dob,
             startDate: `${new Date().getFullYear()}-04-01`,
@@ -415,6 +468,10 @@ const seed = async (corporateId) => {
 
     await transaction.commit();
     console.log(`\nSeeded ${specs.length} policies for corporate #${corporate.id}, employee account #${user.id}.`);
+    if (arg('employee')) {
+      console.log('That account already existed; its password is untouched.');
+      return 0;
+    }
     if (!supplied) {
       console.log('The test account has a random password. Set one with --password=... or the usual reset flow before signing in.');
     }

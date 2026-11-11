@@ -131,30 +131,37 @@ router.get('/hospitals', async (req, res) => {
       if (city) { whereClause += ' AND city LIKE :city'; replacements.city = `%${city}%`; }
       if (state) { whereClause += ' AND state LIKE :state'; replacements.state = `%${state}%`; }
       if (pincode) { whereClause += ' AND pincode = :pincode'; replacements.pincode = pincode; }
-      if (search) { whereClause += ' AND (name LIKE :search OR address LIKE :search)'; replacements.search = `%${search}%`; }
-      if (is_spn === 'true') { whereClause += ' AND is_spn = true'; }
+      if (search) { whereClause += ' AND (hospital_name ILIKE :search OR address ILIKE :search)'; replacements.search = `%${search}%`; }
+      if (is_spn === 'true') { whereClause += " AND network_type IS NOT NULL AND lower(network_type) <> 'none'"; }
       const countQuery = `SELECT COUNT(*) as total FROM hospitals ${whereClause}`;
       const [countResult] = await sequelize.query(countQuery, { replacements, type: QueryTypes.SELECT });
       const query = `
-        SELECT 
+        -- The hospitals table has no name / phone / mobile / entity_type /
+        -- google_place_id / is_spn / active columns; they are hospital_name,
+        -- phone_number, network_type and status. Selecting the old names threw
+        -- 42703, which is why the hospital detail endpoint answered 500 for
+        -- every integer id. Aliased back to the names the clients read.
+        SELECT
           id,
-          name,
+          hospital_name AS name,
           address,
           city,
           state,
           pincode,
-          phone,
-          mobile,
+          phone_number AS phone,
+          phone_number AS mobile,
           email,
-          entity_type,
-          google_place_id,
-          is_spn,
-          active
+          'hospital' AS entity_type,
+          NULL::text AS google_place_id,
+          (network_type IS NOT NULL AND lower(network_type) <> 'none') AS is_spn,
+          (lower(COALESCE(status, 'active')) = 'active') AS active,
+          latitude,
+          longitude
         FROM hospitals 
         ${whereClause}
         ORDER BY 
-          CASE WHEN is_spn = true THEN 0 ELSE 1 END,
-          name
+          CASE WHEN network_type IS NOT NULL AND lower(network_type) <> 'none' THEN 0 ELSE 1 END,
+          hospital_name
         LIMIT :limit OFFSET :offset
       `;
       const hospitals = await sequelize.query(query, {
@@ -266,20 +273,22 @@ router.get('/hospitals/:id', async (req, res) => {
     }
 
     const [hospital] = await sequelize.query(
-      `SELECT 
+      `SELECT
         id,
-        name,
+        hospital_name AS name,
         address,
         city,
         state,
         pincode,
-        phone,
-        mobile,
+        phone_number AS phone,
+        phone_number AS mobile,
         email,
-        entity_type,
-        google_place_id,
-        is_spn,
-        active,
+        'hospital' AS entity_type,
+        NULL::text AS google_place_id,
+        (network_type IS NOT NULL AND lower(network_type) <> 'none') AS is_spn,
+        (lower(COALESCE(status, 'active')) = 'active') AS active,
+        latitude,
+        longitude,
         created_at
       FROM hospitals 
       WHERE id = :id`,
@@ -329,23 +338,26 @@ router.get('/hospitals/place/:placeId', async (req, res) => {
       });
     }
 
+    // hospitals has no google_place_id column, so this legacy lookup can never
+    // match a row. It is kept as an explicit empty result rather than a 500:
+    // the tenant lookup above is the live path for a place id.
     const [hospital] = await sequelize.query(
-      `SELECT 
+      `SELECT
         id,
-        name,
+        hospital_name AS name,
         address,
         city,
         state,
         pincode,
-        phone,
-        mobile,
+        phone_number AS phone,
+        phone_number AS mobile,
         email,
-        entity_type,
-        google_place_id,
-        is_spn,
-        active
+        'hospital' AS entity_type,
+        NULL::text AS google_place_id,
+        (network_type IS NOT NULL AND lower(network_type) <> 'none') AS is_spn,
+        (lower(COALESCE(status, 'active')) = 'active') AS active
       FROM hospitals 
-      WHERE google_place_id = :placeId`,
+      WHERE metadata->>'googlePlaceId' = :placeId`,
       {
         replacements: { placeId },
         type: QueryTypes.SELECT
@@ -378,16 +390,16 @@ router.get('/hospitals/spn/list', async (req, res) => {
     const { city, state, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
-    let whereClause = 'WHERE is_spn = true AND active = true';
+    let whereClause = "WHERE network_type IS NOT NULL AND lower(network_type) <> 'none' AND lower(COALESCE(status, 'active')) = 'active'";
     const replacements = {};
 
     if (city) {
-      whereClause += ' AND city LIKE :city';
+      whereClause += ' AND city ILIKE :city';
       replacements.city = `%${city}%`;
     }
 
     if (state) {
-      whereClause += ' AND state LIKE :state';
+      whereClause += ' AND state ILIKE :state';
       replacements.state = `%${state}%`;
     }
 
@@ -398,20 +410,22 @@ router.get('/hospitals/spn/list', async (req, res) => {
     });
 
     const query = `
-      SELECT 
+      SELECT
         id,
-        name,
+        hospital_name AS name,
         address,
         city,
         state,
         pincode,
-        phone,
-        mobile,
+        phone_number AS phone,
+        phone_number AS mobile,
         email,
-        google_place_id
+        NULL::text AS google_place_id,
+        latitude,
+        longitude
       FROM hospitals 
       ${whereClause}
-      ORDER BY name
+      ORDER BY hospital_name
       LIMIT :limit OFFSET :offset
     `;
 

@@ -483,12 +483,29 @@ router.patch('/admin/claims/:id/status', authUser, requireRole(['admin', 'hospit
 // Get active providers
 router.get('/providers', async (req, res) => {
   try {
+    // The attribute list asked for "logo" and "supportedServices". The table
+    // has neither: the column is logoUrl, and there is no supportedServices
+    // at all — so every call to this endpoint answered 500. The model
+    // (insurance.model.intelligent.js) has always been right; only this list
+    // was wrong.
     const providers = await InsuranceProvider.findAll({
       where: { isActive: true },
-      attributes: ['id', 'name', 'logo', 'website', 'supportedServices'],
+      attributes: ['id', 'name', 'code', 'logoUrl', 'website', 'contactPhone', 'metadata'],
       order: [['name', 'ASC']]
     });
-    res.json({ providers });
+    res.json({
+      providers: providers.map((provider) => {
+        const row = provider.toJSON ? provider.toJSON() : provider;
+        return {
+          ...row,
+          // Kept for the clients that already read these names.
+          logo: row.logoUrl ?? null,
+          supportedServices: Array.isArray(row.metadata?.supportedServices)
+            ? row.metadata.supportedServices
+            : [],
+        };
+      }),
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Failed to fetch providers', error: e.message });
