@@ -4,6 +4,8 @@ const sendOutboundEmail = jest.fn();
 const dbQuery = jest.fn();
 const sendWhatsApp = jest.fn();
 const mailAttachmentsForCategory = jest.fn();
+const recordSentEmail = jest.fn();
+const teamMemberForCategory = jest.fn();
 
 jest.unstable_mockModule('../services/emailService.js', () => ({ default: { sendOutboundEmail } }));
 jest.unstable_mockModule('../services/notification.service.js', () => ({ default: { sendWhatsApp } }));
@@ -15,6 +17,9 @@ jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({
 }));
 jest.unstable_mockModule('../services/team-email-template-attachments.service.js', () => ({
   mailAttachmentsForCategory,
+}));
+jest.unstable_mockModule('../services/team-sent-folder.service.js', () => ({
+  recordSentEmail, teamMemberForCategory, default: { recordSentEmail, teamMemberForCategory },
 }));
 
 const { notifyAhcEntitlement } = await import('../services/corporate-ahc-entitlement-notification.service.js');
@@ -37,6 +42,8 @@ beforeEach(() => {
   sendOutboundEmail.mockReset().mockResolvedValue({ messageId: 'm1' });
   sendWhatsApp.mockReset();
   mailAttachmentsForCategory.mockReset();
+  recordSentEmail.mockReset().mockResolvedValue(99);
+  teamMemberForCategory.mockReset().mockResolvedValue(6);
   jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => { console.warn.mockRestore?.(); });
@@ -140,6 +147,38 @@ describe('the AHC welcome email carries the file attached to the template', () =
     expect(payload.htmlContent).toContain('Signing in to My SmartHealth');
     expect(payload.htmlContent).toContain(MEMBER.email);
     expect(payload.htmlContent).not.toMatch(/your password is|temporary password/i);
+  });
+
+  it('records the send in the Team Sent folder', async () => {
+    // Automated mail used to leave no trace a human could see: EmailLog is an
+    // in-memory store, email_logs is never written on this path, and only the
+    // two hand-driven routes created an EmailInbox row. The desk was told mail
+    // had gone out and found an empty Sent folder.
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [LETTER], templateId: 't1', reason: 'ok' });
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+
+    expect(teamMemberForCategory).toHaveBeenCalledWith('corporate_ahc');
+    const [recorded] = recordSentEmail.mock.calls[0];
+    expect(recorded).toMatchObject({ teamMemberId: 6, to: MEMBER.email, labels: ['sent', 'ahc', 'invitation'] });
+    expect(recorded.subject).toContain('Equitas AHC 2026-27');
+    expect(recorded.htmlBody).toContain('Signing in to My SmartHealth');
+    expect(recorded.attachments).toEqual([LETTER]);
+  });
+
+  it('labels a reminder by its own event type', async () => {
+    arm();
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'reminder_7', validTo: '2026-12-15' });
+    expect(recordSentEmail.mock.calls[0][0].labels).toEqual(['sent', 'ahc', 'reminder_7']);
+  });
+
+  it('does not record anything when the send failed', async () => {
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [], templateId: null, reason: 'no_attachments' });
+    sendOutboundEmail.mockRejectedValue(new Error('SMTP 554'));
+    const result = await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    expect(result.emailStatus).toBe('failed');
+    expect(recordSentEmail).not.toHaveBeenCalled();
   });
 
   it('stays idempotent — a duplicate claim sends nothing', async () => {

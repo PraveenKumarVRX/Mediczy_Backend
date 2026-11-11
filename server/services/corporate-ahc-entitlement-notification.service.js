@@ -4,6 +4,7 @@ import whatsappProductionService from './whatsapp-production.service.js';
 import { postgresSequelize as db } from '../db/postgres-sequelize.js';
 import { ahcInvitationMessage } from './corporate-ahc-message-templates.service.js';
 import { mailAttachmentsForCategory } from './team-email-template-attachments.service.js';
+import { recordSentEmail, teamMemberForCategory } from './team-sent-folder.service.js';
 
 const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /** Undo the idempotency claim when nothing was sent, so a retry is possible. */
@@ -52,9 +53,18 @@ export async function notifyAhcEntitlement({packageId,userId,eventType='invitati
   const text=eventType==='invitation'?invitation.text:`Dear ${name}, your ${member.name} is available for one use only. Please book and complete it on or before ${expiry}. After this date it cannot be used. Open https://app.mediqzy.com/health-checkups`;
   let emailStatus='not_applicable',whatsappStatus='not_applicable';
   if(member.email) {
+    const htmlContent=eventType==='invitation'?invitation.html:`<p>${esc(text)}</p>`;
     try {
-      await emailService.sendOutboundEmail(1,{to:member.email,subject,htmlContent:eventType==='invitation'?invitation.html:`<p>${esc(text)}</p>`,attachments:attachedFiles.length?attachedFiles:undefined});
+      const sent=await emailService.sendOutboundEmail(1,{to:member.email,subject,htmlContent,attachments:attachedFiles.length?attachedFiles:undefined});
       emailStatus=eventType==='invitation'&&!attachedFiles.length?'sent_no_file':'sent';
+      // Put it in the Team Sent folder. Automated mail used to leave no trace a
+      // human could see, so the desk was told it had gone and found nothing.
+      await recordSentEmail({
+        teamMemberId: await teamMemberForCategory('corporate_ahc'),
+        to: member.email, subject, htmlBody: htmlContent, textBody: text,
+        messageId: sent?.messageId || null, attachments: attachedFiles,
+        labels: ['sent', 'ahc', eventType],
+      });
     } catch { emailStatus='failed'; }
   }
   if(member.phoneNumber) { try {
