@@ -597,20 +597,20 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
     to: email,
     from: {
       email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
-      name: 'Mediqzy Corporate Health Platform'
+      name: 'My SmartHealth'
     },
-    subject: 'Welcome to Mediqzy - Corporate Portal Access 🏢',
+    subject: 'Welcome to My SmartHealth - Corporate Portal Access 🏢',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
         <div style="background-color: #7c3aed; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to Mediqzy! 🎉</h1>
+          <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to My SmartHealth! 🎉</h1>
         </div>
         
         <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: #7c3aed; margin-bottom: 20px;">Dear ${companyName} Team,</h2>
           
           <p style="font-size: 16px; line-height: 1.6; color: #374151;">
-            Your corporate account has been successfully created on Mediqzy Corporate Health Platform! 🏢
+            Your corporate account has been successfully created on My SmartHealth! 🏢
           </p>
           
           <div style="background-color: #faf5ff; border-left: 4px solid #7c3aed; padding: 20px; margin: 25px 0; border-radius: 5px;">
@@ -659,7 +659,7 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
         </div>
         
         <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-          <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
+          <p>© 2026 My SmartHealth. All rights reserved.</p>
         </div>
       </div>
     `
@@ -702,18 +702,18 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
     to: email,
     from: {
       email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
-      name: 'Mediqzy Corporate Health'
+      name: 'My SmartHealth'
     },
     subject: `Welcome to ${companyName} Employee Health Portal – Your Login Details`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
         <div style="background-color: #0f766e; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1 style="color: white; margin: 0; font-size: 26px;">Welcome to Mediqzy Employee Health Portal 🏥</h1>
+          <h1 style="color: white; margin: 0; font-size: 26px;">Welcome to My SmartHealth 🏥</h1>
         </div>
         <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: #0f766e; margin-bottom: 20px;">Dear ${firstName} ${lastName},</h2>
           <p style="font-size: 16px; line-height: 1.6; color: #374151;">
-            Your employee health account has been activated under the <strong>${companyName}</strong> corporate health program on Mediqzy. Your plan details and login credentials are below.
+            Your employee health account has been activated under the <strong>${companyName}</strong> corporate health program on My SmartHealth. Your plan details and login credentials are below.
           </p>
           <div style="background-color: #f0fdfa; border-left: 4px solid #0f766e; padding: 20px; margin: 25px 0; border-radius: 5px;">
             <h3 style="color: #0f766e; margin-top: 0;">Your Account Details</h3>
@@ -767,7 +767,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
           </p>
         </div>
         <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-          <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
+          <p>© 2026 My SmartHealth. All rights reserved.</p>
         </div>
       </div>
     `
@@ -814,7 +814,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
     to: email,
     from: {
       email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
-      name: 'Mediqzy Corporate Health'
+      name: 'My SmartHealth'
     },
     subject: `Reminder: Activate Your ${companyName} Health Portal Access`,
     html: `
@@ -825,7 +825,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
         <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: #0f766e; margin-bottom: 20px;">Dear ${firstName} ${lastName},</h2>
           <p style="font-size: 16px; line-height: 1.6; color: #374151;">
-            This is a friendly reminder that your employee health account under the <strong>${companyName}</strong> corporate health program on Mediqzy is ready and waiting. We've issued a new temporary password below so you can log in right away.
+            This is a friendly reminder that your employee health account under the <strong>${companyName}</strong> corporate health program on My SmartHealth is ready and waiting. We've issued a new temporary password below so you can log in right away.
           </p>
           <div style="background-color: #f0fdfa; border-left: 4px solid #0f766e; padding: 20px; margin: 25px 0; border-radius: 5px;">
             <h3 style="color: #0f766e; margin-top: 0;">Your Account Details</h3>
@@ -879,7 +879,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
           </p>
         </div>
         <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-          <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
+          <p>© 2026 My SmartHealth. All rights reserved.</p>
         </div>
       </div>
     `
@@ -916,7 +916,7 @@ export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, h
     to,
     from: {
       email: process.env.SENDGRID_FROM_EMAIL || "noreply@mediqzy.com",
-      name: "Mediqzy Corporate Health"
+      name: "My SmartHealth"
     },
     subject,
     html

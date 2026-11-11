@@ -1750,12 +1750,12 @@ router.post('/employees/send-invite', authCorporate, async (req, res) => {
     const { sendTransactionalEmail } = await import('../services/welcome-email.service.js');
     await sendTransactionalEmail({
       to: email,
-      subject: `You're invited to the Mediqzy Employee Health Portal`,
+      subject: `You're invited to My SmartHealth`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #0f766e;">Hi ${firstName},</h2>
           <p style="font-size: 15px; line-height: 1.6; color: #374151;">
-            Your employer has set up your health benefits account on the Mediqzy Employee Health Portal.
+            Your employer has set up your health benefits account on My SmartHealth.
           </p>
           <p style="font-size: 15px; line-height: 1.6; color: #374151;">
             Activate it using your Employee ID: <strong>${employeeId}</strong>

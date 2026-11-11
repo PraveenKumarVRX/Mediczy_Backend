@@ -2,6 +2,8 @@
 
 Use the employee's actual `validTo` date for every send. It is calculated as 45 days from onboarding, capped at 31 March 2027. Do not state a generic 45-day deadline in the message because the employee needs their exact personal expiry date.
 
+**Branding:** My SmartHealth is the only employee- and corporate-facing brand for this programme. Mediczy is the underlying software platform name and must not appear in corporate communications.
+
 ## Email
 
 **Subject:** `Your Equitas Bank Annual Health Checkup is ready — use it by {{valid_to}}`
@@ -12,7 +14,7 @@ Use the employee's actual `validTo` date for every send. It is calculated as 45 
 
 > Dear {{employee_name}},
 >
-> Your {{program_name}} is now available through Mediczy.
+> Your {{program_name}} is now available through My SmartHealth.
 >
 > **Your personal AHC validity ends on {{valid_to}}.** Please book and complete your health checkup on or before this date. This is a one-time benefit; unused eligibility cannot be used after expiry.
 >
@@ -20,7 +22,7 @@ Use the employee's actual `validTo` date for every send. It is calculated as 45 
 >
 > For eligibility questions, please contact your HR team. Do not reply with personal health information.
 >
-> Mediczy Healthcare
+> My SmartHealth
 
 ## Gupshup WhatsApp template submission
 
@@ -32,8 +34,8 @@ Create this template in the Gupshup WhatsApp app, submit it for approval, then s
 | Suggested category | `UTILITY` (allow Meta to recategorise if requested) |
 | Language | English (`en`) |
 | Label | AHC eligibility update |
-| Body | `Hello {{1}}, your {{2}} annual health checkup is now available through Mediczy. Your personal validity ends on {{3}}. Please complete it before this date; unused eligibility cannot be used after expiry.` |
-| Footer | `Mediczy Healthcare` |
+| Body | `Hello {{1}}, your {{2}} annual health checkup is now available through My SmartHealth. Your personal validity ends on {{3}}. Please complete it before this date; unused eligibility cannot be used after expiry.` |
+| Footer | `My SmartHealth` |
 | URL button | `Book AHC` → `https://app.mediqzy.com/health-checkups` |
 | Variable samples | `Aarav Sharma`, `Equitas Bank`, `15 December 2026` |
 

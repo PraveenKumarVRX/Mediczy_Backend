@@ -166,7 +166,7 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
       subject: `You've been added as ${roleLabel} for ${corporate.companyName}`,
       html: `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
         <h2 style="color:#0f766e;margin:0 0 12px;">Welcome, ${firstName || 'there'}!</h2>
-        <p>You've been added as ${roleLabel} for <b>${corporate.companyName}</b> on the Mediqzy corporate wellness portal.</p>
+        <p>You've been added as ${roleLabel} for <b>${corporate.companyName}</b> on the My SmartHealth corporate wellness portal.</p>
         <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:16px;margin:16px 0;">
           <p style="margin:4px 0;"><strong>Login URL:</strong> <a href="${primaryLoginUrl}">${primaryLoginUrl}</a></p>
           <p style="margin:4px 0;"><strong>Email:</strong> ${normalizedEmail}</p>
@@ -175,7 +175,7 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
         <p style="color:#64748b;font-size:13px;">Please change your password after your first login.</p>
       </div>`,
       text: `Welcome! You've been added as ${roleLabel} for ${corporate.companyName}. Login: ${primaryLoginUrl}  Email: ${normalizedEmail}  Temporary password: ${tempPassword}`,
-      fromName: 'Mediqzy Corporate Wellness',
+      fromName: 'My SmartHealth',
     });
     emailStatus = 'sent';
   } catch (err) {

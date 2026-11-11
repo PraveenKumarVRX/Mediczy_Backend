@@ -14,6 +14,10 @@ describe('corporate AHC invitation templates', () => {
     expect(message.subject).toContain('15 December 2026');
     expect(message.text).toContain('one-time benefit');
     expect(message.html).toContain('Book your AHC');
+    expect(message.text).toContain('My SmartHealth');
+    expect(message.html).toContain('My SmartHealth');
+    expect(message.html).not.toContain('through Mediczy');
+    expect(message.html).not.toContain('Mediczy Healthcare');
     expect(message.whatsappParams).toEqual(['Aarav', 'Equitas Bank', '15 December 2026']);
   });
 });
