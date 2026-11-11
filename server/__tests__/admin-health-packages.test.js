@@ -6,7 +6,33 @@ let permissions=['Corporate Management'];
 const query = jest.fn();
 const transaction = jest.fn(async (fn) => fn({}));
 jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({ authUser: (req, res, next) => { req.user = { id: 1, role, metadata: {permissions} }; next(); }, requireRole: roles => (req, res, next) => roles.includes(role) ? next() : res.sendStatus(403) }));
-jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({ postgresSequelize: { query, transaction, QueryTypes: { SELECT: 'SELECT' } } }));
+// Models in this route's import graph call sequelize.define() and then register
+// hooks on the result at module load, so the stub answers any method with a spy.
+const stubObject = (seed = {}) => {
+  const target = { ...seed };
+  return new Proxy(target, {
+    get(obj, prop) {
+      if (prop in obj) return obj[prop];
+      if (typeof prop === 'symbol') return undefined;
+      obj[prop] = jest.fn();
+      return obj[prop];
+    },
+    has: () => true,
+  });
+};
+const defineModel = () => stubObject({ rawAttributes: {}, associations: {}, prototype: {}, tableName: 'stub', name: 'Stub' });
+const sequelizeStub = stubObject({
+  query, transaction,
+  QueryTypes: { SELECT: 'SELECT', UPDATE: 'UPDATE', INSERT: 'INSERT', DELETE: 'DELETE' },
+  define: jest.fn(defineModel),
+  model: jest.fn(defineModel),
+  models: {},
+  literal: jest.fn(v => v),
+  fn: jest.fn((...args) => args),
+  col: jest.fn(v => v),
+  getQueryInterface: jest.fn(() => stubObject({ showAllTables: jest.fn(async () => []) })),
+});
+jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({ postgresSequelize: sequelizeStub, connectToPostgresDB: jest.fn(), default: sequelizeStub }));
 const { default: router } = await import('../routes/admin-health-packages.route.js');
 const app = express();
 app.use(express.json());
