@@ -297,10 +297,20 @@ const shapePolicy = (row, members) => {
   const policyType = typeOf(row.policyType);
   const spec = policyType ? POLICY_TYPES[policyType] : null;
 
-  const sumInsured = numberOrNull(row.sumInsured);
-  const used = numberOrNull(row.myUsed);
-  const remaining = numberOrNull(row.myRemaining) ?? (
-    sumInsured !== null && used !== null ? Math.max(sumInsured - used, 0) : null
+  // insurance_policies."sumInsured" is NOT NULL DEFAULT 0, so an accident or
+  // life policy — which has a cover amount and no sum insured at all — has to
+  // store 0 there. Reporting that 0 would read as "₹0 of hospital cover". The
+  // type already says which figure is its key number, so a type measured in
+  // cover amount reports no sum insured, used or remaining rather than three
+  // zeroes the schema was forced to invent.
+  const keyIsCoverAmount = spec?.keyNumberField === 'coverAmount';
+  const storedSumInsured = numberOrNull(row.sumInsured);
+  const sumInsured = keyIsCoverAmount ? null : storedSumInsured;
+  const used = keyIsCoverAmount ? null : numberOrNull(row.myUsed);
+  const remaining = keyIsCoverAmount ? null : (
+    numberOrNull(row.myRemaining) ?? (
+      sumInsured !== null && used !== null ? Math.max(sumInsured - used, 0) : null
+    )
   );
   const coverAmount = numberOrNull(row.coverAmount);
   const deductible = numberOrNull(row.deductible);
@@ -324,7 +334,11 @@ const shapePolicy = (row, members) => {
   // What the employer has not supplied, named rather than defaulted. The app
   // renders "not provided by your employer" from this list.
   const missing = [];
-  if (sumInsured === null && coverAmount === null) missing.push(spec?.keyNumberField || 'sumInsured');
+  // The key number this type is measured in, and only that one. A GPA policy
+  // with no cover amount is missing its key number even though the schema's
+  // default left a 0 in sumInsured.
+  const keyNumber = keyIsCoverAmount ? coverAmount : sumInsured;
+  if (keyNumber === null) missing.push(spec?.keyNumberField || 'sumInsured');
   if (!members.length) missing.push('members');
   if ((policyType === 'GHI_TOPUP' || policyType === 'PARENTS_TOPUP') && deductible === null) missing.push('deductible');
   if ((policyType === 'PARENTS_GHI' || policyType === 'PARENTS_TOPUP') && numberOrNull(row.copayPercent) === null) missing.push('copayPercent');

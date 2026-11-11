@@ -320,48 +320,49 @@ const seed = async (corporateId) => {
     for (const spec of specs) {
       const base = spec.deductibleFrom ? idByKey.get(spec.deductibleFrom) : null;
       const baseSpec = spec.deductibleFrom ? specs.find((s) => s.key === spec.deductibleFrom) : null;
+      // Columns whose value is null are omitted rather than passed as NULL:
+      // several here are NOT NULL with a default (sumInsured and premium
+      // default to 0, status to 'draft', the JSONB bags to '[]'), and an
+      // explicit NULL overrides the default and fails the constraint. An
+      // accident or life policy has no sum insured, so it must take the
+      // column's own 0 — the wallet service reports no sum insured for those
+      // types rather than passing that 0 off as cover.
+      const values = {
+        policyNumber: spec.policyNumber,
+        policyName: spec.policyName,
+        insuranceCompanyId: insurer.id,
+        corporateId: corporate.id,
+        policyType: spec.policyType,
+        sumInsured: spec.sumInsured ?? null,
+        coverAmount: spec.coverAmount ?? null,
+        baseSumInsured: baseSpec?.sumInsured ?? null,
+        deductible: baseSpec?.sumInsured ?? null,
+        linkedBasePolicyId: base ?? null,
+        floater: spec.floater ?? null,
+        copayPercent: spec.copayPercent ?? null,
+        roomRentLimit: spec.roomRentLimit ?? null,
+        maternityCovered: spec.maternityCovered ?? null,
+        benefitSchedule: spec.benefitSchedule ? JSON.stringify(spec.benefitSchedule) : null,
+        opLimits: spec.opLimits ? JSON.stringify(spec.opLimits) : null,
+        waitingPeriods: spec.waitingPeriods ? JSON.stringify(spec.waitingPeriods) : null,
+        exclusions: spec.exclusions ? JSON.stringify(spec.exclusions) : null,
+        policyStartDate: `${new Date().getFullYear()}-04-01`,
+        policyEndDate: `${new Date().getFullYear() + 1}-03-31`,
+        status: 'active',
+        voluntary: Boolean(spec.voluntary),
+        premiumPerYear: spec.premiumPerYear ?? null,
+        enrolmentFrom: spec.enrolmentFrom ?? null,
+        enrolmentTo: spec.enrolmentTo ?? null,
+        metadata: meta({ corporate: corporate.companyName }),
+      };
+      const JSONB = new Set(['benefitSchedule', 'opLimits', 'waitingPeriods', 'exclusions', 'metadata']);
+      const present = Object.entries(values).filter(([, value]) => value !== null);
       const [policy] = await q(
         `INSERT INTO insurance_policies
-           ("policyNumber", "policyName", "insuranceCompanyId", "corporateId", "policyType",
-            "sumInsured", "coverAmount", "baseSumInsured", deductible, "linkedBasePolicyId",
-            floater, "copayPercent", "roomRentLimit", "maternityCovered",
-            "benefitSchedule", "opLimits", "waitingPeriods", exclusions,
-            "policyStartDate", "policyEndDate", status, voluntary, "premiumPerYear",
-            "enrolmentFrom", "enrolmentTo", premium, metadata, "createdAt", "updatedAt")
-         VALUES (:policyNumber, :policyName, :insurerId, :corporateId, :policyType,
-            :sumInsured, :coverAmount, :baseSumInsured, :deductible, :linkedBasePolicyId,
-            :floater, :copayPercent, :roomRentLimit, :maternityCovered,
-            :benefitSchedule::jsonb, :opLimits::jsonb, :waitingPeriods::jsonb, :exclusions::jsonb,
-            :startDate, :endDate, 'active', :voluntary, :premiumPerYear,
-            :enrolmentFrom, :enrolmentTo, 0, :metadata::jsonb, NOW(), NOW())
+           (${present.map(([name]) => `"${name}"`).join(', ')}, "createdAt", "updatedAt")
+         VALUES (${present.map(([name]) => `:${name}${JSONB.has(name) ? '::jsonb' : ''}`).join(', ')}, NOW(), NOW())
          RETURNING id`,
-        {
-          policyNumber: spec.policyNumber,
-          policyName: spec.policyName,
-          insurerId: insurer.id,
-          corporateId: corporate.id,
-          policyType: spec.policyType,
-          sumInsured: spec.sumInsured ?? null,
-          coverAmount: spec.coverAmount ?? null,
-          baseSumInsured: baseSpec?.sumInsured ?? null,
-          deductible: baseSpec?.sumInsured ?? null,
-          linkedBasePolicyId: base ?? null,
-          floater: spec.floater ?? null,
-          copayPercent: spec.copayPercent ?? null,
-          roomRentLimit: spec.roomRentLimit ?? null,
-          maternityCovered: spec.maternityCovered ?? null,
-          benefitSchedule: JSON.stringify(spec.benefitSchedule || []),
-          opLimits: JSON.stringify(spec.opLimits || []),
-          waitingPeriods: JSON.stringify(spec.waitingPeriods || {}),
-          exclusions: JSON.stringify(spec.exclusions || []),
-          startDate: `${new Date().getFullYear()}-04-01`,
-          endDate: `${new Date().getFullYear() + 1}-03-31`,
-          voluntary: Boolean(spec.voluntary),
-          premiumPerYear: spec.premiumPerYear ?? null,
-          enrolmentFrom: spec.enrolmentFrom ?? null,
-          enrolmentTo: spec.enrolmentTo ?? null,
-          metadata: meta({ corporate: corporate.companyName }),
-        },
+        Object.fromEntries(present),
         transaction
       );
       idByKey.set(spec.key, policy.id);

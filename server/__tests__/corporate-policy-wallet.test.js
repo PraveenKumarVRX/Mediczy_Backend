@@ -256,6 +256,32 @@ describe('nothing is assumed', () => {
     expect(policy.missing).toContain('sumInsured');
   });
 
+  it('does not report the schema\'s forced zero as cover', async () => {
+    // insurance_policies."sumInsured" is NOT NULL DEFAULT 0, so an accident or
+    // life policy has to store 0 there. Reporting it would read as "₹0 of
+    // hospital cover" on a policy that has no sum insured at all.
+    const { getPolicyWallet } = await load({
+      policies: [policyRow({ id: 7, policyType: 'GPA', sumInsured: '0', coverAmount: '2000000', myUsed: '0', myRemaining: '0' })],
+      members: [memberRow({ policyId: 7 })],
+    });
+    const [policy] = (await getPolicyWallet(19)).policies;
+    expect(policy.coverAmount).toBe(2000000);
+    expect(policy.sumInsured).toBeNull();
+    expect(policy.utilized).toBeNull();
+    expect(policy.remaining).toBeNull();
+    expect(policy.missing).not.toContain('coverAmount');
+  });
+
+  it('still reports a missing key number for the field the type is measured in', async () => {
+    const { getPolicyWallet } = await load({
+      policies: [policyRow({ id: 7, policyType: 'GPA', sumInsured: '0', coverAmount: null })],
+      members: [memberRow({ policyId: 7 })],
+    });
+    const [policy] = (await getPolicyWallet(19)).policies;
+    // The 0 the default left behind must not pass for a supplied cover amount.
+    expect(policy.missing).toContain('coverAmount');
+  });
+
   it('treats an absent enrolment window as closed', async () => {
     const { getPolicyWallet } = await load({ policies: [policyRow({ voluntary: true })], members: [memberRow()] });
     const [policy] = (await getPolicyWallet(19)).policies;
@@ -679,6 +705,14 @@ describe('the test policies', () => {
 
   it('leaves the fields the employer has not given as NULL', () => {
     expect(script).toMatch(/tpaId, policyDocumentUrl and claimFormUrl stay NULL/);
+  });
+
+  it('omits a null column instead of passing NULL over a default', () => {
+    // sumInsured and premium are NOT NULL DEFAULT 0, status defaults to
+    // 'draft', the JSONB bags to '[]'. An explicit NULL overrides the default
+    // and fails the constraint.
+    expect(script).toMatch(/filter\(\(\[, value\]\) => value !== null\)/);
+    expect(script).toContain('present.map(([name]) => `"${name}"`)');
   });
 
   it('runs in one transaction, so a failure leaves nothing behind', () => {
