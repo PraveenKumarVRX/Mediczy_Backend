@@ -18,6 +18,7 @@ import emailServiceModule from './emailService.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { SMSService } from './sms.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { recordAutomatedSend } from './team-sent-folder.service.js';
 
 // SMSService requires a config; `new SMSService()` would throw on first use ("reading 'provider'").
 // Build the same config queue-notify uses, and leave it null (fallback skips) when SMS is unconfigured.
@@ -115,7 +116,9 @@ async function sendToRecipient({ name, email, phone }, booking, kind) {
       `<strong>Reference:</strong> ${escapeHtml(booking.bookingReference)}</p>` +
       `<p>${escapeHtml(copy.closing)}</p>`;
     try {
-      await emailServiceModule.sendOutboundEmail(1, { to: email, subject: `Health checkup booking ${copy.subject} — ${booking.bookingReference}`, htmlContent: html });
+      const subject = `Health checkup booking ${copy.subject} — ${booking.bookingReference}`;
+      const sent = await emailServiceModule.sendOutboundEmail(1, { to: email, subject, htmlContent: html });
+      await recordAutomatedSend({ to: email, subject, htmlBody: html, messageId: sent?.messageId || null, labels: ['sent', 'health-checkup', kind] });
     } catch (error) { failed += 1; console.error('[health-checkups] email send failed', error.message); }
   }
 

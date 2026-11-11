@@ -1,5 +1,6 @@
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import emailServiceModule from './emailService.js';
+import { recordAutomatedSend } from './team-sent-folder.service.js';
 
 const WEEKDAY_SATURDAY = 6;
 const WEEKDAY_SUNDAY = 0;
@@ -257,7 +258,7 @@ async function maybeSendMisEmail(corporate, report) {
   if (!corporate?.email) return 'skipped';
   const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || 'https://app.mediqzy.com';
   try {
-    await emailServiceModule.sendOutboundEmail(1, {
+    const sent = await emailServiceModule.sendOutboundEmail(1, {
       to: corporate.email,
       subject: report.title,
       htmlContent: `
@@ -269,6 +270,7 @@ async function maybeSendMisEmail(corporate, report) {
       `,
       textContent: `Your ${report.title} is ready. Open ${appUrl}/corporate/reports to download it.`,
     });
+    await recordAutomatedSend({ to: corporate.email, subject: report.title, htmlBody: `<p>The weekly corporate MIS for ${report.period} was sent to ${corporate.email}.</p>`, messageId: sent?.messageId || null, labels: ['sent', 'corporate-mis'] });
     await postgresSequelize.query(
       `UPDATE corporate_generated_reports
           SET delivery_status = 'sent', delivered_at = NOW()

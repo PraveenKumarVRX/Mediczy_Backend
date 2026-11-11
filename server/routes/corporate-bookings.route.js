@@ -22,6 +22,7 @@ import { corporateReportDownloadUrl } from '../services/corporate-report-storage
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 import { computeReportSla } from '../services/corporate-wellness-mis.service.js';
 import { notifyBooking } from '../services/health-checkup-notify.service.js';
+import { recordAutomatedSend } from '../services/team-sent-folder.service.js';
 
 // ──────────────────────────────────────────────
 // Reports are stored in MinIO via uploadToMinio service
@@ -148,7 +149,9 @@ async function sendCorporateEmail(teamUserId, { to, subject, html }) {
 
   // Fallback: global email_configs
   console.log(`⚠️ [corporate-email] No team email_settings for user ${teamUserId}, using global config`);
-  return await emailServiceModule.sendOutboundEmail(1, { to, subject, htmlContent: html });
+  const sent = await emailServiceModule.sendOutboundEmail(1, { to, subject, htmlContent: html });
+  await recordAutomatedSend({ to, subject, htmlBody: html, messageId: sent?.messageId || null, labels: ['sent', 'corporate-booking'] });
+  return sent;
 }
 
 // ──────────────────────────────────────────────

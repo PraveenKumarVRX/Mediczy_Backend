@@ -18,6 +18,7 @@ import { getEmployeeAhcTests, testNames } from '../utils/health-package-tests.js
 import { generateReferralLetterPdf, referralLetterPdfPath } from '../services/corporate-referral-letter-pdf.service.js';
 import emailServiceModule from '../services/emailService.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
+import { recordAutomatedSend } from '../services/team-sent-folder.service.js';
 
 const router = express.Router();
 const Q = postgresSequelize.QueryTypes;
@@ -117,11 +118,11 @@ async function notifyEmployee(letter, kind = 'issued') {
       ? `your health checkup referral letter (${ref}) has been withdrawn by your HR team.`
       : `your HR team has issued your authorised health checkup referral letter (${ref}) for ${labName}. You can download and share it from the app.`;
     if (emp.email) {
-      await emailServiceModule.sendOutboundEmail(1, {
-        to: emp.email,
-        subject: kind === 'revoked' ? `Health checkup referral withdrawn — ${ref}` : `Your health checkup referral letter — ${ref}`,
-        htmlContent: `<p>Dear ${name},</p><p>${line}</p>`,
-      }).catch(() => {});
+      const subject = kind === 'revoked' ? `Health checkup referral withdrawn — ${ref}` : `Your health checkup referral letter — ${ref}`;
+      const htmlContent = `<p>Dear ${name},</p><p>${line}</p>`;
+      await emailServiceModule.sendOutboundEmail(1, { to: emp.email, subject, htmlContent })
+        .then(sent => recordAutomatedSend({ to: emp.email, subject, htmlBody: htmlContent, messageId: sent?.messageId || null, labels: ['sent', 'referral', kind] }))
+        .catch(() => {});
     }
     const digits = String(emp.phone || '').replace(/\D/g, '');
     if (digits.length >= 10 && whatsappProductionService?.configured) {

@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { authCorporate } from '../middleware/corporate.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import emailServiceModule from '../services/emailService.js';
+import { recordAutomatedSend } from '../services/team-sent-folder.service.js';
 
 const router = express.Router();
 const candidateRouter = express.Router();
@@ -149,11 +150,12 @@ router.post('/cases/:caseId/invite', authCorporate, async (req, res) => {
     });
     const appUrl = (process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
     const invitationUrl = `${appUrl}/pre-employment/consent/${token}`;
-    await emailServiceModule.sendOutboundEmail(1, {
-      to: row.email,
-      subject: 'Action required: pre-employment health check',
-      htmlContent: `<p>Hello ${String(row.full_name).replace(/[<>&"]/g, '')},</p><p>Please review and consent to your pre-employment health-check process. This is separate from employee health benefits.</p><p><a href="${invitationUrl}">Review and consent securely</a></p><p>This link expires in seven days.</p>`,
-    });
+    const subject = 'Action required: pre-employment health check';
+    // The body carries a one-off consent link, so it is recorded by subject and
+    // recipient only — the link itself is not filed in a shared folder.
+    const htmlContent = `<p>Hello ${String(row.full_name).replace(/[<>&"]/g, '')},</p><p>Please review and consent to your pre-employment health-check process. This is separate from employee health benefits.</p><p><a href="${invitationUrl}">Review and consent securely</a></p><p>This link expires in seven days.</p>`;
+    const sent = await emailServiceModule.sendOutboundEmail(1, { to: row.email, subject, htmlContent });
+    await recordAutomatedSend({ to: row.email, subject, htmlBody: '<p>A pre-employment consent invitation was sent. The secure link is not stored here.</p>', messageId: sent?.messageId || null, labels: ['sent', 'pre-employment', 'invitation'] });
     return res.json({ success: true, delivery: 'email', expiresAt: expiresAt.toISOString() });
   } catch (error) {
     console.error('[peme] invite', error);
