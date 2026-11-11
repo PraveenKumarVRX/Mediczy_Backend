@@ -22,10 +22,38 @@ import { jest } from '@jest/globals';
 const poolQuery = jest.fn(async () => ({ rows: [] }));
 jest.unstable_mockModule('../db/pgPool.js', () => ({ default: { query: poolQuery, connect: jest.fn() } }));
 
+// Models reached through the route call sequelize.define at import time, so the
+// stub has to answer it or the module graph cannot be built and the suite fails
+// to run before a single prescribing-safety assertion executes.
+const stubSequelizeModel = () => ({
+  findByPk: jest.fn(async () => null),
+  findOne: jest.fn(async () => null),
+  findAll: jest.fn(async () => []),
+  create: jest.fn(async (v) => v),
+  update: jest.fn(async () => [0]),
+  destroy: jest.fn(async () => 0),
+  count: jest.fn(async () => 0),
+  belongsTo: jest.fn(),
+  hasMany: jest.fn(),
+  hasOne: jest.fn(),
+  belongsToMany: jest.fn(),
+  addHook: jest.fn(),
+  sync: jest.fn(async () => undefined),
+  // models attach instance methods, e.g. User.prototype.comparePassword
+  prototype: {},
+});
+
 jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({
   postgresSequelize: {
     transaction: async (fn) => fn({ query: async () => [] }),
     query: jest.fn(async () => []),
+    define: jest.fn(() => stubSequelizeModel()),
+    model: jest.fn(() => stubSequelizeModel()),
+    literal: jest.fn((v) => v),
+    fn: jest.fn((...a) => a),
+    col: jest.fn((v) => v),
+    where: jest.fn((...a) => a),
+    authenticate: jest.fn(async () => undefined),
   },
 }));
 
@@ -51,6 +79,12 @@ jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({
     if (req.headers['x-role']) req.doctor = undefined; else req.doctor = { id: 7, organization_id: Number(req.headers['x-org']) || 3 };
     next();
   },
+  // A route under test imports this too. Omitting it from the factory means the
+  // module cannot be linked and the whole suite fails to run, so none of these
+  // prescribing-safety assertions were executing.
+  requireRole: () => (_req, _res, next) => next(),
+  requireRoleOrHospitalAdmin: () => (_req, _res, next) => next(),
+  authUserOptional: (req, _res, next) => next(),
 }));
 
 const created = [];

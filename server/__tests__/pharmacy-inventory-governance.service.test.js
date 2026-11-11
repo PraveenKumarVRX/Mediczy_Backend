@@ -3,24 +3,46 @@ import { jest } from '@jest/globals';
 const sequelize = { query: jest.fn(), transaction: jest.fn() };
 jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({ postgresSequelize: sequelize }));
 
+// The readiness check reads information_schema through the raw pg pool, not
+// Sequelize: Sequelize sniffs any information_schema.tables query, classifies it
+// as "show tables" and flattens the result to bare strings whatever `type` is
+// passed, so table_name always came back undefined and the check could never
+// pass. These tests still mocked Sequelize for it, so the check saw no tables,
+// resolved, and the suite proved nothing.
+const pgPool = { query: jest.fn() };
+jest.unstable_mockModule('../db/pgPool.js', () => ({ default: pgPool }));
+
+const GOVERNANCE_TABLES = [
+  'pharmacy_stock_movements', 'pharmacy_controlled_movements',
+  'pharmacy_wastage', 'pharmacy_recalls', 'pharmacy_recall_items',
+];
+const schemaPresent = (tables) => pgPool.query.mockResolvedValueOnce({ rows: tables.map((t) => ({ table_name: t })) });
+
 const governance = await import('../services/pharmacy-inventory-governance.service.js');
 
 describe('pharmacy inventory governance', () => {
   beforeEach(() => jest.clearAllMocks());
 
   test('readiness fails closed until all governance tables are migrated', async () => {
-    sequelize.query.mockResolvedValueOnce([{ table_name: 'pharmacy_wastage' }]);
+    schemaPresent(['pharmacy_wastage']);
     await expect(governance.ensurePharmacyGovernanceReady()).rejects.toMatchObject({ code: 'PHARMACY_GOVERNANCE_SCHEMA_NOT_READY', status: 503 });
   });
 
+  test('readiness passes once every governance table is present', async () => {
+    schemaPresent(GOVERNANCE_TABLES);
+    await expect(governance.ensurePharmacyGovernanceReady()).resolves.toBe(true);
+  });
+
+  test('a single missing table is enough to fail closed', async () => {
+    for (const omitted of GOVERNANCE_TABLES) {
+      schemaPresent(GOVERNANCE_TABLES.filter((t) => t !== omitted));
+      await expect(governance.ensurePharmacyGovernanceReady())
+        .rejects.toMatchObject({ code: 'PHARMACY_GOVERNANCE_SCHEMA_NOT_READY' });
+    }
+  });
+
   test('issueFefo consumes earliest non-expired batches and records a movement per batch', async () => {
-    sequelize.query.mockResolvedValueOnce([
-      { table_name: 'pharmacy_stock_movements' },
-      { table_name: 'pharmacy_controlled_movements' },
-      { table_name: 'pharmacy_wastage' },
-      { table_name: 'pharmacy_recalls' },
-      { table_name: 'pharmacy_recall_items' },
-    ]);
+    schemaPresent(GOVERNANCE_TABLES);
     const client = { query: jest.fn()
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [

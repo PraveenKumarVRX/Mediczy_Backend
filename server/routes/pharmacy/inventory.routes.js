@@ -155,6 +155,43 @@ router.get('/search', async (req, res) => {
       }),
     });
   } catch (error) {
+    // If this pharmacy's inventory tables are not migrated yet, the search can
+    // still help someone find a medicine by name — but it must never let a
+    // catalogue entry read as stock on hand. Every row comes back explicitly
+    // non-stock, with a code saying why, rather than a quantity invented to
+    // fill the shape.
+    if (['42P01', '42703'].includes(error?.code)) {
+      const safeLimit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+      const catalogue = await sharedPool.query(
+        `SELECT id, name, generic_name, manufacturer, strength, form, pack_size, mrp
+           FROM pharmacy_medicines
+          WHERE name ILIKE $1 OR generic_name ILIKE $1 OR manufacturer ILIKE $1
+          ORDER BY name ASC LIMIT $2`,
+        [`%${req.query.q}%`, safeLimit]
+      ).catch(() => ({ rows: [] }));
+
+      console.warn('[pharmacy/inventory] inventory schema not ready — answering from the catalogue only');
+      return res.json({
+        success: true,
+        query: req.query.q,
+        code: 'INVENTORY_SCHEMA_NOT_READY',
+        message: 'Showing the medicine catalogue only. Stock levels are unavailable until the pharmacy inventory migration is applied.',
+        data: catalogue.rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          genericName: row.generic_name,
+          manufacturer: row.manufacturer,
+          strength: row.strength,
+          form: row.form,
+          packSize: row.pack_size,
+          price: row.mrp === null || row.mrp === undefined ? null : Number(row.mrp),
+          // Not stock: no quantity is claimed and nothing reads as available.
+          status: 'Catalog only',
+          inStock: false,
+          quantity: null,
+        })),
+      });
+    }
     console.error('Medicine search error:', error);
     res.status(500).json({ success: false, message: 'Search failed', error: error.message });
   }
