@@ -2061,6 +2061,48 @@ class TPAClaimsLifecycleService {
     });
     return { success: true, fraudRisk: rows[0] };
   }
+
+  /**
+   * The member's own e-card.
+   *
+   * Resolution is by the explicit user_id link only. tpa_members otherwise
+   * offers a name, an employer's own employee code and four digits of a phone
+   * number, and matching on any of those collides — a collision here hands one
+   * person another person's insurance card, policy number and balance. An
+   * unlinked member is told their card is not linked yet; nothing is guessed.
+   *
+   * Returns null when there is no linked, active membership, so the caller can
+   * answer 404 without leaking whether some other member matched.
+   */
+  async getECardForUser(userId) {
+    const id = Number(userId);
+    if (!Number.isSafeInteger(id) || id < 1) return null;
+
+    let rows = [];
+    try {
+      rows = await sequelize.query(
+        `SELECT tpa_id AS "tpaId", member_id AS "memberId"
+           FROM tpa_members
+          WHERE user_id = :userId AND status = 'active'
+          ORDER BY updated_at DESC NULLS LAST`,
+        { replacements: { userId: id }, type: QueryTypes.SELECT }
+      );
+    } catch (error) {
+      // The link column arrives with migration 20261111000100. Until it is
+      // applied there is no verified link for anyone, which is the same answer
+      // as an unlinked member rather than an error page.
+      if (['42703', '42P01'].includes(error?.original?.code || error?.parent?.code || error?.code)) {
+        return null;
+      }
+      throw error;
+    }
+
+    if (!rows.length) return null;
+    // The unique index makes more than one impossible per TPA; across TPAs,
+    // the most recently updated membership is the current one.
+    const { tpaId, memberId } = rows[0];
+    return this.generateECard(tpaId, memberId);
+  }
 }
 
 export const tpaClaimsLifecycleService = new TPAClaimsLifecycleService();

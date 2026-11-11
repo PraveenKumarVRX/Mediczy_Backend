@@ -10,6 +10,7 @@ import whatsappProductionService from '../services/whatsapp-production.service.j
 import purchaseNotification from '../services/purchase-notification.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
 
+import { tpaClaimsLifecycleService } from '../services/tpa-claims-lifecycle.service.js';
 const router = express.Router();
 
 const COUPON_SCOPES = {
@@ -400,6 +401,34 @@ async function loadActiveCorporateLink(userId) {
     return null;
   }
 }
+
+/**
+ * GET /api/membership/e-card
+ *
+ * The signed-in member's own insurance e-card. Every existing e-card endpoint
+ * is gated to the TPA desk, so a member had no way to see their own card at
+ * all and the Benefits Hub insurance section had nothing to call.
+ *
+ * The card is built by the same generator the TPA desk uses, so the two cannot
+ * drift, and it is resolved strictly through the member's linked account —
+ * never by name or by four digits of a phone number.
+ */
+router.get('/e-card', authUser, async (req, res) => {
+  try {
+    const card = await tpaClaimsLifecycleService.getECardForUser(req.user.id);
+    if (!card) {
+      return res.status(404).json({
+        success: false,
+        code: 'ECARD_NOT_LINKED',
+        message: 'No insurance membership is linked to this account yet. Ask your HR or TPA desk to link it.',
+      });
+    }
+    return res.json(card);
+  } catch (error) {
+    console.error('[membership] e-card lookup failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not load your e-card' });
+  }
+});
 
 router.get('/my/current', authUser, async (req,res) => {
   try {
