@@ -6,14 +6,33 @@ import { ahcInvitationMessage } from './corporate-ahc-message-templates.service.
 import { mailAttachmentsForCategory } from './team-email-template-attachments.service.js';
 
 const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/** Undo the idempotency claim when nothing was sent, so a retry is possible. */
+async function releaseClaim(id) {
+  try { await db.query(`DELETE FROM corporate_ahc_entitlement_notifications WHERE id=:id`,{replacements:{id},type:db.QueryTypes.DELETE}); }
+  catch (error) { console.warn('[ahc-notify] could not release the notification claim:',error.message); }
+}
+
 const title={invitation:'Your Annual Health Checkup is available',extension:'Your Annual Health Checkup validity has been extended',reminder_15:'15 days left to use your Annual Health Checkup',reminder_7:'7 days left to use your Annual Health Checkup',reminder_3:'3 days left to use your Annual Health Checkup',reminder_1:'Final reminder: your Annual Health Checkup expires tomorrow'};
 
 /** Sends one idempotent, employee-specific AHC notice. Provider failures are recorded, not thrown. */
 export async function notifyAhcEntitlement({packageId,userId,eventType='invitation',validTo}) {
   const [claim]=await db.query(`INSERT INTO corporate_ahc_entitlement_notifications(package_id,user_id,event_type,valid_to) VALUES(:packageId,:userId,:eventType,:validTo) ON CONFLICT(package_id,user_id,event_type,valid_to) DO NOTHING RETURNING id`,{replacements:{packageId:String(packageId),userId,eventType,validTo},type:db.QueryTypes.SELECT});
   if(!claim) return {sent:false,duplicate:true};
-  const [member]=await db.query(`SELECT u."firstName",u."lastName",u.email,u."phoneNumber",p.name,p."corporateName",uhp."validFrom" FROM users u JOIN corporate_health_package_catalog p ON p.id=:packageId LEFT JOIN user_health_packages uhp ON uhp."userId"=u.id AND uhp."packageId"=CAST(:packageId AS text) AND uhp.status='active' WHERE u.id=:userId ORDER BY uhp."createdAt" DESC NULLS LAST LIMIT 1`,{replacements:{packageId:String(packageId),userId},type:db.QueryTypes.SELECT});
-  if(!member) return {sent:false,missing:true};
+  // The employer's name comes from corporates."companyName" through the
+  // package's corporate_id. corporate_health_package_catalog has no
+  // "corporateName" column — selecting one made every send throw 42703, which
+  // is why corporate_ahc_entitlement_notifications held nothing at all.
+  let member;
+  try {
+    [member]=await db.query(`SELECT u."firstName",u."lastName",u.email,u."phoneNumber",p.name,c."companyName" AS "corporateName",uhp."validFrom" FROM users u JOIN corporate_health_package_catalog p ON p.id=:packageId LEFT JOIN corporates c ON c.id=p.corporate_id LEFT JOIN user_health_packages uhp ON uhp."userId"=u.id AND uhp."packageId"=CAST(:packageId AS text) AND uhp.status='active' WHERE u.id=:userId ORDER BY uhp."createdAt" DESC NULLS LAST LIMIT 1`,{replacements:{packageId:String(packageId),userId},type:db.QueryTypes.SELECT});
+  } catch (error) {
+    // Nothing was sent, so the claim must not stand: leaving it would make the
+    // unique (package,user,event,valid_to) guard refuse every later attempt as
+    // a duplicate, and the employee would never be told.
+    await releaseClaim(claim.id);
+    throw error;
+  }
+  if(!member) { await releaseClaim(claim.id); return {sent:false,missing:true}; }
   const name=[member.firstName,member.lastName].filter(Boolean).join(' ')||'Employee';
   const start=member.validFrom?new Date(`${String(member.validFrom).slice(0,10)}T00:00:00Z`).toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}):'';
   const expiry=new Date(`${validTo}T00:00:00Z`).toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
@@ -47,6 +66,16 @@ export async function notifyAhcEntitlement({packageId,userId,eventType='invitati
       whatsappStatus=sent?.success?'sent':'failed';
     }
   } catch (error) { whatsappStatus=eventType==='invitation'&&whatsappProductionService.provider==='gupshup'&&/AHC_WELCOME/.test(error.message)?'pending_template_approval':'failed'; } }
-  await db.query(`UPDATE corporate_ahc_entitlement_notifications SET email_status=:emailStatus,whatsapp_status=:whatsappStatus,sent_at=NOW() WHERE id=:id`,{replacements:{id:claim.id,emailStatus,whatsappStatus},type:db.QueryTypes.UPDATE});
+  // Recording must never discard the fact that mail was already sent. The
+  // status column was VARCHAR(20) while the code writes a 25-character value,
+  // so this UPDATE used to throw after a successful delivery and the row stayed
+  // 'pending'. Clamped as well as widened (20261111000700), and a recording
+  // failure is now logged loudly rather than thrown.
+  const clamp=(v)=>String(v??'').slice(0,40);
+  try {
+    await db.query(`UPDATE corporate_ahc_entitlement_notifications SET email_status=:emailStatus,whatsapp_status=:whatsappStatus,sent_at=NOW() WHERE id=:id`,{replacements:{id:claim.id,emailStatus:clamp(emailStatus),whatsappStatus:clamp(whatsappStatus)},type:db.QueryTypes.UPDATE});
+  } catch (error) {
+    console.error(`[ahc-notify] SENT but NOT RECORDED for user ${userId} (claim ${claim.id}, email=${emailStatus}, whatsapp=${whatsappStatus}): ${error.message}`);
+  }
   return {sent:emailStatus.startsWith('sent')||whatsappStatus==='sent',emailStatus,whatsappStatus,attachments:attachedFiles.map(f=>f.filename)};
 }

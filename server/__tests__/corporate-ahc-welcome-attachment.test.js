@@ -141,6 +141,68 @@ describe('the AHC welcome email carries the file attached to the template', () =
     expect(mailAttachmentsForCategory).not.toHaveBeenCalled();
   });
 
+  it('reads the employer name from corporates, not from the package table', async () => {
+    // corporate_health_package_catalog has no "corporateName" column; selecting
+    // one threw 42703 on every send and the notifications table stayed empty.
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [], templateId: null, reason: 'no_attachments' });
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    const [memberSql] = dbQuery.mock.calls.find(([sql]) => /FROM users u/.test(sql));
+    expect(memberSql).toContain('LEFT JOIN corporates c ON c.id=p.corporate_id');
+    expect(memberSql).toContain('c."companyName" AS "corporateName"');
+    expect(memberSql).not.toContain('p."corporateName"');
+  });
+
+  it('releases the claim when the member lookup fails, so a retry can still send', async () => {
+    // Claiming first gives idempotency, but a claim left behind after a failure
+    // makes the unique guard refuse every later attempt as a duplicate — which
+    // is exactly what happened to the first Equitas batch.
+    dbQuery.mockReset();
+    dbQuery
+      .mockImplementationOnce(async () => [{ id: 11 }])                       // claim
+      .mockImplementationOnce(async () => { throw new Error('column p.corporateName does not exist'); })
+      .mockImplementation(async () => []);
+    await expect(notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' }))
+      .rejects.toThrow(/corporateName/);
+    const release = dbQuery.mock.calls.find(([sql]) => /DELETE FROM corporate_ahc_entitlement_notifications/.test(sql));
+    expect(release).toBeDefined();
+    expect(release[1].replacements).toEqual({ id: 11 });
+    expect(sendOutboundEmail).not.toHaveBeenCalled();
+  });
+
+  it('releases the claim when the member row is missing', async () => {
+    arm(null);
+    const result = await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    expect(result).toEqual({ sent: false, missing: true });
+    expect(dbQuery.mock.calls.some(([sql]) => /DELETE FROM corporate_ahc_entitlement_notifications/.test(sql))).toBe(true);
+  });
+
+  it('does not lose a delivered send when the status row cannot be written', async () => {
+    // The status column was VARCHAR(20) while the code writes a 25-character
+    // value, so this UPDATE threw AFTER five real employees had been emailed.
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [LETTER], templateId: 't1', reason: 'ok' });
+    dbQuery.mockImplementation(async (sql) => {
+      if (/UPDATE corporate_ahc_entitlement_notifications/.test(sql)) throw new Error('value too long for type character varying(20)');
+      return [];
+    });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    expect(sendOutboundEmail).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ sent: true, emailStatus: 'sent' });   // the send is still reported
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('SENT but NOT RECORDED'));
+    error.mockRestore();
+  });
+
+  it('clamps a status value to what the column holds', async () => {
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [], templateId: null, reason: 'no_attachments' });
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    const update = dbQuery.mock.calls.find(([sql]) => /UPDATE corporate_ahc_entitlement_notifications/.test(sql));
+    expect(update[1].replacements.emailStatus.length).toBeLessThanOrEqual(40);
+    expect(update[1].replacements.whatsappStatus.length).toBeLessThanOrEqual(40);
+  });
+
   it('reports a provider failure instead of throwing', async () => {
     arm();
     mailAttachmentsForCategory.mockResolvedValue({ attachments: [LETTER], templateId: 't1', reason: 'ok' });
