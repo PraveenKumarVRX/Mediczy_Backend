@@ -13,6 +13,7 @@ import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 const router = express.Router();
 
 // pg returns JSONB columns as already-parsed JS objects; this handles both cases
@@ -29,80 +30,25 @@ const aiComplete = async (messages, opts = {}) => {
 };
 
 // ─── DB Bootstrap ─────────────────────────────────────────────────────────────
-async function ensureTables() {
-  await sharedPool.query(`
-    -- Year-wise historical policy records (retrospective data)
-    CREATE TABLE IF NOT EXISTS crm_rfq_policy_history (
-      id                      BIGSERIAL    PRIMARY KEY,
-      rfq_id                  BIGINT       NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
-      year_label              VARCHAR(10)  NOT NULL,        -- 'Y-1', 'Y-2', 'Y-3'
-      policy_year_start       DATE,
-      policy_year_end         DATE,
-      insurer_name            VARCHAR(255),
-      tpa_name                VARCHAR(255),
-      -- Premium data
-      gross_premium           NUMERIC(15,2) DEFAULT 0,
-      net_premium             NUMERIC(15,2) DEFAULT 0,
-      -- Claims data
-      total_claims_incurred   NUMERIC(15,2) DEFAULT 0,
-      total_claims_count      INTEGER       DEFAULT 0,
-      cat_claims_count        INTEGER       DEFAULT 0,      -- claims > 2L
-      cat_claims_amount       NUMERIC(15,2) DEFAULT 0,
-      avg_claim_size          NUMERIC(12,2),
-      claim_frequency_pct     NUMERIC(6,3),                 -- claims per 100 lives
-      -- Risk indicators
-      loss_ratio              NUMERIC(6,3),                 -- claims/premium
-      copay_collected         NUMERIC(12,2) DEFAULT 0,
-      ibnr_reserve            NUMERIC(12,2) DEFAULT 0,
-      -- Member counts
-      lives_count             INTEGER       DEFAULT 0,
-      employee_count          INTEGER       DEFAULT 0,
-      -- Top diagnoses / notes
-      top_diagnoses           JSONB         DEFAULT '[]'::jsonb,
-      notes                   TEXT,
-      created_by              INTEGER,
-      updated_by              INTEGER,
-      created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-      updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-      UNIQUE(rfq_id, year_label)
-    );
-    CREATE INDEX IF NOT EXISTS idx_policy_hist_rfq  ON crm_rfq_policy_history(rfq_id);
+const SCHEMA_TABLES = ['crm_rfq_policy_history', 'crm_rfq_analysis_cache'];
 
-    -- Cached analysis results (re-generated on demand)
-    CREATE TABLE IF NOT EXISTS crm_rfq_analysis_cache (
-      id                      BIGSERIAL    PRIMARY KEY,
-      rfq_id                  BIGINT       NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
-      version                 INTEGER      NOT NULL DEFAULT 1,
-      -- Risk scoring
-      risk_score              NUMERIC(5,2),   -- 0–100 (100 = highest risk)
-      risk_tier               VARCHAR(20),    -- 'green','amber','red','black'
-      renewal_probability     NUMERIC(4,3),   -- 0–1
-      -- Retrospective summary
-      avg_loss_ratio          NUMERIC(6,3),
-      trend_factor            NUMERIC(6,4),
-      claim_frequency_trend   VARCHAR(20),    -- 'improving','stable','deteriorating'
-      top_diagnoses           JSONB DEFAULT '[]'::jsonb,
-      -- Cost model outputs
-      pure_premium_per_life   NUMERIC(12,2),
-      loaded_premium_per_life NUMERIC(12,2),
-      gross_premium_per_life  NUMERIC(12,2),  -- incl. GST
-      total_projected_premium NUMERIC(15,2),
-      projected_loss_ratio    NUMERIC(6,3),
-      -- Quote strategies (array of 3)
-      quote_strategies        JSONB DEFAULT '[]'::jsonb,
-      -- AI narrative
-      ai_narrative            TEXT,
-      ai_executive_summary    TEXT,
-      -- Meta
-      inputs_snapshot         JSONB DEFAULT '{}'::jsonb,
-      generated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-      generated_by            INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_analysis_rfq ON crm_rfq_analysis_cache(rfq_id);
-  `);
-}
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureTables = schemaVerifier({
+  sequelize: sharedPool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015003900-crm-extensions-governance before using CRM analysis',
+});
 
-ensureTables().catch(e => console.error('[CRM Analysis] DB init error:', e.message));
+ensureTables().catch((err) => console.error('[crm-analysis] schema check failed:', err.message, err.details || ''));
+
+const guardedSharedPool = guardedQuery(sharedPool, 'Apply migration 20261015003900-crm-extensions-governance before using CRM analysis');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
+
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ─── Actuarial Engine ────────────────────────────────────────────────────────
@@ -504,7 +450,7 @@ function computeRiskScore({ avgLR, trendDirection, avgAge, industryFactor, catCl
 // ─── GET policy history (retrospective data) ─────────────────────────────────
 router.get('/rfqs/:rfqId/policy-history', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `SELECT * FROM crm_rfq_policy_history WHERE rfq_id = $1 ORDER BY
         CASE year_label WHEN 'Y-1' THEN 1 WHEN 'Y-2' THEN 2 WHEN 'Y-3' THEN 3 ELSE 4 END`,
       [req.params.rfqId]
@@ -537,7 +483,7 @@ router.put('/rfqs/:rfqId/policy-history/:yearLabel', authTeam, requirePermission
     const freqPct = lives_count && total_claims_count
       ? ((parseInt(total_claims_count) / parseInt(lives_count)) * 100).toFixed(3) : null;
 
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `INSERT INTO crm_rfq_policy_history
          (rfq_id, year_label, policy_year_start, policy_year_end, insurer_name, tpa_name,
           gross_premium, net_premium, total_claims_incurred, total_claims_count,
@@ -570,7 +516,7 @@ router.put('/rfqs/:rfqId/policy-history/:yearLabel', authTeam, requirePermission
 // ─── DELETE one policy year ───────────────────────────────────────────────────
 router.delete('/rfqs/:rfqId/policy-history/:yearLabel', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
-    await sharedPool.query(`DELETE FROM crm_rfq_policy_history WHERE rfq_id=$1 AND year_label=$2`,
+    await guardedSharedPool(`DELETE FROM crm_rfq_policy_history WHERE rfq_id=$1 AND year_label=$2`,
       [req.params.rfqId, req.params.yearLabel]);
     return res.json({ success: true });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
@@ -579,7 +525,7 @@ router.delete('/rfqs/:rfqId/policy-history/:yearLabel', authTeam, requirePermiss
 // ─── GET cached latest analysis ──────────────────────────────────────────────
 router.get('/rfqs/:rfqId/analysis', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `SELECT * FROM crm_rfq_analysis_cache WHERE rfq_id=$1 ORDER BY version DESC LIMIT 1`,
       [req.params.rfqId]
     );
@@ -595,19 +541,19 @@ router.post('/rfqs/:rfqId/generate', authTeam, requirePermission('Insurance RFQ 
     const { prospective = {} } = req.body; // optional overrides: projected_lives, si_override, industry, stop_loss_pct
 
     // ── Load RFQ ──────────────────────────────────────────────────────────
-    const rfqRes = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id=$1`, [rfqId]);
+    const rfqRes = await guardedSharedPool(`SELECT * FROM crm_rfqs WHERE id=$1`, [rfqId]);
     if (!rfqRes.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
     const rfq = rfqRes.rows[0];
 
     // ── Load retrospective: policy history + uploaded claims ─────────────
     const [histRes, ageBandRes, claimsAggRes] = await Promise.all([
-      sharedPool.query(`SELECT * FROM crm_rfq_policy_history WHERE rfq_id=$1 ORDER BY year_label`, [rfqId]),
-      sharedPool.query(`SELECT
+      guardedSharedPool(`SELECT * FROM crm_rfq_policy_history WHERE rfq_id=$1 ORDER BY year_label`, [rfqId]),
+      guardedSharedPool(`SELECT
         CASE WHEN age < 18 THEN '0-17' WHEN age < 30 THEN '18-29' WHEN age < 45 THEN '30-44'
              WHEN age < 60 THEN '45-59' WHEN age < 75 THEN '60-74' ELSE '75+' END AS age_band,
         COUNT(*) AS count
         FROM crm_rfq_members WHERE rfq_id=$1 AND age IS NOT NULL GROUP BY 1`, [rfqId]),
-      sharedPool.query(`SELECT
+      guardedSharedPool(`SELECT
         COUNT(*)                                         AS total_claims,
         COALESCE(SUM(claimed_amount),0)                  AS total_claimed,
         COALESCE(SUM(approved_amount),0)                 AS total_approved,
@@ -650,7 +596,7 @@ router.post('/rfqs/:rfqId/generate', authTeam, requirePermission('Insurance RFQ 
     const strategies = buildQuoteStrategies(costModel, rfq, policyHistory, stopLossPct);
 
     // ── Build top diagnoses summary ───────────────────────────────────────
-    const topDxRes = await sharedPool.query(
+    const topDxRes = await guardedSharedPool(
       `SELECT diagnosis, COUNT(*) AS count, COALESCE(SUM(approved_amount),0) AS total_cost
        FROM crm_rfq_claims WHERE rfq_id=$1 AND diagnosis IS NOT NULL AND diagnosis != ''
        GROUP BY diagnosis ORDER BY count DESC LIMIT 10`, [rfqId]
@@ -756,7 +702,7 @@ Produce a JSON with exactly these keys:
     }
 
     // ── Increment version ──────────────────────────────────────────────────
-    const prevVer = await sharedPool.query(`SELECT MAX(version) AS v FROM crm_rfq_analysis_cache WHERE rfq_id=$1`, [rfqId]);
+    const prevVer = await guardedSharedPool(`SELECT MAX(version) AS v FROM crm_rfq_analysis_cache WHERE rfq_id=$1`, [rfqId]);
     const version = (parseInt(prevVer.rows[0]?.v) || 0) + 1;
 
     const inputsSnapshot = {
@@ -766,7 +712,7 @@ Produce a JSON with exactly these keys:
       ageBandCount: ageBands.length,
     };
 
-    const { rows: saved } = await sharedPool.query(
+    const { rows: saved } = await guardedSharedPool(
       `INSERT INTO crm_rfq_analysis_cache
          (rfq_id, version, risk_score, risk_tier, renewal_probability,
           avg_loss_ratio, trend_factor, claim_frequency_trend, top_diagnoses,
@@ -827,7 +773,7 @@ Produce a JSON with exactly these keys:
 // ─── GET all analysis versions for an RFQ ────────────────────────────────────
 router.get('/rfqs/:rfqId/analysis/versions', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `SELECT id, version, risk_score, risk_tier, ai_executive_summary, generated_at, generated_by
        FROM crm_rfq_analysis_cache WHERE rfq_id=$1 ORDER BY version DESC`,
       [req.params.rfqId]
@@ -839,7 +785,7 @@ router.get('/rfqs/:rfqId/analysis/versions', authTeam, requirePermission('Insura
 // ─── GET one specific version ─────────────────────────────────────────────────
 router.get('/rfqs/:rfqId/analysis/:versionId', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `SELECT * FROM crm_rfq_analysis_cache WHERE rfq_id=$1 AND id=$2`,
       [req.params.rfqId, req.params.versionId]
     );
@@ -858,19 +804,19 @@ router.post('/rfqs/:rfqId/cost-model-preview', authTeam, requirePermission('Insu
       stop_loss_pct,   // optional: 70/80/90 — aggregate stop-loss clause %
     } = req.body;
 
-    const rfqRes = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id=$1`, [req.params.rfqId]);
+    const rfqRes = await guardedSharedPool(`SELECT * FROM crm_rfqs WHERE id=$1`, [req.params.rfqId]);
     if (!rfqRes.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
     const rfq = rfqRes.rows[0];
 
     // Fall back to DB data if not provided
     let ageBands = age_bands;
     if (!ageBands?.length) {
-      const r = await sharedPool.query(`SELECT CASE WHEN age<18 THEN '0-17' WHEN age<30 THEN '18-29' WHEN age<45 THEN '30-44' WHEN age<60 THEN '45-59' WHEN age<75 THEN '60-74' ELSE '75+' END AS age_band, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id=$1 AND age IS NOT NULL GROUP BY 1`, [req.params.rfqId]);
+      const r = await guardedSharedPool(`SELECT CASE WHEN age<18 THEN '0-17' WHEN age<30 THEN '18-29' WHEN age<45 THEN '30-44' WHEN age<60 THEN '45-59' WHEN age<75 THEN '60-74' ELSE '75+' END AS age_band, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id=$1 AND age IS NOT NULL GROUP BY 1`, [req.params.rfqId]);
       ageBands = r.rows;
     }
     let policyHistory = policy_history;
     if (!policyHistory?.length) {
-      const r = await sharedPool.query(`SELECT * FROM crm_rfq_policy_history WHERE rfq_id=$1`, [req.params.rfqId]);
+      const r = await guardedSharedPool(`SELECT * FROM crm_rfq_policy_history WHERE rfq_id=$1`, [req.params.rfqId]);
       policyHistory = r.rows;
     }
 
@@ -912,7 +858,7 @@ router.post('/rfqs/:rfqId/strategy-to-quote/:strategy', authTeam, requirePermiss
       return res.status(400).json({ success: false, message: 'strategy must be A, B or C' });
     }
     // Load latest analysis
-    const { rows: analysisRows } = await sharedPool.query(
+    const { rows: analysisRows } = await guardedSharedPool(
       `SELECT * FROM crm_rfq_analysis_cache WHERE rfq_id=$1 ORDER BY version DESC LIMIT 1`, [rfqId]
     );
     if (!analysisRows.length) {
@@ -924,7 +870,7 @@ router.post('/rfqs/:rfqId/strategy-to-quote/:strategy', authTeam, requirePermiss
     if (!chosen) return res.status(404).json({ success: false, message: 'Strategy not found in analysis' });
 
     // Verify RFQ exists
-    const rfqRes = await sharedPool.query(`SELECT id, rfq_number FROM crm_rfqs WHERE id=$1`, [rfqId]);
+    const rfqRes = await guardedSharedPool(`SELECT id, rfq_number FROM crm_rfqs WHERE id=$1`, [rfqId]);
     if (!rfqRes.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
     const rfq = rfqRes.rows[0];
 
@@ -944,7 +890,7 @@ router.post('/rfqs/:rfqId/strategy-to-quote/:strategy', authTeam, requirePermiss
       ...(chosen.key_features || []),
     ].join('\n');
 
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `INSERT INTO crm_quotes
          (rfq_id, quote_number, status, version, valid_until,
           total_premium, total_lives, per_life_cost,

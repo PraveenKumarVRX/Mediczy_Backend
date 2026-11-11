@@ -19,6 +19,7 @@ import {
 } from '../middleware/authDisplayDevice.middleware.js';
 import { verifyHospitalToken } from '../middleware/hospitalAuth.middleware.js';
 
+import { schemaError, tableNameFromSchemaRow, SCHEMA_NOT_MIGRATED } from '../utils/schema-guard.js';
 const router = express.Router();
 
 registerDisplaySSE(router, async (req, res) => {
@@ -119,71 +120,29 @@ async function readBloodBankDisplay(organizationId) {
   }
 }
 
+const SCHEMA_TABLES = ['display_zones', 'display_devices', 'emergency_broadcasts', 'checkin_tokens'];
+
+// Owned by the migration. The old bootstrap also swallowed its own failure
+// ('table setup skipped'), so a broken schema surfaced later as confusing
+// query errors on the kiosk rather than as the migration problem it was.
 async function ensureTables() {
+  const db = await connectPostgres();
   try {
-    const db = await connectPostgres();
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS display_zones (
-        id SERIAL PRIMARY KEY,
-        zone_id VARCHAR(80) UNIQUE NOT NULL,
-        name VARCHAR(200) NOT NULL,
-        description TEXT,
-        floor VARCHAR(50),
-        building VARCHAR(100),
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS display_devices (
-        id SERIAL PRIMARY KEY,
-        device_token VARCHAR(120) UNIQUE NOT NULL,
-        name VARCHAR(200),
-        zone_id VARCHAR(80),
-        display_type VARCHAR(40),
-        url_path VARCHAR(200),
-        ip_address VARCHAR(60),
-        organization_id INTEGER,
-        last_seen TIMESTAMPTZ,
-        active BOOLEAN DEFAULT TRUE,
-        config JSONB DEFAULT '{}',
-        registered_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await db.query(`ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS emergency_broadcasts (
-        id SERIAL PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        message TEXT NOT NULL,
-        severity VARCHAR(30) DEFAULT 'critical',
-        zone_id VARCHAR(80),
-        organization_id INTEGER,
-        pushed_by VARCHAR(200),
-        dismissed_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await db.query(`ALTER TABLE emergency_broadcasts ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS checkin_tokens (
-        id SERIAL PRIMARY KEY,
-        token_number VARCHAR(20) NOT NULL,
-        patient_name VARCHAR(200),
-        appointment_id VARCHAR(100),
-        doctor_name VARCHAR(200),
-        counter VARCHAR(50),
-        zone_id VARCHAR(80),
-        status VARCHAR(30) DEFAULT 'waiting',
-        issued_at TIMESTAMPTZ DEFAULT NOW(),
-        called_at TIMESTAMPTZ
-      );
-    `);
-  } catch (e) {
-    console.warn('[display] table setup skipped:', e.message);
+    const { rows } = await db.query(
+      `SELECT table_name AS "tableName" FROM information_schema.tables
+        WHERE table_schema = current_schema() AND table_name = ANY($1::text[])`,
+      [SCHEMA_TABLES]
+    );
+    const present = new Set(rows.map(tableNameFromSchemaRow).filter(Boolean));
+    const missingTables = SCHEMA_TABLES.filter((t) => !present.has(t));
+    if (missingTables.length) throw schemaError('Apply migration 20261015004200-display-kiosk-governance before using hospital displays', missingTables);
+  } finally {
+    await db?.release?.();
   }
 }
 
-ensureTables();
+// Reported at startup rather than silently skipped.
+ensureTables().catch((err) => console.error('[display] schema check failed:', err.message, err.details || ''));
 
 // ─── Device token auth (lightweight — long-lived tokens, no expiry) ──────────
 // For kiosk/display screens. Token is just a stored secret in display_devices.
@@ -288,7 +247,8 @@ router.post('/devices', verifyHospitalToken, async (req, res) => {
     const cfg = { ...(config && typeof config === 'object' ? config : {}), organization_id: orgId };
 
     const db = await connectPostgres();
-    await db.query(`ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
+    // organization_id is added by the display-kiosk migration; adding it here
+    // meant every device registration took a schema lock on the table.
     const result = await db.query(
       `INSERT INTO display_devices (device_token, name, zone_id, display_type, url_path, ip_address, organization_id, config)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,

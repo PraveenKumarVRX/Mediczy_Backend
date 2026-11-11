@@ -25,19 +25,27 @@ import { connectPostgres }       from '../db/postgres.js';
 import { resolveConcept }        from '../services/hypergrid-terminology.service.js';
 import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 const router = express.Router();
 
-const ensureEquipmentInventoryTable = async (pool) => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS hg_equipment_inventory (
-      id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, equipment_class VARCHAR(120) NOT NULL,
-      device_name VARCHAR(200) NOT NULL, manufacturer VARCHAR(160), model VARCHAR(160), serial_number VARCHAR(160),
-      department VARCHAR(160), location VARCHAR(160), protocol VARCHAR(80), owner_department VARCHAR(120),
-      integration_status VARCHAR(32) NOT NULL DEFAULT 'identified', connector_id INTEGER, notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(), updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-  `);
-};
+const SCHEMA_TABLES = ['hg_equipment_inventory'];
+
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureEquipmentInventoryTable = schemaVerifier({
+  pool: pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004800-rwe-export-governance before using the hypergrid connector',
+});
+
+ensureEquipmentInventoryTable().catch((err) => console.error('[hypergrid] schema check failed:', err.message, err.details || ''));
+
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015004800-rwe-export-governance before using the hypergrid connector');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ── Built-in adapter templates ────────────────────────────────────────────────
 const ADAPTER_TEMPLATES = [
@@ -153,8 +161,8 @@ router.get('/equipment/coverage', authUser, requireHgTenant, async (req, res) =>
   try {
     const pool = await connectPostgres();
     const tenantId = req.hgTenantId;
-    const connectors = await pool.query(`SELECT connector_type, template_id, status FROM hg_connectors WHERE tenant_id=$1`, [tenantId]);
-    const devices = await pool.query(`SELECT device_type, COUNT(*)::int AS count FROM hg_devices WHERE tenant_id=$1 AND COALESCE(status, 'offline') <> 'inactive' GROUP BY device_type`, [tenantId]);
+    const connectors = await guardedPool(`SELECT connector_type, template_id, status FROM hg_connectors WHERE tenant_id=$1`, [tenantId]);
+    const devices = await guardedPool(`SELECT device_type, COUNT(*)::int AS count FROM hg_devices WHERE tenant_id=$1 AND COALESCE(status, 'offline') <> 'inactive' GROUP BY device_type`, [tenantId]);
     const connectorTypes = new Set(connectors.rows.map((row) => String(row.connector_type || '').toLowerCase()));
     const deviceTypes = new Set(devices.rows.map((row) => String(row.device_type || '').toLowerCase()));
     const equipment = EQUIPMENT_INTEGRATION_CATALOG.map((item) => {
@@ -186,7 +194,7 @@ router.get('/equipment/inventory', authUser, requireHgTenant, async (req, res) =
     const pool = await connectPostgres();
     await ensureEquipmentInventoryTable(pool);
     const { status, department } = req.query;
-    const { rows } = await pool.query(`SELECT * FROM hg_equipment_inventory WHERE tenant_id=$1 AND ($2::text IS NULL OR integration_status=$2) AND ($3::text IS NULL OR department=$3) ORDER BY created_at DESC`, [req.hgTenantId, status || null, department || null]);
+    const { rows } = await guardedPool(`SELECT * FROM hg_equipment_inventory WHERE tenant_id=$1 AND ($2::text IS NULL OR integration_status=$2) AND ($3::text IS NULL OR department=$3) ORDER BY created_at DESC`, [req.hgTenantId, status || null, department || null]);
     res.json({ success: true, equipment: rows });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to list equipment inventory' });
@@ -198,7 +206,7 @@ router.post('/equipment/inventory', authUser, requireRole(['admin', 'hospital'])
     await ensureEquipmentInventoryTable(pool);
     const { equipmentClass, deviceName, manufacturer, model, serialNumber, department, location, protocol, ownerDepartment, notes } = req.body;
     if (!equipmentClass || !deviceName) return res.status(400).json({ success: false, message: 'equipmentClass and deviceName required' });
-    const { rows } = await pool.query(`INSERT INTO hg_equipment_inventory (tenant_id, equipment_class, device_name, manufacturer, model, serial_number, department, location, protocol, owner_department, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [req.hgTenantId, equipmentClass, deviceName, manufacturer || null, model || null, serialNumber || null, department || null, location || null, protocol || null, ownerDepartment || null, notes || null]);
+    const { rows } = await guardedPool(`INSERT INTO hg_equipment_inventory (tenant_id, equipment_class, device_name, manufacturer, model, serial_number, department, location, protocol, owner_department, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [req.hgTenantId, equipmentClass, deviceName, manufacturer || null, model || null, serialNumber || null, department || null, location || null, protocol || null, ownerDepartment || null, notes || null]);
     res.status(201).json({ success: true, equipment: rows[0] });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to register equipment' });
@@ -211,7 +219,7 @@ router.patch('/equipment/inventory/:id', authUser, requireRole(['admin', 'hospit
     if (integrationStatus && !VALID.includes(integrationStatus)) return res.status(400).json({ success: false, message: `integrationStatus must be: ${VALID.join(', ')}` });
     const pool = await connectPostgres();
     await ensureEquipmentInventoryTable(pool);
-    const { rows } = await pool.query(`UPDATE hg_equipment_inventory SET integration_status=COALESCE($3,integration_status), protocol=COALESCE($4,protocol), connector_id=COALESCE($5,connector_id), owner_department=COALESCE($6,owner_department), notes=COALESCE($7,notes), updated_at=NOW() WHERE id=$1 AND tenant_id=$2 RETURNING *`, [req.params.id, req.hgTenantId, integrationStatus || null, protocol || null, connectorId || null, ownerDepartment || null, notes || null]);
+    const { rows } = await guardedPool(`UPDATE hg_equipment_inventory SET integration_status=COALESCE($3,integration_status), protocol=COALESCE($4,protocol), connector_id=COALESCE($5,connector_id), owner_department=COALESCE($6,owner_department), notes=COALESCE($7,notes), updated_at=NOW() WHERE id=$1 AND tenant_id=$2 RETURNING *`, [req.params.id, req.hgTenantId, integrationStatus || null, protocol || null, connectorId || null, ownerDepartment || null, notes || null]);
     if (!rows[0]) return res.status(404).json({ success: false, message: 'Equipment not found' });
     res.json({ success: true, equipment: rows[0] });
   } catch {
@@ -222,7 +230,7 @@ router.get('/equipment/rollout', authUser, requireHgTenant, async (req, res) => 
   try {
     const pool = await connectPostgres();
     await ensureEquipmentInventoryTable(pool);
-    const { rows } = await pool.query(`SELECT integration_status, COUNT(*)::int AS count FROM hg_equipment_inventory WHERE tenant_id=$1 GROUP BY integration_status`, [req.hgTenantId]);
+    const { rows } = await guardedPool(`SELECT integration_status, COUNT(*)::int AS count FROM hg_equipment_inventory WHERE tenant_id=$1 GROUP BY integration_status`, [req.hgTenantId]);
     const byStatus = Object.fromEntries(rows.map((row) => [row.integration_status, row.count]));
     res.json({ success: true, data: { byStatus, nextSteps: [
       'Register every physical device model in inventory',
@@ -250,7 +258,7 @@ router.post('/packs', authUser, requireRole(['admin', 'hospital']), requireHgTen
     for (const tplId of pack.templateIds) {
       const tpl = ADAPTER_TEMPLATES.find(t => t.id === tplId);
       if (!tpl) continue;
-      await pool.query(
+      await guardedPool(
         `INSERT INTO hg_connectors
            (connector_type, template_id, name, config, tenant_id, status, created_at)
          VALUES ($1,$2,$3,$4,$5,'configured',NOW())
@@ -276,7 +284,7 @@ router.post('/mappings', authUser, requireRole(['admin', 'hospital']), requireHg
     if (!sourceField || !targetCanonicalField)
       return res.status(400).json({ success: false, message: 'sourceField and targetCanonicalField required' });
     const pool = await connectPostgres();
-    const r    = await pool.query(
+    const r    = await guardedPool(
       `INSERT INTO hg_field_mappings
          (connector_id, source_field, target_canonical_field, transform_type,
           transform_config, unit, validation_rule, description, tenant_id, active, created_at)
@@ -297,7 +305,7 @@ router.get('/mappings', authUser, requireHgTenant, async (req, res) => {
   try {
     const { connectorId } = req.query;
     const pool = await connectPostgres();
-    const r    = await pool.query(
+    const r    = await guardedPool(
       `SELECT * FROM hg_field_mappings
        WHERE tenant_id = $1
          AND ($2::int IS NULL OR connector_id = $2)
@@ -315,7 +323,7 @@ router.put('/mappings/:id', authUser, requireRole(['admin', 'hospital']), requir
   try {
     const { transformType, transformConfig, unit, validationRule, description } = req.body;
     const pool = await connectPostgres();
-    const r    = await pool.query(
+    const r    = await guardedPool(
       `UPDATE hg_field_mappings
        SET transform_type   = COALESCE($3, transform_type),
            transform_config = COALESCE($4, transform_config),
@@ -339,7 +347,7 @@ router.put('/mappings/:id', authUser, requireRole(['admin', 'hospital']), requir
 router.delete('/mappings/:id', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
-    await pool.query(
+    await guardedPool(
       `UPDATE hg_field_mappings SET active = FALSE WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.hgTenantId]
     );
@@ -386,7 +394,7 @@ router.post('/connectors', authUser, requireRole(['admin', 'hospital']), require
     if (!name || !connectorType)
       return res.status(400).json({ success: false, message: 'name and connectorType required' });
     const pool = await connectPostgres();
-    const r    = await pool.query(
+    const r    = await guardedPool(
       `INSERT INTO hg_connectors
          (name, connector_type, template_id, config, description, tenant_id, status, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,'draft',NOW())
@@ -403,7 +411,7 @@ router.post('/connectors', authUser, requireRole(['admin', 'hospital']), require
 router.get('/connectors', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
-    const r    = await pool.query(
+    const r    = await guardedPool(
       `SELECT id, name, connector_type, template_id, status, description, created_at
        FROM hg_connectors WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [req.hgTenantId]
@@ -421,7 +429,7 @@ router.patch('/connectors/:id/status', authUser, requireRole(['admin', 'hospital
     if (!VALID.includes(status))
       return res.status(400).json({ success: false, message: `status must be: ${VALID.join(', ')}` });
     const pool = await connectPostgres();
-    await pool.query(
+    await guardedPool(
       `UPDATE hg_connectors SET status = $3, updated_at = NOW() WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.hgTenantId, status]
     );
@@ -439,7 +447,7 @@ router.post('/certify', authUser, requireRole(['admin', 'hospital']), requireHgT
       return res.status(400).json({ success: false, message: 'connectorId required' });
 
     const pool      = await connectPostgres();
-    const connR     = await pool.query(
+    const connR     = await guardedPool(
       `SELECT * FROM hg_connectors WHERE id = $1 AND tenant_id = $2`,
       [connectorId, req.hgTenantId]
     );
@@ -459,7 +467,7 @@ router.post('/certify', authUser, requireRole(['admin', 'hospital']), requireHgT
       { name: 'At least one field mapping',  pass: false }, // checked below
     ];
 
-    const mappings = await pool.query(
+    const mappings = await guardedPool(
       `SELECT COUNT(*) FROM hg_field_mappings WHERE connector_id = $1 AND active = TRUE`,
       [connectorId]
     );
@@ -472,7 +480,7 @@ router.post('/certify', authUser, requireRole(['admin', 'hospital']), requireHgT
 
     const certified = passed === tests.length;
     if (certified) {
-      await pool.query(
+      await guardedPool(
         `UPDATE hg_connectors SET status = 'certified', updated_at = NOW() WHERE id = $1`,
         [connectorId]
       );

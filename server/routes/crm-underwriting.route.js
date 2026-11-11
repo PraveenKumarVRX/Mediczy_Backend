@@ -19,6 +19,7 @@ import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import XLSX from '../utils/excel-compat.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 const router = express.Router();
 
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -107,71 +108,24 @@ async function sibRagContext(query) {
 
 // ─── DB bootstrap ─────────────────────────────────────────────────────────────
 
-async function ensureTables() {
-  await sharedPool.query(`
-    CREATE TABLE IF NOT EXISTS crm_insurance_products (
-      id            BIGSERIAL PRIMARY KEY,
-      code          VARCHAR(30)  NOT NULL UNIQUE,
-      name          VARCHAR(200) NOT NULL,
-      category      VARCHAR(50)  NOT NULL,
-      description   TEXT,
-      irdai_ref     VARCHAR(100),
-      is_active     BOOLEAN NOT NULL DEFAULT true,
-      sort_order    INTEGER DEFAULT 0,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ins_products_code ON crm_insurance_products(code);
+const SCHEMA_TABLES = ['crm_insurance_products', 'crm_product_coverage_matrix', 'crm_rfq_underwriting'];
 
-    CREATE TABLE IF NOT EXISTS crm_product_coverage_matrix (
-      id                BIGSERIAL PRIMARY KEY,
-      product_id        BIGINT NOT NULL REFERENCES crm_insurance_products(id) ON DELETE CASCADE,
-      coverage_head     VARCHAR(200) NOT NULL,
-      category          VARCHAR(50)  NOT NULL DEFAULT 'hospitalization',
-      status            VARCHAR(20)  NOT NULL DEFAULT 'included',
-      description       TEXT,
-      limit_type        VARCHAR(50),
-      limit_value       VARCHAR(200),
-      waiting_period    VARCHAR(100),
-      sub_limit_notes   TEXT,
-      regulatory_ref    VARCHAR(200),
-      is_optional       BOOLEAN NOT NULL DEFAULT false,
-      is_standard_excl  BOOLEAN NOT NULL DEFAULT false,
-      sort_order        INTEGER DEFAULT 0,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_coverage_matrix_product ON crm_product_coverage_matrix(product_id);
-    CREATE INDEX IF NOT EXISTS idx_coverage_matrix_status ON crm_product_coverage_matrix(status);
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureTables = schemaVerifier({
+  sequelize: sharedPool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015003900-crm-extensions-governance before using CRM underwriting',
+});
 
-    CREATE TABLE IF NOT EXISTS crm_rfq_underwriting (
-      id                  BIGSERIAL PRIMARY KEY,
-      rfq_id              BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
-      product_id          BIGINT REFERENCES crm_insurance_products(id),
-      product_code        VARCHAR(30),
-      uw_status           VARCHAR(50) NOT NULL DEFAULT 'pending',
-      risk_score          INTEGER DEFAULT 50,
-      loading_pct         NUMERIC(5,2) DEFAULT 0,
-      decision            VARCHAR(100),
-      ai_narrative        TEXT,
-      slip_parsed         JSONB DEFAULT '{}'::jsonb,
-      requested_coverages JSONB DEFAULT '[]'::jsonb,
-      coverage_gap        JSONB DEFAULT '[]'::jsonb,
-      conditions          JSONB DEFAULT '[]'::jsonb,
-      exclusions_applied  JSONB DEFAULT '[]'::jsonb,
-      risk_flags          JSONB DEFAULT '[]'::jsonb,
-      created_by          INTEGER,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_rfq_uw_rfq ON crm_rfq_underwriting(rfq_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_rfq_uw_rfq_product ON crm_rfq_underwriting(rfq_id, product_code);
-  `);
-  // Add extracted_text cache column if it doesn't exist yet
-  await sharedPool.query(`
-    ALTER TABLE crm_rfq_files ADD COLUMN IF NOT EXISTS extracted_text TEXT;
-  `).catch(() => {});
-  await seedProducts();
-}
+ensureTables().catch((err) => console.error('[crm-underwriting] schema check failed:', err.message, err.details || ''));
+
+const guardedSharedPool = guardedQuery(sharedPool, 'Apply migration 20261015003900-crm-extensions-governance before using CRM underwriting');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ─── Document text extraction ─────────────────────────────────────────────────
 // Fetches a file from S3 and extracts readable text. Caches result in DB.
@@ -226,7 +180,7 @@ async function extractAndCacheFileText(file) {
     }
 
     if (text.trim()) {
-      await sharedPool.query(
+      await guardedSharedPool(
         `UPDATE crm_rfq_files SET extracted_text = $1 WHERE id = $2`,
         [text, file.id]
       ).catch(() => {});
@@ -241,7 +195,7 @@ async function extractAndCacheFileText(file) {
 // ─── Seed insurance products & coverage matrix ───────────────────────────────
 
 async function seedProducts() {
-  const existing = await sharedPool.query(`SELECT COUNT(*) AS c FROM crm_insurance_products`);
+  const existing = await guardedSharedPool(`SELECT COUNT(*) AS c FROM crm_insurance_products`);
   if (parseInt(existing.rows[0].c) > 0) return; // already seeded
 
   // Insert product catalogue
@@ -256,7 +210,7 @@ async function seedProducts() {
   ];
 
   for (const p of products) {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `INSERT INTO crm_insurance_products (code, name, category, description, irdai_ref, sort_order)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
       [p.code, p.name, p.category, p.description, p.irdai_ref, p.sort_order]
@@ -273,7 +227,7 @@ async function seedCoverageMatrix(productId, code) {
   if (!matrix) return;
   for (let i = 0; i < matrix.length; i++) {
     const m = matrix[i];
-    await sharedPool.query(
+    await guardedSharedPool(
       `INSERT INTO crm_product_coverage_matrix
         (product_id, coverage_head, category, status, description, limit_type, limit_value,
          waiting_period, sub_limit_notes, regulatory_ref, is_optional, is_standard_excl, sort_order)
@@ -516,7 +470,7 @@ Always cite specific IRDAI regulations, waiting period rules, and actuarial rati
 
 router.get('/products', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `SELECT * FROM crm_insurance_products WHERE is_active = true ORDER BY sort_order`
     );
     res.json({ success: true, products: rows });
@@ -531,13 +485,13 @@ router.get('/products', authTeam, requirePermission('Insurance RFQ Management'),
 router.get('/products/:code/matrix', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { code } = req.params;
-    const prod = await sharedPool.query(
+    const prod = await guardedSharedPool(
       `SELECT * FROM crm_insurance_products WHERE code = $1`, [code.toUpperCase()]
     );
     if (!prod.rows.length) return res.status(404).json({ success: false, error: 'Product not found' });
     const productId = prod.rows[0].id;
 
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `SELECT * FROM crm_product_coverage_matrix WHERE product_id = $1 ORDER BY sort_order`,
       [productId]
     );
@@ -560,7 +514,7 @@ router.get('/products/:code/matrix', authTeam, requirePermission('Insurance RFQ 
 router.get('/rfqs/:rfqId', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId } = req.params;
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedSharedPool(
       `SELECT u.*, p.name AS product_name, p.code AS product_code_from_product
        FROM crm_rfq_underwriting u
        LEFT JOIN crm_insurance_products p ON p.id = u.product_id
@@ -582,7 +536,7 @@ router.get('/rfqs/:rfqId', authTeam, requirePermission('Insurance RFQ Management
 router.post('/rfqs/:rfqId/parse-slip', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId } = req.params;
-    const rfqRes = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    const rfqRes = await guardedSharedPool(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
     if (!rfqRes.rows.length) return res.status(404).json({ success: false, error: 'RFQ not found' });
     const rfq = rfqRes.rows[0];
 
@@ -676,13 +630,13 @@ router.post('/rfqs/:rfqId/analyze', authTeam, requirePermission('Insurance RFQ M
     const userId = req.teamUser?.id || 0;
 
     // ── 1. Fetch RFQ ──────────────────────────────────────────────────────────
-    const rfqRes = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    const rfqRes = await guardedSharedPool(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
     if (!rfqRes.rows.length) return res.status(404).json({ success: false, error: 'RFQ not found' });
     const rfq = rfqRes.rows[0];
 
     // ── 2. Member profile ─────────────────────────────────────────────────────
     const [memberSummary, ageBands, claimsSummary] = await Promise.all([
-      sharedPool.query(`SELECT
+      guardedSharedPool(`SELECT
         COUNT(*) AS total_lives,
         COUNT(DISTINCT emp_code) AS total_employees,
         ROUND(AVG(age)) AS avg_age,
@@ -691,7 +645,7 @@ router.post('/rfqs/:rfqId/analyze', authTeam, requirePermission('Insurance RFQ M
         COALESCE(AVG(COALESCE(NULLIF(si_proposed,0), si_expiring)) FILTER (WHERE COALESCE(si_proposed,si_expiring) > 0), 0) AS avg_si,
         COALESCE(MAX(COALESCE(NULLIF(si_proposed,0), si_expiring)), 0) AS max_si
         FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]),
-      sharedPool.query(`SELECT
+      guardedSharedPool(`SELECT
         CASE WHEN age < 25 THEN '<25'
              WHEN age < 35 THEN '25-34'
              WHEN age < 45 THEN '35-44'
@@ -700,7 +654,7 @@ router.post('/rfqs/:rfqId/analyze', authTeam, requirePermission('Insurance RFQ M
              ELSE '65+' END AS band,
         COUNT(*) AS cnt
         FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY 1 ORDER BY 1`, [rfqId]),
-      sharedPool.query(`SELECT
+      guardedSharedPool(`SELECT
         COUNT(*) AS total_claims,
         COALESCE(SUM(claimed_amount), 0) AS total_claimed,
         COALESCE(SUM(approved_amount), 0) AS total_approved,
@@ -727,7 +681,7 @@ router.post('/rfqs/:rfqId/analyze', authTeam, requirePermission('Insurance RFQ M
     const lossRatio = estimatedGWP > 0 ? Math.round((totalApproved / estimatedGWP) * 100) : 0;
 
     // ── 3. Load product coverage matrix ──────────────────────────────────────
-    const prodRes = await sharedPool.query(
+    const prodRes = await guardedSharedPool(
       `SELECT p.*, array_agg(row_to_json(m.*)) AS matrix_rows
        FROM crm_insurance_products p
        LEFT JOIN crm_product_coverage_matrix m ON m.product_id = p.id
@@ -903,7 +857,7 @@ Be precise, professional, and cite specific IRDAI regulations where relevant.`;
     if (avgSI > 1500000) conditions.push(`Sum Insured > ₹15L: Requires medical records for members above 45 years.`);
 
     // ── 11. Save to DB ────────────────────────────────────────────────────────
-    await sharedPool.query(
+    await guardedSharedPool(
       `INSERT INTO crm_rfq_underwriting
         (rfq_id, product_id, product_code, uw_status, risk_score, loading_pct, decision,
          ai_narrative, slip_parsed, requested_coverages, coverage_gap, conditions,
@@ -960,9 +914,9 @@ router.post('/rfqs/:rfqId/ai-chat', authTeam, requirePermission('Insurance RFQ M
 
     // Load full RFQ + live analytics + uploaded files in parallel
     const [rfqRes, uwRes, memberRes, claimsRes, ageBandRes, topClaimsRes, filesRes] = await Promise.all([
-      sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]),
-      sharedPool.query(`SELECT * FROM crm_rfq_underwriting WHERE rfq_id = $1 AND product_code = $2 ORDER BY updated_at DESC LIMIT 1`, [rfqId, productCode.toUpperCase()]),
-      sharedPool.query(`SELECT
+      guardedSharedPool(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]),
+      guardedSharedPool(`SELECT * FROM crm_rfq_underwriting WHERE rfq_id = $1 AND product_code = $2 ORDER BY updated_at DESC LIMIT 1`, [rfqId, productCode.toUpperCase()]),
+      guardedSharedPool(`SELECT
         COUNT(*) AS total_lives,
         COUNT(DISTINCT emp_code) AS employees,
         ROUND(AVG(age)) AS avg_age,
@@ -970,14 +924,14 @@ router.post('/rfqs/:rfqId/ai-chat', authTeam, requirePermission('Insurance RFQ M
         COUNT(*) FILTER (WHERE COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%') AS self_count,
         COALESCE(AVG(COALESCE(NULLIF(si_proposed,0), si_expiring)) FILTER (WHERE COALESCE(si_proposed,si_expiring) > 0), 0) AS avg_si
         FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]),
-      sharedPool.query(`SELECT
+      guardedSharedPool(`SELECT
         COUNT(*) AS total_claims,
         COALESCE(SUM(claimed_amount), 0) AS total_claimed,
         COALESCE(SUM(approved_amount), 0) AS total_approved,
         COALESCE(AVG(approved_amount) FILTER (WHERE approved_amount > 0), 0) AS avg_approved,
         COALESCE(MAX(approved_amount), 0) AS max_claim
         FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]),
-      sharedPool.query(`SELECT
+      guardedSharedPool(`SELECT
         CASE WHEN age < 25 THEN 'Under 25'
              WHEN age < 35 THEN '25–34'
              WHEN age < 45 THEN '35–44'
@@ -986,10 +940,10 @@ router.post('/rfqs/:rfqId/ai-chat', authTeam, requirePermission('Insurance RFQ M
              ELSE '65+' END AS band,
         COUNT(*) AS cnt
         FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY 1 ORDER BY 1`, [rfqId]),
-      sharedPool.query(`SELECT diagnosis, COALESCE(SUM(approved_amount),0) AS paid
+      guardedSharedPool(`SELECT diagnosis, COALESCE(SUM(approved_amount),0) AS paid
         FROM crm_rfq_claims WHERE rfq_id = $1 AND diagnosis IS NOT NULL
         GROUP BY diagnosis ORDER BY paid DESC LIMIT 8`, [rfqId]),
-      sharedPool.query(`SELECT id, category, original_name, s3_key, mime_type, extracted_text, uploaded_at
+      guardedSharedPool(`SELECT id, category, original_name, s3_key, mime_type, extracted_text, uploaded_at
         FROM crm_rfq_files WHERE rfq_id = $1
         AND category NOT IN ('members')
         ORDER BY uploaded_at ASC`, [rfqId]),
@@ -1156,8 +1110,8 @@ router.post('/rfqs/:rfqId/generate-terms', authTeam, requirePermission('Insuranc
     const { productCode = 'GMC' } = req.body;
 
     const [rfqRes, uwRes] = await Promise.all([
-      sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]),
-      sharedPool.query(`SELECT * FROM crm_rfq_underwriting WHERE rfq_id = $1 AND product_code = $2 ORDER BY updated_at DESC LIMIT 1`, [rfqId, productCode.toUpperCase()]),
+      guardedSharedPool(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]),
+      guardedSharedPool(`SELECT * FROM crm_rfq_underwriting WHERE rfq_id = $1 AND product_code = $2 ORDER BY updated_at DESC LIMIT 1`, [rfqId, productCode.toUpperCase()]),
     ]);
 
     if (!rfqRes.rows.length) return res.status(404).json({ success: false, error: 'RFQ not found' });
@@ -1202,6 +1156,5 @@ Format as a formal business letter. Use clear, legally appropriate language.`;
 
 // ─── Bootstrap tables on first load ──────────────────────────────────────────
 
-ensureTables().catch(err => console.error('[UW] table bootstrap error:', err.message));
 
 export default router;

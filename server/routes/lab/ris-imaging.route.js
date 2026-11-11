@@ -37,6 +37,7 @@ import {
 import { getLatestDraft } from '../../services/imaging/imaging-report-drafter.service.js';
 import qualityGates from '../../services/ai-quality-gates.service.js';
 
+import { schemaVerifier, guardedQuery } from '../../utils/schema-guard.js';
 const router = express.Router();
 
 const VALID_STUDY_STATUSES = ['Ordered', 'Scheduled', 'InProgress', 'Completed', 'Reported', 'Cancelled'];
@@ -253,150 +254,24 @@ const buildEvidenceCsv = ({ generatedAt, generatedBy, summary, filters, studies,
 };
 
 // ─── DB bootstrap ────────────────────────────────────────────────────────────
-const ensureTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ris_studies (
-      id               BIGSERIAL PRIMARY KEY,
-      lab_id           INTEGER NOT NULL,
-      patient_id       INTEGER,
-      patient_name     VARCHAR(255) NOT NULL,
-      patient_dob      DATE,
-      patient_sex      CHAR(1) DEFAULT 'U',
-      accession_number VARCHAR(64),
-      study_instance_uid VARCHAR(128),
-      modality         VARCHAR(20) NOT NULL DEFAULT 'OT',
-      body_part        VARCHAR(100),
-      study_description VARCHAR(500),
-      referring_physician VARCHAR(255),
-      referring_doctor_id INTEGER,
-      referring_doctor_name VARCHAR(255),
-      study_date       DATE NOT NULL DEFAULT CURRENT_DATE,
-      study_time       TIME,
-      priority         VARCHAR(20) DEFAULT 'Routine' CHECK (priority IN ('STAT','Urgent','Routine')),
-      status           VARCHAR(30) DEFAULT 'Ordered' CHECK (status IN ('Ordered','Scheduled','InProgress','Completed','Reported','Cancelled')),
-      file_name        VARCHAR(500) NOT NULL,
-      original_name    VARCHAR(500) NOT NULL,
-      file_path        VARCHAR(1000) NOT NULL,
-      file_size        INTEGER NOT NULL DEFAULT 0,
-      mime_type        VARCHAR(100) NOT NULL,
-      is_dicom         BOOLEAN DEFAULT FALSE,
-      dicom_tags       JSONB DEFAULT '{}',
-      series_count     INTEGER DEFAULT 1,
-      image_count      INTEGER DEFAULT 1,
-      report_text      TEXT,
-      report_status    VARCHAR(20) DEFAULT 'Pending' CHECK (report_status IN ('Pending','Draft','Final','Addendum')),
-      reported_by      VARCHAR(255),
-      reported_at      TIMESTAMPTZ,
-      notes            TEXT,
-      tenant_id        INTEGER,
-      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ris_lab_id    ON ris_studies(lab_id);
-    CREATE INDEX IF NOT EXISTS idx_ris_patient    ON ris_studies(patient_name);
-    CREATE INDEX IF NOT EXISTS idx_ris_modality   ON ris_studies(modality);
-    CREATE INDEX IF NOT EXISTS idx_ris_status     ON ris_studies(status);
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS series_instance_uid VARCHAR(128);
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS sop_instance_uid VARCHAR(128);
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS orthanc_study_id VARCHAR(64);
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS orthanc_instance_id VARCHAR(64);
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS pacs_source VARCHAR(20) DEFAULT 's3';
-    CREATE INDEX IF NOT EXISTS idx_ris_study_date ON ris_studies(study_date DESC);
-    -- Structured e-signature on the finalized report — separate from the
-    -- free-text reported_by column so the sealing doctor's identity and
-    -- credentials survive independently of display formatting.
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signed_by_id INTEGER;
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signed_by_name VARCHAR(255);
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signed_by_registration VARCHAR(100);
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signature_hash VARCHAR(128);
-    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signed_at TIMESTAMPTZ;
+const SCHEMA_TABLES = ['ris_studies', 'ris_study_audit_events', 'ris_sample_custody_events', 'ris_qc_reviews', 'ris_result_context', 'ris_critical_value_alerts', 'ris_qc_templates'];
 
-    CREATE TABLE IF NOT EXISTS ris_study_audit_events (
-      id BIGSERIAL PRIMARY KEY,
-      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
-      lab_id INTEGER NOT NULL,
-      event_type VARCHAR(80) NOT NULL,
-      actor_id INTEGER,
-      actor_name VARCHAR(255),
-      details JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ris_audit_study ON ris_study_audit_events(study_id, created_at DESC);
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const requireRisSchema = schemaVerifier({
+  pool: pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015003600-ris-imaging-governance before using RIS imaging',
+});
 
-    CREATE TABLE IF NOT EXISTS ris_sample_custody_events (
-      id BIGSERIAL PRIMARY KEY,
-      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
-      lab_id INTEGER NOT NULL,
-      from_status VARCHAR(30),
-      to_status VARCHAR(30) NOT NULL,
-      reason VARCHAR(500),
-      actor_id INTEGER,
-      actor_name VARCHAR(255),
-      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ris_custody_study ON ris_sample_custody_events(study_id, created_at DESC);
+requireRisSchema().catch((err) => console.error('[ris-imaging] schema check failed:', err.message, err.details || ''));
 
-    CREATE TABLE IF NOT EXISTS ris_qc_reviews (
-      id BIGSERIAL PRIMARY KEY,
-      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
-      lab_id INTEGER NOT NULL,
-      qc_status VARCHAR(20) NOT NULL CHECK (qc_status IN ('Passed','Failed','NeedsReview')),
-      review_notes TEXT,
-      reviewed_by VARCHAR(255),
-      reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ris_qc_study ON ris_qc_reviews(study_id, reviewed_at DESC);
+const guardedPool = guardedQuery(pool, 'Apply migration 20261015003600-ris-imaging-governance before using RIS imaging');
 
-    CREATE TABLE IF NOT EXISTS ris_result_context (
-      id BIGSERIAL PRIMARY KEY,
-      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
-      lab_id INTEGER NOT NULL,
-      reagent_lot_number VARCHAR(120) NOT NULL,
-      calibration_reference VARCHAR(120) NOT NULL,
-      context_notes TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (study_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_ris_result_context_study ON ris_result_context(study_id);
-
-    CREATE TABLE IF NOT EXISTS ris_critical_value_alerts (
-      id BIGSERIAL PRIMARY KEY,
-      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
-      lab_id INTEGER NOT NULL,
-      alert_reason VARCHAR(500) NOT NULL,
-      value_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-      status VARCHAR(20) NOT NULL DEFAULT 'Open' CHECK (status IN ('Open','Acknowledged','Escalated')),
-      raised_by VARCHAR(255),
-      raised_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      due_at TIMESTAMPTZ,
-      acknowledged_by VARCHAR(255),
-      acknowledged_at TIMESTAMPTZ,
-      acknowledgment_notes TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ris_critical_study ON ris_critical_value_alerts(study_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_ris_critical_status ON ris_critical_value_alerts(lab_id, status, due_at);
-
-    CREATE TABLE IF NOT EXISTS ris_qc_templates (
-      id BIGSERIAL PRIMARY KEY,
-      lab_id INTEGER NOT NULL,
-      modality VARCHAR(20) NOT NULL,
-      item_key VARCHAR(120) NOT NULL,
-      item_label VARCHAR(255) NOT NULL,
-      required BOOLEAN NOT NULL DEFAULT TRUE,
-      display_order INTEGER NOT NULL DEFAULT 1,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (lab_id, modality, item_key)
-    );
-    CREATE INDEX IF NOT EXISTS idx_ris_qc_template_modality ON ris_qc_templates(lab_id, modality, display_order);
-  `);
-};
-ensureTable().catch(e => console.error('[RIS] Table init error:', e.message));
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ─── Multer ───────────────────────────────────────────────────────────────────
 const ALLOWED_MIME = [
@@ -487,7 +362,7 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Could not resolve StudyInstanceUID from DICOM' });
     }
 
-    const result = await pool.query(`
+    const result = await guardedPool(`
       INSERT INTO ris_studies
         (lab_id, patient_name, patient_dob, patient_sex,
          accession_number, study_instance_uid, series_instance_uid, sop_instance_uid,
@@ -537,7 +412,7 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
     // Index in HyperGrid metadata using real Orthanc UIDs (for worklist / reports)
     if (isDicom && study.study_instance_uid) {
       try {
-        await pool.query(
+        await guardedPool(
           `INSERT INTO hg_dicom_studies
              (study_instance_uid, patient_id, patient_name, modality,
               study_date, study_description, accession_number, tenant_id, created_by, created_at)
@@ -557,7 +432,7 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
           ],
         );
         if (study.sop_instance_uid) {
-          await pool.query(
+          await guardedPool(
             `INSERT INTO hg_dicom_instances
                (sop_instance_uid, study_instance_uid, series_instance_uid, file_path, file_size,
                 content_type, tenant_id, created_at)
@@ -689,7 +564,7 @@ router.post('/upload-series', authLab, upload.array('files', 100), async (req, r
       return res.status(400).json({ success: false, message: 'Could not resolve StudyInstanceUID from batch' });
     }
 
-    const result = await pool.query(`
+    const result = await guardedPool(`
       INSERT INTO ris_studies
         (lab_id, patient_name, patient_dob, patient_sex,
          accession_number, study_instance_uid, series_instance_uid, sop_instance_uid,
@@ -821,7 +696,7 @@ router.get('/studies', authLab, async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     const [dataRes, countRes] = await Promise.all([
-      pool.query(
+      guardedPool(
         `SELECT id, lab_id, patient_name, patient_sex, patient_dob,
                 accession_number, study_instance_uid,
                 modality, body_part, study_description, referring_physician,
@@ -834,7 +709,7 @@ router.get('/studies', authLab, async (req, res) => {
          LIMIT $${p} OFFSET $${p+1}`,
         [...params, parseInt(limit), offset]
       ),
-      pool.query(`SELECT COUNT(*) FROM ris_studies WHERE ${where}`, params),
+      guardedPool(`SELECT COUNT(*) FROM ris_studies WHERE ${where}`, params),
     ]);
 
     return res.json({
@@ -853,7 +728,7 @@ router.get('/studies', authLab, async (req, res) => {
 // ─── GET /file/:id ────────────────────────────────────────────────────────────
 router.get('/file/:id', authLab, async (req, res) => {
   try {
-    const row = await pool.query(
+    const row = await guardedPool(
       'SELECT * FROM ris_studies WHERE id = $1 AND lab_id = $2',
       [req.params.id, req.lab.id]
     );
@@ -897,7 +772,7 @@ router.get('/file/:id', authLab, async (req, res) => {
 // ─── GET /:id (metadata) ──────────────────────────────────────────────────────
 router.get('/:id', authLab, async (req, res) => {
   try {
-    const row = await pool.query(
+    const row = await guardedPool(
       'SELECT * FROM ris_studies WHERE id = $1 AND lab_id = $2',
       [req.params.id, req.lab.id]
     );
@@ -911,7 +786,7 @@ router.get('/:id', authLab, async (req, res) => {
 // ─── GET /:id/audit ─────────────────────────────────────────────────────────
 router.get('/:id/audit', authLab, async (req, res) => {
   try {
-    const studyCheck = await pool.query(
+    const studyCheck = await guardedPool(
       'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2',
       [req.params.id, req.lab.id]
     );
@@ -919,7 +794,7 @@ router.get('/:id/audit', authLab, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Not found' });
     }
 
-    const rows = await pool.query(
+    const rows = await guardedPool(
       `SELECT id, study_id, event_type, actor_id, actor_name, details, created_at
        FROM ris_study_audit_events
        WHERE study_id = $1 AND lab_id = $2
@@ -936,7 +811,7 @@ router.get('/:id/audit', authLab, async (req, res) => {
 // ─── GET /:id/custody ───────────────────────────────────────────────────────
 router.get('/:id/custody', authLab, async (req, res) => {
   try {
-    const studyCheck = await pool.query(
+    const studyCheck = await guardedPool(
       'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2',
       [req.params.id, req.lab.id]
     );
@@ -944,7 +819,7 @@ router.get('/:id/custody', authLab, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Not found' });
     }
 
-    const rows = await pool.query(
+    const rows = await guardedPool(
       `SELECT id, study_id, from_status, to_status, reason, actor_id, actor_name, metadata, created_at
        FROM ris_sample_custody_events
        WHERE study_id = $1 AND lab_id = $2
@@ -962,7 +837,7 @@ router.get('/:id/custody', authLab, async (req, res) => {
 router.get('/qc/templates/:modality', authLab, async (req, res) => {
   try {
     const modality = normalizeModality(req.params.modality);
-    const templateRows = await pool.query(
+    const templateRows = await guardedPool(
       `SELECT item_key, item_label, required, display_order
        FROM ris_qc_templates
        WHERE lab_id = $1 AND modality = $2
@@ -1108,7 +983,7 @@ router.put('/:id/qc', authLab, async (req, res) => {
 // ─── GET /critical-alerts/summary ───────────────────────────────────────────
 router.get('/critical-alerts/summary', authLab, async (req, res) => {
   try {
-    const row = await pool.query(
+    const row = await guardedPool(
       `SELECT
          COUNT(*) FILTER (WHERE status = 'Open')::int         AS open_count,
          COUNT(*) FILTER (WHERE status = 'Escalated')::int    AS escalated_count,
@@ -1220,7 +1095,7 @@ router.get('/export/evidence-pack', authLab, async (req, res) => {
     }
     const filterSql = dateFilters.length ? ` AND ${dateFilters.join(' AND ')}` : '';
 
-    const studies = await pool.query(
+    const studies = await guardedPool(
       `SELECT s.id, s.patient_name, s.modality, s.status, s.report_status, s.created_at, s.updated_at,
               s.reported_by, s.reported_at, s.accession_number
        FROM ris_studies s
@@ -1296,28 +1171,28 @@ router.get('/export/evidence-pack', authLab, async (req, res) => {
     }
 
     const [auditEvents, custodyEvents, qcReviews, criticalAlerts, resultContexts] = await Promise.all([
-      pool.query(
+      guardedPool(
         `SELECT id, study_id, event_type, actor_id, actor_name, details, created_at
          FROM ris_study_audit_events
          WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
          ORDER BY created_at DESC`,
         [req.lab.id, studyIds]
       ),
-      pool.query(
+      guardedPool(
         `SELECT id, study_id, from_status, to_status, reason, actor_id, actor_name, metadata, created_at
          FROM ris_sample_custody_events
          WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
          ORDER BY created_at DESC`,
         [req.lab.id, studyIds]
       ),
-      pool.query(
+      guardedPool(
         `SELECT id, study_id, qc_status, review_notes, reviewed_by, reviewed_at
          FROM ris_qc_reviews
          WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
          ORDER BY reviewed_at DESC`,
         [req.lab.id, studyIds]
       ),
-      pool.query(
+      guardedPool(
         `SELECT id, study_id, status, alert_reason, value_payload, raised_by, raised_at,
                 due_at, acknowledged_by, acknowledged_at, acknowledgment_notes
          FROM ris_critical_value_alerts
@@ -1325,7 +1200,7 @@ router.get('/export/evidence-pack', authLab, async (req, res) => {
          ORDER BY created_at DESC`,
         [req.lab.id, studyIds]
       ),
-      pool.query(
+      guardedPool(
         `SELECT id, study_id, reagent_lot_number, calibration_reference, context_notes, updated_at
          FROM ris_result_context
          WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
@@ -1462,7 +1337,7 @@ router.put('/:id/result-context', authLab, async (req, res) => {
 // ─── GET /:id/critical-alerts ───────────────────────────────────────────────
 router.get('/:id/critical-alerts', authLab, async (req, res) => {
   try {
-    const studyCheck = await pool.query(
+    const studyCheck = await guardedPool(
       'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2',
       [req.params.id, req.lab.id]
     );
@@ -1470,7 +1345,7 @@ router.get('/:id/critical-alerts', authLab, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Not found' });
     }
 
-    const alerts = await pool.query(
+    const alerts = await guardedPool(
       `SELECT id, study_id, status, alert_reason, value_payload, raised_by, raised_at,
               due_at, acknowledged_by, acknowledged_at, acknowledgment_notes, updated_at
        FROM ris_critical_value_alerts

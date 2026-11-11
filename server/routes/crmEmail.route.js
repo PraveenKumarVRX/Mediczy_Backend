@@ -16,81 +16,32 @@ import { simpleParser } from 'mailparser';
 import { authCRM } from '../middleware/crm.middleware.js';
 import sharedPool from '../db/pgPool.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 const router = express.Router();
 
 // ─── Multer for attachments ───────────────────────────────────────────────────
 const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 10 } });
 
-// ─── DDL: auto-create tables ─────────────────────────────────────────────────
-(async () => {
-  try {
-    await sharedPool.query(`
-      CREATE TABLE IF NOT EXISTS crm_email_settings (
-        id            BIGSERIAL PRIMARY KEY,
-        crm_user_id   INTEGER NOT NULL,
-        display_name  VARCHAR(255),
-        email         VARCHAR(255) NOT NULL,
-        provider      VARCHAR(50) DEFAULT 'custom',
-        smtp_host     VARCHAR(255),
-        smtp_port     INTEGER DEFAULT 587,
-        smtp_secure   BOOLEAN DEFAULT false,
-        smtp_username VARCHAR(255),
-        smtp_password TEXT,
-        imap_host     VARCHAR(255),
-        imap_port     INTEGER DEFAULT 993,
-        imap_secure   BOOLEAN DEFAULT true,
-        imap_username VARCHAR(255),
-        imap_password TEXT,
-        is_default    BOOLEAN DEFAULT false,
-        is_active     BOOLEAN DEFAULT true,
-        last_synced_at TIMESTAMPTZ,
-        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_crm_email_settings_user ON crm_email_settings(crm_user_id);
+// ─── Schema: owned by the migration, verified here ───────────────────────────
+const SCHEMA_TABLES = ['crm_email_settings', 'crm_email_inbox', 'crm_email_templates'];
 
-      CREATE TABLE IF NOT EXISTS crm_email_inbox (
-        id            BIGSERIAL PRIMARY KEY,
-        crm_user_id   INTEGER NOT NULL,
-        settings_id   BIGINT REFERENCES crm_email_settings(id) ON DELETE SET NULL,
-        message_id    TEXT,
-        folder        VARCHAR(50) DEFAULT 'inbox',
-        from_addr     TEXT NOT NULL DEFAULT '',
-        from_name     TEXT DEFAULT '',
-        to_addrs      TEXT[] DEFAULT '{}',
-        cc_addrs      TEXT[] DEFAULT '{}',
-        subject       TEXT DEFAULT '',
-        body_text     TEXT,
-        body_html     TEXT,
-        is_read       BOOLEAN DEFAULT false,
-        is_starred    BOOLEAN DEFAULT false,
-        received_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE(crm_user_id, message_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_crm_email_inbox_user ON crm_email_inbox(crm_user_id, received_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_crm_email_inbox_folder ON crm_email_inbox(crm_user_id, folder);
+const ensureCrmEmailSchema = schemaVerifier({
+  pool: sharedPool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015003900-crm-extensions-governance before using CRM email',
+});
 
-      CREATE TABLE IF NOT EXISTS crm_email_templates (
-        id            BIGSERIAL PRIMARY KEY,
-        crm_user_id   INTEGER NOT NULL,
-        name          VARCHAR(255) NOT NULL,
-        subject       TEXT,
-        body          TEXT,
-        category      VARCHAR(100) DEFAULT 'general',
-        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_crm_email_templates_user ON crm_email_templates(crm_user_id);
-    `);
-  } catch (e) {
-    console.warn('[CRMEmail] DDL warn:', e.message);
-  }
-})();
+const guardedPool = guardedQuery(sharedPool, 'Apply migration 20261015003900-crm-extensions-governance before using CRM email');
+
+// The old block created these tables on import and logged a warning if that
+// failed, so a missing migration was a one-line warning and then a stream of
+// confusing query errors. Reported properly now; boot is not blocked.
+ensureCrmEmailSchema().catch((err) => console.error('[CRMEmail] schema check failed:', err.message, err.details || ''));
 
 // ─── SMTP helper ─────────────────────────────────────────────────────────────
 async function getSmtpConfig(crmUserId) {
-  const { rows } = await sharedPool.query(
+  const { rows } = await guardedPool(
     `SELECT * FROM crm_email_settings WHERE crm_user_id = $1 AND is_active = true ORDER BY is_default DESC, id ASC LIMIT 1`,
     [crmUserId]
   );
@@ -156,7 +107,7 @@ async function syncImap(settings, daysBack = 30) {
                     const ccAddrs  = (parsed.cc?.value || []).map(a => a.address).filter(Boolean);
                     const receivedAt = parsed.date || new Date();
 
-                    await sharedPool.query(
+                    await guardedPool(
                       `INSERT INTO crm_email_inbox
                          (crm_user_id, settings_id, message_id, folder, from_addr, from_name,
                           to_addrs, cc_addrs, subject, body_text, body_html, received_at)
@@ -181,7 +132,7 @@ async function syncImap(settings, daysBack = 30) {
           fetch.once('error', (fetchErr) => { imap.end(); reject(fetchErr); });
           fetch.once('end', async () => {
             await Promise.all(emailPromises);
-            await sharedPool.query(
+            await guardedPool(
               `UPDATE crm_email_settings SET last_synced_at = NOW() WHERE id = $1`,
               [settings.id]
             );
@@ -204,7 +155,7 @@ async function syncImap(settings, daysBack = 30) {
 /** GET /api/crm/emails/settings */
 router.get('/settings', authCRM, async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `SELECT id, display_name, email, provider, smtp_host, smtp_port, smtp_secure,
               smtp_username, imap_host, imap_port, imap_secure, imap_username,
               is_default, is_active, last_synced_at, created_at
@@ -232,13 +183,13 @@ router.post('/settings', authCRM, async (req, res) => {
     if (!email) return res.status(400).json({ success: false, message: 'Email address is required' });
 
     if (is_default) {
-      await sharedPool.query(
+      await guardedPool(
         `UPDATE crm_email_settings SET is_default = false WHERE crm_user_id = $1`,
         [req.crmUser.id]
       );
     }
 
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `INSERT INTO crm_email_settings
          (crm_user_id, display_name, email, provider,
           smtp_host, smtp_port, smtp_secure, smtp_username, smtp_password,
@@ -263,7 +214,7 @@ router.post('/settings', authCRM, async (req, res) => {
 /** PUT /api/crm/emails/settings/:id */
 router.put('/settings/:id', authCRM, async (req, res) => {
   try {
-    const { rows: existing } = await sharedPool.query(
+    const { rows: existing } = await guardedPool(
       `SELECT id FROM crm_email_settings WHERE id = $1 AND crm_user_id = $2`,
       [req.params.id, req.crmUser.id]
     );
@@ -277,13 +228,13 @@ router.put('/settings/:id', authCRM, async (req, res) => {
     } = req.body;
 
     if (is_default) {
-      await sharedPool.query(
+      await guardedPool(
         `UPDATE crm_email_settings SET is_default = false WHERE crm_user_id = $1 AND id != $2`,
         [req.crmUser.id, req.params.id]
       );
     }
 
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `UPDATE crm_email_settings SET
         display_name  = COALESCE($1, display_name),
         email         = COALESCE($2, email),
@@ -323,7 +274,7 @@ router.put('/settings/:id', authCRM, async (req, res) => {
 /** DELETE /api/crm/emails/settings/:id */
 router.delete('/settings/:id', authCRM, async (req, res) => {
   try {
-    const { rowCount } = await sharedPool.query(
+    const { rowCount } = await guardedPool(
       `DELETE FROM crm_email_settings WHERE id = $1 AND crm_user_id = $2`,
       [req.params.id, req.crmUser.id]
     );
@@ -337,7 +288,7 @@ router.delete('/settings/:id', authCRM, async (req, res) => {
 /** POST /api/crm/emails/settings/:id/test — test SMTP connection */
 router.post('/settings/:id/test', authCRM, async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `SELECT * FROM crm_email_settings WHERE id = $1 AND crm_user_id = $2`,
       [req.params.id, req.crmUser.id]
     );
@@ -375,7 +326,7 @@ router.get('/inbox', authCRM, async (req, res) => {
 
     const where = conditions.join(' AND ');
     const [{ rows: emails }, { rows: countRows }] = await Promise.all([
-      sharedPool.query(
+      guardedPool(
         `SELECT id, message_id, folder, from_addr, from_name, to_addrs, subject,
                 LEFT(body_text, 200) AS body_preview, body_html IS NOT NULL AS has_html,
                 is_read, is_starred, received_at
@@ -383,7 +334,7 @@ router.get('/inbox', authCRM, async (req, res) => {
          ORDER BY received_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
         [...params, parseInt(limit), offset]
       ),
-      sharedPool.query(`SELECT COUNT(*) FROM crm_email_inbox WHERE ${where}`, params),
+      guardedPool(`SELECT COUNT(*) FROM crm_email_inbox WHERE ${where}`, params),
     ]);
 
     res.json({ success: true, data: { emails, total: parseInt(countRows[0].count), page: parseInt(page) } });
@@ -397,8 +348,8 @@ router.get('/stats', authCRM, async (req, res) => {
   try {
     const uid = req.crmUser.id;
     const [{ rows: totals }, { rows: unread }] = await Promise.all([
-      sharedPool.query(`SELECT COUNT(*) AS total FROM crm_email_inbox WHERE crm_user_id = $1`, [uid]),
-      sharedPool.query(`SELECT COUNT(*) AS unread FROM crm_email_inbox WHERE crm_user_id = $1 AND is_read = false`, [uid]),
+      guardedPool(`SELECT COUNT(*) AS total FROM crm_email_inbox WHERE crm_user_id = $1`, [uid]),
+      guardedPool(`SELECT COUNT(*) AS unread FROM crm_email_inbox WHERE crm_user_id = $1 AND is_read = false`, [uid]),
     ]);
     res.json({ success: true, data: { total: parseInt(totals[0].total), unread: parseInt(unread[0].unread) } });
   } catch (e) {
@@ -412,7 +363,7 @@ router.get('/stats', authCRM, async (req, res) => {
 
 router.get('/templates', authCRM, async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `SELECT * FROM crm_email_templates WHERE crm_user_id = $1 ORDER BY created_at DESC`,
       [req.crmUser.id]
     );
@@ -426,7 +377,7 @@ router.post('/templates', authCRM, async (req, res) => {
   try {
     const { name, subject, body, category = 'general' } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Template name required' });
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `INSERT INTO crm_email_templates (crm_user_id, name, subject, body, category)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [req.crmUser.id, name, subject || null, body || null, category]
@@ -440,7 +391,7 @@ router.post('/templates', authCRM, async (req, res) => {
 router.put('/templates/:id', authCRM, async (req, res) => {
   try {
     const { name, subject, body, category } = req.body;
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `UPDATE crm_email_templates SET
          name = COALESCE($1, name), subject = COALESCE($2, subject),
          body = COALESCE($3, body), category = COALESCE($4, category), updated_at = NOW()
@@ -456,7 +407,7 @@ router.put('/templates/:id', authCRM, async (req, res) => {
 
 router.delete('/templates/:id', authCRM, async (req, res) => {
   try {
-    await sharedPool.query(
+    await guardedPool(
       `DELETE FROM crm_email_templates WHERE id = $1 AND crm_user_id = $2`,
       [req.params.id, req.crmUser.id]
     );
@@ -472,7 +423,7 @@ router.delete('/templates/:id', authCRM, async (req, res) => {
 
 router.get('/templates', authCRM, async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `SELECT * FROM crm_email_templates WHERE crm_user_id = $1 ORDER BY created_at DESC`,
       [req.crmUser.id]
     );
@@ -486,7 +437,7 @@ router.post('/templates', authCRM, async (req, res) => {
   try {
     const { name, subject, body, category = 'general' } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Template name required' });
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `INSERT INTO crm_email_templates (crm_user_id, name, subject, body, category)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [req.crmUser.id, name, subject || null, body || null, category]
@@ -500,7 +451,7 @@ router.post('/templates', authCRM, async (req, res) => {
 router.put('/templates/:id', authCRM, async (req, res) => {
   try {
     const { name, subject, body, category } = req.body;
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `UPDATE crm_email_templates SET
          name = COALESCE($1, name), subject = COALESCE($2, subject),
          body = COALESCE($3, body), category = COALESCE($4, category), updated_at = NOW()
@@ -516,7 +467,7 @@ router.put('/templates/:id', authCRM, async (req, res) => {
 
 router.delete('/templates/:id', authCRM, async (req, res) => {
   try {
-    await sharedPool.query(
+    await guardedPool(
       `DELETE FROM crm_email_templates WHERE id = $1 AND crm_user_id = $2`,
       [req.params.id, req.crmUser.id]
     );
@@ -529,14 +480,14 @@ router.delete('/templates/:id', authCRM, async (req, res) => {
 /** GET /api/crm/emails/:id — full email detail */
 router.get('/:id', authCRM, async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `SELECT * FROM crm_email_inbox WHERE id = $1 AND crm_user_id = $2`,
       [req.params.id, req.crmUser.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Email not found' });
     // Mark as read
     if (!rows[0].is_read) {
-      await sharedPool.query(`UPDATE crm_email_inbox SET is_read = true WHERE id = $1`, [req.params.id]);
+      await guardedPool(`UPDATE crm_email_inbox SET is_read = true WHERE id = $1`, [req.params.id]);
       rows[0].is_read = true;
     }
     res.json({ success: true, data: rows[0] });
@@ -548,7 +499,7 @@ router.get('/:id', authCRM, async (req, res) => {
 /** PUT /api/crm/emails/:id/mark-read */
 router.put('/:id/mark-read', authCRM, async (req, res) => {
   try {
-    await sharedPool.query(
+    await guardedPool(
       `UPDATE crm_email_inbox SET is_read = true WHERE id = $1 AND crm_user_id = $2`,
       [req.params.id, req.crmUser.id]
     );
@@ -561,7 +512,7 @@ router.put('/:id/mark-read', authCRM, async (req, res) => {
 /** PUT /api/crm/emails/:id/toggle-star */
 router.put('/:id/toggle-star', authCRM, async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `UPDATE crm_email_inbox SET is_starred = NOT is_starred WHERE id = $1 AND crm_user_id = $2 RETURNING is_starred`,
       [req.params.id, req.crmUser.id]
     );
@@ -575,7 +526,7 @@ router.put('/:id/toggle-star', authCRM, async (req, res) => {
 /** DELETE /api/crm/emails/:id */
 router.delete('/:id', authCRM, async (req, res) => {
   try {
-    await sharedPool.query(
+    await guardedPool(
       `DELETE FROM crm_email_inbox WHERE id = $1 AND crm_user_id = $2`,
       [req.params.id, req.crmUser.id]
     );
@@ -611,7 +562,7 @@ router.post('/send', authCRM, attachUpload.array('attachments', 10), async (req,
     });
 
     // Save to sent folder
-    await sharedPool.query(
+    await guardedPool(
       `INSERT INTO crm_email_inbox
          (crm_user_id, settings_id, message_id, folder, from_addr, from_name, to_addrs,
           subject, body_text, body_html, is_read, received_at)
@@ -633,7 +584,7 @@ router.post('/send', authCRM, attachUpload.array('attachments', 10), async (req,
 router.post('/sync', authCRM, async (req, res) => {
   try {
     const { days_back = 30 } = req.body;
-    const { rows } = await sharedPool.query(
+    const { rows } = await guardedPool(
       `SELECT * FROM crm_email_settings WHERE crm_user_id = $1 AND is_active = true ORDER BY is_default DESC LIMIT 1`,
       [req.crmUser.id]
     );

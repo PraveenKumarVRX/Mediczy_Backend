@@ -10,6 +10,7 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import detectAppointmentIntent from '../utils/appointmentIntent.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 // Load environment variables
 dotenv.config();
 
@@ -17,34 +18,24 @@ const router = express.Router();
 
 let aiDoctorMetricsTableReady = false;
 
-async function ensureAiDoctorMetricsTable() {
-  if (aiDoctorMetricsTableReady) return;
+const SCHEMA_TABLES = ['ai_doctor_metrics'];
 
-  await postgresSequelize.query(`
-    CREATE TABLE IF NOT EXISTS ai_doctor_metrics (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT,
-      tenant_id BIGINT,
-      event_type VARCHAR(64) NOT NULL,
-      session_id VARCHAR(128),
-      language_code VARCHAR(16),
-      page_path VARCHAR(120) DEFAULT '/ai-doctor',
-      latency_ms INTEGER,
-      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-      ip_address VARCHAR(64),
-      user_agent TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureAiDoctorMetricsTable = schemaVerifier({
+  sequelize: postgresSequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004800-rwe-export-governance before using AI doctor metrics',
+});
 
-    CREATE INDEX IF NOT EXISTS idx_ai_doctor_metrics_user_created
-      ON ai_doctor_metrics (user_id, created_at DESC);
+ensureAiDoctorMetricsTable().catch((err) => console.error('[ai] schema check failed:', err.message, err.details || ''));
 
-    CREATE INDEX IF NOT EXISTS idx_ai_doctor_metrics_event_created
-      ON ai_doctor_metrics (event_type, created_at DESC);
-  `);
+const guardedPostgresSequelize = guardedQuery(postgresSequelize, 'Apply migration 20261015004800-rwe-export-governance before using AI doctor metrics');
 
-  aiDoctorMetricsTableReady = true;
-}
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // SIB FastAPI Configuration (SOLE AI SOURCE)
 const SIB_BASE_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -161,7 +152,6 @@ router.use(aiRouteLimiter);
 // Lightweight KPI ingestion endpoint for AI Doctor UX analytics
 router.post('/ai-doctor/metrics', auth, async (req, res) => {
   try {
-    await ensureAiDoctorMetricsTable();
 
     const {
       eventType,
@@ -196,7 +186,7 @@ router.post('/ai-doctor/metrics', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'payload must be a JSON object.' });
     }
 
-    await postgresSequelize.query(
+    await guardedPostgresSequelize(
       `
         INSERT INTO ai_doctor_metrics (
           user_id,
@@ -248,12 +238,11 @@ router.post('/ai-doctor/metrics', auth, async (req, res) => {
 // User-level summary endpoint for quick product KPI visibility
 router.get('/ai-doctor/metrics/summary', auth, async (req, res) => {
   try {
-    await ensureAiDoctorMetricsTable();
 
     const userId = req.user?.id || null;
     const days = Math.min(30, Math.max(1, parseInt(req.query.days || '7', 10)));
 
-    const [summary] = await postgresSequelize.query(
+    const [summary] = await guardedPostgresSequelize(
       `
         SELECT
           COUNT(*)::int AS total_events,
@@ -272,7 +261,7 @@ router.get('/ai-doctor/metrics/summary', auth, async (req, res) => {
       }
     );
 
-    const topPrompts = await postgresSequelize.query(
+    const topPrompts = await guardedPostgresSequelize(
       `
         SELECT
           payload->>'prompt' AS prompt,

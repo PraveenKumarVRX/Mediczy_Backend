@@ -3,33 +3,26 @@
  * Mutations require x-device-token; organizationId is bound from device registry (never client body).
  */
 import pool from '../db/pgPool.js';
+import { schemaVerifier } from '../utils/schema-guard.js';
 
 let _schemaReady = false;
 
+const SCHEMA_TABLES = ['display_devices'];
+
+// Verified, not created. This ran on the authentication path, so every kiosk
+// request could issue DDL; it also swallowed its own failure, leaving a broken
+// schema to surface later as a confusing auth error.
+const verifyDisplaySchema = schemaVerifier({
+  pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004200-display-kiosk-governance before registering display devices',
+});
+
 export async function ensureDisplayDeviceSchema() {
   if (_schemaReady) return;
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS display_devices (
-        id SERIAL PRIMARY KEY,
-        device_token VARCHAR(120) UNIQUE NOT NULL,
-        name VARCHAR(200),
-        zone_id VARCHAR(80),
-        display_type VARCHAR(40),
-        url_path VARCHAR(200),
-        ip_address VARCHAR(60),
-        organization_id INTEGER,
-        last_seen TIMESTAMPTZ,
-        active BOOLEAN DEFAULT TRUE,
-        config JSONB DEFAULT '{}',
-        registered_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await pool.query(`ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
-    _schemaReady = true;
-  } catch (e) {
-    console.warn('[authDisplayDevice] schema ensure skipped:', e.message);
-  }
+  await verifyDisplaySchema();
+  _schemaReady = true;
 }
 
 function tokenFromReq(req) {
