@@ -395,15 +395,17 @@ router.get('/my-hospitals', authUser, async (req, res) => {
     const { corporateId, companyName } = corp;
 
     const hospitals = await postgresSequelize.query(
+      // hospitals stores the number as phone_number and has no rating column at
+      // all, so this selected two columns that do not exist and the endpoint
+      // answered 500 every time — the corporate hospital network never loaded.
       `SELECT h.id,
               h.hospital_name   AS name,
               h.city,
               h.state,
               h.address,
-              h.phone,
+              h.phone_number    AS phone,
               h.specializations,
-              h.metadata,
-              h.rating
+              h.metadata
          FROM hospitals h
          JOIN corporate_network_assignments cna
            ON cna.partner_id   = h.id
@@ -421,7 +423,8 @@ router.get('/my-hospitals', authUser, async (req, res) => {
       address:       h.address || '',
       phone:         h.phone   || '',
       specializations: h.specializations || [],
-      rating:        parseFloat(h.rating) || 0,
+      // hospitals carries no rating; reported as 0 rather than invented.
+      rating:        0,
       isCorpAssigned: true,
       corporateId,
       corporateName:  companyName,
@@ -456,11 +459,11 @@ router.get('/my-clinics', authUser, async (req, res) => {
     const { corporateId, companyName } = corp;
 
     const clinics = await postgresSequelize.query(
+      // outreach_clinics has no metadata column, which made this 500 every time.
       `SELECT oc.id,
               oc.name,
               oc.type,
-              oc.location,
-              oc.metadata
+              oc.location
          FROM outreach_clinics oc
          JOIN corporate_network_assignments cna
            ON cna.partner_id   = oc.id
@@ -478,7 +481,9 @@ router.get('/my-clinics', authUser, async (req, res) => {
       isCorpAssigned: true,
       corporateId,
       corporateName:  companyName,
-      corpDiscount:   c.metadata?.corpDiscount || c.metadata?.discount || 0,
+      // Neither outreach_clinics nor the assignment row records a corporate
+      // discount, so none is claimed for a clinic.
+      corpDiscount:   0,
     }));
 
     return res.json({
