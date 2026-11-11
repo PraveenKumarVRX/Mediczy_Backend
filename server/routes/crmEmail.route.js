@@ -34,10 +34,6 @@ const ensureCrmEmailSchema = schemaVerifier({
 
 const guardedPool = guardedQuery(sharedPool, 'Apply migration 20261015003900-crm-extensions-governance before using CRM email');
 
-// The old block created these tables on import and logged a warning if that
-// failed, so a missing migration was a one-line warning and then a stream of
-// confusing query errors. Reported properly now; boot is not blocked.
-ensureCrmEmailSchema().catch((err) => console.error('[CRMEmail] schema check failed:', err.message, err.details || ''));
 
 // ─── SMTP helper ─────────────────────────────────────────────────────────────
 async function getSmtpConfig(crmUserId) {

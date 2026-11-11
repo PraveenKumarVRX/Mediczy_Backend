@@ -266,7 +266,6 @@ const requireRisSchema = schemaVerifier({
   message: 'Apply migration 20261015003600-ris-imaging-governance before using RIS imaging',
 });
 
-requireRisSchema().catch((err) => console.error('[ris-imaging] schema check failed:', err.message, err.details || ''));
 
 const guardedPool = guardedQuery(pool, 'Apply migration 20261015003600-ris-imaging-governance before using RIS imaging');
 

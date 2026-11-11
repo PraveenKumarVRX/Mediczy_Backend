@@ -30,7 +30,6 @@ const ensureAiDoctorMetricsTable = schemaVerifier({
   message: 'Apply migration 20261015004800-rwe-export-governance before using AI doctor metrics',
 });
 
-ensureAiDoctorMetricsTable().catch((err) => console.error('[ai] schema check failed:', err.message, err.details || ''));
 
 const guardedPostgresSequelize = guardedQuery(postgresSequelize, 'Apply migration 20261015004800-rwe-export-governance before using AI doctor metrics');
 

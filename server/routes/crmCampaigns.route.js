@@ -29,7 +29,6 @@ const ensureTables = schemaVerifier({
   message: 'Apply migration 20261015003800-crm-campaigns-governance before using CRM campaigns',
 });
 
-ensureTables().catch((err) => console.error('[crm-campaigns] schema check failed:', err.message, err.details || ''));
 
 const guardedSharedPool = guardedQuery(sharedPool, 'Apply migration 20261015003800-crm-campaigns-governance before using CRM campaigns');
 
