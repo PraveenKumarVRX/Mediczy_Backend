@@ -47,7 +47,7 @@ export async function notifyAhcEntitlement({packageId,userId,eventType='invitati
     try { const resolved=await mailAttachmentsForCategory('corporate_ahc'); attachedFiles=resolved.attachments; if(resolved.reason!=='ok') console.warn(`[ahc-notify] no template attachment for user ${userId}: ${resolved.reason}`); }
     catch (error) { console.warn('[ahc-notify] template attachment lookup failed:',error.message); }
   }
-  const invitation=ahcInvitationMessage({employeeName:name,corporateName:member.corporateName,programName:member.name,validFrom:start,validTo:expiry,attachmentName:attachedFiles[0]?.filename||null});
+  const invitation=ahcInvitationMessage({employeeName:name,corporateName:member.corporateName,programName:member.name,validFrom:start,validTo:expiry,attachmentName:attachedFiles[0]?.filename||null,loginEmail:member.email,loginPhone:member.phoneNumber});
   const subject=eventType==='invitation'?invitation.subject:(title[eventType]||title.invitation);
   const text=eventType==='invitation'?invitation.text:`Dear ${name}, your ${member.name} is available for one use only. Please book and complete it on or before ${expiry}. After this date it cannot be used. Open https://app.mediqzy.com/health-checkups`;
   let emailStatus='not_applicable',whatsappStatus='not_applicable';

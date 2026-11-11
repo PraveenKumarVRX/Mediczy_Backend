@@ -19,6 +19,34 @@ export const AHC_SUPPORT = Object.freeze({
 });
 
 /**
+ * How a corporate employee signs in to My SmartHealth.
+ *
+ * The app supports passwordless sign-in (`POST /api/users/login/send-otp`,
+ * then `/login/verify-otp`) with either the registered email or the registered
+ * 10-digit mobile, so **no password is created for these accounts and none is
+ * ever put in an email**. A one-time code is the credential, it is requested
+ * by the person themselves, and it expires. An emailed password would sit in a
+ * mailbox forever and unlock a health record.
+ *
+ * WhatsApp OTP delivery is unreliable while the Gupshup templates are
+ * unapproved, so the email route is named first.
+ */
+export const AHC_SIGN_IN = Object.freeze({
+  method: 'One-time code — no password needed',
+  steps: [
+    'Open My SmartHealth and choose **Sign in with OTP**.',
+    'Enter your registered email address or mobile number.',
+    'We send you a one-time code; enter it to sign in.',
+  ],
+  passwordNote: 'Prefer a password? Choose **Forgot password** on the sign-in screen to set one for your account.',
+});
+
+const maskPhone = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 4 ? `\u2022\u2022\u2022\u2022\u2022\u2022${digits.slice(-4)}` : '';
+};
+
+/**
  * The booking journey as the product actually implements it
  * (routes/health-checkup.route.js): an employee's booking starts as `booked`,
  * the care team confirms it, instructions become visible from `confirmed`, and
@@ -62,7 +90,7 @@ export const AHC_GUPSHUP_WELCOME_TEMPLATE = Object.freeze({
  * genuinely going out — an email telling an employee to read an attachment
  * that is not there is worse than one that never mentions it.
  */
-export function ahcInvitationMessage({ employeeName, corporateName, programName, validFrom, validTo, attachmentName = null }) {
+export function ahcInvitationMessage({ employeeName, corporateName, programName, validFrom, validTo, attachmentName = null, loginEmail = null, loginPhone = null }) {
   const name = String(employeeName || 'Member').trim();
   const employer = String(corporateName || programName || 'your organisation').trim();
   const programme = String(programName || 'Annual Health Checkup').trim();
@@ -73,6 +101,8 @@ export function ahcInvitationMessage({ employeeName, corporateName, programName,
   const subject = `Your ${programme} is available \u2014 complete it by ${expiry}`;
   const validityLine = start ? `${start} to ${expiry}` : `until ${expiry}`;
   const manual = String(attachmentName || '').trim();
+  const signInEmail = String(loginEmail || '').trim();
+  const signInPhone = maskPhone(loginPhone);
   // Deliberately does not name the file: the saved studio template is static
   // HTML, so a filename baked into the copy goes stale the moment HR replaces
   // the attachment. The sentence is identical on both paths.
@@ -86,6 +116,12 @@ export function ahcInvitationMessage({ employeeName, corporateName, programName,
     `Your ${programme} is now available through My SmartHealth.`,
     '',
     `Your personal AHC validity period is ${validityLine}. Please book and complete your checkup on or before the end date. This is a one-time benefit; unused eligibility cannot be used after its expiry.`,
+    '',
+    'Signing in to My SmartHealth',
+    `Your username is ${signInEmail || 'the email address this message was sent to'}${signInPhone ? `, or your registered mobile ending ${signInPhone}` : ''}.`,
+    AHC_SIGN_IN.method,
+    ...AHC_SIGN_IN.steps.map((step, index) => `  ${index + 1}. ${step.replace(/\*\*/g, '')}`),
+    AHC_SIGN_IN.passwordNote.replace(/\*\*/g, ''),
     '',
     'How to use your checkup',
     ...AHC_PROCESS_STEPS.map((step, index) => `${index + 1}. ${step.title} \u2014 ${step.detail}`),
@@ -132,6 +168,20 @@ export function ahcInvitationMessage({ employeeName, corporateName, programName,
       <span style="font-size:13px">Please complete your checkup on or before the end date.</span>
     </div>
     <p>This is a one-time benefit; unused eligibility cannot be used after expiry.</p>
+    <div style="margin:26px 0 0;padding:18px;background:#f4f7fb;border:1px solid #dbe4ef;border-radius:8px">
+      <strong style="font-size:15px;color:#172033">Signing in to My SmartHealth</strong>
+      <p style="margin:10px 0 0;font-size:13px;line-height:21px;color:#4b5563">
+        Your username is <strong style="color:#116466">${escapeHtml(signInEmail) || 'the email address this message was sent to'}</strong>${signInPhone ? `, or your registered mobile ending <strong style="color:#116466">${escapeHtml(signInPhone)}</strong>` : ''}.
+      </p>
+      <p style="margin:10px 0 0;font-size:13px;line-height:21px;color:#4b5563">
+        <strong>${escapeHtml(AHC_SIGN_IN.method)}</strong>
+      </p>
+      <ol style="margin:8px 0 0;padding-left:20px;font-size:13px;line-height:21px;color:#4b5563">
+        ${AHC_SIGN_IN.steps.map(step => `<li>${escapeHtml(step).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</li>`).join('\n        ')}
+      </ol>
+      <p style="margin:10px 0 0;font-size:12px;line-height:19px;color:#6b7280">${escapeHtml(AHC_SIGN_IN.passwordNote).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</p>
+      <p style="margin:10px 0 0;font-size:12px;line-height:19px;color:#6b7280">We never send a password by email. If a message ever asks you for your password or a one-time code, it is not from us.</p>
+    </div>
     <h2 style="font-size:17px;margin:30px 0 14px;padding-top:18px;border-top:1px solid #e5e7eb">How to use your checkup</h2>
     <table role="presentation" cellpadding="0" cellspacing="0" width="100%">${steps}</table>
     ${manualLine ? `<p style="margin:18px 0 0;padding:12px 14px;background:#edf8f6;border-radius:6px;font-size:13px;line-height:20px;color:#315b55">\u{1F4CE} ${escapeHtml(manualLine)}</p>` : ''}
@@ -155,5 +205,5 @@ export function ahcInvitationMessage({ employeeName, corporateName, programName,
 </table>
 </td></tr></table></body></html>`;
 
-  return { subject, text, html, bookingUrl, support: AHC_SUPPORT, steps: AHC_PROCESS_STEPS, attachmentName: manual || null, whatsappParams: [name, employer, expiry] };
+  return { subject, text, html, bookingUrl, support: AHC_SUPPORT, steps: AHC_PROCESS_STEPS, signIn: AHC_SIGN_IN, attachmentName: manual || null, whatsappParams: [name, employer, expiry] };
 }

@@ -1,4 +1,4 @@
-import { AHC_GUPSHUP_WELCOME_TEMPLATE, ahcInvitationMessage, AHC_SUPPORT, AHC_PROCESS_STEPS } from '../services/corporate-ahc-message-templates.service.js';
+import { AHC_GUPSHUP_WELCOME_TEMPLATE, ahcInvitationMessage, AHC_SUPPORT, AHC_PROCESS_STEPS, AHC_SIGN_IN } from '../services/corporate-ahc-message-templates.service.js';
 
 describe('corporate AHC invitation templates', () => {
   it('keeps Gupshup variables ordered and provides representative samples', () => {
@@ -137,6 +137,58 @@ describe('the invitation explains the process and signs off with the care desk',
     expect(html).not.toContain('<img src=x');
     expect(html).not.toContain('onerror');
     expect(html).toContain('AHC appointment booking manual attached with this email');
+  });
+
+  it('tells the employee how to sign in, naming their own username', () => {
+    const { html, text } = ahcInvitationMessage({
+      employeeName: 'S Vivek', programName: 'AHC', validTo: '27-12-2026',
+      loginEmail: 's.vivek@equitas.bank.in', loginPhone: '9032479087',
+    });
+    expect(html).toContain('Signing in to My SmartHealth');
+    expect(html).toContain('s.vivek@equitas.bank.in');
+    expect(text).toContain('s.vivek@equitas.bank.in');
+    for (const step of AHC_SIGN_IN.steps) expect(text).toContain(step.replace(/\*\*/g, ''));
+  });
+
+  it('masks the mobile number to its last four digits', () => {
+    const { html, text } = ahcInvitationMessage({
+      employeeName: 'S Vivek', programName: 'AHC', validTo: '27-12-2026',
+      loginEmail: 's.vivek@equitas.bank.in', loginPhone: '+91 90324 79087',
+    });
+    expect(html).toContain('9087');
+    expect(html).not.toContain('9032479087');
+    expect(text).not.toContain('9032479087');
+  });
+
+  it('never puts a password in the email, and says so', () => {
+    // The accounts are passwordless by design: /api/users/login/send-otp is the
+    // credential. An emailed password would sit in a mailbox forever and
+    // unlock a health record.
+    const { html, text } = ahcInvitationMessage({
+      employeeName: 'S Vivek', programName: 'AHC', validTo: '27-12-2026',
+      loginEmail: 's.vivek@equitas.bank.in', loginPhone: '9032479087',
+    });
+    for (const body of [html, text]) {
+      expect(body).not.toMatch(/your password is|temporary password|password\s*:/i);
+    }
+    expect(html).toContain('We never send a password by email');
+    expect(AHC_SIGN_IN.method).toMatch(/no password needed/i);
+  });
+
+  it('falls back to generic wording when no identifier is supplied', () => {
+    const { html, text } = ahcInvitationMessage({ employeeName: 'S Vivek', programName: 'AHC', validTo: '27-12-2026' });
+    expect(html).toContain('the email address this message was sent to');
+    expect(text).toContain('the email address this message was sent to');
+    expect(html).not.toContain('registered mobile ending');
+  });
+
+  it('escapes an identifier that contains markup', () => {
+    const { html } = ahcInvitationMessage({
+      employeeName: 'S Vivek', programName: 'AHC', validTo: '27-12-2026',
+      loginEmail: '<script>alert(1)</script>@x.com',
+    });
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
   });
 
   it('still refuses to send without a personalised expiry', () => {

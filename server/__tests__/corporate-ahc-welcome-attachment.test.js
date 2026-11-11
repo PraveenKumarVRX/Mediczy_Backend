@@ -132,6 +132,16 @@ describe('the AHC welcome email carries the file attached to the template', () =
     expect(payload.htmlContent).toContain('Team SmartHealth');
   });
 
+  it('names the recipient\'s own email and masked mobile as their sign-in', async () => {
+    arm();
+    mailAttachmentsForCategory.mockResolvedValue({ attachments: [LETTER], templateId: 't1', reason: 'ok' });
+    await notifyAhcEntitlement({ packageId: 'pkg-1', userId: 7641, eventType: 'invitation', validTo: '2026-12-15' });
+    const [, payload] = sendOutboundEmail.mock.calls[0];
+    expect(payload.htmlContent).toContain('Signing in to My SmartHealth');
+    expect(payload.htmlContent).toContain(MEMBER.email);
+    expect(payload.htmlContent).not.toMatch(/your password is|temporary password/i);
+  });
+
   it('stays idempotent — a duplicate claim sends nothing', async () => {
     dbQuery.mockReset();
     dbQuery.mockImplementationOnce(async () => []);

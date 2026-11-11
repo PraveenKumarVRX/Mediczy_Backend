@@ -18,6 +18,18 @@ Use the employee's actual `validFrom` and `validTo` dates for every send. The pe
 >
 > **Your personal AHC validity period is {{valid_from}} to {{valid_to}}.** Please complete your checkup on or before the end date. This is a one-time benefit; unused eligibility cannot be used after expiry.
 >
+> **Signing in to My SmartHealth**
+>
+> Your username is your registered email address (the one this message was sent to), or your registered mobile number.
+>
+> **One-time code — no password needed**
+> 1. Open My SmartHealth and choose **Sign in with OTP**.
+> 2. Enter your registered email address or mobile number.
+> 3. We send you a one-time code; enter it to sign in.
+>
+> Prefer a password? Choose **Forgot password** on the sign-in screen to set one.
+> We never send a password by email. If a message ever asks you for your password or a one-time code, it is not from us.
+>
 > **How to use your checkup**
 >
 > 1. **Open My SmartHealth** — Sign in to the app, or go to app.mediqzy.com, and open Health Checkups.
@@ -54,6 +66,17 @@ when the caller passes `attachmentName`, which `notifyAhcEntitlement` resolves
 from the template *before* composing the body. With no file attached, the line
 is absent — an email telling an employee to read an attachment that is not
 there is worse than one that never mentions it.
+
+**No password is ever emailed.** Corporate employee accounts are created
+without a usable password on purpose: the app signs people in with a one-time
+code (`POST /api/users/login/send-otp` then `/login/verify-otp`) using the
+registered email or the 10-digit mobile. A password mailed to an employee would
+sit in their mailbox indefinitely and unlock a health record, so the invitation
+names the username and the method, never a secret. `AHC_SIGN_IN` holds that
+copy; the automated email prints the employee's own address and their mobile
+masked to four digits, while the saved studio template uses the generic
+"the email address this message was sent to" so HR has no extra placeholder to
+fill.
 
 **Care desk contacts** come from `AHC_SUPPORT` in the same service:
 `care@mysmarthealth.in` (the monitored shared mailbox) and `+91 80989 98998`,
