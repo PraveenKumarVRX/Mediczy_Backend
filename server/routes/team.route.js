@@ -27,6 +27,17 @@ import { generateAssistedEmailDraft, analyzeEmailCommunication } from '../servic
 import { fetchScopedCorporateActivity, summarizeScopedCorporateActivity } from '../services/team-corporate-activity.service.js';
 import { sendTransactionalEmail, getEmailProviderStatus } from '../services/welcome-email.service.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
+
+const ENSURETEAMWORKSPACESCHEMA_TABLES = ['api_v2_refresh_tokens', 'team_refresh_tokens', 'team_login_attempts', 'team_appointments', 'team_communication_logs', 'team_communication_templates', 'crm_ai_email_communications'];
+
+const ensureTeamWorkspaceSchema = schemaVerifier({
+  pool: sharedPool,
+  tables: ENSURETEAMWORKSPACESCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004000-team-workspace-governance before using the team workspace',
+});
+
 const router = express.Router();
 
 // ─── Token constants ─────────────────────────────────────────────────────────
@@ -51,112 +62,9 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
 ;(async () => {
   try {
     const pool = sharedPool;
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS api_v2_refresh_tokens (
-        id             BIGSERIAL   PRIMARY KEY,
-        jti            UUID        NOT NULL UNIQUE,
-        user_id        INTEGER     NOT NULL,
-        role           VARCHAR(50) NOT NULL,
-        token_hash     VARCHAR(64) NOT NULL,
-        expires_at     TIMESTAMPTZ NOT NULL,
-        revoked        BOOLEAN     NOT NULL DEFAULT FALSE,
-        revoked_at     TIMESTAMPTZ,
-        replaced_by_jti UUID,
-        ip_address     TEXT,
-        user_agent     TEXT,
-        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_user_role ON api_v2_refresh_tokens(user_id, role);
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_expires_at ON api_v2_refresh_tokens(expires_at);
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_revoked ON api_v2_refresh_tokens(revoked);
-
-      CREATE TABLE IF NOT EXISTS team_refresh_tokens (
-        id         BIGSERIAL   PRIMARY KEY,
-        jti        UUID        NOT NULL UNIQUE,
-        user_id    INTEGER     NOT NULL,
-        token_hash VARCHAR(64) NOT NULL,
-        issued_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        expires_at TIMESTAMPTZ NOT NULL,
-        revoked    BOOLEAN     NOT NULL DEFAULT FALSE,
-        revoked_at TIMESTAMPTZ,
-        device_fp  VARCHAR(64),
-        ip_address VARCHAR(45)
-      );
-      CREATE INDEX IF NOT EXISTS idx_trt_jti     ON team_refresh_tokens(jti);
-      CREATE INDEX IF NOT EXISTS idx_trt_user_id ON team_refresh_tokens(user_id);
-
-      CREATE TABLE IF NOT EXISTS team_login_attempts (
-        id         BIGSERIAL    PRIMARY KEY,
-        email      VARCHAR(255) NOT NULL,
-        ip_address VARCHAR(45),
-        succeeded  BOOLEAN      NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_tla_email_ts
-        ON team_login_attempts(email, created_at);
-
-      CREATE TABLE IF NOT EXISTS team_appointments (
-        id               BIGSERIAL    PRIMARY KEY,
-        doctor_id        INTEGER      NOT NULL,
-        patient_email    VARCHAR(255) NOT NULL,
-        appointment_date DATE         NOT NULL,
-        appointment_time VARCHAR(20)  NOT NULL,
-        type             VARCHAR(50)  NOT NULL DEFAULT 'consultation',
-        notes            TEXT,
-        status           VARCHAR(30)  NOT NULL DEFAULT 'confirmed',
-        tenant_id        INTEGER,
-        created_by       INTEGER      NOT NULL,
-        created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_tappt_doctor  ON team_appointments(doctor_id);
-      CREATE INDEX IF NOT EXISTS idx_tappt_status  ON team_appointments(status);
-      CREATE INDEX IF NOT EXISTS idx_tappt_tenant  ON team_appointments(tenant_id);
-
-      CREATE TABLE IF NOT EXISTS team_communication_logs (
-        id                  BIGSERIAL PRIMARY KEY,
-        team_user_id        INTEGER NOT NULL,
-        corporate_id        INTEGER,
-        channel             VARCHAR(20) NOT NULL,
-        recipient           VARCHAR(255) NOT NULL,
-        recipient_mode      VARCHAR(30) NOT NULL DEFAULT 'single',
-        template_id         VARCHAR(100),
-        template_name       VARCHAR(150),
-        subject             TEXT,
-        message             TEXT,
-        provider            VARCHAR(50),
-        status              VARCHAR(20) NOT NULL,
-        provider_message_id VARCHAR(255),
-        error_message       TEXT,
-        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_tcomm_team_created   ON team_communication_logs(team_user_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_tcomm_channel_status ON team_communication_logs(channel, status);
-      CREATE INDEX IF NOT EXISTS idx_tcomm_corporate      ON team_communication_logs(corporate_id);
-
-      CREATE TABLE IF NOT EXISTS team_communication_templates (
-        id            BIGSERIAL PRIMARY KEY,
-        team_user_id  INTEGER NOT NULL,
-        corporate_id  INTEGER,
-        channel       VARCHAR(20) NOT NULL,
-        template_key  VARCHAR(120) NOT NULL,
-        name          VARCHAR(150) NOT NULL,
-        category      VARCHAR(80) NOT NULL DEFAULT 'General',
-        subject       TEXT,
-        content       TEXT NOT NULL,
-        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (team_user_id, corporate_id, channel, template_key)
-      );
-      CREATE INDEX IF NOT EXISTS idx_tcomm_tpl_corporate ON team_communication_templates(corporate_id, channel);
-
-      ALTER TABLE team_communication_logs
-        ADD COLUMN IF NOT EXISTS ai_draft_id BIGINT;
-
-      ALTER TABLE team_communication_templates
-        ADD COLUMN IF NOT EXISTS source VARCHAR(30) NOT NULL DEFAULT 'manual';
-    `);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensureTeamWorkspaceSchema();
   } catch (err) {
     console.error('[Team] DB table init error:', err.message);
   }
@@ -1662,38 +1570,9 @@ const _buildProfessionalEmailHtml = ({ subject, message, companyName }) => {
 };
 
 const _ensureTeamAiCommunicationTable = async () => {
-  await sharedPool.query(`
-    CREATE TABLE IF NOT EXISTS crm_ai_email_communications (
-      id                 BIGSERIAL PRIMARY KEY,
-      entity_type        VARCHAR(40),
-      entity_id          BIGINT,
-      lead_id            BIGINT,
-      deal_id            BIGINT,
-      contact_email      VARCHAR(255),
-      subject            TEXT,
-      body               TEXT,
-      intent             VARCHAR(100),
-      tone               VARCHAR(80),
-      status             VARCHAR(40) DEFAULT $q$draft$q$,
-      event_type         VARCHAR(40),
-      sentiment          VARCHAR(40),
-      engagement_score   INTEGER DEFAULT 0,
-      conversion_signal  VARCHAR(40),
-      urgency            VARCHAR(40),
-      next_action        JSONB DEFAULT '{}'::jsonb,
-      suggested_stage    VARCHAR(100),
-      revenue_impact     NUMERIC(15,2) DEFAULT 0,
-      ai_payload         JSONB DEFAULT '{}'::jsonb,
-      learning_tags      JSONB DEFAULT $q$[]$q$::jsonb,
-      created_by         INTEGER,
-      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ai_email_entity ON crm_ai_email_communications(entity_type, entity_id);
-    CREATE INDEX IF NOT EXISTS idx_ai_email_team ON crm_ai_email_communications(created_by, entity_type, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_ai_email_team_entity_created ON crm_ai_email_communications(created_by, entity_type, entity_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_ai_email_team_score_created ON crm_ai_email_communications(created_by, entity_type, engagement_score DESC, created_at DESC);
-  `);
+  // Schema is owned by the migration; this used to build the table on
+  // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+  await ensureTeamWorkspaceSchema();
 };
 
 _ensureTeamAiCommunicationTable().catch((err) => {

@@ -15,6 +15,18 @@ import llmProvider from './ai-brain/llm-provider.js';
 import cron from 'node-cron';
 import { tick, tickStart, tickError, beginJob } from '../utils/cronRegistry.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
+import schemaCheckPool from '../db/pgPool.js';
+
+const ENSUREPROACTIVEALERTSSCHEMA_TABLES = ['ai_proactive_alerts'];
+
+const ensureProactiveAlertsSchema = schemaVerifier({
+  pool: schemaCheckPool,
+  tables: ENSUREPROACTIVEALERTSSCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migration before storing proactive alerts',
+});
+
 class ProactiveAlertsService {
   constructor() {
     this.running = false;
@@ -179,23 +191,9 @@ class ProactiveAlertsService {
   }
 
   async storeAlerts(pool, alerts) {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ai_proactive_alerts (
-        id SERIAL PRIMARY KEY,
-        type VARCHAR(50) NOT NULL,
-        severity VARCHAR(20) DEFAULT 'medium',
-        patient_id INTEGER,
-        doctor_id INTEGER,
-        message TEXT,
-        data JSONB DEFAULT '{}',
-        status VARCHAR(20) DEFAULT 'pending',
-        acknowledged_at TIMESTAMP,
-        tenant_id VARCHAR(64) DEFAULT 'default',
-        created_at TIMESTAMP DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_alerts_status ON ai_proactive_alerts(status);
-      CREATE INDEX IF NOT EXISTS idx_alerts_doctor ON ai_proactive_alerts(doctor_id);
-    `);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensureProactiveAlertsSchema();
 
     for (const alert of alerts) {
       await pool.query(

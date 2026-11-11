@@ -38,16 +38,27 @@ describe('imaging RIS auto-ingest', () => {
     delete process.env.ORTHANC_DEFAULT_REFERRING_DOCTOR_ID;
   });
 
-  it('prefers explicit lab id, then env, then modality AE match', async () => {
+  it('prefers an explicit lab id, then the modality AE title, then the institution name', async () => {
     expect(await resolveLabIdForOrthancIngest({ explicitLabId: 2368 })).toBe(2368);
 
-    process.env.ORTHANC_DEFAULT_LAB_ID = '99';
-    expect(await resolveLabIdForOrthancIngest({})).toBe(99);
-
-    delete process.env.ORTHANC_DEFAULT_LAB_ID;
     mockQuery.mockResolvedValueOnce({ rows: [{ tenant_id: 42 }] });
     expect(await resolveLabIdForOrthancIngest({ remoteAet: 'MRI_PC_1' })).toBe(42);
-    expect(mockQuery).toHaveBeenCalled();
+
+    mockQuery.mockResolvedValueOnce({ rows: [] });               // no AE match
+    mockQuery.mockResolvedValueOnce({ rows: [{ tenant_id: 55 }] }); // institution match
+    expect(await resolveLabIdForOrthancIngest({ remoteAet: 'RELAY', institutionName: 'City Imaging' })).toBe(55);
+  });
+
+  it('quarantines a study it cannot attribute rather than guessing from the env default', async () => {
+    // ORTHANC_DEFAULT_LAB_ID was removed as an automatic fallback: once set it
+    // silently overrode every study's real owning lab, for every lab, which
+    // attributes a patient's imaging to the wrong one. No match now means no
+    // attribution.
+    process.env.ORTHANC_DEFAULT_LAB_ID = '99';
+    expect(await resolveLabIdForOrthancIngest({})).toBeNull();
+
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    expect(await resolveLabIdForOrthancIngest({ remoteAet: 'UNKNOWN_AE' })).toBeNull();
   });
 
   it('resolves referring doctor from env default', async () => {
@@ -65,7 +76,7 @@ describe('imaging RIS auto-ingest', () => {
   });
 
   it('inserts a new ris_studies row for Orthanc MRI ingest', async () => {
-    process.env.ORTHANC_DEFAULT_LAB_ID = '2368';
+    // The lab is named explicitly: an env default no longer attributes studies.
     process.env.ORTHANC_DEFAULT_REFERRING_DOCTOR_ID = '70';
 
     mockQuery
@@ -99,6 +110,7 @@ describe('imaging RIS auto-ingest', () => {
       },
       orthancStudyId: 'orthanc-study-1',
       remoteAet: 'MRI_CONSOLE',
+      labId: 2368,
     });
 
     expect(out.success).toBe(true);
@@ -110,7 +122,6 @@ describe('imaging RIS auto-ingest', () => {
   });
 
   it('updates existing ris_studies instead of duplicating', async () => {
-    process.env.ORTHANC_DEFAULT_LAB_ID = '2368';
     mockQuery
       .mockResolvedValueOnce({ rows: [{ id: 11, referring_doctor_id: null, status: 'Completed', image_count: 1 }] })
       .mockResolvedValueOnce({ rows: [{ id: 11, modality: 'MR' }] });
@@ -122,6 +133,7 @@ describe('imaging RIS auto-ingest', () => {
         modality: 'MR',
       },
       orthancStudyId: 'orthanc-study-1',
+      labId: 2368,
     });
 
     expect(out.success).toBe(true);

@@ -26,41 +26,29 @@ import {
 import { computeNews2 } from './news2.service.js';
 import drugInteractionChecker from './ai-drug-interaction.service.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 const DISCLAIMER =
   'Clinical decision support only — licensed clinician review required before any care decision.';
 
 // ─── Phase 2: tables, NEWS2/qSOFA, coding ────────────────────────────────────
 
-const ensureClinicalIntelligenceTables = async () => {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS clinical_alerts (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL,
-      patient_id INTEGER NOT NULL,
-      source VARCHAR(80) NOT NULL,
-      alert_type VARCHAR(80) NOT NULL,
-      severity VARCHAR(24) NOT NULL,
-      score INTEGER,
-      title VARCHAR(240) NOT NULL,
-      message TEXT NOT NULL,
-      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-      status VARCHAR(24) NOT NULL DEFAULT 'open',
-      acknowledged_by INTEGER,
-      acknowledged_at TIMESTAMP,
-      resolved_at TIMESTAMP,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS clinical_coding_suggestions (
-      id SERIAL PRIMARY KEY,
-      note_id INTEGER NOT NULL,
-      patient_id INTEGER NOT NULL,
-      doctor_id INTEGER NOT NULL,
-      suggestions JSONB NOT NULL DEFAULT '[]'::jsonb,
-      status VARCHAR(24) NOT NULL DEFAULT 'pending_review',
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-  `);
-};
+const SCHEMA_TABLES = ['clinical_alerts', 'clinical_coding_suggestions'];
+
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureClinicalIntelligenceTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+
+const guardedSequelize = guardedQuery(sequelize, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // WP-1.8: this was the third of three disagreeing NEWS2 implementations, and shared their worst bug — every
 // missing vital defaulted to a value that scored 0 (Number(undefined ?? 0) || null still treats a real 0 the
@@ -138,7 +126,6 @@ export const scoreDeterioration = (rawVitals = {}) => {
 };
 
 export const evaluateVitalsAndAlert = async ({ tenantId, patientId, source = 'vitals', vitals, recordedBy = null }) => {
-  await ensureClinicalIntelligenceTables();
   const result = scoreDeterioration(vitals);
 
   await publishEvent({
@@ -155,7 +142,7 @@ export const evaluateVitalsAndAlert = async ({ tenantId, patientId, source = 'vi
   const title = severity === 'critical' ? 'Critical deterioration risk' : 'Deterioration review required';
   const message = `NEWS2 ${result.news2}; qSOFA ${result.qsofa}. Review patient now and document escalation.`;
 
-  const [alert] = await sequelize.query(
+  const [alert] = await guardedSequelize(
     `INSERT INTO clinical_alerts
       (tenant_id, patient_id, source, alert_type, severity, score, title, message, payload)
      VALUES
@@ -238,7 +225,6 @@ Output JSON: { "suggestions": [{ "code", "description", "codeSystem": "icd10|cpt
 }
 
 export const createCodingSuggestions = async (note) => {
-  await ensureClinicalIntelligenceTables();
   const corpus = [
     note.chiefComplaint,
     note.subjective,
@@ -281,7 +267,7 @@ export const createCodingSuggestions = async (note) => {
 
   if (!suggestions.length) return [];
 
-  await sequelize.query(
+  await guardedSequelize(
     `INSERT INTO clinical_coding_suggestions (note_id, patient_id, doctor_id, suggestions)
      VALUES (:noteId, :patientId, :doctorId, :suggestions::jsonb)`,
     {
@@ -659,8 +645,7 @@ function demoMedsForPatient(name) {
 
 async function loadClinicalAlerts(organizationId) {
   try {
-    await ensureClinicalIntelligenceTables();
-    const rows = await sequelize.query(
+    const rows = await guardedSequelize(
       `SELECT id, patient_id, severity, title, message, score, status, acknowledged_at, created_at
        FROM clinical_alerts
        WHERE tenant_id = :tenantId AND COALESCE(status, 'open') = 'open'
@@ -883,8 +868,7 @@ export async function acknowledgeClinicalAlert(organizationId, alertId, userId) 
   }
   if (id.startsWith('clinical-')) {
     const numericId = parseInt(id.replace('clinical-', ''), 10);
-    await ensureClinicalIntelligenceTables();
-    await sequelize.query(
+    await guardedSequelize(
       `UPDATE clinical_alerts
        SET status = 'acknowledged', acknowledged_by = :userId, acknowledged_at = NOW()
        WHERE id = :id AND tenant_id = :tenantId`,

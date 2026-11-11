@@ -23,6 +23,7 @@
 import { randomUUID } from 'crypto';
 import pool from '../db/pgPool.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 const CDA_NS = 'urn:hl7-org:v3';
 const MEDICZY_OID_ROOT = '2.16.840.1.113883.3.mediczy';
 const LOINC_SYSTEM = '2.16.840.1.113883.6.1';
@@ -31,28 +32,23 @@ const SNOMED_SYSTEM = '2.16.840.1.113883.6.96';
 const RXNORM_SYSTEM = '2.16.840.1.113883.6.88';
 
 // ── DB table for CDA document registry ───────────────────────────────────────
-export async function ensureCdaTables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS cda_documents (
-      id              BIGSERIAL PRIMARY KEY,
-      tenant_id       INTEGER,
-      patient_id      INTEGER,
-      document_type   VARCHAR(50) NOT NULL,
-      loinc_code      VARCHAR(10),
-      cda_id          UUID NOT NULL UNIQUE,
-      xml_content     TEXT,
-      status          VARCHAR(20) DEFAULT 'generated',
-      reference_id    INTEGER,
-      reference_type  VARCHAR(50),
-      generated_by    INTEGER,
-      generated_at    TIMESTAMPTZ DEFAULT NOW(),
-      validated_at    TIMESTAMPTZ,
-      validation_errors TEXT[]
-    );
-    CREATE INDEX IF NOT EXISTS idx_cda_patient ON cda_documents(patient_id, document_type);
-    CREATE INDEX IF NOT EXISTS idx_cda_tenant  ON cda_documents(tenant_id, generated_at DESC);
-  `);
-}
+const SCHEMA_TABLES = ['cda_documents'];
+
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureCdaTables = schemaVerifier({
+  pool: pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+
+const guardedPool = guardedQuery(pool, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ── XML helpers ───────────────────────────────────────────────────────────────
 function esc(s) {
@@ -384,7 +380,7 @@ export function generateImagingReport({ patient, doctor, hospital, study, report
 
 // ── Persistence helpers ───────────────────────────────────────────────────────
 export async function saveCdaDocument({ tenantId, patientId, documentType, loincCode, cdaId, xml, referenceId, referenceType, generatedBy }) {
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `INSERT INTO cda_documents
        (tenant_id, patient_id, document_type, loinc_code, cda_id, xml_content, reference_id, reference_type, generated_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
@@ -395,7 +391,7 @@ export async function saveCdaDocument({ tenantId, patientId, documentType, loinc
 }
 
 export async function listCdaDocuments(patientId, tenantId) {
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT id, cda_id, document_type, loinc_code, status, reference_id, reference_type, generated_at
      FROM cda_documents WHERE patient_id = $1 AND tenant_id = $2 ORDER BY generated_at DESC`,
     [patientId, tenantId]
@@ -404,7 +400,7 @@ export async function listCdaDocuments(patientId, tenantId) {
 }
 
 export async function getCdaDocument(id, tenantId) {
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     'SELECT * FROM cda_documents WHERE id = $1 AND tenant_id = $2',
     [id, tenantId]
   );

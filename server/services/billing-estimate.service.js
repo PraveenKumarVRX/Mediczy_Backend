@@ -9,63 +9,24 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS billing_estimates (
-      id                  BIGSERIAL PRIMARY KEY,
-      organization_id     BIGINT,
-      admission_id        BIGINT,
-      patient_id          BIGINT,
-      estimate_type       TEXT DEFAULT 'pre_admission',  -- pre_admission | mid_stay | final
-      procedure_name      TEXT,
-      room_charges        NUMERIC(12,2) DEFAULT 0,
-      ot_charges          NUMERIC(12,2) DEFAULT 0,
-      anesthesia_charges  NUMERIC(12,2) DEFAULT 0,
-      consumable_charges  NUMERIC(12,2) DEFAULT 0,
-      implant_charges     NUMERIC(12,2) DEFAULT 0,
-      pharmacy_charges    NUMERIC(12,2) DEFAULT 0,
-      lab_charges         NUMERIC(12,2) DEFAULT 0,
-      imaging_charges     NUMERIC(12,2) DEFAULT 0,
-      professional_fees   NUMERIC(12,2) DEFAULT 0,
-      misc_charges        NUMERIC(12,2) DEFAULT 0,
-      subtotal            NUMERIC(12,2) GENERATED ALWAYS AS (
-        room_charges + ot_charges + anesthesia_charges + consumable_charges +
-        implant_charges + pharmacy_charges + lab_charges + imaging_charges +
-        professional_fees + misc_charges
-      ) STORED,
-      discount_amount     NUMERIC(12,2) DEFAULT 0,
-      tax_amount          NUMERIC(12,2) DEFAULT 0,
-      total_estimate      NUMERIC(12,2) DEFAULT 0,
-      currency            TEXT DEFAULT 'INR',
-      insurance_covered   NUMERIC(12,2) DEFAULT 0,
-      patient_liability   NUMERIC(12,2) DEFAULT 0,
-      notes               TEXT,
-      prepared_by         TEXT,
-      valid_until         DATE,
-      status              TEXT DEFAULT 'draft',   -- draft | shared | accepted | superseded
-      estimate_data       JSONB DEFAULT '{}'::jsonb,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_billing_estimate_admission ON billing_estimates(admission_id);
-    CREATE INDEX IF NOT EXISTS idx_billing_estimate_patient   ON billing_estimates(patient_id);
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
+const SCHEMA_TABLES = ['billing_estimates', 'non_payable_items'];
 
-    CREATE TABLE IF NOT EXISTS non_payable_items (
-      id                BIGSERIAL PRIMARY KEY,
-      organization_id   BIGINT,
-      admission_id      BIGINT NOT NULL,
-      item_category     TEXT,
-      item_description  TEXT NOT NULL,
-      amount            NUMERIC(12,2) NOT NULL,
-      reason_code       TEXT,   -- charity | insurance_exclusion | write_off | hospital_error | other
-      approved_by       TEXT,
-      notes             TEXT,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_non_payable_admission ON non_payable_items(admission_id);
-  `);
-}
-ensureTables().catch(e => console.warn('[billing-estimate] table init:', e.message));
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+
+const guardedSequelize = guardedQuery(sequelize, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ── Estimate generation ───────────────────────────────────────────────────────
 
@@ -85,7 +46,7 @@ export async function createEstimate(data) {
   const totalEstimate = subtotal - parseFloat(discountAmount || 0) + parseFloat(taxAmount || 0);
   const patientLiability = totalEstimate - parseFloat(insuranceCovered || 0);
 
-  const [result] = await sequelize.query(
+  const [result] = await guardedSequelize(
     `INSERT INTO billing_estimates (
        organization_id, admission_id, patient_id, estimate_type, procedure_name,
        room_charges, ot_charges, anesthesia_charges, consumable_charges, implant_charges,
@@ -119,14 +80,14 @@ export async function createEstimate(data) {
 }
 
 export async function getEstimatesByAdmission(admissionId) {
-  return sequelize.query(
+  return guardedSequelize(
     `SELECT * FROM billing_estimates WHERE admission_id = :admId ORDER BY created_at DESC`,
     { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
   );
 }
 
 export async function updateEstimateStatus(estimateId, status) {
-  await sequelize.query(
+  await guardedSequelize(
     `UPDATE billing_estimates SET status = :status, updated_at = NOW() WHERE id = :id`,
     { replacements: { id: estimateId, status }, type: QueryTypes.UPDATE }
   );
@@ -136,7 +97,7 @@ export async function updateEstimateStatus(estimateId, status) {
 // ── Non-payable items ─────────────────────────────────────────────────────────
 
 export async function addNonPayableItem({ organizationId, admissionId, itemCategory, itemDescription, amount, reasonCode, approvedBy, notes }) {
-  const [result] = await sequelize.query(
+  const [result] = await guardedSequelize(
     `INSERT INTO non_payable_items (organization_id, admission_id, item_category, item_description, amount, reason_code, approved_by, notes)
      VALUES (:orgId, :admId, :category, :desc, :amount, :reason, :by, :notes)
      RETURNING *`,
@@ -153,7 +114,7 @@ export async function addNonPayableItem({ organizationId, admissionId, itemCateg
 }
 
 export async function getNonPayableItems(admissionId) {
-  return sequelize.query(
+  return guardedSequelize(
     `SELECT * FROM non_payable_items WHERE admission_id = :admId ORDER BY created_at DESC`,
     { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
   );
@@ -162,14 +123,14 @@ export async function getNonPayableItems(admissionId) {
 // ── Sync OT consumables into estimate ────────────────────────────────────────
 
 export async function syncOtConsumablesToEstimate(admissionId, estimateId, organizationId) {
-  const [otBooking] = await sequelize.query(
+  const [otBooking] = await guardedSequelize(
     `SELECT id FROM ot_bookings WHERE admission_id = :admId ORDER BY created_at DESC LIMIT 1`,
     { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
   ).catch(() => [null]);
 
   if (!otBooking) return { synced: false, reason: 'no_ot_booking' };
 
-  const [row] = await sequelize.query(
+  const [row] = await guardedSequelize(
     `SELECT
        COALESCE(SUM(unit_cost * quantity) FILTER (WHERE is_billable = TRUE AND item_code NOT LIKE 'IMP%'), 0) as consumable_total,
        COALESCE(SUM(unit_cost * quantity) FILTER (WHERE is_billable = TRUE AND item_code LIKE 'IMP%'), 0) as implant_total
@@ -178,12 +139,12 @@ export async function syncOtConsumablesToEstimate(admissionId, estimateId, organ
     { replacements: { bookingId: otBooking.id }, type: QueryTypes.SELECT }
   ).catch(() => [{ consumable_total: 0, implant_total: 0 }]);
 
-  const implants = await sequelize.query(
+  const implants = await guardedSequelize(
     `SELECT COALESCE(SUM(unit_cost), 0) as implant_total FROM implant_records WHERE ot_booking_id = :bookingId AND is_billable = TRUE`,
     { replacements: { bookingId: otBooking.id }, type: QueryTypes.SELECT }
   ).catch(() => [{ implant_total: 0 }]);
 
-  await sequelize.query(
+  await guardedSequelize(
     `UPDATE billing_estimates
      SET consumable_charges = :consumable, implant_charges = :implant, updated_at = NOW()
      WHERE id = :estId`,

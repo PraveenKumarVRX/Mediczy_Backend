@@ -27,6 +27,17 @@ import { verifyChain } from '../services/audit-chain.service.js';
 import llmMetrics from '../services/llm-metrics.service.js';
 import { getOpportunityMatrix } from '../services/healthcare-ai-opportunity.service.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
+
+const ENSUREAIGOVERNANCESCHEMA_TABLES = ['ai_adverse_events'];
+
+const ensureAiGovernanceSchema = schemaVerifier({
+  pool: pool,
+  tables: ENSUREAIGOVERNANCESCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004800-rwe-export-governance before recording AI adverse events',
+});
+
 const router = express.Router();
 
 // ── Auth middleware (reuse existing pattern) ──────────────────────────────────
@@ -389,18 +400,9 @@ router.post('/adverse-events', async (req, res) => {
     }
 
     // Ensure table exists (idempotent DDL)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ai_adverse_events (
-        id           SERIAL PRIMARY KEY,
-        patient_id   INTEGER,
-        component_id TEXT NOT NULL,
-        description  TEXT NOT NULL,
-        severity     TEXT NOT NULL,
-        reported_by  INTEGER REFERENCES users(id),
-        status       TEXT DEFAULT 'open',
-        created_at   TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensureAiGovernanceSchema();
 
     const reporterId = reportedBy ?? req.user?.id ?? null;
 
@@ -498,10 +500,9 @@ router.post('/risk-scores/:id/pin-version', requireSuperAdminOrMedDir, async (re
     }
 
     // Ensure column exists (idempotent DDL)
-    await pool.query(`
-      ALTER TABLE ai_health_risk_scores
-      ADD COLUMN IF NOT EXISTS algorithm_version TEXT
-    `);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensureAiGovernanceSchema();
 
     const { rows } = await pool.query(`
       UPDATE ai_health_risk_scores

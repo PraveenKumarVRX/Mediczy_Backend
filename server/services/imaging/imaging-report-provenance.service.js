@@ -29,7 +29,6 @@ const ensureTable = schemaVerifier({
 // startup so an unmigrated environment shows up in the log rather than only
 // when a request arrives.
 const guardedPool = guardedQuery(pool, 'Apply migration 20261015004500-imaging-evidence-governance before using imaging report provenance');
-ensureTable().catch((err) => console.error('[imaging-report-provenance] schema check failed:', err.message, err.details || ''));
 
 export async function recordProvenance({
   draftId,

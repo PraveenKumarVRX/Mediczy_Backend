@@ -30,7 +30,6 @@ const ensureTables = schemaVerifier({
 // an unmigrated environment is visible in the log, not only when a booking is
 // attempted. A consent gate must never read as "no restriction recorded".
 const guardedQ = guardedQuery(sequelize, 'Apply migration 20260526000001-create-hmis-phase3-5-tables before enforcing consent');
-ensureTables().catch((err) => console.error('[consent-enforcement] schema check failed:', err.message, err.details || ''));
 // Roles that can override consent checks (emergency/clinical authority)
 const CONSENT_OVERRIDE_ROLES = new Set([
   'admin', 'super_admin', 'medical_director', 'surgeon', 'anesthetist', 'ot_head'

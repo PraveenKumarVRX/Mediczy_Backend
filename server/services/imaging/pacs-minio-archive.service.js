@@ -81,7 +81,6 @@ const ensureLogTable = schemaVerifier({
 // startup so an unmigrated environment shows up in the log rather than only
 // when a request arrives.
 const guardedPool = guardedQuery(pool, 'Apply migration 20261015004600-imaging-ops-governance before using the PACS archive');
-ensureLogTable().catch((err) => console.error('[pacs-minio-archive] schema check failed:', err.message, err.details || ''));
 
 async function* listAllKeys(client, bucket) {
   let token;

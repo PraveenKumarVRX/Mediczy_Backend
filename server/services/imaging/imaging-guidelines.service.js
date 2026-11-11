@@ -37,7 +37,6 @@ const ensureTable = schemaVerifier({
 // startup so an unmigrated environment shows up in the log rather than only
 // when a request arrives.
 const guardedPool = guardedQuery(pool, 'Apply migration 20261015004600-imaging-ops-governance before using imaging guidelines');
-ensureTable().catch((err) => console.error('[imaging-guidelines] schema check failed:', err.message, err.details || ''));
 
 const SEED_GUIDELINES = [
   {

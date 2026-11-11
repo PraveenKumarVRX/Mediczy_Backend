@@ -10,8 +10,8 @@ test('RWE and HyperGrid routes are migration-owned and fail closed', () => {
   expect(hypergrid).not.toMatch(/CREATE\s+(TABLE|INDEX)|ALTER\s+TABLE/i);
   expect(rwe).toContain('SCHEMA_NOT_MIGRATED');
   expect(hypergrid).toContain('SCHEMA_NOT_MIGRATED');
-  expect(rwe).toContain('information_schema.tables');
-  expect(hypergrid).toContain('information_schema.tables');
+  expect(rwe).toContain('schema-guard.js');
+  expect(hypergrid).toContain('schema-guard.js');
 });
 
 test('RWE export persistence is owned by a deployment migration', () => {
@@ -29,7 +29,7 @@ test('AI governance persistence is migration-owned and request paths are read-on
   const proactive = fs.readFileSync(path.join(root, 'services/ai-proactive-alerts-cron.service.js'), 'utf8');
   for (const source of [governance, doctor, proactive]) {
     expect(source).not.toMatch(/CREATE\s+TABLE|CREATE\s+INDEX/i);
-    expect(source).toContain('information_schema.tables');
+    expect(source).toContain('schema-guard.js');
   }
   const migration = fs.readFileSync(
     path.join(root, 'migrations/20261015005000-ai-governance.migration.js'),
@@ -45,7 +45,7 @@ test('clinical intelligence and billing estimate services are migration-owned', 
   const billing = fs.readFileSync(path.join(root, 'services/billing-estimate.service.js'), 'utf8');
   for (const source of [clinical, billing]) {
     expect(source).not.toMatch(/CREATE\s+TABLE|CREATE\s+INDEX/i);
-    expect(source).toContain('information_schema.tables');
+    expect(source).toContain('schema-guard.js');
     expect(source).toContain('SCHEMA_NOT_MIGRATED');
   }
   const migration = fs.readFileSync(
@@ -68,7 +68,7 @@ test('clinical support services are migration-owned and fail closed', () => {
   for (const relative of files) {
     const source = fs.readFileSync(path.join(root, relative), 'utf8');
     expect(source).not.toMatch(/CREATE\s+TABLE|CREATE\s+INDEX/i);
-    expect(source).toContain('information_schema.tables');
+    expect(source).toContain('schema-guard.js');
     expect(source).toContain('SCHEMA_NOT_MIGRATED');
   }
   const migration = fs.readFileSync(
@@ -84,7 +84,7 @@ test('CRM growth automation and segments are migration-owned', () => {
   for (const relative of ['services/crm-automations.service.js', 'services/crm-segments.service.js']) {
     const source = fs.readFileSync(path.join(root, relative), 'utf8');
     expect(source).not.toMatch(/CREATE\s+TABLE|CREATE\s+INDEX/i);
-    expect(source).toContain('information_schema.tables');
+    expect(source).toContain('schema-guard.js');
     expect(source).toContain('SCHEMA_NOT_MIGRATED');
   }
   const migration = fs.readFileSync(path.join(root, 'migrations/20261015005300-crm-growth-governance.migration.js'), 'utf8');
@@ -97,7 +97,7 @@ test('HMIS workflow persistence is migration-owned', () => {
   for (const relative of ['services/discharge-workflow.service.js', 'services/hmis-automation.service.js', 'services/hmis-preauth.service.js']) {
     const source = fs.readFileSync(path.join(root, relative), 'utf8');
     expect(source).not.toMatch(/CREATE\s+TABLE|CREATE\s+INDEX/i);
-    expect(source).toContain('information_schema.tables');
+    expect(source).toContain('schema-guard.js');
     expect(source).toContain('SCHEMA_NOT_MIGRATED');
   }
   const migration = fs.readFileSync(path.join(root, 'migrations/20261015005400-hmis-workflows-governance.migration.js'), 'utf8');
@@ -107,7 +107,7 @@ test('HMIS workflow persistence is migration-owned', () => {
 test('ISO 27001 persistence is migration-owned', () => {
   const service = fs.readFileSync(path.join(root, 'services/iso27001.service.js'), 'utf8');
   expect(service).not.toMatch(/CREATE\s+TABLE|CREATE\s+INDEX/i);
-  expect(service).toContain('information_schema.tables');
+  expect(service).toContain('schema-guard.js');
   expect(service).toContain('SCHEMA_NOT_MIGRATED');
   const migration = fs.readFileSync(path.join(root, 'migrations/20261015005500-iso27001-governance.migration.js'), 'utf8');
   for (const table of ['iso27001_controls', 'iso27001_evidence', 'iso27001_risk_register']) {

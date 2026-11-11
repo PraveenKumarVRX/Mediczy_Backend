@@ -34,7 +34,6 @@ const ensureTable = schemaVerifier({
 // startup so an unmigrated environment shows up in the log rather than only
 // when a request arrives.
 const guardedPool = guardedQuery(pool, 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging evidence graph');
-ensureTable().catch((err) => console.error('[imaging-evidence-graph] schema check failed:', err.message, err.details || ''));
 
 /** Persists the compiled model + matched rules as linked rows. Called after
  * the draft row itself exists (needs a real draft_id/study_id). Best-effort

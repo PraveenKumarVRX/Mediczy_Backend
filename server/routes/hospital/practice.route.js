@@ -30,6 +30,17 @@ import emrOrderRouter from '../../services/emr-order-router.service.js';
 import { enforceInsurancePolicyStandards } from '../../services/insurance-policy-standards.service.js';
 import { evaluateVitalsAndAlert, ensureClinicalIntelligenceTables } from '../../services/clinical-intelligence.service.js';
 
+import { schemaVerifier } from '../../utils/schema-guard.js';
+
+const ENSUREPRACTICESCHEMA_TABLES = ['discharge_plans', 'prems_survey_invitations', 'hospital_tariffs', 'prems_responses'];
+
+const ensurePracticeSchema = schemaVerifier({
+  sequelize: sequelize,
+  tables: ENSUREPRACTICESCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015002700-prems-feedback before using practice workflows',
+});
+
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
 const DEMO_HOSPITAL_CAPABILITIES = [
@@ -1610,23 +1621,16 @@ router.put('/discharge-summaries/:id', verifyHospitalToken, requireSessionRole(D
 });
 
 
-const ensureDischargePlanningTables = async () => {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS discharge_plans (
-      id SERIAL PRIMARY KEY,
-      hospital_id INTEGER NOT NULL,
-      patient_id VARCHAR(80) NOT NULL,
-      admission_id VARCHAR(80),
-      target_discharge_date DATE,
-      owner VARCHAR(160),
-      status VARCHAR(24) NOT NULL DEFAULT 'active',
-      blockers JSONB NOT NULL DEFAULT '[]'::jsonb,
-      tasks JSONB NOT NULL DEFAULT '[]'::jsonb,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-};
+// Discharge planning has its own check so the handlers below state plainly what
+// they depend on. The table is owned by the 20261015002700-prems-feedback
+// migration; this used to build it on the request path, taking an ACCESS
+// EXCLUSIVE lock mid-request, and a skipped migration simply looked fine.
+const ensureDischargePlanningTables = schemaVerifier({
+  sequelize,
+  tables: ['discharge_plans'],
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015002700-prems-feedback before using discharge planning',
+});
 
 router.get('/discharge-plans', verifyHospitalToken, async (req, res) => {
   await ensureDischargePlanningTables();
@@ -3483,43 +3487,16 @@ router.patch('/clinical-alerts/:id/acknowledge', verifyHospitalToken, async (req
 
 // Phase 1: canonical tariff master
 const ensurePremsTables = async () => {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS prems_survey_invitations (
-      id SERIAL PRIMARY KEY,
-      hospital_id INTEGER NOT NULL,
-      patient_id VARCHAR(80),
-      discharge_summary_id INTEGER,
-      visit_type VARCHAR(24) NOT NULL DEFAULT 'ipd',
-      channel VARCHAR(24) NOT NULL DEFAULT 'whatsapp',
-      status VARCHAR(24) NOT NULL DEFAULT 'queued',
-      sent_at TIMESTAMP,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
+  // Schema is owned by the migration; this used to build the table on
+  // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+  await ensurePracticeSchema();
 };
 
 router.get('/tariffs', verifyHospitalToken, async (req, res) => {
   try {
-    await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS hospital_tariffs (
-        id SERIAL PRIMARY KEY,
-        hospital_id INTEGER NOT NULL,
-        code VARCHAR(80) NOT NULL,
-        item_name VARCHAR(200) NOT NULL,
-        category VARCHAR(80) NOT NULL,
-        unit VARCHAR(40) NOT NULL,
-        room_category VARCHAR(80),
-        payer_type VARCHAR(80),
-        package_code VARCHAR(80),
-        rate NUMERIC(12,2) NOT NULL,
-        gst NUMERIC(5,2) NOT NULL DEFAULT 0,
-        effective_from DATE NOT NULL,
-        effective_to DATE,
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensurePracticeSchema();
     const [rows] = await sequelize.query(`SELECT * FROM hospital_tariffs WHERE active = TRUE AND hospital_id = :hospitalId ORDER BY category, item_name`, { replacements: { hospitalId: req.hospitalId } });
     res.json({ success: true, data: rows });
   } catch (error) {
@@ -3533,26 +3510,9 @@ router.post('/tariffs', verifyHospitalToken, async (req, res) => {
     if (!code || !itemName || !category || !unit || rate === undefined || !effectiveFrom) {
       return res.status(400).json({ success: false, message: 'code, itemName, category, unit, rate and effectiveFrom are required' });
     }
-    await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS hospital_tariffs (
-        id SERIAL PRIMARY KEY,
-        hospital_id INTEGER NOT NULL,
-        code VARCHAR(80) NOT NULL,
-        item_name VARCHAR(200) NOT NULL,
-        category VARCHAR(80) NOT NULL,
-        unit VARCHAR(40) NOT NULL,
-        room_category VARCHAR(80),
-        payer_type VARCHAR(80),
-        package_code VARCHAR(80),
-        rate NUMERIC(12,2) NOT NULL,
-        gst NUMERIC(5,2) NOT NULL DEFAULT 0,
-        effective_from DATE NOT NULL,
-        effective_to DATE,
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensurePracticeSchema();
     const [rows] = await sequelize.query(`
       INSERT INTO hospital_tariffs (hospital_id, code, item_name, category, unit, room_category, payer_type, package_code, rate, gst, effective_from, effective_to)
       VALUES (:hospitalId,:code,:itemName,:category,:unit,:roomCategory,:payerType,:packageCode,:rate,:gst,:effectiveFrom,:effectiveTo)
@@ -3592,21 +3552,9 @@ router.get('/tariffs/lookup', verifyHospitalToken, async (req, res) => {
 router.get('/prems/responses', verifyHospitalToken, async (req, res) => {
   try {
     await ensurePremsTables();
-    await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS prems_responses (
-        id SERIAL PRIMARY KEY,
-        hospital_id INTEGER NOT NULL,
-        patient_id VARCHAR(80),
-        visit_type VARCHAR(24) NOT NULL,
-        rating INTEGER NOT NULL,
-        communication_score INTEGER,
-        cleanliness_score INTEGER,
-        wait_time_score INTEGER,
-        comment TEXT,
-        negative_followup BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensurePracticeSchema();
     const [rows] = await sequelize.query(`SELECT * FROM prems_responses WHERE hospital_id = :hospitalId ORDER BY created_at DESC LIMIT 100`, { replacements: { hospitalId: req.hospitalId } });
     res.json({ success: true, data: rows });
   } catch (error) {
@@ -3619,43 +3567,89 @@ router.post('/prems/responses', verifyHospitalToken, async (req, res) => {
     await ensurePremsTables();
     const { patientId, visitType = 'opd', rating, communicationScore, cleanlinessScore, waitTimeScore, comment } = req.body;
     if (!rating) return res.status(400).json({ success: false, message: 'rating is required' });
-    await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS prems_responses (
-        id SERIAL PRIMARY KEY,
-        hospital_id INTEGER NOT NULL,
-        patient_id VARCHAR(80),
-        visit_type VARCHAR(24) NOT NULL,
-        rating INTEGER NOT NULL,
-        communication_score INTEGER,
-        cleanliness_score INTEGER,
-        wait_time_score INTEGER,
-        comment TEXT,
-        negative_followup BOOLEAN NOT NULL DEFAULT FALSE,
-        sentiment VARCHAR(24),
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-    await sequelize.query(`ALTER TABLE prems_responses ADD COLUMN IF NOT EXISTS sentiment VARCHAR(24)`);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensurePracticeSchema();
+
+    // A survey form that is submitted twice — a double tap, a retried request,
+    // a reloaded link — must record one response, not two, or the ward's scores
+    // move on how often a patient pressed the button. prems_responses already
+    // carried idempotency_key under a unique index and nothing ever set it.
+    const idempotencyKey = String(req.body.idempotencyKey || req.get('Idempotency-Key') || '').trim();
+    if (!idempotencyKey) {
+      return res.status(400).json({
+        success: false,
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'Send an idempotencyKey (or an Idempotency-Key header) so a resubmitted survey is not counted twice.',
+      });
+    }
+
     const negativeFollowup = Number(rating) <= 2;
     // `sentiment` has existed on this table since the PREMS migration but was never
     // populated by this route — classify the free-text comment when one is given.
     const sentimentResult = comment ? await classifySentiment(comment).catch(() => null) : null;
     const [rows] = await sequelize.query(`
-      INSERT INTO prems_responses (hospital_id, patient_id, visit_type, rating, communication_score, cleanliness_score, wait_time_score, comment, negative_followup, sentiment)
-      VALUES (:hospitalId,:patientId,:visitType,:rating,:communicationScore,:cleanlinessScore,:waitTimeScore,:comment,:negativeFollowup,:sentiment)
-      RETURNING *
-    `, { replacements: { hospitalId: req.hospitalId, patientId: patientId || null, visitType, rating, communicationScore: communicationScore || null, cleanlinessScore: cleanlinessScore || null, waitTimeScore: waitTimeScore || null, comment: comment || null, negativeFollowup, sentiment: sentimentResult?.sentiment || null } });
+      INSERT INTO prems_responses (hospital_id, patient_id, visit_type, rating, communication_score, cleanliness_score, wait_time_score, comment, negative_followup, sentiment, idempotency_key)
+      VALUES (:hospitalId,:patientId,:visitType,:rating,:communicationScore,:cleanlinessScore,:waitTimeScore,:comment,:negativeFollowup,:sentiment,:idempotencyKey)
+      ON CONFLICT DO NOTHING RETURNING *
+    `, { replacements: { hospitalId: req.hospitalId, patientId: patientId || null, visitType, rating, communicationScore: communicationScore || null, cleanlinessScore: cleanlinessScore || null, waitTimeScore: waitTimeScore || null, comment: comment || null, negativeFollowup, sentiment: sentimentResult?.sentiment || null, idempotencyKey } });
+    // A replay returns no row from ON CONFLICT DO NOTHING. Answer with the
+    // response already recorded, and do not raise a second complaint ticket
+    // for it.
+    if (!rows[0]) {
+      const [existing] = await sequelize.query(
+        `SELECT * FROM prems_responses WHERE idempotency_key = :idempotencyKey LIMIT 1`,
+        { replacements: { idempotencyKey } }
+      );
+      return res.status(200).json({
+        success: true,
+        data: existing?.[0] || null,
+        replayed: true,
+        message: 'This survey response was already recorded.',
+      });
+    }
+
     if (negativeFollowup) {
+      const ticketNumber = `PREMS-${Date.now()}`;
       await sequelize.query(`
         INSERT INTO tickets ("ticketNumber", subject, description, category, priority, status, requester, metadata, "createdAt", "updatedAt")
         VALUES (:ticketNumber, :subject, :description, 'feedback', 'high', 'open', :requester::jsonb, :metadata::jsonb, NOW(), NOW())
       `, { replacements: {
-        ticketNumber: `PREMS-${Date.now()}`,
+        ticketNumber,
         subject: `Negative PREMS feedback - ${visitType.toUpperCase()}`,
         description: comment || 'Low patient experience score requires follow-up.',
         requester: JSON.stringify({ userId: patientId || null }),
         metadata: JSON.stringify({ source: 'prems', responseId: rows[0].id, hospitalId: req.hospitalId }),
       } });
+
+      // A complaint with no clock is a complaint nobody has to answer. The
+      // ticket_sla table was created with the PREMS migration and never
+      // written to, so negative feedback raised a ticket that could sit open
+      // indefinitely with nothing recording when a reply was due.
+      const severity = Number(rating) <= 1 ? 'S1' : 'S2';
+      const responseHours = severity === 'S1' ? 4 : 8;
+      const resolutionHours = severity === 'S1' ? 24 : 72;
+      await sequelize.query(`
+        INSERT INTO ticket_sla (ticket_id, severity, feedback_type, evidence_quote, response_due_at, resolution_due_at)
+        VALUES (:ticketId, :severity, 'prems_negative', :quote,
+                NOW() + (:responseHours || ' hours')::interval,
+                NOW() + (:resolutionHours || ' hours')::interval)
+        ON CONFLICT (ticket_id) DO NOTHING
+      `, { replacements: {
+        ticketId: ticketNumber,
+        severity,
+        quote: comment ? String(comment).slice(0, 500) : null,
+        responseHours: String(responseHours),
+        resolutionHours: String(resolutionHours),
+      } }).catch((err) => console.error('[prems] SLA record failed:', err.message));
+
+      // Without this the response and the complaint it raised were unlinked, so
+      // nothing could tell which feedback a ticket came from.
+      await sequelize.query(
+        `UPDATE prems_responses SET complaint_ticket_id = :ticketId, updated_at = NOW() WHERE id = :id`,
+        { replacements: { ticketId: ticketNumber, id: rows[0].id } }
+      ).catch((err) => console.error('[prems] ticket link failed:', err.message));
+      rows[0].complaint_ticket_id = ticketNumber;
     }
     res.status(201).json({ success: true, data: rows[0] });
   } catch (error) {
@@ -3671,6 +3665,38 @@ router.get('/prems/invitations', verifyHospitalToken, async (req, res) => {
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to load PREMS invitations', error: error.message });
+  }
+});
+
+/**
+ * PREMS metrics for a hospital: volumes, average scores and how the complaints
+ * raised from negative feedback are tracking against their SLA.
+ */
+router.get('/prems/metrics', verifyHospitalToken, async (req, res) => {
+  try {
+    await ensurePracticeSchema();
+    const [summary] = await sequelize.query(`
+      SELECT COUNT(*)::int AS responses,
+             ROUND(AVG(rating)::numeric, 2) AS average_rating,
+             COUNT(*) FILTER (WHERE negative_followup)::int AS negative_responses,
+             COUNT(DISTINCT complaint_ticket_id)::int AS complaints_raised
+        FROM prems_responses
+       WHERE hospital_id = :hospitalId
+         AND created_at >= NOW() - INTERVAL '90 days'
+    `, { replacements: { hospitalId: req.hospitalId } });
+
+    const [sla] = await sequelize.query(`
+      SELECT COUNT(*)::int AS tracked,
+             COUNT(*) FILTER (WHERE breached)::int AS breached,
+             COUNT(*) FILTER (WHERE response_met_at IS NULL AND response_due_at < NOW())::int AS response_overdue
+        FROM ticket_sla
+       WHERE feedback_type = 'prems_negative'
+         AND created_at >= NOW() - INTERVAL '90 days'
+    `).catch(() => [[{}]]);
+
+    res.json({ success: true, data: { window: '90d', ...(summary?.[0] || {}), sla: sla?.[0] || {} } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to load PREMS metrics', error: error.message });
   }
 });
 

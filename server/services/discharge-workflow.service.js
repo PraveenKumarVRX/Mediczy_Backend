@@ -15,6 +15,17 @@ import { z } from 'zod';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import leven from 'leven';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
+
+const ENSUREDISCHARGEREFINEMENTSCHEMA_TABLES = ['doctor_note_refinements', 'discharge_packets'];
+
+const ensureDischargeRefinementSchema = schemaVerifier({
+  sequelize: sequelize,
+  tables: ENSUREDISCHARGEREFINEMENTSCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the discharge workflow migration before refining discharge notes',
+});
+
 // ── Adaptive refinement (Phlox-comparison finding) ──────────────────────────
 //
 // When a doctor's signed finalContent differs substantially from the AI's
@@ -25,13 +36,9 @@ const REFINEMENT_CHANGE_THRESHOLD = 0.4;
 const MAX_REFINEMENT_INSTRUCTIONS = 10;
 
 async function ensureRefinementsTable() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS doctor_note_refinements (
-      doctor_id    INTEGER PRIMARY KEY,
-      instructions JSONB NOT NULL DEFAULT '[]'::jsonb,
-      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+  // Schema is owned by the migration; this used to build the table on
+  // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+  await ensureDischargeRefinementSchema();
 }
 ensureRefinementsTable().catch((e) => console.warn('[discharge-workflow] refinements table init:', e.message));
 
@@ -107,38 +114,9 @@ const DischargeDraftSchema = z.object({
 const DISCHARGE_DRAFT_RESPONSE_FORMAT = zodResponseFormat(DischargeDraftSchema, 'discharge_draft');
 
 async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS discharge_packets (
-      id                  BIGSERIAL PRIMARY KEY,
-      organization_id     BIGINT,
-      admission_id        BIGINT NOT NULL,
-      patient_id          BIGINT,
-      draft_content       TEXT,
-      final_content       TEXT,
-      diagnosis_summary   TEXT,
-      procedure_summary   TEXT,
-      medication_summary  TEXT,
-      follow_up_summary   TEXT,
-      diet_instructions   TEXT,
-      activity_notes      TEXT,
-      emergency_contacts  TEXT,
-      ai_generated        BOOLEAN DEFAULT FALSE,
-      ai_model            TEXT,
-      signed_by           TEXT,
-      signed_at           TIMESTAMPTZ,
-      status              TEXT DEFAULT 'draft',   -- draft | signed | sent | delivered
-      sent_at             TIMESTAMPTZ,
-      delivery_channel    TEXT,   -- portal | whatsapp | email | print
-      delivery_address    TEXT,
-      delivery_receipt    JSONB DEFAULT '{}'::jsonb,
-      packet_data         JSONB DEFAULT '{}'::jsonb,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_discharge_packet_admission ON discharge_packets(admission_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_discharge_packet_signed
-      ON discharge_packets(admission_id) WHERE status IN ('signed','sent','delivered');
-  `);
+  // Schema is owned by the migration; this used to build the table on
+  // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+  await ensureDischargeRefinementSchema();
 }
 ensureTables().catch(e => console.warn('[discharge-workflow] table init:', e.message));
 

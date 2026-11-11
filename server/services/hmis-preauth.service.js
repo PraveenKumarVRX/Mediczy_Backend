@@ -9,59 +9,24 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS hmis_preauth_requests (
-      id                  BIGSERIAL PRIMARY KEY,
-      organization_id     BIGINT,
-      admission_id        BIGINT NOT NULL,
-      ot_booking_id       BIGINT,
-      patient_id          BIGINT,
-      insurer_name        TEXT NOT NULL,
-      tpa_name            TEXT,
-      policy_number       TEXT,
-      member_id           TEXT,
-      corporate_referral_id BIGINT,
-      diagnosis_codes     TEXT,              -- ICD-10 codes, comma-separated
-      procedure_codes     TEXT,              -- CPT/ICD procedure codes
-      estimated_amount    NUMERIC(12,2),
-      approved_amount     NUMERIC(12,2),
-      pre_auth_number     TEXT,
-      pre_auth_date       DATE,
-      validity_days       SMALLINT DEFAULT 30,
-      valid_until         DATE,
-      status              TEXT DEFAULT 'draft',  -- draft | submitted | pending | approved | partial | denied | expired
-      denial_reason       TEXT,
-      denial_code         TEXT,
-      appeal_status       TEXT,              -- null | appealed | upheld | overturned
-      submitted_by        TEXT,
-      submitted_at        TIMESTAMPTZ,
-      approved_by_tpa     TEXT,
-      approved_at         TIMESTAMPTZ,
-      documents           JSONB DEFAULT '[]'::jsonb,  -- [{ type, url, uploaded_at }]
-      notes               TEXT,
-      request_data        JSONB DEFAULT '{}'::jsonb,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_preauth_admission  ON hmis_preauth_requests(admission_id);
-    CREATE INDEX IF NOT EXISTS idx_preauth_ot_booking ON hmis_preauth_requests(ot_booking_id);
-    CREATE INDEX IF NOT EXISTS idx_preauth_patient    ON hmis_preauth_requests(patient_id);
-    CREATE INDEX IF NOT EXISTS idx_preauth_status     ON hmis_preauth_requests(organization_id, status);
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
+const SCHEMA_TABLES = ['hmis_preauth_requests', 'hmis_preauth_documents'];
 
-    CREATE TABLE IF NOT EXISTS hmis_preauth_documents (
-      id              BIGSERIAL PRIMARY KEY,
-      preauth_id      BIGINT NOT NULL,
-      document_type   TEXT NOT NULL,   -- clinical_summary | investigation | consent | id_proof | referral | other
-      file_name       TEXT,
-      file_url        TEXT,
-      uploaded_by     TEXT,
-      uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_preauth_docs ON hmis_preauth_documents(preauth_id);
-  `);
-}
-ensureTables().catch(e => console.warn('[hmis-preauth] table init:', e.message));
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+
+const guardedSequelize = guardedQuery(sequelize, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ── Create pre-auth request ───────────────────────────────────────────────────
 
@@ -73,7 +38,7 @@ export async function createPreauthRequest(data) {
     notes, requestData
   } = data;
 
-  const [result] = await sequelize.query(
+  const [result] = await guardedSequelize(
     `INSERT INTO hmis_preauth_requests (
        organization_id, admission_id, ot_booking_id, patient_id,
        insurer_name, tpa_name, policy_number, member_id, corporate_referral_id,
@@ -103,7 +68,7 @@ export async function createPreauthRequest(data) {
 // ── Submit (sends to insurer) ─────────────────────────────────────────────────
 
 export async function submitPreauth(preauthId, { submittedBy }) {
-  await sequelize.query(
+  await guardedSequelize(
     `UPDATE hmis_preauth_requests
      SET status = 'submitted', submitted_by = :by, submitted_at = NOW(), updated_at = NOW()
      WHERE id = :id AND status IN ('draft','pending')`,
@@ -122,7 +87,7 @@ export async function updatePreauthStatus(preauthId, {
     ? new Date(new Date(preAuthDate).getTime() + validityDays * 86400000).toISOString().split('T')[0]
     : null;
 
-  await sequelize.query(
+  await guardedSequelize(
     `UPDATE hmis_preauth_requests
      SET status           = :status,
          pre_auth_number  = COALESCE(:authNum, pre_auth_number),
@@ -153,7 +118,7 @@ export async function updatePreauthStatus(preauthId, {
 // ── Attach document ───────────────────────────────────────────────────────────
 
 export async function attachDocument({ preauthId, documentType, fileName, fileUrl, uploadedBy }) {
-  const [result] = await sequelize.query(
+  const [result] = await guardedSequelize(
     `INSERT INTO hmis_preauth_documents (preauth_id, document_type, file_name, file_url, uploaded_by)
      VALUES (:id, :type, :name, :url, :by) RETURNING *`,
     {
@@ -170,7 +135,7 @@ export async function attachDocument({ preauthId, documentType, fileName, fileUr
 // ── Queries ───────────────────────────────────────────────────────────────────
 
 export async function getPreauthByAdmission(admissionId) {
-  return sequelize.query(
+  return guardedSequelize(
     `SELECT r.*, array_agg(row_to_json(d)) FILTER (WHERE d.id IS NOT NULL) as documents
      FROM hmis_preauth_requests r
      LEFT JOIN hmis_preauth_documents d ON d.preauth_id = r.id
@@ -186,7 +151,7 @@ export async function getPreauthList(organizationId, { status, limit = 50, offse
   const replacements = { orgId: organizationId, limit, offset };
   if (status) { where += ' AND r.status = :status'; replacements.status = status; }
 
-  return sequelize.query(
+  return guardedSequelize(
     `SELECT r.*, p.first_name || ' ' || p.last_name as patient_name,
             a.admission_number
      FROM hmis_preauth_requests r
@@ -200,7 +165,7 @@ export async function getPreauthList(organizationId, { status, limit = 50, offse
 }
 
 export async function getPreauthById(preauthId) {
-  const [row] = await sequelize.query(
+  const [row] = await guardedSequelize(
     `SELECT r.*, array_agg(row_to_json(d)) FILTER (WHERE d.id IS NOT NULL) as documents
      FROM hmis_preauth_requests r
      LEFT JOIN hmis_preauth_documents d ON d.preauth_id = r.id

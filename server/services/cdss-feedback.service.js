@@ -8,6 +8,18 @@
 import { connectPostgres } from '../db/postgres.js';
 import { v4 as uuidv4 } from 'uuid';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
+import schemaCheckPool from '../db/pgPool.js';
+
+const ENSURECDSSFEEDBACKSCHEMA_TABLES = ['ai_cdss_feedback'];
+
+const ensureCdssFeedbackSchema = schemaVerifier({
+  pool: schemaCheckPool,
+  tables: ENSURECDSSFEEDBACKSCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migration before recording CDSS feedback',
+});
+
 class CDSSFeedbackService {
   constructor() {
     this.initialized = false;
@@ -16,28 +28,9 @@ class CDSSFeedbackService {
   async ensureTable() {
     if (this.initialized) return;
     const pool = await connectPostgres();
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ai_cdss_feedback (
-        id SERIAL PRIMARY KEY,
-        query_id VARCHAR(64) NOT NULL,
-        user_id INTEGER,
-        user_role VARCHAR(32) DEFAULT 'doctor',
-        action VARCHAR(20) NOT NULL CHECK (action IN ('accepted','modified','rejected')),
-        feedback_type VARCHAR(32) DEFAULT 'general',
-        original_response JSONB,
-        modification JSONB,
-        reason TEXT,
-        codes_kept TEXT[],
-        codes_removed TEXT[],
-        codes_added TEXT[],
-        query_text TEXT,
-        tenant_id VARCHAR(64) DEFAULT 'default',
-        created_at TIMESTAMP DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_cdss_feedback_query ON ai_cdss_feedback(query_id);
-      CREATE INDEX IF NOT EXISTS idx_cdss_feedback_action ON ai_cdss_feedback(action);
-      CREATE INDEX IF NOT EXISTS idx_cdss_feedback_created ON ai_cdss_feedback(created_at);
-    `);
+    // Schema is owned by the migration; this used to build the table on
+    // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+    await ensureCdssFeedbackSchema();
     this.initialized = true;
   }
 

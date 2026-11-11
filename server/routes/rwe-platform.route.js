@@ -5,6 +5,17 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import pool from '../db/pgPool.js';
 
+import { schemaVerifier } from '../utils/schema-guard.js';
+
+const ENSURERWESCHEMA_TABLES = ['rwe_export_requests'];
+
+const ensureRweSchema = schemaVerifier({
+  pool: pool,
+  tables: ENSURERWESCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply migration 20261015004800-rwe-export-governance before using RWE exports',
+});
+
 const router = express.Router();
 
 router.use(authUser);
@@ -23,16 +34,9 @@ router.get('/cohorts', async (req, res) => {
 
 router.post('/export-request', async (req, res) => {
   const { cohortId, purpose } = req.body;
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS rwe_export_requests (
-      id BIGSERIAL PRIMARY KEY,
-      hospital_id INTEGER,
-      cohort_id VARCHAR(80),
-      purpose TEXT,
-      status VARCHAR(20) DEFAULT 'pending',
-      requested_by INTEGER,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`);
+  // Schema is owned by the migration; this used to build the table on
+  // the request path, taking an ACCESS EXCLUSIVE lock mid-request.
+  await ensureRweSchema();
   const r = await pool.query(
     `INSERT INTO rwe_export_requests (hospital_id, cohort_id, purpose, requested_by)
      VALUES ($1,$2,$3,$4) RETURNING *`,

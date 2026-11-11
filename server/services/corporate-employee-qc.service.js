@@ -29,6 +29,7 @@ import bcrypt from 'bcrypt';
 import { getCronPool } from '../db/pgPool.js';
 import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import { checkQuota, recordSent } from '../utils/emailQuota.js';
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 import {
   generateSecurePassword,
   buildCorporateEmployeeReminderEmail,
@@ -38,22 +39,23 @@ import {
 const pool = getCronPool();
 
 // ── ensure audit table exists ─────────────────────────────────────────────────
-async function ensureQcTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS corporate_employee_qc_log (
-      id              SERIAL PRIMARY KEY,
-      run_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      duration_ms     INTEGER,
-      corporates_scanned INTEGER,
-      checks_run      INTEGER,
-      issues_found    INTEGER,
-      issues_fixed    INTEGER,
-      issues_failed   INTEGER,
-      summary         JSONB,
-      errors          JSONB
-    )
-  `);
-}
+const SCHEMA_TABLES = ['corporate_employee_qc_log'];
+
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureQcTable = schemaVerifier({
+  pool: pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+
+const guardedPool = guardedQuery(pool, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function log(msg) {
@@ -104,10 +106,9 @@ async function runQcSweep() {
 
   try {
     // ── 0. Ensure table ─────────────────────────────────────────────────────
-    await ensureQcTable();
 
     // ── 1. Fetch all active corporates ────────────────────────────────────
-    const { rows: corporates } = await pool.query(`
+    const { rows: corporates } = await guardedPool(`
       SELECT id, "companyName", "assignedTo", "packageType"
       FROM corporates
       WHERE LOWER(COALESCE(status, 'active')) = 'active'
@@ -139,7 +140,7 @@ async function runQcSweep() {
 
       try {
         // ── CHECK 1: users.status != 'active' but active corp link ──────────
-        const { rows: inactiveUsers } = await pool.query(`
+        const { rows: inactiveUsers } = await guardedPool(`
           SELECT DISTINCT u.id AS user_id, u.email, u.status
           FROM users u
           JOIN user_associations ua
@@ -164,7 +165,7 @@ async function runQcSweep() {
 
           const ids = inactiveUsers.map(r => r.user_id);
           try {
-            await pool.query(`
+            await guardedPool(`
               UPDATE users SET status = 'active', "updatedAt" = NOW()
               WHERE id = ANY($1::int[])
             `, [ids]);
@@ -178,7 +179,7 @@ async function runQcSweep() {
         }
 
         // ── CHECK 2: stale corporate_employees.isActive = false ─────────────
-        const { rows: staleCe } = await pool.query(`
+        const { rows: staleCe } = await guardedPool(`
           SELECT DISTINCT ce."userId" AS user_id
           FROM corporate_employees ce
           JOIN user_associations ua
@@ -198,7 +199,7 @@ async function runQcSweep() {
           issuesFound += staleCe.length;
           const ids = staleCe.map(r => r.user_id);
           try {
-            await pool.query(`
+            await guardedPool(`
               UPDATE corporate_employees SET "isActive" = true, "updatedAt" = NOW()
               WHERE corporate_id = $1 AND "userId" = ANY($2::int[])
             `, [corpId, ids]);
@@ -213,7 +214,7 @@ async function runQcSweep() {
 
         // ── CHECK 3: no active plan subscription ────────────────────────────
         // Find the active plan for this corporate first
-        const { rows: planRows } = await pool.query(`
+        const { rows: planRows } = await guardedPool(`
           SELECT id, price, currency, billing_cycle, metadata
           FROM subscription_plans
           WHERE type = 'CORPORATE'
@@ -234,7 +235,7 @@ async function runQcSweep() {
           const currency = String(plan.currency || 'INR').toUpperCase();
           const cycle = String(plan.billing_cycle || 'ANNUAL').toUpperCase();
 
-          const { rows: unsubscribed } = await pool.query(`
+          const { rows: unsubscribed } = await guardedPool(`
             SELECT DISTINCT ua."userId" AS user_id
             FROM user_associations ua
             JOIN corporate_employees ce
@@ -263,7 +264,7 @@ async function runQcSweep() {
             for (const row of unsubscribed) {
               try {
                 // Deactivate any stale corporate plan subs for this user
-                await pool.query(`
+                await guardedPool(`
                   UPDATE user_subscriptions us
                   SET status = 'INACTIVE', updated_at = NOW()
                   WHERE us.user_id = $1 AND us.status = 'ACTIVE'
@@ -275,7 +276,7 @@ async function runQcSweep() {
                 `, [row.user_id, corpId]);
 
                 // Insert/activate correct plan
-                await pool.query(`
+                await guardedPool(`
                   INSERT INTO user_subscriptions
                     (user_id, plan_id, status, start_date, end_date, auto_renew, billing_cycle, price, currency, created_at, updated_at)
                   VALUES ($1, $2, 'ACTIVE', $3::date, $4::date, false, $5, $6, $7, NOW(), NOW())
@@ -299,7 +300,7 @@ async function runQcSweep() {
 
           // CHECK 3b: backfill NULL end_dates on existing active subs where plan has a validTo
           if (planEndDate) {
-            const { rowCount: backfilled } = await pool.query(`
+            const { rowCount: backfilled } = await guardedPool(`
               UPDATE user_subscriptions us
               SET end_date = $1::date, updated_at = NOW()
               WHERE us.plan_id = $2
@@ -315,7 +316,7 @@ async function runQcSweep() {
         }
 
         // ── CHECK 4: expired plan subscriptions ─────────────────────────────
-        const { rows: expired } = await pool.query(`
+        const { rows: expired } = await guardedPool(`
           SELECT us.id AS sub_id, us.user_id
           FROM user_subscriptions us
           JOIN subscription_plans sp ON sp.id = us.plan_id
@@ -333,7 +334,7 @@ async function runQcSweep() {
           issuesFound += expired.length;
           const ids = expired.map(r => r.sub_id);
           try {
-            await pool.query(`
+            await guardedPool(`
               UPDATE user_subscriptions SET status = 'EXPIRED', updated_at = NOW()
               WHERE id = ANY($1::int[])
             `, [ids]);
@@ -347,7 +348,7 @@ async function runQcSweep() {
         }
 
         // ── CHECK 5: orphan associations (no corporate_employees row) ────────
-        const { rows: orphans } = await pool.query(`
+        const { rows: orphans } = await guardedPool(`
           SELECT ua."userId" AS user_id
           FROM user_associations ua
           WHERE ua."entityId" = $1
@@ -370,7 +371,7 @@ async function runQcSweep() {
         }
 
         // ── CHECK 6: never-logged-in employees — send approved reminder email ─
-        const { rows: neverLoggedIn } = await pool.query(`
+        const { rows: neverLoggedIn } = await guardedPool(`
           SELECT
             u.id, u.email, u."firstName", u."lastName",
             u.password, u.metadata AS user_metadata, u.status AS user_status,
@@ -427,7 +428,7 @@ async function runQcSweep() {
                 const message = await buildCorporateEmployeeReminderEmail(emailData, tempPassword, { teamUserId, corporateId: corpId });
 
                 // Reset password so the reminder email credentials are valid
-                await pool.query(`
+                await guardedPool(`
                   UPDATE users SET
                     password = $1,
                     "isVerified" = true,
@@ -438,7 +439,7 @@ async function runQcSweep() {
                 `, [hashedPassword, emp.id]);
 
                 // Supersede any active delivery record for this recipient (prevents unique constraint violation)
-                await pool.query(`
+                await guardedPool(`
                   UPDATE corporate_welcome_email_deliveries
                   SET status = 'duplicate', error_message = 'Superseded by QC reminder', updated_at = NOW()
                   WHERE corporate_id = $1 AND LOWER(recipient_email) = LOWER($2)
@@ -450,7 +451,7 @@ async function runQcSweep() {
                   .update(`qc-rem|${corpId}|${emp.id}|${emailData.email}|${dayBucket}`)
                   .digest('hex').slice(0, 24);
 
-                const { rows: [dr] } = await pool.query(`
+                const { rows: [dr] } = await guardedPool(`
                   INSERT INTO corporate_welcome_email_deliveries
                     (corporate_id, user_id, employee_id, recipient_email, subject, idempotency_key,
                      request_scope, status, attempts, metadata, created_by, created_at, updated_at)
@@ -469,7 +470,7 @@ async function runQcSweep() {
                   { teamUserId }
                 );
 
-                await pool.query(`
+                await guardedPool(`
                   UPDATE corporate_welcome_email_deliveries SET status = 'sent', updated_at = NOW()
                   WHERE id = $1
                 `, [dr.id]);
@@ -499,7 +500,7 @@ async function runQcSweep() {
     const durationMs = Date.now() - started;
 
     // ── Write audit row ──────────────────────────────────────────────────────
-    await pool.query(`
+    await guardedPool(`
       INSERT INTO corporate_employee_qc_log
         (run_at, duration_ms, corporates_scanned, checks_run, issues_found, issues_fixed, issues_failed, summary, errors)
       VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)
@@ -530,7 +531,7 @@ async function runQcSweep() {
     const durationMs = Date.now() - started;
     log(`❌ Fatal error: ${fatalErr.message}`);
     try {
-      await pool.query(`
+      await guardedPool(`
         INSERT INTO corporate_employee_qc_log
           (run_at, duration_ms, corporates_scanned, checks_run, issues_found, issues_fixed, issues_failed, summary, errors)
         VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)

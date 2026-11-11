@@ -16,30 +16,27 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import crypto from 'crypto';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 // ── B1: Reservation table bootstrap ──────────────────────────────────────────
 
-async function ensureReservationTable() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS bed_reservations (
-      id            BIGSERIAL PRIMARY KEY,
-      token         TEXT NOT NULL UNIQUE,
-      bed_id        BIGINT NOT NULL,
-      organization_id BIGINT NOT NULL,
-      reserved_by   TEXT,
-      context       JSONB DEFAULT '{}'::jsonb,
-      status        TEXT NOT NULL DEFAULT 'active',   -- active | consumed | released | expired
-      reserved_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      expires_at    TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '10 minutes',
-      released_at   TIMESTAMPTZ
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_bed_reservations_active_bed
-      ON bed_reservations (bed_id)
-      WHERE status = 'active';
-    CREATE INDEX IF NOT EXISTS idx_bed_reservations_token ON bed_reservations(token);
-  `);
-}
+const SCHEMA_TABLES = ['bed_reservations'];
 
-ensureReservationTable().catch(e => console.warn('[bed-allocation] reservation table init:', e.message));
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureReservationTable = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+
+const guardedSequelize = guardedQuery(sequelize, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
+
 
 export async function getAvailableBeds(organizationId, { wardType, wardId, genderRequired } = {}) {
   let where = `b.organization_id = :orgId AND b.status = 'available'`;
@@ -58,7 +55,7 @@ export async function getAvailableBeds(organizationId, { wardType, wardId, gende
     replacements.gender = genderRequired;
   }
 
-  return sequelize.query(
+  return guardedSequelize(
     `SELECT b.*, w.name as ward_name, w.ward_type, w.floor, w.charge_per_day
      FROM beds b
      JOIN wards w ON w.id = b.ward_id
@@ -103,7 +100,7 @@ export async function autoAllocateBed(organizationId, {
 }
 
 export async function getBedCensus(organizationId) {
-  return sequelize.query(
+  return guardedSequelize(
     `SELECT
        w.id as ward_id,
        w.name as ward_name,
@@ -130,7 +127,7 @@ export async function getRealTimeBedMap(organizationId, wardId) {
   const replacements = { orgId: organizationId };
   if (wardId) replacements.wardId = wardId;
 
-  return sequelize.query(
+  return guardedSequelize(
     `SELECT
        b.id, b.bed_number, b.bed_type, b.status, b.gender_restriction, b.is_isolation,
        b.ward_id, w.name as ward_name, w.ward_type, w.floor,
@@ -147,7 +144,7 @@ export async function getRealTimeBedMap(organizationId, wardId) {
 }
 
 export async function getPredictedDischarges(organizationId) {
-  return sequelize.query(
+  return guardedSequelize(
     `SELECT
        a.id, a.admission_number, a.patient_id, a.ward_id, a.bed_id,
        b.bed_number, w.name as ward_name,
@@ -178,7 +175,7 @@ export async function reserveBed(organizationId, bedId, { reservedBy, context = 
   // Single INSERT with a unique partial index on (bed_id) WHERE status='active'
   // guarantees only one active reservation per bed at a time.
   try {
-    await sequelize.query(
+    await guardedSequelize(
       `INSERT INTO bed_reservations (token, bed_id, organization_id, reserved_by, context, expires_at)
        VALUES (:token, :bedId, :orgId, :reservedBy, :ctx::jsonb,
                NOW() + MAKE_INTERVAL(mins => :ttl))`,
@@ -207,7 +204,7 @@ export async function reserveBed(organizationId, bedId, { reservedBy, context = 
  * Called inside admitPatient() before occupying the bed.
  */
 export async function consumeReservation(token, bedId, organizationId) {
-  const [row] = await sequelize.query(
+  const [row] = await guardedSequelize(
     `UPDATE bed_reservations
      SET status = 'consumed', released_at = NOW()
      WHERE token = :token AND bed_id = :bedId AND organization_id = :orgId
@@ -223,7 +220,7 @@ export async function consumeReservation(token, bedId, organizationId) {
  * Explicitly release a reservation (e.g. user cancels before admitting).
  */
 export async function releaseBedReservation(token, organizationId) {
-  await sequelize.query(
+  await guardedSequelize(
     `UPDATE bed_reservations SET status = 'released', released_at = NOW()
      WHERE token = :token AND organization_id = :orgId AND status = 'active'`,
     { replacements: { token, orgId: organizationId }, type: QueryTypes.UPDATE }
@@ -235,7 +232,7 @@ export async function releaseBedReservation(token, organizationId) {
  * Background cleanup — expire stale reservations and free beds.
  */
 export async function expireStaleReservations() {
-  const expired = await sequelize.query(
+  const expired = await guardedSequelize(
     `UPDATE bed_reservations SET status = 'expired', released_at = NOW()
      WHERE status = 'active' AND expires_at <= NOW()
      RETURNING bed_id`,
@@ -248,7 +245,7 @@ export async function updateBedStatus(organizationId, bedId, status) {
   const validStatuses = ['available', 'occupied', 'under_maintenance', 'blocked', 'housekeeping'];
   if (!validStatuses.includes(status)) throw new Error('Invalid bed status');
 
-  await sequelize.query(
+  await guardedSequelize(
     `UPDATE beds SET status = :status, updated_at = NOW() WHERE id = :bedId AND organization_id = :orgId`,
     { replacements: { status, bedId, orgId: organizationId }, type: QueryTypes.UPDATE }
   );

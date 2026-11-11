@@ -35,7 +35,6 @@ const ensureTable = schemaVerifier({
 // startup so an unmigrated environment shows up in the log rather than only
 // when a request arrives.
 const guardedPool = guardedQuery(pool, 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging validation factory');
-ensureTable().catch((err) => console.error('[imaging-validation-factory] schema check failed:', err.message, err.details || ''));
 
 export async function registerCase({ studyId, tenantId, addedBy, addedByName, notes }) {
   const { rows } = await guardedPool(

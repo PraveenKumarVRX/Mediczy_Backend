@@ -52,7 +52,6 @@ const ensureTable = schemaVerifier({
 // startup so an unmigrated environment shows up in the log rather than only
 // when a request arrives.
 const guardedPool = guardedQuery(pool, 'Apply migration 20261015004500-imaging-evidence-governance before using the imaging knowledge base');
-ensureTable().catch((err) => console.error('[imaging-knowledge-base] schema check failed:', err.message, err.details || ''));
 
 /** Real embedding call to SIB's ClinicalBERT endpoint — same function every
  * other RAG consumer in this codebase uses, not a separate implementation.

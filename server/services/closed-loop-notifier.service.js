@@ -18,32 +18,28 @@ import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 const APP_URL   = process.env.APP_URL || 'https://app.mediqzy.com';
 const FROM_EMAIL = process.env.SES_FROM_EMAIL || process.env.EMAIL_FROM || 'support@mediqzy.com';
 
 // ─── Ensure follow-up table exists ───────────────────────────────────────────
 
-async function ensureFollowupTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ticket_resolution_followups (
-      id                SERIAL        PRIMARY KEY,
-      ticket_id         TEXT          NOT NULL UNIQUE,
-      severity          TEXT,
-      requester_name    TEXT,
-      requester_email   TEXT,
-      requester_phone   TEXT,
-      send_after        TIMESTAMPTZ   NOT NULL,
-      sent_at           TIMESTAMPTZ,
-      channel           TEXT,         -- 'email' | 'whatsapp' | 'none'
-      created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_trf_pending
-      ON ticket_resolution_followups (send_after, sent_at)
-      WHERE sent_at IS NULL
-  `);
-}
+const SCHEMA_TABLES = ['ticket_resolution_followups'];
+
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureFollowupTable = schemaVerifier({
+  pool: pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+const guardedPool = guardedQuery(pool, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ─── Email sender (direct SES) ────────────────────────────────────────────────
 
@@ -132,16 +128,15 @@ class ClosedLoopNotifierService {
    */
   async scheduleFollowup({ ticketId, severity, requesterName, requesterEmail, requesterPhone }) {
     if (!this.tableReady) {
-      await ensureFollowupTable().catch(() => {});
       this.tableReady = true;
     }
     // Only follow up on complaint-tier tickets (those with an SLA record)
-    const { rows } = await pool.query(
+    const { rows } = await guardedPool(
       `SELECT ticket_id FROM ticket_sla WHERE ticket_id = $1`, [ticketId]
     );
     if (!rows.length) return; // not a tracked complaint
 
-    await pool.query(`
+    await guardedPool(`
       INSERT INTO ticket_resolution_followups
         (ticket_id, severity, requester_name, requester_email, requester_phone, send_after)
       VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '24 hours')
@@ -155,7 +150,7 @@ class ClosedLoopNotifierService {
     let sent = 0;
 
     try {
-      const { rows } = await pool.query(`
+      const { rows } = await guardedPool(`
         SELECT *
         FROM ticket_resolution_followups
         WHERE sent_at  IS NULL
@@ -166,7 +161,7 @@ class ClosedLoopNotifierService {
 
       for (const row of rows) {
         const channel = await this._sendNotification(row);
-        await pool.query(`
+        await guardedPool(`
           UPDATE ticket_resolution_followups
           SET sent_at = NOW(), channel = $2
           WHERE id = $1

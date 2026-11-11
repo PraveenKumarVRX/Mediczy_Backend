@@ -12,6 +12,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 async function q(sql, replacements = {}) {
   try { return await sequelize.query(sql, { replacements, type: QueryTypes.SELECT }); }
   catch { return []; }
@@ -24,46 +25,28 @@ async function exec(sql, replacements = {}) {
 
 // ── Automation Job Table (self-bootstrapping) ─────────────────────────────────
 
-async function ensureAutomationTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS automation_jobs (
-      id           SERIAL PRIMARY KEY,
-      job_type     VARCHAR(80)  NOT NULL,
-      reference_id INTEGER,
-      organization_id INTEGER,
-      payload      JSONB        DEFAULT '{}',
-      status       VARCHAR(30)  NOT NULL DEFAULT 'pending',
-      scheduled_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-      started_at   TIMESTAMPTZ,
-      completed_at TIMESTAMPTZ,
-      error_msg    TEXT,
-      retry_count  INTEGER      NOT NULL DEFAULT 0,
-      max_retries  INTEGER      NOT NULL DEFAULT 3,
-      created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_automation_jobs_status_scheduled
-      ON automation_jobs (status, scheduled_at);
-    CREATE INDEX IF NOT EXISTS idx_automation_jobs_type_org
-      ON automation_jobs (job_type, organization_id);
+const SCHEMA_TABLES = ['automation_jobs', 'automation_run_log'];
 
-    CREATE TABLE IF NOT EXISTS automation_run_log (
-      id           SERIAL PRIMARY KEY,
-      job_id       INTEGER REFERENCES automation_jobs(id),
-      job_type     VARCHAR(80),
-      organization_id INTEGER,
-      reference_id INTEGER,
-      outcome      VARCHAR(30),
-      details      JSONB DEFAULT '{}',
-      ran_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `).catch(() => {});
-}
-ensureAutomationTables().catch(() => {});
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureAutomationTables = schemaVerifier({
+  sequelize: sequelize,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+
+const guardedSequelize = guardedQuery(sequelize, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ── Job Scheduler ─────────────────────────────────────────────────────────────
 
 export async function scheduleJob({ jobType, referenceId, organizationId, payload = {}, runAt = new Date(), maxRetries = 3 }) {
-  const result = await sequelize.query(`
+  const result = await guardedSequelize(`
     INSERT INTO automation_jobs (job_type, reference_id, organization_id, payload, scheduled_at, max_retries)
     VALUES (:jobType, :refId, :orgId, :payload, :runAt, :maxRetries)
     RETURNING id
@@ -115,14 +98,14 @@ export async function runClinicalEscalation(organizationId) {
   const results = [];
   for (const alert of breached) {
     // Mark as escalated
-    await sequelize.query(`
+    await guardedSequelize(`
       UPDATE vital_alerts
       SET status = 'escalated', updated_at = NOW()
       WHERE id = :id
     `, { replacements: { id: alert.id } }).catch(() => {});
 
     // Log escalation event
-    await sequelize.query(`
+    await guardedSequelize(`
       INSERT INTO patient_navigation_events (admission_id, category, event_type, title, description, organization_id)
       VALUES (:admId, 'escalation', 'clinical_escalation', :title, :desc, :orgId)
       ON CONFLICT DO NOTHING
@@ -162,7 +145,7 @@ export async function runDischargeReminders(organizationId) {
   for (const adm of candidates) {
     const blocking = Number(adm.blocking_items || 0);
     if (blocking > 0) {
-      await sequelize.query(`
+      await guardedSequelize(`
         INSERT INTO patient_navigation_events
           (admission_id, category, event_type, title, description, organization_id)
         VALUES (:admId, 'discharge', 'discharge_reminder',
@@ -204,7 +187,7 @@ export async function runPreAuthBundling(organizationId) {
   for (const adm of needsPreauth) {
     // pre_authorizations requires pre_auth_number/policy_number/diagnosis/admission_details —
     // draft in sensible placeholders; insurance-desk staff fill in the real values on submit.
-    await sequelize.query(`
+    await guardedSequelize(`
       INSERT INTO pre_authorizations
         (pre_auth_number, patient_id, hospital_id, organization_id, policy_number,
          admission_id, admission_details, estimated_amount, diagnosis, status, remarks)
@@ -244,7 +227,7 @@ export async function runFollowUpScheduler(organizationId) {
   const scheduled = [];
   for (const adm of missing) {
     const followUpDate = new Date(new Date(adm.discharged_at).getTime() + 7 * 86400000).toISOString().split('T')[0];
-    await sequelize.query(`
+    await guardedSequelize(`
       INSERT INTO follow_up_plans
         (admission_id, patient_id, organization_id, planned_date, visit_type, status, risk_level, notes)
       VALUES (:admId, :patId, :orgId, :followUpDate, 'in_person', 'scheduled', 'medium',

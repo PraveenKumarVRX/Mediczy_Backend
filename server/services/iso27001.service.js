@@ -18,59 +18,25 @@
 
 import pool from '../db/pgPool.js';
 
+import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 // ── DB bootstrap ──────────────────────────────────────────────────────────────
-export async function ensureIso27001Tables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS iso27001_controls (
-      id              SERIAL PRIMARY KEY,
-      control_id      VARCHAR(10) UNIQUE NOT NULL,
-      domain          VARCHAR(5) NOT NULL,
-      domain_name     TEXT NOT NULL,
-      control_name    TEXT NOT NULL,
-      description     TEXT,
-      control_type    VARCHAR(30),
-      cybersecurity   BOOLEAN DEFAULT FALSE
-    );
-    CREATE TABLE IF NOT EXISTS iso27001_evidence (
-      id              BIGSERIAL PRIMARY KEY,
-      tenant_id       INTEGER NOT NULL,
-      control_id      VARCHAR(10) REFERENCES iso27001_controls(control_id),
-      applicability   VARCHAR(20) DEFAULT 'not_assessed',
-      justification   TEXT,
-      implementation_status VARCHAR(20) DEFAULT 'not_started',
-      owner           TEXT,
-      evidence_text   TEXT,
-      evidence_url    TEXT,
-      last_review     DATE,
-      reviewed_by     INTEGER,
-      maturity_score  INTEGER DEFAULT 0,
-      notes           TEXT,
-      created_at      TIMESTAMPTZ DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(tenant_id, control_id)
-    );
-    CREATE TABLE IF NOT EXISTS iso27001_risk_register (
-      id              BIGSERIAL PRIMARY KEY,
-      tenant_id       INTEGER NOT NULL,
-      control_id      VARCHAR(10) REFERENCES iso27001_controls(control_id),
-      risk_title      TEXT NOT NULL,
-      threat          TEXT,
-      vulnerability   TEXT,
-      likelihood      INTEGER DEFAULT 3,
-      impact          INTEGER DEFAULT 3,
-      risk_score      INTEGER GENERATED ALWAYS AS (likelihood * impact) STORED,
-      treatment       VARCHAR(20) DEFAULT 'mitigate',
-      residual_score  INTEGER DEFAULT 0,
-      status          VARCHAR(20) DEFAULT 'open',
-      owner           TEXT,
-      due_date        DATE,
-      created_at      TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_iso_evidence_tenant  ON iso27001_evidence(tenant_id, control_id);
-    CREATE INDEX IF NOT EXISTS idx_iso_risk_tenant      ON iso27001_risk_register(tenant_id, status);
-  `);
-  await seedControls();
-}
+const SCHEMA_TABLES = ['iso27001_controls', 'iso27001_evidence', 'iso27001_risk_register'];
+
+// Owned by the migration and only verified here: creating these on demand
+// would let a skipped migration look healthy on tables without its indexes
+// and constraints, and would let a request hold an ACCESS EXCLUSIVE lock.
+const ensureIso27001Tables = schemaVerifier({
+  pool: pool,
+  tables: SCHEMA_TABLES,
+  code: 'SCHEMA_NOT_MIGRATED',
+  message: 'Apply the platform-edge governance migrations before using this service',
+});
+
+
+const guardedPool = guardedQuery(pool, 'Apply the platform-edge governance migrations before using this service');
+
+// Reported at startup so an unmigrated environment shows in the log, not
+// only when the first request fails. Boot is not blocked.
 
 // ── Controls catalogue — ISO/IEC 27001:2022 Annex A ─────────────────────────
 const CONTROLS = [
@@ -174,10 +140,10 @@ const CONTROLS = [
 ];
 
 async function seedControls() {
-  const { rowCount } = await pool.query(`SELECT 1 FROM iso27001_controls LIMIT 1`);
+  const { rowCount } = await guardedPool(`SELECT 1 FROM iso27001_controls LIMIT 1`);
   if (rowCount > 0) return;
   for (const c of CONTROLS) {
-    await pool.query(
+    await guardedPool(
       `INSERT INTO iso27001_controls (control_id, domain, domain_name, control_name, control_type, cybersecurity)
        VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (control_id) DO NOTHING`,
       [c.id, c.domain, c.dn, c.name, c.type, c.cyber || false]
@@ -196,7 +162,7 @@ export async function listControls(tenantId, filters = {}) {
   if (status)        { conds.push(`COALESCE(e.implementation_status,'not_started') = $${idx++}`); vals.push(status); }
 
   const where = conds.length ? `AND ${conds.join(' AND ')}` : '';
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT c.control_id, c.domain, c.domain_name, c.control_name, c.control_type, c.cybersecurity,
             COALESCE(e.applicability,'not_assessed')           AS applicability,
             COALESCE(e.implementation_status,'not_started')   AS implementation_status,
@@ -211,7 +177,7 @@ export async function listControls(tenantId, filters = {}) {
 }
 
 export async function getControlDetail(controlId, tenantId) {
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT c.*, e.applicability, e.justification, e.implementation_status,
             e.owner, e.evidence_text, e.evidence_url, e.maturity_score,
             e.last_review, e.notes, e.updated_at
@@ -226,7 +192,7 @@ export async function getControlDetail(controlId, tenantId) {
 
 export async function upsertControlEvidence(tenantId, controlId, data) {
   const { applicability, justification, implementationStatus, owner, evidenceText, evidenceUrl, maturityScore, notes, reviewedBy } = data;
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `INSERT INTO iso27001_evidence
        (tenant_id, control_id, applicability, justification, implementation_status, owner, evidence_text, evidence_url, maturity_score, notes, reviewed_by, last_review, updated_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, CURRENT_DATE, NOW())
@@ -261,7 +227,7 @@ export async function upsertControlEvidence(tenantId, controlId, data) {
 
 // ── Domain-level maturity scorecard ──────────────────────────────────────────
 export async function getMaturityScorecard(tenantId) {
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT c.domain, c.domain_name,
             COUNT(c.control_id)                                      AS total,
             COUNT(e.control_id)                                      AS assessed,
@@ -317,7 +283,7 @@ export async function generateSoA(tenantId) {
 // ── Risk register ─────────────────────────────────────────────────────────────
 export async function addRisk(tenantId, data) {
   const { controlId, riskTitle, threat, vulnerability, likelihood, impact, treatment, owner, dueDate } = data;
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `INSERT INTO iso27001_risk_register
        (tenant_id, control_id, risk_title, threat, vulnerability, likelihood, impact, treatment, residual_score, owner, due_date)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -341,7 +307,7 @@ export async function listRisks(tenantId, filters = {}) {
   if (status)    { conds.push(`status = $${idx++}`);    vals.push(status); }
   if (treatment) { conds.push(`treatment = $${idx++}`); vals.push(treatment); }
   vals.push(Math.min(Number(limit) || 50, 200));
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `SELECT id, control_id, risk_title, threat, likelihood, impact, risk_score, treatment, residual_score, status, owner, due_date, created_at
      FROM iso27001_risk_register WHERE ${conds.join(' AND ')} ORDER BY risk_score DESC LIMIT $${idx}`,
     vals
@@ -351,7 +317,7 @@ export async function listRisks(tenantId, filters = {}) {
 
 export async function updateRisk(id, tenantId, updates) {
   const { status, residualScore, treatment, owner } = updates;
-  const { rows } = await pool.query(
+  const { rows } = await guardedPool(
     `UPDATE iso27001_risk_register
      SET status = COALESCE($1, status),
          residual_score = COALESCE($2, residual_score),

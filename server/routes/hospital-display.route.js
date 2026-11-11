@@ -141,8 +141,6 @@ async function ensureTables() {
   }
 }
 
-// Reported at startup rather than silently skipped.
-ensureTables().catch((err) => console.error('[display] schema check failed:', err.message, err.details || ''));
 
 // ─── Device token auth (lightweight — long-lived tokens, no expiry) ──────────
 // For kiosk/display screens. Token is just a stored secret in display_devices.
