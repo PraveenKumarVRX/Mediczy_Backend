@@ -7,6 +7,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { postgresSequelize as db } from '../db/postgres-sequelize.js';
 import { ahcExtension, ahcWindow, validityDays } from '../services/corporate-ahc-entitlement-policy.service.js';
 import { notifyAhcEntitlement } from '../services/corporate-ahc-entitlement-notification.service.js';
+import { invitationStatus, dispatchInvitations, MAX_PER_DISPATCH } from '../services/ahc-invitation-dispatch.service.js';
 const router = express.Router();
 router.use(authUser, requireRole(['admin', 'team']), (req, res, next) => {
     if (req.user?.isAdmin || ['admin','system_admin','super_admin'].includes(req.userRole || req.user?.role)) return next();
@@ -61,18 +62,72 @@ router.patch('/:id/assignments',async(req,res)=>{
     try{
       const data=await updatePackageEmployeeAssignments(req.params.id,req.body);
       const additions=[...new Set((req.body.addEmployeeIds||[]).map(Number).filter(Number.isInteger))];
-      if(additions.length){
-        const [p]=await query(`SELECT metadata FROM corporate_health_package_catalog WHERE id=:id`,{id:req.params.id});
-        const metadata=typeof p?.metadata==='string'?JSON.parse(p.metadata):p?.metadata||{};
-        if(metadata.corporateValidFrom&&metadata.corporateValidTo){
-          const window=ahcWindow({assignedOn:new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),validityPeriod:metadata.individualValidityPeriod||metadata.validityPeriod,corporateValidFrom:metadata.corporateValidFrom,corporateValidTo:metadata.corporateValidTo});
-          void Promise.allSettled(additions.map(userId=>notifyAhcEntitlement({packageId:req.params.id,userId,eventType:'invitation',validTo:window.validTo})));
-        }
+      // Tagging grants eligibility; it does NOT email anyone. This used to send
+      // the welcome as a side effect, so editing eligibility could post
+      // thousands of messages with no review step and no way to see who was
+      // about to receive one. Send deliberately via
+      // POST /:id/invitations/send, or pass sendInvitations:true here to keep
+      // the old one-step behaviour for a small, intentional batch.
+      let invitations=null;
+      if(additions.length&&req.body?.sendInvitations===true){
+        invitations=await dispatchInvitations({packageId:req.params.id,userIds:additions,send:true});
+      } else if(additions.length){
+        const status=await invitationStatus(req.params.id).catch(()=>null);
+        invitations=status?{sent:false,awaitingInvitation:status.counts.pending,armed:status.armed,hint:'POST /api/admin/health-packages/:id/invitations/send to send'}:null;
       }
-      return res.json({success:true,data});
+      return res.json({success:true,data,invitations});
     }
     catch(e){return e.status?res.status(e.status).json({success:false,message:e.message}):fail(res,e);}
 });
+// ─────────────────────────────────────────────────────────────────────────────
+// AHC WELCOME INVITATIONS — prepared/sent ledger and an explicit send
+//
+// Mirrors the account-welcome surface already used for Ninjacart
+// (/admin/corporate-employee-welcome-emails/{prepare-bulk,send,deliveries}):
+// see who is waiting, then fire when you choose. The "pending" list is derived
+// from the entitlement and the notification ledger rather than pre-created
+// rows, because corporate_ahc_entitlement_notifications is the idempotency
+// guard — staging a row there would make the real send look like a duplicate.
+// That is how the account-welcome design ended up with 5,581 rows stuck at
+// 'prepared' and never sent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** GET /:id/invitations — who is entitled, who was invited, who is waiting. */
+router.get('/:id/invitations', async (req, res) => {
+  try {
+    const status = await invitationStatus(req.params.id);
+    return res.json({ success: true, data: status });
+  } catch (e) {
+    return e.status ? res.status(e.status).json({ success: false, message: e.message }) : fail(res, e);
+  }
+});
+
+/**
+ * POST /:id/invitations/send — fire the welcome email.
+ *
+ * Body: { userIds?: number[], send?: boolean, limit?: number }
+ * Reports who WOULD receive one unless `send: true`, so the dangerous call is
+ * never the accidental one. Omit userIds to target everyone entitled who has
+ * not been invited for their current window.
+ */
+router.post('/:id/invitations/send', async (req, res) => {
+  const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds : null;
+  if (userIds && userIds.length > MAX_PER_DISPATCH) {
+    return res.status(400).json({ success: false, message: `Send at most ${MAX_PER_DISPATCH} invitations per request` });
+  }
+  try {
+    const result = await dispatchInvitations({
+      packageId: req.params.id,
+      userIds,
+      send: req.body?.send === true,
+      limit: req.body?.limit,
+    });
+    return res.json({ success: true, data: result });
+  } catch (e) {
+    return e.status ? res.status(e.status).json({ success: false, message: e.message }) : fail(res, e);
+  }
+});
+
 /** One audited HR-requested extension per employee; never beyond the corporate AHC end date. */
 router.post('/:id/extensions', async (req,res) => {
   const userId=Number(req.body?.userId), reason=String(req.body?.reason||'').trim(), hrRequestReference=String(req.body?.hrRequestReference||'').trim();
