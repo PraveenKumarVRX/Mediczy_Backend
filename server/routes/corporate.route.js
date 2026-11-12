@@ -3,6 +3,7 @@ import { JWT_CONFIG as JWT_SSO_CONFIG } from '../config/auth.config.js';
 import { encrypt as encryptSsoSecret, decrypt as decryptSsoSecret } from '../utils/encryption.js';
 const JWT_SSO_SECRET = JWT_SSO_CONFIG.SECRET;
 import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
+import { invitationStatus as ahcInvitationStatus } from '../services/ahc-invitation-dispatch.service.js';
 import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
 import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
@@ -4195,7 +4196,16 @@ router.put('/ahc/batches/:id', authCorporate, async (req, res) => {
   try {
     if (status === 'active') {
       const data=await activateAhcBatch({corporateId,batchId:id,packageId:req.body?.packageId});
-      return res.json({success:true,data});
+      // Activating a batch grants the entitlement and sends nothing. Report how
+      // many are now awaiting the welcome, so a batch cannot be activated and
+      // the employees left untold without anyone noticing.
+      let invitations=null;
+      try {
+        const status=await ahcInvitationStatus(req.body?.packageId);
+        invitations={sent:false,armed:status.armed,awaitingInvitation:status.counts.pending,
+          hint:'POST /api/admin/health-packages/:id/invitations/send to send the AHC welcome'};
+      } catch { /* not an AHC package, or no window configured */ }
+      return res.json({success:true,data,invitations});
     }
     if (status && !['planning','completed','cancelled'].includes(status)) return res.status(400).json({success:false,message:'Invalid batch status'});
     await postgresSequelize.query(
@@ -4346,8 +4356,12 @@ router.post('/ahc/batches/:id/send-reminders', authCorporate, async (req, res) =
   const { id } = req.params;
   try {
     const reminded = await remindAhcBatch({corporateId,batchId:id});
+    // remindAhcBatch writes an in-app notification only — channels ARRAY['app'].
+    // Naming the channel stops this reading as "an email went out", which is
+    // what the endpoint's name suggests and what it does not do.
     if (reminded === null) return res.status(404).json({success:false,message:'Batch not found'});
-    return res.json({success:true,data:{reminded,message:`Reminders sent to ${reminded} employees`}});
+    return res.json({success:true,data:{reminded,channels:['app'],
+      message:`In-app reminder sent to ${reminded} employee(s). No email or WhatsApp was sent — use the AHC invitation send for email.`}});
   } catch (err) {
     console.error('[corporate] ahc send reminders error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to send reminders' });

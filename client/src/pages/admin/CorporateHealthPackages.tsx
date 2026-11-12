@@ -25,7 +25,11 @@ import {
   Package,
   UserCheck,
   Activity,
-  CheckCircle2
+  CheckCircle2,
+  Mail,
+  Send,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 import api from '@/utils/api';
 import { assignmentChanges, selectVisibleEmployees } from '@/utils/health-package-employees';
@@ -97,6 +101,16 @@ const CorporateHealthPackages = () => {
   const [isTagEmployeesDialogOpen, setIsTagEmployeesDialogOpen] = useState(false);
   const [viewingPackage, setViewingPackage] = useState<HealthCheckupPackage | null>(null);
   const [taggingPackage, setTaggingPackage] = useState<HealthCheckupPackage | null>(null);
+  // AHC welcome invitations — tagging grants eligibility and sends nothing, so
+  // sending is a separate, deliberate action with a preview before it fires.
+  const [isInvitesOpen, setIsInvitesOpen] = useState(false);
+  const [invitesPackage, setInvitesPackage] = useState<HealthCheckupPackage | null>(null);
+  const [invites, setInvites] = useState<any | null>(null);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [invitesSelected, setInvitesSelected] = useState<number[]>([]);
+  const [invitesPreview, setInvitesPreview] = useState<any | null>(null);
+  const [invitesError, setInvitesError] = useState<string | null>(null);
+  const [invitesSending, setInvitesSending] = useState(false);
   const [editingPackage, setEditingPackage] = useState<HealthCheckupPackage | null>(null);
   const [activeTab, setActiveTab] = useState('list');
 
@@ -261,6 +275,52 @@ const CorporateHealthPackages = () => {
       setIsTagEmployeesDialogOpen(false);await fetchPackages();
     } catch(err:any){setAssignmentError(err?.response?.data?.message||'Unable to update employee eligibility');}
     finally{setLoading(false);}
+  };
+
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
+
+  const openInvitations = async (pkg: HealthCheckupPackage) => {
+    setInvitesPackage(pkg); setInvites(null); setInvitesPreview(null); setInvitesError(null);
+    setInvitesSelected([]); setIsInvitesOpen(true); setInvitesLoading(true);
+    try {
+      const { data } = await api.get(`/admin/health-packages/${pkg.id}/invitations`, { headers: authHeaders });
+      setInvites(data.data);
+      // Pre-select exactly those who can receive one: entitled, with an email,
+      // not already invited for their current window.
+      setInvitesSelected((data.data.entitled || [])
+        .filter((e: any) => !e.invited && e.email)
+        .map((e: any) => Number(e.userId)));
+    } catch (err: any) {
+      setInvitesError(err?.response?.data?.message || 'Unable to load invitation status');
+    } finally { setInvitesLoading(false); }
+  };
+
+  /** Ask the server who would receive one. Never sends. */
+  const previewInvitations = async () => {
+    if (!invitesPackage) return;
+    setInvitesSending(true); setInvitesError(null);
+    try {
+      const { data } = await api.post(`/admin/health-packages/${invitesPackage.id}/invitations/send`,
+        { userIds: invitesSelected }, { headers: authHeaders });
+      setInvitesPreview(data.data);
+    } catch (err: any) {
+      setInvitesError(err?.response?.data?.message || 'Unable to preview the invitations');
+    } finally { setInvitesSending(false); }
+  };
+
+  /** The only call that sends. Requires a preview first, deliberately. */
+  const sendInvitations = async () => {
+    if (!invitesPackage || !invitesPreview) return;
+    setInvitesSending(true); setInvitesError(null);
+    try {
+      const { data } = await api.post(`/admin/health-packages/${invitesPackage.id}/invitations/send`,
+        { userIds: invitesSelected, send: true }, { headers: authHeaders });
+      setResult({ message: `${invitesPackage.packageName}: welcome email sent to ${data.data.delivered} employee(s)${data.data.failed ? `, ${data.data.failed} failed` : ''}` });
+      setInvitesPreview(null);
+      await openInvitations(invitesPackage);
+    } catch (err: any) {
+      setInvitesError(err?.response?.data?.message || 'Unable to send the invitations');
+    } finally { setInvitesSending(false); }
   };
 
   const handleSubmitPackage = async (e: React.FormEvent) => {
@@ -865,6 +925,10 @@ const CorporateHealthPackages = () => {
                     <Users className="h-4 w-4 mr-2" />
                     Tag Employees
                   </Button>
+                  <Button variant="outline" onClick={() => { setIsViewDialogOpen(false); openInvitations(viewingPackage); }}>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Welcome emails
+                  </Button>
                   <Button variant="outline" onClick={() => handleEditPackage(viewingPackage)}>
                     <Edit className="h-4 w-4 mr-2" />
                     Edit
@@ -978,6 +1042,115 @@ const CorporateHealthPackages = () => {
                 </div>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* AHC welcome emails — review, then fire. Tagging employees grants
+            eligibility and sends nothing; this is the only place that sends. */}
+        <Dialog open={isInvitesOpen} onOpenChange={setIsInvitesOpen}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5" /> AHC welcome emails — {invitesPackage?.packageName}
+              </DialogTitle>
+            </DialogHeader>
+
+            {invitesLoading ? (
+              <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            ) : !invites ? (
+              <p className="py-6 text-sm text-muted-foreground">{invitesError || 'No invitation status available.'}</p>
+            ) : (
+              <div className="space-y-4">
+                {!invites.armed && (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{invites.reason} Nothing can be sent until the package has a validity window.</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[['Entitled', invites.counts.entitled], ['Already sent', invites.counts.invited],
+                    ['Awaiting', invites.counts.pending], ['No email', invites.counts.noEmail]].map(([label, n]) => (
+                    <div key={String(label)} className="rounded-xl border border-border bg-muted/20 p-3">
+                      <div className="text-xs text-muted-foreground">{label}</div>
+                      <div className="text-xl font-semibold text-foreground">{String(n)}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="max-h-64 overflow-y-auto rounded-xl border border-border">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-muted/50 text-xs text-muted-foreground">
+                      <tr><th className="p-2 text-left w-8"></th><th className="p-2 text-left">Employee</th><th className="p-2 text-left">Valid to</th><th className="p-2 text-left">Status</th></tr>
+                    </thead>
+                    <tbody>
+                      {(invites.entitled || []).map((e: any) => {
+                        const selectable = !e.invited && Boolean(e.email);
+                        return (
+                          <tr key={e.userId} className="border-t border-border">
+                            <td className="p-2">
+                              <Checkbox
+                                checked={invitesSelected.includes(Number(e.userId))}
+                                disabled={!selectable}
+                                onCheckedChange={(c) => setInvitesSelected(prev => c
+                                  ? [...new Set([...prev, Number(e.userId)])]
+                                  : prev.filter(id => id !== Number(e.userId)))}
+                              />
+                            </td>
+                            <td className="p-2">
+                              <div className="font-medium text-foreground">{e.name || `User ${e.userId}`}</div>
+                              <div className="text-xs text-muted-foreground">{e.email || 'no email on record'}</div>
+                            </td>
+                            <td className="p-2 text-xs text-muted-foreground">{String(e.validTo || '').slice(0, 10)}</td>
+                            <td className="p-2">
+                              {e.invited
+                                ? <Badge variant="outline" className="text-xs">sent {String(e.sentAt || '').slice(0, 10)}</Badge>
+                                : e.email
+                                  ? <Badge className="text-xs">awaiting</Badge>
+                                  : <Badge variant="destructive" className="text-xs">no email</Badge>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {invitesError && <p className="text-sm text-red-600">{invitesError}</p>}
+
+                {invitesPreview && (
+                  <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3 text-sm dark:border-teal-500/25 dark:bg-teal-500/10">
+                    <p className="font-semibold text-teal-900 dark:text-teal-100">
+                      Ready to send to {invitesPreview.wouldSend?.length || 0} employee(s)
+                    </p>
+                    {!!invitesPreview.wouldSend?.length && (
+                      <p className="mt-1 text-xs text-teal-800 dark:text-teal-200">
+                        {invitesPreview.wouldSend.slice(0, 8).map((w: any) => w.email).join(', ')}
+                        {invitesPreview.wouldSend.length > 8 ? ` +${invitesPreview.wouldSend.length - 8} more` : ''}
+                      </p>
+                    )}
+                    {!!invitesPreview.skipped?.length && (
+                      <p className="mt-1 text-xs text-teal-700 dark:text-teal-300">
+                        {invitesPreview.skipped.length} skipped ({[...new Set(invitesPreview.skipped.map((x: any) => x.reason))].join(', ')})
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+                  <span className="mr-auto text-xs text-muted-foreground">{invitesSelected.length} selected</span>
+                  <Button variant="outline" onClick={() => setIsInvitesOpen(false)}>Close</Button>
+                  <Button variant="outline" disabled={!invites.armed || invitesSending || !invitesSelected.length} onClick={previewInvitations}>
+                    {invitesSending && !invitesPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
+                    Preview
+                  </Button>
+                  <Button disabled={!invites.armed || invitesSending || !invitesPreview || !invitesPreview.wouldSend?.length} onClick={sendInvitations}>
+                    {invitesSending && invitesPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                    Send {invitesPreview?.wouldSend?.length ? `(${invitesPreview.wouldSend.length})` : ''}
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>

@@ -3,6 +3,7 @@ import express from 'express';
 import { body } from 'express-validator';
 import { listCronLeases } from '../services/cron-lease.service.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { invitationStatus as ahcInvitationStatus } from '../services/ahc-invitation-dispatch.service.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 import { listBlockedIPs, blockIP, unblockIP, getIPStats } from '../middleware/credentialStuffingGuard.js';
@@ -5284,7 +5285,17 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
       }
     }
 
-    return res.json({ success: true, message: 'Employee updated successfully' });
+    // Editing an employee can create an AHC entitlement (above). Report whether
+    // anyone is now awaiting the welcome rather than granting it in silence.
+    let invitations = null;
+    if (req.body?.packageId) {
+      try {
+        const status = await ahcInvitationStatus(req.body.packageId);
+        invitations = { sent: false, armed: status.armed, awaitingInvitation: status.counts.pending,
+          hint: 'POST /api/admin/health-packages/:id/invitations/send to send the AHC welcome' };
+      } catch { /* not an AHC package */ }
+    }
+    return res.json({ success: true, message: 'Employee updated successfully', invitations });
   } catch (error) {
     console.error('Failed to update corporate employee:', error);
     if (error.name === 'SequelizeUniqueConstraintError' && error.fields && error.fields.email) {
@@ -6555,10 +6566,23 @@ router.post('/corporate-package-assignments', authUser, requireRole(['admin', 't
     }
     
     console.log(`[Package Assignment] Corporate ${corporate.companyName}: Assigned ${results.assigned.length} employees, Failed ${results.failed.length}`);
-    
+
+    // Assigning grants eligibility and sends nothing. Surface how many are now
+    // waiting, so eligibility cannot be granted here and quietly forgotten —
+    // this route used to leave employees entitled with no one aware they had
+    // never been told. Sending stays the one explicit action:
+    // POST /api/admin/health-packages/:id/invitations/send
+    let invitations = null;
+    try {
+      const status = await ahcInvitationStatus(packageId);
+      invitations = { sent: false, armed: status.armed, awaitingInvitation: status.counts.pending,
+        hint: 'POST /api/admin/health-packages/:id/invitations/send to send the AHC welcome' };
+    } catch { /* not an AHC package, or none configured — nothing to report */ }
+
     return res.json({
       success: true,
       message: `Health package assigned to ${results.assigned.length} employees`,
+      invitations,
       data: {
         corporate: corporate.companyName,
         packageId,
