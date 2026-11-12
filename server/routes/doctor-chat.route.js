@@ -15,11 +15,23 @@ import { authUser } from '../middleware/auth.middleware.js';
 import { s3Storage, s3PresignedUrl } from '../utils/s3-storage.js';
 import { translateClinical } from '../services/hospital-os/translator.service.js';
 
-let chatTranslationColumnReady = false;
-async function ensureChatTranslationColumn() {
-  if (chatTranslationColumnReady) return;
-  await pool.query(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS translated_content JSONB`);
-  chatTranslationColumnReady = true;
+// chat_messages.translated_content is created by
+// migrations/20261112000100-chat-message-translations.migration.js. This route
+// used to add the column itself on the request path, which is unversioned
+// schema change with the app role's privileges. The probe below is read-only;
+// only a positive answer is cached, so an environment that has not run the
+// migration yet starts working as soon as it does, with no restart.
+let chatTranslationColumn = null;
+async function hasChatTranslationColumn() {
+  if (chatTranslationColumn === true) return true;
+  try {
+    const { rowCount } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'chat_messages' AND column_name = 'translated_content' LIMIT 1`);
+    chatTranslationColumn = rowCount > 0;
+  } catch {
+    chatTranslationColumn = false;
+  }
+  return chatTranslationColumn;
 }
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -186,12 +198,12 @@ router.get('/messages/:conversationId', authUser, requireDoctor, async (req, res
     const beforeClause = before ? `AND m."createdAt" < $4` : '';
     if (before) params.push(before);
 
-    await ensureChatTranslationColumn();
+    const translationsAvailable = await hasChatTranslationColumn();
     const { rows } = await pool.query(`
       SELECT
         m.id, m."conversationId", m."senderId", m."senderType",
         m."recipientId", m."recipientType", m.content, m."messageType",
-        m.attachments, m.status, m."createdAt", m.translated_content
+        m.attachments, m.status, m."createdAt"${translationsAvailable ? ', m.translated_content' : ', NULL AS translated_content'}
       FROM chat_messages m
       WHERE m."conversationId" = $1
         AND (m."senderId" = $2 OR m."recipientId" = $2)
@@ -239,7 +251,7 @@ router.post('/messages', authUser, requireDoctor, async (req, res) => {
   }
 
   try {
-    await ensureChatTranslationColumn();
+    const translationsAvailable = await hasChatTranslationColumn();
     const attachments = req.body.attachments ? JSON.parse(req.body.attachments) : [];
     const trimmedContent = content?.trim() || '';
 
@@ -265,13 +277,20 @@ router.post('/messages', authUser, requireDoctor, async (req, res) => {
       }
     }
 
-    const { rows } = await pool.query(`
-      INSERT INTO chat_messages
-        ("conversationId", "senderId", "senderType", "recipientId", "recipientType",
-         content, "messageType", attachments, status, translated_content, "createdAt", "updatedAt")
-      VALUES ($1, $2, 'doctor', $3, $4, $5, $6, $7::jsonb, 'sent', $8::jsonb, NOW(), NOW())
-      RETURNING *
-    `, [conversationId, doctorId, recipientId, recipientType, trimmedContent, messageType, JSON.stringify(attachments), translatedContent ? JSON.stringify(translatedContent) : null]);
+    // Without the migration the column is absent, so the message is still
+    // delivered — only its cached translation is dropped. Silently losing the
+    // message would be the worse failure.
+    if (translatedContent && !translationsAvailable) {
+      console.warn('[doctor-chat] chat_messages.translated_content is missing — run 20261112000100; sending without the cached translation');
+    }
+    const columns = ['"conversationId"', '"senderId"', '"senderType"', '"recipientId"', '"recipientType"',
+      'content', '"messageType"', 'attachments', 'status', ...(translationsAvailable ? ['translated_content'] : []), '"createdAt"', '"updatedAt"'];
+    const values = ['$1', '$2', "'doctor'", '$3', '$4', '$5', '$6', '$7::jsonb', "'sent'",
+      ...(translationsAvailable ? ['$8::jsonb'] : []), 'NOW()', 'NOW()'];
+    const params = [conversationId, doctorId, recipientId, recipientType, trimmedContent, messageType, JSON.stringify(attachments)];
+    if (translationsAvailable) params.push(translatedContent ? JSON.stringify(translatedContent) : null);
+    const { rows } = await pool.query(
+      `INSERT INTO chat_messages (${columns.join(', ')}) VALUES (${values.join(', ')}) RETURNING *`, params);
 
     res.json({ success: true, message: rows[0] });
   } catch (err) {

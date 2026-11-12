@@ -39,8 +39,15 @@ describe('WP-1.5 request-time DDL audit', () => {
     const { out } = run(['--json']);
     const report = JSON.parse(out);
     const files = new Set(report.findings.map((f) => f.file));
-    // If this stops matching, the debt was cleared and the expectation should be revisited upward.
-    expect(files.size).toBeGreaterThan(50);
+    // A ratchet, not a floor. This asserted `> 50` files and had been failing
+    // since the count fell to 45 — a stale expectation reporting progress as a
+    // regression. The debt may shrink, which is the point; it must not grow
+    // unnoticed. Lower these numbers when it shrinks further; raising one is a
+    // deliberate decision to accept more request-time DDL, not a fix.
+    expect(files.size).toBeLessThanOrEqual(45);
+    expect(report.tables.length).toBeLessThanOrEqual(121);
+    // And still large enough to prove the audit is scanning something real.
+    expect(files.size).toBeGreaterThan(20);
     expect(report.tables.length).toBeGreaterThan(50);
   });
 
