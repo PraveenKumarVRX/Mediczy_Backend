@@ -12,8 +12,18 @@
  *   submission: { state: 'saved'|'pending_hr'|'payment_pending'|'rejected', requestId, detail, at } | null,
  *   requestId: string | null,     // SmartCRM's HR request id, when pending HR
  * }
+ *
+ * Two kinds of policy:
+ *   - Mediqzy's own (insurance_policies rows HR or ops entered). The window
+ *     dates and top-ups come from here. Mode is 'web' when the employer's
+ *     binding says enrolment happens on SmartCRM's web portal, else 'off' —
+ *     never 'in_app', because the in-app flow only exists through SmartCRM.
+ *     A web binding needs no partner key, so a pilot employer can show
+ *     "Enrol now" before any SmartCRM read is switched on.
+ *   - Projected from SmartCRM (source 'smartcrm'): the binding's mode, which
+ *     may be 'in_app' once SmartCRM's write endpoints exist.
  */
-import { SOURCE_SYSTEM, effectiveEnrolmentMode, loadBinding } from './config.js';
+import { SOURCE_SYSTEM, effectiveEnrolmentMode, loadBindings } from './config.js';
 import { describeLink, getActiveLink } from './member-link.service.js';
 import { lastSubmission } from './enrolment.service.js';
 
@@ -25,9 +35,12 @@ export function windowStatus(enrolment) {
   return enrolment.from > today() ? 'upcoming' : 'closed';
 }
 
-export async function applyEnrolmentOverlay(userId, policies) {
-  // Native Mediqzy policies: no in-app enrolment flow exists for them yet, so
-  // the mode is 'off' whatever the window says.
+/**
+ * @param {number} userId
+ * @param {object[]} policies           shaped wallet policies (mutated)
+ * @param {Map<string, number>} corporateOf  policy id -> corporate id
+ */
+export async function applyEnrolmentOverlay(userId, policies, corporateOf = new Map()) {
   for (const policy of policies) {
     policy.enrolment = {
       ...policy.enrolment,
@@ -42,22 +55,28 @@ export async function applyEnrolmentOverlay(userId, policies) {
   let insurance = { linked: false };
   try {
     const link = await getActiveLink(userId);
-    if (!link) return insurance;
-    const binding = await loadBinding(link.corporate_id);
-    insurance = describeLink(link, binding);
-    const smartcrm = policies.filter((p) => p.source === SOURCE_SYSTEM);
-    if (!smartcrm.length) return insurance;
+    const corporateIds = [...new Set([...corporateOf.values(), link?.corporate_id].filter(Boolean))];
+    const bindings = await loadBindings(corporateIds);
+    if (link) insurance = describeLink(link, bindings.get(Number(link.corporate_id)) || null);
 
-    const mode = effectiveEnrolmentMode(binding);
-    const submission = await lastSubmission(userId);
-    for (const policy of smartcrm) {
-      policy.enrolment.mode = mode;
-      policy.enrolment.webUrl = mode === 'web' ? binding.web_enrolment_url : null;
-      // SmartCRM owns the window; the dates are not projected, so the app
-      // asks GET /api/employee/enrolment/window when mode is in_app.
-      if (policy.enrolment.status === 'not_set' && mode === 'in_app') policy.enrolment.status = 'live_check';
-      policy.enrolment.submission = submission;
-      policy.enrolment.requestId = submission?.state === 'pending_hr' ? submission.requestId : null;
+    let submission;
+    for (const policy of policies) {
+      const binding = bindings.get(Number(corporateOf.get(policy.id))) || null;
+      if (!binding) continue;
+      if (policy.source === SOURCE_SYSTEM) {
+        const mode = effectiveEnrolmentMode(binding);
+        policy.enrolment.mode = mode;
+        policy.enrolment.webUrl = mode === 'web' ? binding.web_enrolment_url : null;
+        // SmartCRM owns the window and the dates are not projected, so the
+        // app asks GET /api/employee/enrolment/window when mode is in_app.
+        if (policy.enrolment.status === 'not_set' && mode === 'in_app') policy.enrolment.status = 'live_check';
+        if (submission === undefined) submission = await lastSubmission(userId);
+        policy.enrolment.submission = submission;
+        policy.enrolment.requestId = submission?.state === 'pending_hr' ? submission.requestId : null;
+      } else if (binding.enrolment_mode === 'web' && binding.web_enrolment_url) {
+        policy.enrolment.mode = 'web';
+        policy.enrolment.webUrl = binding.web_enrolment_url;
+      }
     }
   } catch (error) {
     console.error(`[smartcrm-overlay] user ${userId}: ${error.message}`);

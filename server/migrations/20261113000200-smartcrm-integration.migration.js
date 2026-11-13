@@ -35,12 +35,16 @@ export async function up(db = pool) {
     CREATE TABLE IF NOT EXISTS smartcrm_corporate_bindings (
       id                  SERIAL PRIMARY KEY,
       corporate_id        INTEGER NOT NULL REFERENCES corporates(id) ON DELETE CASCADE,
-      tenant_slug         TEXT NOT NULL,
-      smartcrm_corporate  TEXT NOT NULL,
+      -- The three SmartCRM fields are optional so a corporate can be put on
+      -- web enrolment (a link to SmartCRM's portal) before any partner key
+      -- exists. Reading or in-app enrolment requires all three; see the
+      -- smartcrm_bindings_api_needs_source check below.
+      tenant_slug         TEXT,
+      smartcrm_corporate  TEXT,
       -- The name of the environment variable holding this corporate's partner
       -- key, never the key. Constrained so a key pasted here by mistake fails.
-      api_key_env         TEXT NOT NULL
-                          CHECK (api_key_env ~ '^SMARTCRM_KEY_[A-Z0-9_]{1,60}$'),
+      api_key_env         TEXT
+                          CHECK (api_key_env IS NULL OR api_key_env ~ '^SMARTCRM_KEY_[A-Z0-9_]{1,60}$'),
       read_enabled        BOOLEAN NOT NULL DEFAULT FALSE,
       enrolment_mode      TEXT NOT NULL DEFAULT 'off'
                           CHECK (enrolment_mode IN ('off', 'web', 'in_app')),
@@ -50,6 +54,13 @@ export async function up(db = pool) {
       created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT smartcrm_bindings_one_per_corporate UNIQUE (corporate_id),
+      CONSTRAINT smartcrm_bindings_api_needs_source CHECK (
+        (NOT read_enabled AND enrolment_mode <> 'in_app')
+        OR (tenant_slug IS NOT NULL AND smartcrm_corporate IS NOT NULL AND api_key_env IS NOT NULL)
+      ),
+      CONSTRAINT smartcrm_bindings_web_needs_url CHECK (
+        enrolment_mode <> 'web' OR web_enrolment_url IS NOT NULL
+      ),
       CONSTRAINT smartcrm_bindings_one_per_source UNIQUE (tenant_slug, smartcrm_corporate)
     );
 

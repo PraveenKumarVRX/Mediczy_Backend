@@ -554,6 +554,7 @@ router.get('/benefits', authUser, async (req, res) => {
         policyGroups: [],
         policySummary: null,
         policyLadders: [],
+        insuranceLink: { linked: false },
         policiesUnavailable: null
       });
     }
@@ -695,6 +696,7 @@ router.get('/benefits', authUser, async (req, res) => {
     let policyGroups = [];
     let policySummary = null;
     let policyLadders = [];
+    let insuranceLink = { linked: false };
     let policiesUnavailable = null;
     try {
       const wallet = await policyWallet.getPolicyWallet(req.user.id);
@@ -702,6 +704,7 @@ router.get('/benefits', authUser, async (req, res) => {
       policyGroups = wallet.groups;
       policySummary = wallet.summary;
       policyLadders = wallet.ladders;
+      insuranceLink = wallet.insurance || insuranceLink;
     } catch (policyError) {
       policiesUnavailable = policyError.code || 'POLICY_WALLET_UNAVAILABLE';
       console.error('[employee] benefits: policy wallet unavailable:', policyError.message);
@@ -718,6 +721,9 @@ router.get('/benefits', authUser, async (req, res) => {
       policyGroups,
       policySummary,
       policyLadders,
+      // SmartCRM link state (ADR-001): whether this member's insurance is
+      // linked, when it last synced, and whether that is stale.
+      insuranceLink,
       policiesUnavailable
     });
   } catch (err) {

@@ -498,7 +498,8 @@ export async function getPolicyWallet(userId) {
     groups.push({ key: 'other', label: 'Other cover', emptyLine: null, policies: other.map((p) => p.id) });
   }
 
-  const insurance = await overlayEnrolment(id, policies);
+  const corporateOf = new Map(rows.map((r) => [String(r.id), Number(r.corporateId) || null]));
+  const insurance = await overlayEnrolment(id, policies, corporateOf);
   return { policies, groups, summary: summarise(policies), ladders: buildLadders(policies), insurance };
 }
 
@@ -507,10 +508,10 @@ export async function getPolicyWallet(userId) {
  * Imported lazily and fenced: the wallet must render even if the overlay or
  * its tables are unavailable.
  */
-async function overlayEnrolment(userId, policies) {
+async function overlayEnrolment(userId, policies, corporateOf) {
   try {
     const { applyEnrolmentOverlay } = await import('./smartcrm/wallet-overlay.js');
-    return await applyEnrolmentOverlay(userId, policies);
+    return await applyEnrolmentOverlay(userId, policies, corporateOf);
   } catch (error) {
     console.error(`[policy-wallet] enrolment overlay skipped: ${error.message}`);
     return { linked: false };

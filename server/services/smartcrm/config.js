@@ -90,6 +90,26 @@ export async function loadBinding(corporateId, db = pool) {
   }
 }
 
+/** Bindings for several corporates at once, keyed by corporate id. */
+export async function loadBindings(corporateIds, db = pool) {
+  const ids = [...new Set((corporateIds || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
+  const out = new Map();
+  if (!ids.length || !(await schemaAvailable(db))) return out;
+  try {
+    const { rows } = await db.query(
+      `SELECT id, corporate_id, tenant_slug, smartcrm_corporate, api_key_env,
+              read_enabled, enrolment_mode, web_enrolment_url
+         FROM smartcrm_corporate_bindings
+        WHERE corporate_id = ANY($1::int[])`,
+      [ids]
+    );
+    for (const row of rows) out.set(Number(row.corporate_id), row);
+  } catch (error) {
+    if (!isMissingSchema(error)) throw error;
+  }
+  return out;
+}
+
 /**
  * The enrolment mode the member actually gets for a binding. 'in_app' and
  * 'web' are downgraded to 'off' when the kill switch is off, and 'web' needs
@@ -105,5 +125,5 @@ export function effectiveEnrolmentMode(binding) {
 
 export default {
   SOURCE_SYSTEM, PARTNER_PREFIX, SmartCrmError, integrationEnabled, partnerBaseUrl,
-  apiKeyFor, schemaAvailable, loadBinding, effectiveEnrolmentMode,
+  apiKeyFor, schemaAvailable, loadBinding, loadBindings, effectiveEnrolmentMode,
 };

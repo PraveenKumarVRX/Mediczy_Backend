@@ -39,7 +39,8 @@ const client = await import('../services/smartcrm/partner-client.js');
 const { mapSummary } = await import('../services/smartcrm/summary-mapper.js');
 const links = await import('../services/smartcrm/member-link.service.js');
 const enrolment = await import('../services/smartcrm/enrolment.service.js');
-const { windowStatus } = await import('../services/smartcrm/wallet-overlay.js');
+const await_overlay = await import('../services/smartcrm/wallet-overlay.js');
+const { windowStatus } = await_overlay;
 
 const BINDING = {
   id: 1, corporate_id: 5, tenant_slug: 'insurecorrect', smartcrm_corporate: 'EQUITAS',
@@ -129,7 +130,7 @@ describe('switches', () => {
 
   it('the migration stores a key NAME, constrained so a key cannot be pasted in', () => {
     const sql = readFileSync(join(ROOT, 'migrations/20261113000200-smartcrm-integration.migration.js'), 'utf8');
-    expect(sql).toMatch(/api_key_env\s+TEXT NOT NULL\s+CHECK \(api_key_env ~ '\^SMARTCRM_KEY_/);
+    expect(sql).toMatch(/CHECK \(api_key_env IS NULL OR api_key_env ~ '\^SMARTCRM_KEY_/);
     expect(sql).toMatch(/read_enabled\s+BOOLEAN NOT NULL DEFAULT FALSE/);
     expect(sql).toMatch(/enrolment_mode\s+TEXT NOT NULL DEFAULT 'off'/);
     expect(sql).toMatch(/uniq_member_link_user_per_tenant/);
@@ -440,5 +441,46 @@ describe('route', () => {
     expect(app).toMatch(/app\.use\("\/api\/employee", employeeInsuranceRouter\)/);
     const rf = readFileSync(join(ROOT, 'middleware/ringFencing.js'), 'utf8');
     expect(rf).toContain("'/api/employee'");
+  });
+});
+
+describe('wallet overlay — web enrolment for an employer on Mediqzy data', () => {
+  const { applyEnrolmentOverlay } = await_overlay;
+  const native = (id) => ({ id, source: 'insurance_policies', enrolment: { from: '2020-01-01', to: '2099-01-01', open: true } });
+
+  it('gives a native policy web mode and the portal URL from a key-less web binding', async () => {
+    const webOnly = { corporate_id: 5, tenant_slug: null, smartcrm_corporate: null, api_key_env: null, read_enabled: false, enrolment_mode: 'web', web_enrolment_url: 'https://enrol.example.invalid/x' };
+    handlers = baseHandlers({ link: null });
+    handlers.unshift([/FROM smartcrm_corporate_bindings WHERE corporate_id = ANY/, () => [webOnly]]);
+    const policies = [native('1'), native('2')];
+    await applyEnrolmentOverlay(19, policies, new Map([['1', 5], ['2', 6]]));
+    expect(policies[0].enrolment).toMatchObject({ mode: 'web', webUrl: webOnly.web_enrolment_url, status: 'open' });
+    // Another employer's policy is untouched by this employer's binding.
+    expect(policies[1].enrolment).toMatchObject({ mode: 'off', webUrl: null });
+  });
+
+  it('never gives a native policy in_app mode — that flow exists only through SmartCRM', async () => {
+    handlers = baseHandlers({ link: null });
+    handlers.unshift([/FROM smartcrm_corporate_bindings WHERE corporate_id = ANY/, () => [{ ...BINDING }]]);
+    const policies = [native('1')];
+    await applyEnrolmentOverlay(19, policies, new Map([['1', 5]]));
+    expect(policies[0].enrolment.mode).toBe('off');
+  });
+
+  it('a SmartCRM-projected policy takes the binding mode and the last submission', async () => {
+    handlers.unshift(
+      [/FROM smartcrm_corporate_bindings WHERE corporate_id = ANY/, () => [{ ...BINDING }]],
+      [/FROM insurance_enrolment_requests WHERE user_id = \$1 AND operation = 'submit'/, () => [{ status_code: 202, response: { request_id: 'HR-9' }, completed_at: null }]],
+    );
+    const policies = [{ id: '3', source: 'smartcrm', enrolment: { from: null, to: null, open: false } }];
+    const insurance = await applyEnrolmentOverlay(7646, policies, new Map([['3', 5]]));
+    expect(policies[0].enrolment).toMatchObject({ mode: 'in_app', status: 'live_check', requestId: 'HR-9' });
+    expect(insurance.linked).toBe(true);
+  });
+
+  it('the migration lets a web binding exist without SmartCRM keys, but not a read or in-app one', () => {
+    const sql = readFileSync(join(ROOT, 'migrations/20261113000200-smartcrm-integration.migration.js'), 'utf8');
+    expect(sql).toMatch(/smartcrm_bindings_api_needs_source CHECK/);
+    expect(sql).toMatch(/smartcrm_bindings_web_needs_url CHECK/);
   });
 });
