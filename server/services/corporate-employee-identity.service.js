@@ -84,3 +84,30 @@ export async function findExistingEmployeeAccount({ corporateId, email, employee
 }
 
 export default { findExistingEmployeeAccount, MATCHED_BY };
+
+/**
+ * Is the per-financial-year roster stamp available yet?
+ *
+ * The code deploys before its migration, so an INSERT naming
+ * roster_financial_year would hard-fail (42703) on a server reloaded in that
+ * window and break employee upload entirely. Only a positive answer is cached:
+ * the column cannot disappear, while a negative one is temporary and would
+ * otherwise persist until someone restarted the process — the exact fault the
+ * template-attachment probe hit on 2026-11-11.
+ */
+let rosterYearColumn = null;
+export async function rosterFinancialYearAvailable() {
+  if (rosterYearColumn === true) return true;
+  try {
+    const rows = await select(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'corporate_employees' AND column_name = 'roster_financial_year' LIMIT 1`, {});
+    rosterYearColumn = rows.length > 0;
+  } catch {
+    rosterYearColumn = false;
+  }
+  return rosterYearColumn;
+}
+
+/** Test seam. */
+export function __resetRosterYearProbe() { rosterYearColumn = null; }

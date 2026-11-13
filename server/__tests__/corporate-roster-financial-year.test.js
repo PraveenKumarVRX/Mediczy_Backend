@@ -62,6 +62,19 @@ describe('the financial year is the roster\'s unit', () => {
     expect(script).toContain('may still be mid-checkup');
   });
 
+  it('survives a server reloaded before the migration is applied', () => {
+    // The code deploys before its migration. An INSERT naming a column that
+    // does not exist yet would hard-fail 42703 and break employee upload
+    // entirely for everyone, not just the roster stamp.
+    expect(route).toContain('rosterFinancialYearAvailable()');
+    expect(route).toMatch(/\$\{rosterYearReady \? ', roster_financial_year, roster_uploaded_at' : ''\}/);
+    expect(route).toMatch(/\$\{rosterYearReady \? ', :rosterFinancialYear, NOW\(\)' : ''\}/);
+    const identity = fs.readFileSync('services/corporate-employee-identity.service.js', 'utf8');
+    // and only a positive answer may be cached, or the process stays degraded
+    // until someone restarts it
+    expect(identity).toContain('if (rosterYearColumn === true) return true;');
+  });
+
   it('the migration is additive and registered', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS roster_financial_year');
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS roster_uploaded_at');

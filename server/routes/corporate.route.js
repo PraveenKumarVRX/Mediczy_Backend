@@ -4,7 +4,7 @@ import { encrypt as encryptSsoSecret, decrypt as decryptSsoSecret } from '../uti
 const JWT_SSO_SECRET = JWT_SSO_CONFIG.SECRET;
 import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
 import { invitationStatus as ahcInvitationStatus } from '../services/ahc-invitation-dispatch.service.js';
-import { findExistingEmployeeAccount } from '../services/corporate-employee-identity.service.js';
+import { findExistingEmployeeAccount, rosterFinancialYearAvailable } from '../services/corporate-employee-identity.service.js';
 import { fiscalYearOf } from '../utils/ist-date.js';
 import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
@@ -1379,9 +1379,11 @@ router.post('/employees', authCorporate, async (req, res) => {
       }
     }
 
+    // Resolved per call: the column exists only once 20261113000100 is applied.
+    const rosterYearReady = await rosterFinancialYearAvailable();
     const [employeeRow] = await postgresSequelize.query(
-      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", roster_financial_year, roster_uploaded_at, "createdAt", "updatedAt")
-       VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, :rosterFinancialYear, NOW(), NOW(), NOW())
+      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive"${rosterYearReady ? ', roster_financial_year, roster_uploaded_at' : ''}, "createdAt", "updatedAt")
+       VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true${rosterYearReady ? ', :rosterFinancialYear, NOW()' : ''}, NOW(), NOW())
        RETURNING unique_id`,
       { replacements: { corporateId, userId: linkedUserId, employeeId: normalizedEmployeeId, email: normalizedEmail, rosterFinancialYear: fiscalYearOf().label, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata }, type: postgresSequelize.QueryTypes.SELECT }
     );
@@ -1574,6 +1576,7 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
         // would reject nearly every row; the row is REFRESHED instead and
         // re-stamped with the current year, which is what marks the employee
         // live for it.
+        const rosterYearReady = await rosterFinancialYearAvailable();
         const rosterFinancialYear = fiscalYearOf().label;
         await postgresSequelize.query(
           `UPDATE corporate_employees SET
@@ -1583,8 +1586,7 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
              designation = COALESCE(NULLIF(:designation, ''), designation),
              "isActive" = true,
              "exitDate" = NULL,
-             roster_financial_year = :rosterFinancialYear,
-             roster_uploaded_at = NOW(),
+             ${rosterYearReady ? 'roster_financial_year = :rosterFinancialYear, roster_uploaded_at = NOW(),' : ''}
              "updatedAt" = NOW()
            WHERE corporate_id = :corporateId AND LOWER("employeeId") = LOWER(:employeeId)`,
           { replacements: {
@@ -1670,9 +1672,10 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
         }
       }
 
+      const rosterYearReady = await rosterFinancialYearAvailable();
       const [employeeRow] = await postgresSequelize.query(
-        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", roster_financial_year, roster_uploaded_at, "createdAt", "updatedAt")
-         VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, :rosterFinancialYear, NOW(), NOW(), NOW())
+        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive"${rosterYearReady ? ', roster_financial_year, roster_uploaded_at' : ''}, "createdAt", "updatedAt")
+         VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true${rosterYearReady ? ', :rosterFinancialYear, NOW()' : ''}, NOW(), NOW())
          RETURNING unique_id`,
         { replacements: { corporateId, userId: linkedUserId, employeeId: generatedEmployeeId, email: normalizedEmail, rosterFinancialYear: fiscalYearOf().label, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata }, type: postgresSequelize.QueryTypes.SELECT }
       );
