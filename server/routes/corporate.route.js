@@ -5,6 +5,7 @@ const JWT_SSO_SECRET = JWT_SSO_CONFIG.SECRET;
 import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
 import { invitationStatus as ahcInvitationStatus } from '../services/ahc-invitation-dispatch.service.js';
 import { findExistingEmployeeAccount } from '../services/corporate-employee-identity.service.js';
+import { fiscalYearOf } from '../utils/ist-date.js';
 import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
 import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
@@ -1379,10 +1380,10 @@ router.post('/employees', authCorporate, async (req, res) => {
     }
 
     const [employeeRow] = await postgresSequelize.query(
-      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-       VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
+      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", roster_financial_year, roster_uploaded_at, "createdAt", "updatedAt")
+       VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, :rosterFinancialYear, NOW(), NOW(), NOW())
        RETURNING unique_id`,
-      { replacements: { corporateId, userId: linkedUserId, employeeId: normalizedEmployeeId, email: normalizedEmail, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata }, type: postgresSequelize.QueryTypes.SELECT }
+      { replacements: { corporateId, userId: linkedUserId, employeeId: normalizedEmployeeId, email: normalizedEmail, rosterFinancialYear: fiscalYearOf().label, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata }, type: postgresSequelize.QueryTypes.SELECT }
     );
     const employeeUid = employeeRow?.unique_id || null;
 
@@ -1568,7 +1569,33 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
         { replacements: { corporateId, employeeId: generatedEmployeeId }, type: postgresSequelize.QueryTypes.SELECT }
       );
       if (existingById) {
-        errors.push({ row: index + 1, employee: emp, error: `Employee ID ${generatedEmployeeId} already exists in this corporate` });
+        // The employer uploads its list once per financial year, so next
+        // April's file contains most of the same staff codes. Rejecting them
+        // would reject nearly every row; the row is REFRESHED instead and
+        // re-stamped with the current year, which is what marks the employee
+        // live for it.
+        const rosterFinancialYear = fiscalYearOf().label;
+        await postgresSequelize.query(
+          `UPDATE corporate_employees SET
+             email = COALESCE(NULLIF(:email, ''), email),
+             business_unit = COALESCE(:businessUnit, business_unit),
+             department = COALESCE(:department, department),
+             designation = COALESCE(NULLIF(:designation, ''), designation),
+             "isActive" = true,
+             "exitDate" = NULL,
+             roster_financial_year = :rosterFinancialYear,
+             roster_uploaded_at = NOW(),
+             "updatedAt" = NOW()
+           WHERE corporate_id = :corporateId AND LOWER("employeeId") = LOWER(:employeeId)`,
+          { replacements: {
+              corporateId, employeeId: generatedEmployeeId, email: normalizedEmail,
+              businessUnit: emp.businessUnit || emp.business_unit || null,
+              department: emp.department || null, designation: emp.designation || '',
+              rosterFinancialYear,
+            }, type: postgresSequelize.QueryTypes.UPDATE }
+        );
+        successfulUploads.push({ employeeId: generatedEmployeeId, uid: null, name: emp.name,
+          linked: true, accountProvisioned: false, refreshed: true, financialYear: rosterFinancialYear });
         continue;
       }
       if (normalizedEmail) {
@@ -1580,8 +1607,10 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
             LIMIT 1`,
           { replacements: { corporateId, email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
         );
-        if (existingByEmail) {
-          errors.push({ row: index + 1, employee: emp, error: `Employee email ${normalizedEmail} already exists in this corporate` });
+        if (existingByEmail && String(existingByEmail.employeeId).toLowerCase() !== generatedEmployeeId.toLowerCase()) {
+          // Still a real conflict: the same address arriving under a different
+          // staff code means two codes claim one person.
+          errors.push({ row: index + 1, employee: emp, error: `Employee email ${normalizedEmail} already belongs to ${existingByEmail.employeeId} in this corporate` });
           continue;
         }
       }
@@ -1642,10 +1671,10 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
       }
 
       const [employeeRow] = await postgresSequelize.query(
-        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-         VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
+        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", roster_financial_year, roster_uploaded_at, "createdAt", "updatedAt")
+         VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, :rosterFinancialYear, NOW(), NOW(), NOW())
          RETURNING unique_id`,
-        { replacements: { corporateId, userId: linkedUserId, employeeId: generatedEmployeeId, email: normalizedEmail, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata }, type: postgresSequelize.QueryTypes.SELECT }
+        { replacements: { corporateId, userId: linkedUserId, employeeId: generatedEmployeeId, email: normalizedEmail, rosterFinancialYear: fiscalYearOf().label, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata }, type: postgresSequelize.QueryTypes.SELECT }
       );
       const employeeUid = employeeRow?.unique_id || null;
 

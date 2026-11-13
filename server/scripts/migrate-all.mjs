@@ -140,6 +140,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261111000600-team-email-template-attachments.migration.js',
   '20261111000700-ahc-notification-status-width.migration.js',
   '20261112000100-chat-message-translations.migration.js',
+  '20261113000100-corporate-roster-financial-year.migration.js',
 ];
 
 function runStep(step) {
