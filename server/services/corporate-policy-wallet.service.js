@@ -190,14 +190,18 @@ const typeOf = (policyType) => {
 };
 
 const POLICY_COLUMNS = `
-  p.id, p."policyNumber", p."policyName", p."policyType", p.status,
+  p.id, COALESCE(p."policyNumber", p.metadata->>'sourcePolicyNumber') AS "policyNumber",
+  p."policyName", p."policyType", p.status,
+  -- to_jsonb, not p.source_system: the code ships before the SmartCRM
+  -- migration that adds the column, and a missing column must not break the wallet.
+  to_jsonb(p)->>'source_system' AS "sourceSystem",
   p."sumInsured", p."coverAmount", p."baseSumInsured", p."deductible",
   p."linkedBasePolicyId", p.floater, p."copayPercent", p."roomRentLimit",
   p."maternityCovered", p."benefitSchedule", p."opLimits", p."waitingPeriods",
   p.exclusions, p."policyStartDate", p."policyEndDate", p.voluntary,
   p."premiumPerYear", p."enrolmentFrom", p."enrolmentTo",
   p."policyDocumentUrl", p."claimFormUrl", p."corporateId", p."tpaId",
-  c."companyName" AS "insurer"`;
+  COALESCE(c."companyName", p.metadata->>'insurerName') AS "insurer"`;
 
 /**
  * Every policy this member is on, with the member's own usage.
@@ -349,7 +353,9 @@ const shapePolicy = (row, members) => {
 
   return {
     id: String(row.id),
-    source: 'insurance_policies',
+    // 'smartcrm' for a policy projected from SmartCRM (ADR-001), where
+    // SmartCRM is the system of record and enrolment goes through it.
+    source: row.sourceSystem || 'insurance_policies',
     policyType,
     // An unrecognised type is reported, not silently grouped: a card whose
     // badge and sections were guessed would show the wrong claim route.
@@ -492,7 +498,23 @@ export async function getPolicyWallet(userId) {
     groups.push({ key: 'other', label: 'Other cover', emptyLine: null, policies: other.map((p) => p.id) });
   }
 
-  return { policies, groups, summary: summarise(policies), ladders: buildLadders(policies) };
+  const insurance = await overlayEnrolment(id, policies);
+  return { policies, groups, summary: summarise(policies), ladders: buildLadders(policies), insurance };
+}
+
+/**
+ * Enrolment mode/status/submission per policy, and the SmartCRM link state.
+ * Imported lazily and fenced: the wallet must render even if the overlay or
+ * its tables are unavailable.
+ */
+async function overlayEnrolment(userId, policies) {
+  try {
+    const { applyEnrolmentOverlay } = await import('./smartcrm/wallet-overlay.js');
+    return await applyEnrolmentOverlay(userId, policies);
+  } catch (error) {
+    console.error(`[policy-wallet] enrolment overlay skipped: ${error.message}`);
+    return { linked: false };
+  }
 }
 
 /** One policy, or null when the member is not on it. */

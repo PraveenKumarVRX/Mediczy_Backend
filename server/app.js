@@ -192,6 +192,7 @@ import aggregatorRouter from './routes/aggregator.route.js';
 import aggregatorAuthRouter from './routes/aggregator-auth.route.js';
 import cartRouter from './routes/cart.route.js';
 import employeeNetworkRouter from './routes/employee-network.route.js';
+import employeeInsuranceRouter from './routes/employee-insurance.route.js';
 import healthPackageKitsRouter from './routes/health-package-kits.route.js';
 import adminHealthPackagesRouter from './routes/admin-health-packages.route.js';
 import corporateBookingsRouter from './routes/corporate-bookings.route.js';
@@ -1413,6 +1414,7 @@ app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use('/api/admin/webhooks', idempotentWebhookRouter); // Idempotent webhook event log (admin: list, retry, stats)
 app.use("/api/appointments", appointmentRouter);
 mountLabRoutes(app, 'catalog'); // lab routes — see routes/lab/registry.js
+app.use("/api/employee", employeeInsuranceRouter); // SmartCRM insurance link + in-app enrolment (ADR-001; inert until switched on)
 app.use("/api/employee", employeeNetworkRouter); // Corporate employee network (my-labs, my-hospitals, my-clinics)
 app.use(["/api/kits", "/api/checkup-kits", "/api/lab/kits"], healthPackageKitsRouter);
 app.use("/api/admin/health-packages", adminHealthPackagesRouter);

@@ -44,6 +44,11 @@ const load = async (handlers = {}) => {
   jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({
     postgresSequelize: { query, transaction: jest.fn() },
   }));
+  // The SmartCRM enrolment overlay reads through pgPool; no member here is
+  // linked, so its tables report absent and it adds only the native fields.
+  jest.unstable_mockModule('../db/pgPool.js', () => ({
+    default: { query: jest.fn(async () => ({ rows: [{ b: false, l: false, r: false }], rowCount: 1 })), connect: jest.fn() },
+  }));
   const mod = await import('../services/corporate-policy-wallet.service.js');
   return { ...mod, query, calls };
 };
@@ -285,7 +290,11 @@ describe('nothing is assumed', () => {
   it('treats an absent enrolment window as closed', async () => {
     const { getPolicyWallet } = await load({ policies: [policyRow({ voluntary: true })], members: [memberRow()] });
     const [policy] = (await getPolicyWallet(19)).policies;
-    expect(policy.enrolment).toEqual({ from: null, to: null, open: false });
+    expect(policy.enrolment).toEqual({
+      from: null, to: null, open: false,
+      // A native Mediqzy policy has no in-app enrolment flow, so mode is off.
+      status: 'not_set', mode: 'off', webUrl: null, submission: null, requestId: null,
+    });
   });
 
   it('opens enrolment only inside a window the employer set', async () => {
