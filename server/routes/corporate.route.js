@@ -4,6 +4,7 @@ import { encrypt as encryptSsoSecret, decrypt as decryptSsoSecret } from '../uti
 const JWT_SSO_SECRET = JWT_SSO_CONFIG.SECRET;
 import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
 import { invitationStatus as ahcInvitationStatus } from '../services/ahc-invitation-dispatch.service.js';
+import { findExistingEmployeeAccount } from '../services/corporate-employee-identity.service.js';
 import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
 import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
@@ -1584,19 +1585,25 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
           continue;
         }
       }
-      // Link to an existing user account by email, same as the single-employee
-      // create path — deterministic ORDER BY, see the comment there.
+      // Find the account this employee already has before creating another.
+      // Matching on the address alone created 367 second accounts in one
+      // Equitas upload: the employer changed mail domain and its older accounts
+      // carry the staff code inside a placeholder address, so every returning
+      // employee looked new. The staff code is the authoritative key.
       const normalizedPhone = emp.phone ? String(emp.phone).trim() : null;
       let linkedUserId = null;
-      if (normalizedEmail) {
-        const [existingUser] = await postgresSequelize.query(
-          `SELECT id FROM users WHERE lower(email) = :email
-           ORDER BY (email = :exactEmail) DESC, ("lastLoginAt" IS NOT NULL) DESC, id ASC
-           LIMIT 1`,
-          { replacements: { email: normalizedEmail, exactEmail: emp.email || normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
-        );
-        if (existingUser) linkedUserId = existingUser.id;
+      const identity = await findExistingEmployeeAccount({
+        corporateId, email: normalizedEmail, employeeCode: generatedEmployeeId, phone: normalizedPhone,
+      });
+      if (identity.ambiguous) {
+        // Two accounts under one code: a human must choose which survives.
+        // Guessing attaches the benefit to an account the employee may not be
+        // able to sign in to.
+        errors.push({ row: index + 1, employee: emp,
+          error: `${generatedEmployeeId} matches ${identity.candidates.length} existing accounts (${identity.candidates.join(', ')}) — resolve the duplicate before uploading this row` });
+        continue;
       }
+      if (identity.userId) linkedUserId = identity.userId;
 
       // No existing account — admin-provision one immediately (same as single add).
       let newAccountCreated = false;
