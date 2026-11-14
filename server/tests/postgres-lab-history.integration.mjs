@@ -81,5 +81,15 @@ try {
   } finally { LabTest.create = originalCreate; }
   check(await asUser(42, transaction => Appointment.count({ where: { userId: 42 }, transaction })) === 1, 'failed history insert rolls the appointment back in PostgreSQL');
   check(await asUser(42, transaction => LabTest.count({ where: { userId: 42 }, transaction })) === 1, 'no duplicate history survived recovery or rollback');
+  await asUser(42, async transaction => {
+    const legacy = await Appointment.create({
+      userId: 42, type: null, consultationType: 'lab-test', patientName: 'Disposable legacy',
+      patientPhone: '', doctorName: 'Lab', appointmentDate: '2026-12-23', appointmentTime: '10:00',
+      doctorDetails: { labId: 7 }, metadata: { totalFee: 0 },
+    }, { transaction });
+    const legacyHistory = await ensureLabAppointmentHistory(legacy, { LabTest, transaction });
+    await legacy.reload({ transaction });
+    check(legacy.type === 'lab' && legacy.metadata.labTestId === legacyHistory.id, 'legacy lab booking with null type is identified and repaired');
+  });
   console.log(JSON.stringify({ passed: checks, failed: 0, database: 'disposable PostgreSQL', productionWrites: 0 }));
 } finally { await db.close(); }

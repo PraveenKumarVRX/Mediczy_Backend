@@ -12,9 +12,14 @@ const HISTORY_STATUS = {
   'no-show': 'no_show', rescheduled: 'rescheduled',
 };
 
+// Older ORM versions dropped `type` on insert. A lab-test consultation with
+// an explicit lab directory reference is still an identifiable lab booking.
+export const isLabAppointmentRecord = appointment => appointment?.type === 'lab' ||
+  (appointment?.consultationType === 'lab-test' && appointment?.doctorDetails?.labId != null);
+
 export async function ensureLabAppointmentHistory(appointment, { LabTest, transaction }) {
   if (!transaction) throw new Error('Lab history requires the appointment transaction');
-  if (appointment.type !== 'lab' || !appointment.userId) {
+  if (!isLabAppointmentRecord(appointment) || !appointment.userId) {
     throw new Error('Only patient-owned lab appointments can be linked');
   }
   const details = appointment.metadata || {};
@@ -55,8 +60,8 @@ export async function ensureLabAppointmentHistory(appointment, { LabTest, transa
       },
     }, { transaction });
   }
-  if (String(details.labTestId ?? '') !== String(history.id)) {
-    await appointment.update({ metadata: { ...details, labTestId: history.id } }, { transaction });
+  if (String(details.labTestId ?? '') !== String(history.id) || appointment.type !== 'lab') {
+    await appointment.update({ type: 'lab', metadata: { ...details, labTestId: history.id } }, { transaction });
   }
   return history;
 }
@@ -69,10 +74,10 @@ export async function updateLinkedLabHistory(labTest, changes, { Appointment, La
     let appointment = null;
     if (labTest.metadata?.source === 'lab_appointment') {
       appointment = await Appointment.findOne({
-        where: { id: labTest.metadata.appointmentId, userId: labTest.userId, type: 'lab' },
+        where: { id: labTest.metadata.appointmentId, userId: labTest.userId },
         transaction, lock: transaction.LOCK.UPDATE,
       });
-      if (!appointment) throw new Error('Linked lab appointment was not found');
+      if (!appointment || !isLabAppointmentRecord(appointment)) throw new Error('Linked lab appointment was not found');
       if (String(appointment.metadata?.labTestId) !== String(labTest.id)) {
         throw new Error('Linked lab appointment has a different history reference');
       }
@@ -88,6 +93,7 @@ export async function updateLinkedLabHistory(labTest, changes, { Appointment, La
         throw new Error('This lab appointment can no longer be changed');
       }
       const patch = {};
+      if (appointment.type !== 'lab') patch.type = 'lab';
       if (changes.status === 'booked') patch.status = 'confirmed';
       if (changes.status === 'cancelled') {
         patch.status = 'cancelled';

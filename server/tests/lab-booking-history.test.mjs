@@ -274,3 +274,16 @@ test('linked history cannot be deleted while leaving a booked appointment behind
   assert.equal(f.histories.length, 1);
   assert.equal(f.appointments[0].status, 'scheduled');
 });
+
+test('historical lab-test appointments with missing type are recovered and normalized', async () => {
+  const f = await fixture();
+  await f.book(body);
+  const appointment = f.appointments[0];
+  f.histories.length = 0;
+  appointment.type = null;
+  appointment.metadata = { ...appointment.metadata, labTestId: null };
+  await f.database.transaction(transaction => ensureLabAppointmentHistory(appointment, { LabTest: f.LabTest, transaction }));
+  assert.equal(appointment.type, 'lab');
+  assert.equal(appointment.metadata.labTestId, 501);
+  assert.equal(f.histories[0].metadata.appointmentId, appointment.id);
+});

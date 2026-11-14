@@ -1,6 +1,6 @@
 // Explicit, patient-scoped recovery. Dry run by default; no global scans or
 // elevated RLS bypass. Run with the same database configuration as the server.
-import { ensureLabAppointmentHistory } from '../services/lab-appointment-history.service.js';
+import { ensureLabAppointmentHistory, isLabAppointmentRecord } from '../services/lab-appointment-history.service.js';
 
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
@@ -25,11 +25,11 @@ try {
     const result = await Appointment.sequelize.transaction(async transaction => {
       await setRlsContext(transaction, { userId: Number(userArg), orgId: Number(orgArg) });
       const appointment = await Appointment.findOne({
-        where: { id, userId: Number(userArg), type: 'lab' },
+        where: { id, userId: Number(userArg) },
         transaction,
         ...(args.includes('--apply') ? { lock: transaction.LOCK.UPDATE } : {}),
       });
-      if (!appointment) throw new Error(`Appointment ${id} is not visible as a lab booking for this user/context`);
+      if (!appointment || !isLabAppointmentRecord(appointment)) throw new Error(`Appointment ${id} is not visible as a lab booking for this user/context`);
       const existing = await LabTest.findOne({
         where: { userId: Number(userArg), metadata: { source: 'lab_appointment', appointmentId: id } },
         transaction,

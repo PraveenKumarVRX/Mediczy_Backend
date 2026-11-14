@@ -2,7 +2,7 @@
 // All creation and patient-side updates share the transaction/locking policy.
 import { Appointment, LabTest } from '../models/index.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
-import { ensureLabAppointmentHistory, updateLinkedLabHistory } from './lab-appointment-history.service.js';
+import { ensureLabAppointmentHistory, updateLinkedLabHistory, isLabAppointmentRecord } from './lab-appointment-history.service.js';
 
 export const createLinkedLabTest = (appointment, transaction) =>
   ensureLabAppointmentHistory(appointment, { LabTest, transaction });
@@ -15,7 +15,7 @@ export async function updateLinkedLabTest(req, labTest, changes) {
 // Appointment-side changes must keep patient Lab Orders synchronized too.
 // The caller's appointment repository owns the RLS transaction and rollback.
 export async function syncLabTestFromAppointment(appointment, transaction) {
-  if (appointment.type !== 'lab' || !appointment.metadata?.labTestId) return;
+  if (!isLabAppointmentRecord(appointment) || !appointment.metadata?.labTestId) return;
   if (!transaction) throw new Error('Lab history synchronization requires a transaction');
   const changes = { appointmentDate: appointment.appointmentDate, appointmentTime: appointment.appointmentTime };
   if (appointment.status === 'cancelled') Object.assign(changes, {

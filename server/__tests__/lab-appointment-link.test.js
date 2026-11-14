@@ -31,7 +31,7 @@ it('creates history and reverse link in the supplied transaction without treatin
     metadata: expect.objectContaining({ appointmentId: 12, labId: 9 }),
   }), { transaction });
   expect(LabTest.create.mock.calls[0][0].hospitalId).toBeUndefined();
-  expect(appointment.update).toHaveBeenCalledWith({ metadata: expect.objectContaining({ labTestId: 21 }) }, { transaction });
+  expect(appointment.update).toHaveBeenCalledWith({ type: 'lab', metadata: expect.objectContaining({ labTestId: 21 }) }, { transaction });
 });
 it('propagates creation failure without writing a reverse link', async () => {
   const appointment = booking();
@@ -61,7 +61,7 @@ it('synchronizes history edits using owner, a row lock and reciprocal reference'
   LabTest.findOne.mockResolvedValue(lab);
   Appointment.findOne.mockResolvedValue(appointment);
   await updateLinkedLabTest({ user: { id: 42 } }, lab, { appointmentTime: '11:00' });
-  expect(Appointment.findOne).toHaveBeenCalledWith({ where: { id: 12, userId: 42, type: 'lab' }, transaction, lock: 'UPDATE' });
+  expect(Appointment.findOne).toHaveBeenCalledWith({ where: { id: 12, userId: 42 }, transaction, lock: 'UPDATE' });
   expect(appointment.update).toHaveBeenCalledWith({ appointmentTime: '11:00' }, { transaction });
   expect(lab.update).toHaveBeenCalledWith({ appointmentTime: '11:00' }, { transaction });
   expect(setRlsContext).toHaveBeenCalledWith(transaction, { userId: 42, orgId: 0 });
