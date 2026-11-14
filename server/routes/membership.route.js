@@ -7,7 +7,7 @@ import pool from '../db/pgPool.js';
 import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
 import { verifyPlanPayment } from '../services/plan-payment-verification.service.js';
-import { quotePlanPurchase, upgradeBaseDue } from '../services/plan-pricing.service.js';
+import { quotePlanPurchase, upgradeBaseDue, SELF_SERVICE_PLAN_TYPES } from '../services/plan-pricing.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
@@ -500,6 +500,13 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
     if(!plan || !plan.isActive) return res.status(404).json({ message:'Plan not available' });
 
     const planType = plan.planType || 'primary';
+    // Only plans members buy themselves. Corporate plans (planType
+    // 'health_checkup', e.g. "Corporate Equitas 2026") are prepaid by the
+    // employer, priced for HR reference, free to the employee and assigned by
+    // the corporate process — never self-subscribed, or anyone could take one free.
+    if (!SELF_SERVICE_PLAN_TYPES.has(planType)) {
+      return res.status(403).json({ success: false, code: 'PLAN_NOT_SELF_SERVICE', message: 'This plan is provided through your employer.' });
+    }
     const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
 
     // Paid plans require a Razorpay payment ID — prevent free activation of paid plans.

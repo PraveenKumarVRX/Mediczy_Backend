@@ -5,6 +5,13 @@
  * two can never disagree.
  */
 
+/**
+ * Plan types a member buys for themselves. Corporate plans ('health_checkup')
+ * are prepaid by the employer: the price is an HR reference, the employee pays
+ * nothing, and the corporate process assigns them.
+ */
+export const SELF_SERVICE_PLAN_TYPES = new Set(['primary', 'addon']);
+
 /** The plan's selling price in rupees (discounted price when set). */
 export function planPrice(plan) {
   const discounted = plan?.discountedPrice;
@@ -26,10 +33,9 @@ export function upgradeBaseDue(currentUserPlan, newPlan, now = new Date()) {
   const paid = parseFloat(currentUserPlan.paidAmount || 0);
   const dailyRate = totalDays > 0 ? paid / totalDays : 0;
   const proratedRefund = Math.round(dailyRate * remainingDays * 100) / 100;
-  // `discountedPrice || price` on purpose: it is what the upgrade route has
-  // always charged. A "0.00" discount therefore means free here (corporate
-  // plans such as "Corporate Equitas 2026" use it), while planPrice() treats
-  // it as "no discount" — an open question, see API_CONTRACT doc / M18 notes.
+  // `discountedPrice || price` on purpose: it is what activation has always
+  // charged. A "0.00" discount means free to the member — confirmed
+  // 2026-11-14 for corporate-prepaid plans (price is an HR reference).
   const newPlanPrice = parseFloat(newPlan.discountedPrice || newPlan.price || 0);
   return {
     newPlanPrice,
@@ -48,6 +54,9 @@ export function upgradeBaseDue(currentUserPlan, newPlan, now = new Date()) {
 export async function quotePlanPurchase({ userId, planId, now = new Date() }, { MembershipPlan, UserPlan }) {
   const plan = await MembershipPlan.findByPk(planId);
   if (!plan || !plan.isActive) return { ok: false, status: 404, code: 'PLAN_NOT_FOUND', message: 'Plan not available' };
+  if (!SELF_SERVICE_PLAN_TYPES.has(plan.planType || 'primary')) {
+    return { ok: false, status: 403, code: 'PLAN_NOT_SELF_SERVICE', message: 'This plan is provided through your employer.' };
+  }
 
   if (plan.planType !== 'addon') {
     const current = await UserPlan.findOne({

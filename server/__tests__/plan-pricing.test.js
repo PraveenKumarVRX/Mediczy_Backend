@@ -1,7 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 
 /** The server's own price for a plan purchase (audit M18). */
-const { planPrice, upgradeBaseDue, quotePlanPurchase } = await import('../services/plan-pricing.service.js');
+const { planPrice, upgradeBaseDue, quotePlanPurchase, SELF_SERVICE_PLAN_TYPES } = await import('../services/plan-pricing.service.js');
 
 const models = ({ plan, current = null }) => ({
   MembershipPlan: { findByPk: jest.fn(async () => plan) },
@@ -59,10 +59,18 @@ describe('quotePlanPurchase', () => {
 });
 
 describe('a "0.00" discount (corporate-sponsored plans)', () => {
-  it('quotes and upgrades the way activation already treats it: free', async () => {
-    const sponsored = { id: 4, name: 'Corporate Equitas 2026', price: '5000.00', discountedPrice: '0.00', isActive: true, planType: 'primary' };
+  it('a primary plan with a "0.00" discount is free to the member, as activation treats it', async () => {
+    const sponsored = { id: 40, name: 'Sponsored primary', price: '5000.00', discountedPrice: '0.00', isActive: true, planType: 'primary' };
     const m = { MembershipPlan: { findByPk: async () => sponsored }, UserPlan: { findOne: async () => null } };
     await expect(quotePlanPurchase({ userId: 1, planId: 4 }, m)).resolves.toMatchObject({ kind: 'subscribe', baseAmount: 0 });
     expect(upgradeBaseDue({ startDate: '2026-01-01', endDate: '2026-12-31', paidAmount: '0' }, sponsored).newPlanPrice).toBe(0);
+  });
+});
+
+describe('corporate-prepaid plans are not self-service', () => {
+  it('payment-order cannot price a health_checkup plan, so it cannot be bought or taken free', async () => {
+    const corporate = { id: 4, name: 'Corporate Equitas 2026', price: '5000.00', discountedPrice: '0.00', isActive: true, planType: 'health_checkup' };
+    const m = { MembershipPlan: { findByPk: async () => corporate }, UserPlan: { findOne: async () => null } };
+    await expect(quotePlanPurchase({ userId: 1, planId: 4 }, m)).resolves.toMatchObject({ ok: false, status: 403, code: 'PLAN_NOT_SELF_SERVICE' });
   });
 });

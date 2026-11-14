@@ -148,3 +148,12 @@ describe('M6, M1, M9: routes that were missing or unreachable', () => {
     expect(src('routes/reports.route.js')).toMatch(/payload\?\.t !== 'report_share'/);
   });
 });
+
+describe('subscribe refuses corporate-prepaid plans', () => {
+  it('only primary and add-on plans can be self-subscribed', () => {
+    const r = src('routes/membership.route.js');
+    const sub = r.slice(r.indexOf("router.post('/subscribe/:planId'"), r.indexOf('verifyPlanPayment(', r.indexOf("router.post('/subscribe/:planId'")));
+    expect(sub).toMatch(/SELF_SERVICE_PLAN_TYPES\.has\(planType\)/);
+    expect(sub).toMatch(/PLAN_NOT_SELF_SERVICE/);
+  });
+});
