@@ -65,6 +65,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/insurance',  // Insurance policies & claims
       '/api/corporate',  // Corporate benefits & health checkups
       '/api/employee',  // Employee corporate network
+      '/api/call-notification/decline', // Patient declines an incoming doctor call (own appointment only)
       '/api/tts',  // Text-to-speech
       '/api/fcm',  // FCM push notification tokens
       '/api/privacy',  // Consent & data export (GDPR)
@@ -157,6 +158,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/insurance',  // Insurance policies & claims
       '/api/corporate',  // Corporate benefits & health checkups
       '/api/employee',  // Employee corporate network
+      '/api/call-notification/decline', // Patient declines an incoming doctor call (own appointment only)
       '/api/tts',  // Text-to-speech
       '/api/fcm',  // FCM push notification tokens
       '/api/privacy',  // Consent & data export (GDPR)
@@ -833,6 +835,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/auth/facebook', // Facebook OAuth2 initiation (patient)
   '/api/auth/facebook/callback', // Facebook OAuth2 callback (patient)
   '/api/auth/oauth/exchange', // Social-login PKCE hand-off: no token yet; the one-time code + verifier authenticate it
+  '/api/reports/shared/', // Shared report link: the signed, expiring share token is the authorisation (recipient has no account)
   '/api/auth/doctor/facebook', // Facebook OAuth2 initiation (doctor)
   '/api/auth/doctor/facebook/callback', // Facebook OAuth2 callback (doctor)
   '/api/users/login',

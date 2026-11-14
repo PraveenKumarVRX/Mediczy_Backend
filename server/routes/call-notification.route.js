@@ -199,15 +199,16 @@ router.post('/end-call', authUser, requireRole('doctor'), async (req, res) => {
     // Update notification status
     await postgresSequelize.query(`
       UPDATE notifications 
-      SET is_read = true,
+      SET "isRead" = true,
           data = jsonb_set(data::jsonb, '{callEnded}', 'true'::jsonb)
-      WHERE user_id = :patientId 
-        AND user_type = 'patient'
+      WHERE "userId" = :patientId 
         AND type = 'call_incoming'
-        AND (data->>'appointmentId')::int = :appointmentId
-        AND is_read = false
+        AND data->>'appointmentId' = :appointmentId
+        AND COALESCE("isRead", false) = false
     `, {
-      replacements: { patientId, appointmentId }
+      // The columns are camelCase ("userId", "isRead"); the old snake_case
+      // update matched no row, so ended calls kept ringing as unread.
+      replacements: { patientId, appointmentId: String(appointmentId) }
     });
 
     res.json({
@@ -259,6 +260,51 @@ router.get('/patient/:patientId/status', authUser, requireRole('doctor'), async 
       message: 'Failed to check patient notification status',
       error: error.message
     });
+  }
+});
+
+/**
+ * POST /api/call-notification/decline   { appointmentId, reason? }
+ * The patient declined an incoming call. Closes the incoming-call notification
+ * and tells the doctor live (socket room doctor-<doctorId>, event
+ * 'call-declined'), so the doctor stops waiting (audit M6).
+ * Only for the caller's own appointment, matched on appointments."userId".
+ */
+router.post('/decline', authUser, async (req, res) => {
+  try {
+    const appointmentId = Number(req.body?.appointmentId);
+    if (!Number.isSafeInteger(appointmentId) || appointmentId <= 0) {
+      return res.status(400).json({ success: false, message: 'appointmentId is required' });
+    }
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.slice(0, 120) : null;
+    const [appointment] = await postgresSequelize.query(
+      `SELECT id, "doctorId" FROM appointments WHERE id = :appointmentId AND "userId" = :userId LIMIT 1`,
+      { replacements: { appointmentId, userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    if (!appointment) return res.status(404).json({ success: false, message: 'Appointment not found' });
+
+    const declinedAt = new Date().toISOString();
+    await postgresSequelize.query(
+      `UPDATE notifications
+          SET "isRead" = true,
+              data = (COALESCE(data::jsonb, '{}'::jsonb) || jsonb_build_object('declined', true, 'declinedAt', CAST(:declinedAt AS text)))
+        WHERE "userId" = :userId
+          AND type = 'call_incoming'
+          AND data->>'appointmentId' = :appointmentId
+          AND COALESCE("isRead", false) = false`,
+      { replacements: { userId: req.user.id, appointmentId: String(appointmentId), declinedAt } }
+    );
+
+    let notified = false;
+    const io = req.app.get('io') || global.io;
+    if (io && appointment.doctorId) {
+      io.to(`doctor-${appointment.doctorId}`).emit('call-declined', { appointmentId, declinedAt, reason });
+      notified = true;
+    }
+    return res.json({ success: true, notified });
+  } catch (error) {
+    console.error('Call decline error:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not record the declined call' });
   }
 });
 

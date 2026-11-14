@@ -158,6 +158,7 @@ export const nodeRateLimit = async (req, res, next) => {
     const withinLimit = await keyRecord.checkRateLimit();
 
     if (!withinLimit) {
+      res.set('Retry-After', '60');
       return res.status(429).json({
         success: false,
         message: 'Rate limit exceeded',

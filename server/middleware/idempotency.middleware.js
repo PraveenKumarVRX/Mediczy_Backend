@@ -32,6 +32,12 @@ function getRedis() {
 /** Fingerprint the caller without storing their credentials. */
 function actorFingerprint(req) {
   if (req.user?.id) return `u${req.user.id}`;
+  // The verified account from rate-limit-identity (it checks the JWT before
+  // routing). Keying on it rather than on the raw Authorization header means a
+  // retry after a token refresh still replays instead of booking twice.
+  if (req.rateLimitAccountKey && req.rateLimitAccountKey.startsWith('account:')) {
+    return `a${crypto.createHash('sha256').update(req.rateLimitAccountKey).digest('hex').slice(0, 16)}`;
+  }
   const auth = req.get('authorization') || req.headers?.cookie || '';
   if (!auth) return 'anon';
   return `t${crypto.createHash('sha256').update(auth).digest('hex').slice(0, 16)}`;
@@ -111,10 +117,12 @@ export function idempotency({ ttlSeconds = DEFAULT_TTL_SECONDS } = {}) {
       return sendJson(body);
     };
 
-    // If the handler never answers (error/timeout), don't strand the key.
-    res.on('close', () => {
-      if (!stored && !res.writableEnded) redis.del(cacheKey).catch(() => {});
-    });
+    // If the handler never answers with res.json (an error, a timeout, or a
+    // res.send/res.end response we cannot replay), release the claim so a retry
+    // is processed instead of getting 409 for the whole TTL.
+    const release = () => { if (!stored) { stored = true; redis.del(cacheKey).catch(() => {}); } };
+    res.on('finish', release);
+    res.on('close', release);
 
     return next();
   };

@@ -192,6 +192,7 @@ export const sendOTP = async (req, res) => {
     // Resend cooldown check
     const cooldownCheck = checkResendCooldown(identifier);
     if (cooldownCheck.blocked) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(cooldownCheck.retryAfterSeconds || 1))));
       return res.status(429).json({
         success: false,
         message: 'OTP was recently sent. Please wait before requesting another.',
@@ -201,6 +202,7 @@ export const sendOTP = async (req, res) => {
 
     const remainingAttempts = getRemainingAttempts(identifier);
     if (remainingAttempts <= 0) {
+      res.set('Retry-After', String(RESEND_WINDOW_SECONDS));
       return res.status(429).json({
         success: false,
         message: 'Too many OTP requests. Please try again later.',
@@ -350,6 +352,7 @@ export const resendOTP = async (req, res) => {
     // Resend cooldown check
     const cooldownCheck = checkResendCooldown(identifier);
     if (cooldownCheck.blocked) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(cooldownCheck.retryAfterSeconds || 1))));
       return res.status(429).json({
         success: false,
         message: 'OTP was recently sent. Please wait before requesting another.',

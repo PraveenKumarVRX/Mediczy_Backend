@@ -16,15 +16,26 @@ const CACHE_TTL = 5 * 60 * 1000;
 
 /**
  * Extract tenant identifier from request
- * Supports multiple strategies:
- * 1. X-Tenant-ID header (API clients)
- * 2. Subdomain (web apps)
- * 3. JWT claim (authenticated requests)
+ * In order: the verified token's tenant; the X-Tenant-ID header only when
+ * ALLOW_TENANT_HEADER=true and the caller is unauthenticated; the subdomain;
+ * a query parameter outside production.
  */
+const TENANT_ID_FORMAT = /^[A-Za-z0-9_-]{1,64}$/;
+
 const extractTenantId = (req) => {
-  // Strategy 1: Header (highest priority for API clients)
-  const headerTenant = req.headers['x-tenant-id'];
-  if (headerTenant) return headerTenant;
+  // Strategy 1: the verified login token (audit M23). It used to rank below the
+  // X-Tenant-ID header, so a signed-in caller could name another tenant.
+  const tokenTenant = req.user?.tenantId || req.user?.tenant_id
+    || req.doctor?.tenantId || req.assistant?.tenantId;
+  if (tokenTenant) return String(tokenTenant);
+
+  // Strategy 2: the header — only where explicitly allowed (same switch as
+  // middleware/tenant.middleware.js), only for an unauthenticated caller, and
+  // only in a bounded format so arbitrary values cannot grow the config cache.
+  const headerTenant = String(req.headers['x-tenant-id'] || '').trim();
+  if (headerTenant && process.env.ALLOW_TENANT_HEADER === 'true' && !req.user && TENANT_ID_FORMAT.test(headerTenant)) {
+    return headerTenant;
+  }
 
   // Strategy 2: Subdomain
   const host = req.hostname || req.headers.host;
@@ -35,10 +46,6 @@ const extractTenantId = (req) => {
     }
   }
 
-  // Strategy 3: JWT claim (if authenticated)
-  if (req.user?.tenantId) return req.user.tenantId;
-  if (req.doctor?.tenantId) return req.doctor.tenantId;
-  if (req.assistant?.tenantId) return req.assistant.tenantId;
 
   // Strategy 4: Query param (for testing/development)
   if (process.env.NODE_ENV !== 'production' && req.query.tenantId) {

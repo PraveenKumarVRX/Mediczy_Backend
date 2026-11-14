@@ -741,6 +741,9 @@ app.options('*', (req, res) => {
 // 3. Rate Limiting - Global and Authentication-specific
 import { identifyRateLimitAccount, accountOrIpRateLimitKey } from './middleware/rate-limit-identity.js';
 app.use(identifyRateLimitAccount);
+// Every 429 carries Retry-After (audit M21); never overrides a limiter's own value.
+import { ensureRetryAfter } from './middleware/retry-after.middleware.js';
+app.use(ensureRetryAfter);
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 300, // tighter global cap to reduce abuse

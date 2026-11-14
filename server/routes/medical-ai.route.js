@@ -818,7 +818,8 @@ router.get('/triage-doctors', authUser, async (req, res) => {
       },
       attributes: [
         'id', 'uniqueId', 'prefix', 'firstName', 'lastName', 'profileImage',
-        'specialization', 'qualifications', 'experience',
+        'specialization', 'qualifications', 'experience', 'registrationNumber',
+        'rating', 'totalReviews',
         'onlineConsultationFee', 'consultationFees',
         'languages', 'isOnline', 'acceptsEmergencyCalls', 'emergencyAvailableUntil'
       ],
@@ -844,8 +845,13 @@ router.get('/triage-doctors', authUser, async (req, res) => {
         specialization: doc.specialization,
         qualifications: doc.qualifications,
         experience: doc.experience,
+        // Telemedicine Practice Guidelines 2020: the patient must see the
+        // registration number of the doctor they are about to consult (audit M24).
+        registrationNumber: doc.registrationNumber || null,
         consultationFee: doc.onlineConsultationFee || doc.consultationFees || 500,
-        rating: 4.5, // Default rating
+        // The doctor's real rating, or null — it used to be a hard-coded 4.5.
+        rating: doc.rating != null && Number(doc.totalReviews) > 0 ? Number(doc.rating) : null,
+        totalReviews: Number(doc.totalReviews) || 0,
         languages: doc.languages || ['English'],
         isOnline: true,
         acceptsEmergency: true
@@ -981,6 +987,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
       
       // Hard limit: max 5 anonymous emergency calls per day total (prevents mass abuse)
       if (guestCallsFromIp > 5) {
+        res.set('Retry-After', '86400'); // the window is a rolling day
         return res.status(429).json({
           success: false,
           error: 'Guest emergency limit reached',

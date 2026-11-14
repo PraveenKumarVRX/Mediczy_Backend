@@ -164,6 +164,8 @@ export function checkLimit(limitType) {
     }
     
     if (req.tenant.hasReachedLimit(limitType)) {
+      // A plan limit, not a short burst: the honest wait is a day; an upgrade lifts it.
+      res.set('Retry-After', '86400');
       return res.status(429).json({
         success: false,
         message: `You have reached your ${limitType} limit. Please upgrade your plan.`,

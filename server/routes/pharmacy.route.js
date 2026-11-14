@@ -80,7 +80,10 @@ router.use('/credit', creditRouter);
  */
 router.get('/medicines', async (req, res) => {
   try {
-    const { search, category, form, schedule } = req.query;
+    const { category, form, schedule } = req.query;
+    // The My SmartHealth app sends `q`; the web sends `search`. Accept both —
+    // `q` was silently ignored, so every app search returned the A–Z list.
+    const search = String(req.query.search || req.query.q || '').trim().slice(0, 100);
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
     const offset = (page - 1) * limit;
@@ -140,6 +143,33 @@ router.get('/medicines', async (req, res) => {
   } catch (error) {
     console.error('[Pharmacy] Medicine search error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to search medicines' });
+  }
+});
+
+/**
+ * Public: one medicine by its numeric id or its CIMS id (e.g. CIMS7756).
+ * The app opens medicine detail by CIMS id; there was no route, so it 404'd.
+ * Declared after /medicines and before /medicines/:id/alternatives.
+ */
+router.get('/medicines/:id', async (req, res) => {
+  try {
+    const raw = String(req.params.id || '').trim();
+    if (!/^(\d{1,9}|CIMS\d{1,12})$/i.test(raw)) return res.status(400).json({ success: false, message: 'Invalid medicine id' });
+    const byNumber = /^\d+$/.test(raw);
+    const { rows } = await sharedPool.query(
+      `SELECT id, name, brand_name, generic_name, strength, form, category,
+              sub_category, manufacturer, composition, mrp, unit_price, pack_size,
+              schedule, indication, side_effects, dosage, storage, cims_id
+         FROM pharmacy_medicines
+        WHERE ${byNumber ? 'id = $1' : 'upper(cims_id) = upper($1)'}
+        LIMIT 1`,
+      [byNumber ? Number(raw) : raw]
+    );
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Medicine not found' });
+    return res.json({ success: true, medicine: withPrescriptionRequirement(rows[0]) });
+  } catch (err) {
+    console.error('GET /pharmacy/medicines/:id error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not load the medicine' });
   }
 });
 

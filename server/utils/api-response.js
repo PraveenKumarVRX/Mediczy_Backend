@@ -72,8 +72,11 @@ export const unprocessable = (res, message, code = ErrorCodes.INVALID_INPUT) =>
   res.status(422).json({ success: false, code, message });
 
 /** 429 Too Many Requests */
-export const tooManyRequests = (res, message = 'Too many requests. Please slow down.', code = ErrorCodes.RATE_LIMIT_EXCEEDED) =>
-  res.status(429).json({ success: false, code, message });
+export const tooManyRequests = (res, message = 'Too many requests. Please slow down.', code = ErrorCodes.RATE_LIMIT_EXCEEDED, retryAfterSeconds = 60) => {
+  // Every 429 tells the client how long to wait (RFC 9110 §10.2.3).
+  res.set('Retry-After', String(Math.max(1, Math.ceil(Number(retryAfterSeconds) || 60))));
+  return res.status(429).json({ success: false, code, message });
+};
 
 // ── 5xx ───────────────────────────────────────────────────────────────────────
 

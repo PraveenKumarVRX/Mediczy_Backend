@@ -61,6 +61,7 @@ export const universalLogin = async (options) => {
             loginDebug.log('Rate limit exceeded', { email: identifier });
             logAuthEvent(`${loginType}_rate_limit_exceeded`, { email: identifier });
 
+            res.set('Retry-After', String(Math.max(1, Math.ceil(Number(rateLimit.retryAfter) || 1) * 60))); // retryAfter is minutes
             return res.status(429).json(createErrorResponse(
                 `Too many login attempts. Please try again in ${rateLimit.retryAfter} minutes.`,
                 429,

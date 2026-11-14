@@ -26,6 +26,10 @@ export function upgradeBaseDue(currentUserPlan, newPlan, now = new Date()) {
   const paid = parseFloat(currentUserPlan.paidAmount || 0);
   const dailyRate = totalDays > 0 ? paid / totalDays : 0;
   const proratedRefund = Math.round(dailyRate * remainingDays * 100) / 100;
+  // `discountedPrice || price` on purpose: it is what the upgrade route has
+  // always charged. A "0.00" discount therefore means free here (corporate
+  // plans such as "Corporate Equitas 2026" use it), while planPrice() treats
+  // it as "no discount" — an open question, see API_CONTRACT doc / M18 notes.
   const newPlanPrice = parseFloat(newPlan.discountedPrice || newPlan.price || 0);
   return {
     newPlanPrice,
@@ -55,7 +59,9 @@ export async function quotePlanPurchase({ userId, planId, now = new Date() }, { 
       return { ok: true, kind: 'upgrade', plan, baseAmount: baseAmountDue };
     }
   }
-  return { ok: true, kind: 'subscribe', plan, baseAmount: planPrice(plan) };
+  // The price /membership/subscribe activates against (discountedPrice || price),
+  // so an order is never priced differently from what activation expects.
+  return { ok: true, kind: 'subscribe', plan, baseAmount: Math.max(0, parseFloat(plan.discountedPrice || plan.price || 0)) };
 }
 
 export default { planPrice, upgradeBaseDue, quotePlanPurchase };

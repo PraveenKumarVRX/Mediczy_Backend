@@ -614,7 +614,11 @@ async function requireHr(req, res, next) {
   try {
     const decoded = jwt.verify(header.slice('Bearer '.length), JWT_CONFIG.SECRET);
     let role = decoded.role || decoded.userRole;
-    let tenantId = decoded.organization_id || decoded.hospital_id || decoded.hospitalId || decoded.tenant_id || decoded.org_id || req.headers['x-tenant-id'] || req.query.tenantId;
+    // Only the verified token decides the tenant (audit M23). The header and the
+    // query parameter used to be fallbacks — and a corporate HR token carries no
+    // tenant claim, so a header skipped the corporate bridge below and let the
+    // caller pick any tenant.
+    let tenantId = decoded.organization_id || decoded.hospital_id || decoded.hospitalId || decoded.tenant_id || decoded.org_id;
     let hrUser = decoded;
 
     // /api/corporate/login issues a different token shape entirely: role:'corporate',

@@ -1117,21 +1117,14 @@ router.get('/upgrade-options', authUser, async (req, res) => {
     
     // Filter to only higher or equal tiers and calculate prorated pricing
     const today = new Date();
-    const endDate = new Date(currentUserPlan.endDate);
-    const startDate = new Date(currentUserPlan.startDate);
-    
-    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-    const remainingDays = Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)));
-    
-    const paidAmount = parseFloat(currentUserPlan.paidAmount || 0);
-    const dailyRate = totalDays > 0 ? paidAmount / totalDays : 0;
-    const proratedRefund = Math.round(dailyRate * remainingDays * 100) / 100;
+    // Same arithmetic as payment-order and the upgrade itself, so the price
+    // shown is the price charged (services/plan-pricing.service.js).
+    const { proratedRefund, remainingDays } = upgradeBaseDue(currentUserPlan, { price: 0 }, today);
     
     const optionsWithPricing = upgradeOptions
       .filter(p => (p.tier || 1) > currentTier)
       .map(plan => {
-        const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
-        const amountDue = Math.max(0, planPrice - proratedRefund);
+        const { newPlanPrice: planPrice, baseAmountDue: amountDue } = upgradeBaseDue(currentUserPlan, plan, today);
         const isUpgrade = (plan.tier || 1) > currentTier;
         
         return {
