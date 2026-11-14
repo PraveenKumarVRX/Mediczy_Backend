@@ -4,6 +4,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "test:lab-booking-history": "node --experimental-vm-modules --test tests/lab-booking-history.test.mjs",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
     "migrate:all": "node scripts/migrate-all.mjs up",
     "test:phase1-audit-regression": "DRYRUN_PHASE=migrate node scripts/qa/phase1-audit-regression.mjs && DRYRUN_PHASE=verify node scripts/qa/phase1-audit-regression.mjs",

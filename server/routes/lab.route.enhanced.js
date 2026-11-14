@@ -2,7 +2,8 @@ import express from 'express';
 import { Op, Sequelize } from 'sequelize';
 import Lab from '../models/postgres/lab.model.postgres.js';
 import FamilyMember from '../models/postgres/family-member.model.postgres.js';
-import { Appointment } from '../models/index.js';
+import { Appointment, LabTest } from '../models/index.js';
+import { ensureLabAppointmentHistory } from '../services/lab-appointment-history.service.js';
 import { Order as BillingOrder } from '../models/billing.model.intelligent.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { orchestrator } from '../db/orchestrator.js';
@@ -878,6 +879,7 @@ router.post('/book', authUser, async (req, res) => {
     // lab appointment". The row's userId = this user satisfies the tenant-isolation policy.
     const labBookingTx = await Appointment.sequelize.transaction();
     let appointment;
+    let labTest;
     try {
       const orgRaw = Number(req.user?.organization_id ?? req.user?.organizationId);
       const orgId = Number.isFinite(orgRaw) && orgRaw > 0 ? orgRaw : 0;
@@ -887,6 +889,7 @@ router.post('/book', authUser, async (req, res) => {
       );
       appointment = await Appointment.create({
       userId: req.user?.id,
+      organization_id: orgId || null,
       patientName: familyMember
         ? `${familyMember.firstName || ''} ${familyMember.lastName || ''}`.trim()
         : patientName || req.user?.name || `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Patient',
@@ -937,6 +940,9 @@ router.post('/book', authUser, async (req, res) => {
         familyMemberId: familyMember ? familyMember.id : null
       }
       }, { transaction: labBookingTx });
+      // Do not acknowledge a booking unless the patient history row is also
+      // durable. A failure here rolls the appointment back as well.
+      labTest = await ensureLabAppointmentHistory(appointment, { LabTest, transaction: labBookingTx });
       await labBookingTx.commit();
     } catch (txErr) {
       await labBookingTx.rollback().catch(() => {});
@@ -966,7 +972,7 @@ router.post('/book', authUser, async (req, res) => {
           subtotal: Number(totalFee),
           total: Number(totalFee),
           currency: 'INR',
-          metadata: { source: 'lab_appointment', appointmentId: appointment.id, labId, labName: lab.name },
+          metadata: { source: 'lab_appointment', appointmentId: appointment.id, labTestId: labTest.id, labId, labName: lab.name },
           notes: (tests || []).map(t => t.name).filter(Boolean).join(', '),
         });
       } catch (ordErr) {
@@ -978,6 +984,10 @@ router.post('/book', authUser, async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Lab appointment booked successfully',
+      // This is the ID accepted by /lab-tests/:id. Keep appointment.id for
+      // existing web clients; it is a different entity and may differ.
+      labTestId: labTest.id,
+      data: labTest,
       appointment: {
         id: appointment.id,
         patientName: appointment.patientName,

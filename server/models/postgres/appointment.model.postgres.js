@@ -113,8 +113,14 @@ const Appointment = sequelize.define('Appointment', {
   },
   
   // Type & Mode
+  // Existing production columns are varchar. Expose `type` so Sequelize
+  // persists and reloads lab bookings instead of silently dropping the key.
+  type: {
+    type: DataTypes.STRING(50),
+    allowNull: true
+  },
   consultationType: {
-    type: DataTypes.ENUM('online', 'in-person'),
+    type: DataTypes.STRING(255),
     defaultValue: 'online'
   },
   

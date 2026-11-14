@@ -8,9 +8,11 @@ import express from 'express';
 import multer from 'multer';
 import { authUser } from '../middleware/auth.middleware.js';
 import { authLab } from '../middleware/authLab.middleware.js';
-import { LabTest, Report } from '../models/index.js';
+import { LabTest, Report, Appointment } from '../models/index.js';
 import { Op } from 'sequelize';
 import pool from '../db/pgPool.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import { updateLinkedLabHistory } from '../services/lab-appointment-history.service.js';
 import { prepareLabCheckout, completeLabCheckout } from '../services/patient-lab-checkout.service.js';
 import { uploadEncryptedReport } from '../services/minio-upload.service.js';
 import {
@@ -476,16 +478,23 @@ router.get('/', authUser, async (req, res) => {
       where.testType = testType;
     }
 
-    // Get lab tests from database
-    const labTests = await LabTest.findAll({
-      where,
-      order: [['appointmentDate', 'DESC']],
-      offset: parseInt(skip),
-      limit: parseInt(limit)
+    // RLS context must be set on the same pooled connection as BOTH reads.
+    // User ownership still applies even when the account has an organization.
+    const { labTests, total } = await LabTest.sequelize.transaction(async transaction => {
+      await setRlsContext(transaction, {
+        userId,
+        orgId: req.user.organization_id ?? req.user.organizationId ?? 0,
+      });
+      const labTests = await LabTest.findAll({
+        where,
+        order: [['appointmentDate', 'DESC']],
+        offset: parseInt(skip),
+        limit: parseInt(limit),
+        transaction,
+      });
+      const total = await LabTest.count({ where, transaction });
+      return { labTests, total };
     });
-
-    // Get total count
-    const total = await LabTest.count({ where });
 
     return res.status(200).json({
       success: true,
@@ -596,19 +605,19 @@ router.post('/:id/confirm', authUser, async (req, res) => {
     }
 
     // Update status to confirmed
-    await labTest.update({
+    const updated = await updateLinkedLabHistory(labTest, {
       status: 'booked',
       confirmationStatus: 'confirmed',
       confirmationDeadline: null,
       reminderSent: false
-    });
+    }, { Appointment, LabTest, setRlsContext });
 
     console.log('✅ Lab test confirmed:', { id, userId });
 
     return res.status(200).json({
       success: true,
       message: 'Lab test confirmed successfully',
-      data: labTest
+      data: updated
     });
   } catch (error) {
     console.error('❌ Confirm lab test error:', error);
@@ -646,20 +655,20 @@ router.post('/:id/cancel', authUser, async (req, res) => {
     }
 
     // Update status to cancelled
-    await labTest.update({
+    const updated = await updateLinkedLabHistory(labTest, {
       status: 'cancelled',
       confirmationStatus: 'rejected',
       cancelledAt: new Date(),
       cancellationReason: reason,
       cancelledBy: 'patient'
-    });
+    }, { Appointment, LabTest, setRlsContext });
 
     console.log('✅ Lab test cancelled:', { id, userId, reason });
 
     return res.status(200).json({
       success: true,
       message: 'Lab test cancelled successfully',
-      data: labTest
+      data: updated
     });
   } catch (error) {
     console.error('❌ Cancel lab test error:', error);
@@ -705,14 +714,14 @@ router.put('/:id', authUser, async (req, res) => {
     if (fastingHours !== undefined) updateData.fastingHours = fastingHours;
 
     // Update the record
-    await labTest.update(updateData);
+    const updated = await updateLinkedLabHistory(labTest, updateData, { Appointment, LabTest, setRlsContext });
 
     console.log('✅ Lab test updated:', { id, userId, ...updateData });
 
     return res.status(200).json({
       success: true,
       message: 'Lab test updated successfully',
-      data: labTest
+      data: updated
     });
   } catch (error) {
     console.error('❌ Update lab test error:', error);
@@ -747,6 +756,11 @@ router.delete('/:id', authUser, async (req, res) => {
       });
     }
 
+    // Linked bookings retain their history and appointment reference. The
+    // cancel route updates both records and releases the reserved slot.
+    if (labTest.metadata?.source === 'lab_appointment') {
+      return res.status(409).json({ success: false, message: 'Cancel this lab appointment instead of deleting its booking history.' });
+    }
     await labTest.destroy();
 
     console.log('✅ Lab test deleted:', { id, userId });

@@ -1,3 +1,4 @@
+import { syncLabTestFromAppointment } from '../services/lab-appointment-link.service.js';
 import { appointmentSlotInstant } from '../utils/appointmentSlotTime.js';
 import { appointmentFee } from '../utils/appointment-fee.js';
 import { validationResult } from 'express-validator';
@@ -1129,11 +1130,14 @@ export const cancelAppointment = async (req, res) => {
     const cancelledById = actor.type === 'patient' ? appointment.userId : appointment.doctorId;
     const defaultReason = actor.type === 'patient' ? 'Cancelled by patient' : 'Cancelled by doctor';
 
-    await appointmentRepository.update(req, appointment, {
-      status: 'cancelled',
-      cancelledBy: cancelledById,
-      cancellationReason: cancelReason || defaultReason,
-      cancelledAt: new Date()
+    await appointmentRepository.withTransaction(req, async (transaction) => {
+      await appointment.update({
+        status: 'cancelled',
+        cancelledBy: cancelledById,
+        cancellationReason: cancelReason || defaultReason,
+        cancelledAt: new Date()
+      }, { transaction });
+      await syncLabTestFromAppointment(appointment, transaction);
     });
 
     // Chat actions commit their durable receipt with the mutation before dispatch.
@@ -1197,6 +1201,7 @@ export const rescheduleAppointment = async (req, res) => {
       const oldDate = appointment.appointmentDate;
       const oldTime = appointment.appointmentTime;
       await appointment.update({ appointmentDate, appointmentTime, status: 'rescheduled' }, { transaction });
+      await syncLabTestFromAppointment(appointment, transaction);
       return { appointment, oldDate, oldTime };
     });
 
