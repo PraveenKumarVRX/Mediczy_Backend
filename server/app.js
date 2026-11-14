@@ -248,6 +248,8 @@ import embeddingsRouter from './routes/embeddings.route.js';
 import cdssKnowledgeRouter from './routes/cdss-knowledge.route.js';
 import documentationRouter from './routes/documentation.route.js';
 import circuitBreakerRouter from './routes/circuit-breaker.route.js';
+import adminIntegrationsRouter from './routes/admin-integrations.route.js';
+import openapiRouter from './routes/openapi.route.js';
 import n8nCallbackRouter from './routes/webhooks/n8n-callback.route.js';
 import oauthRouter from './routes/oauth.route.js';
 import doctorOAuthRouter from './routes/doctor-oauth.route.js';
@@ -1344,6 +1346,10 @@ app.use('/docs', authUser, requireRole('admin'), documentationRouter);
 
 // Circuit Breaker Monitoring
 app.use('/api/circuit-breakers', circuitBreakerRouter);
+// Third-party API integration status (admin, read-only) — integrations/catalog.js
+app.use('/api/admin/integrations', adminIntegrationsRouter);
+// App-facing API contract (OpenAPI 3.0.3, admin) — server/openapi/
+app.use('/api/admin/openapi', openapiRouter);
 
 // OAuth2 Routes (must be before authentication middleware)
 app.use('/api/auth', oauthRouter);

@@ -1,12 +1,32 @@
-import axios from 'axios';
+import * as places from '../integrations/google-places.js';
+import { IntegrationError } from '../integrations/core/integration.js';
 
 /**
  * Google Places API Service
- * Handles address autocomplete, geocoding, and place details
+ * Handles address autocomplete, geocoding, and place details.
+ *
+ * Calls go through the integration layer (integrations/google-places.js):
+ * timeout, retry, circuit breaker, kill switch INTEGRATION_GOOGLE_PLACES_ENABLED.
+ *
+ * Invented addresses are a development convenience only. In production a
+ * missing key or a Google failure raises IntegrationError (503), which the
+ * routes pass on — before 2026-11-14 production silently returned
+ * "123 MG Road, Bangalore" with coordinates, and that could be saved as a
+ * patient's address for a home collection or an ambulance.
  */
 
-const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || '';
-const GOOGLE_GEOCODING_API_KEY = process.env.GOOGLE_GEOCODING_API_KEY || GOOGLE_PLACES_API_KEY;
+const mockAllowed = () => process.env.NODE_ENV !== 'production'
+  && String(process.env.GOOGLE_PLACES_ALLOW_MOCK ?? 'true').toLowerCase() !== 'false';
+
+/** In development, fall back to the fixtures; in production, surface the failure. */
+function fallbackOrThrow(error, label, mock) {
+  if (mockAllowed()) {
+    console.warn(`[google-places] ${label}: ${error.code || error.message} — returning development fixture`);
+    return mock();
+  }
+  if (error instanceof IntegrationError) throw error;
+  throw new IntegrationError('INTEGRATION_UNAVAILABLE', 'Address lookup is unavailable right now.', { integration: 'google-places' });
+}
 
 class GooglePlacesService {
   /**
@@ -16,49 +36,27 @@ class GooglePlacesService {
    * @returns {Promise<Array>} Array of place predictions
    */
   async autocomplete(input, options = {}) {
-    if (!GOOGLE_PLACES_API_KEY) {
-      console.warn('⚠️  Google Places API key not configured');
-      return this.getMockAutocomplete(input);
+    const params = {
+      input,
+      types: options.types || 'address',
+      language: options.language || 'en',
+    };
+    if (options.location) {
+      params.location = `${options.location.lat},${options.location.lng}`;
+      params.radius = options.radius || 50000; // 50km default
     }
-
+    if (options.components) params.components = options.components; // e.g. 'country:in'
     try {
-      const params = {
-        input,
-        key: GOOGLE_PLACES_API_KEY,
-        types: options.types || 'address',
-        language: options.language || 'en'
-      };
-
-      // Add location bias if provided
-      if (options.location) {
-        params.location = `${options.location.lat},${options.location.lng}`;
-        params.radius = options.radius || 50000; // 50km default
-      }
-
-      // Add country restriction if provided
-      if (options.components) {
-        params.components = options.components; // e.g., 'country:in'
-      }
-
-      const response = await axios.get(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json',
-        { params }
-      );
-
-      if (response.data.status === 'OK') {
-        return response.data.predictions.map(prediction => ({
-          placeId: prediction.place_id,
-          description: prediction.description,
-          mainText: prediction.structured_formatting?.main_text || '',
-          secondaryText: prediction.structured_formatting?.secondary_text || '',
-          types: prediction.types
-        }));
-      }
-
-      throw new Error(`Google Places API error: ${response.data.status}`);
+      const predictions = await places.autocomplete(params);
+      return predictions.map((prediction) => ({
+        placeId: prediction.place_id,
+        description: prediction.description,
+        mainText: prediction.structured_formatting?.main_text || '',
+        secondaryText: prediction.structured_formatting?.secondary_text || '',
+        types: prediction.types,
+      }));
     } catch (error) {
-      console.error('Address autocomplete error:', error.message);
-      return this.getMockAutocomplete(input);
+      return fallbackOrThrow(error, 'autocomplete', () => this.getMockAutocomplete(input));
     }
   }
 
@@ -68,32 +66,15 @@ class GooglePlacesService {
    * @returns {Promise<object>} Place details with address components
    */
   async getPlaceDetails(placeId) {
-    if (!GOOGLE_PLACES_API_KEY) {
-      console.warn('⚠️  Google Places API key not configured');
-      return this.getMockPlaceDetails(placeId);
-    }
-
     try {
-      const response = await axios.get(
-        'https://maps.googleapis.com/maps/api/place/details/json',
-        {
-          params: {
-            place_id: placeId,
-            key: GOOGLE_PLACES_API_KEY,
-            fields: 'address_components,formatted_address,geometry,place_id,types,name'
-          }
-        }
-      );
-
-      if (response.data.status === 'OK') {
-        const place = response.data.result;
-        return this.parseGooglePlace(place);
-      }
-
-      throw new Error(`Google Places API error: ${response.data.status}`);
+      const place = await places.placeDetails({
+        place_id: placeId,
+        fields: 'address_components,formatted_address,geometry,place_id,types,name',
+      });
+      if (!place) throw new IntegrationError('INTEGRATION_REJECTED', 'That place could not be found.', { status: 404, integration: 'google-places' });
+      return this.parseGooglePlace(place);
     } catch (error) {
-      console.error('Get place details error:', error.message);
-      return this.getMockPlaceDetails(placeId);
+      return fallbackOrThrow(error, 'place details', () => this.getMockPlaceDetails(placeId));
     }
   }
 
@@ -103,31 +84,12 @@ class GooglePlacesService {
    * @returns {Promise<object>} Geocoded address with coordinates
    */
   async geocode(address) {
-    if (!GOOGLE_GEOCODING_API_KEY) {
-      console.warn('⚠️  Google Geocoding API key not configured');
-      return this.getMockGeocode(address);
-    }
-
     try {
-      const response = await axios.get(
-        'https://maps.googleapis.com/maps/api/geocode/json',
-        {
-          params: {
-            address,
-            key: GOOGLE_GEOCODING_API_KEY
-          }
-        }
-      );
-
-      if (response.data.status === 'OK' && response.data.results.length > 0) {
-        const place = response.data.results[0];
-        return this.parseGooglePlace(place);
-      }
-
-      throw new Error(`Geocoding error: ${response.data.status}`);
+      const [place] = await places.geocode({ address });
+      if (!place) throw new IntegrationError('INTEGRATION_REJECTED', 'That address could not be located.', { status: 404, integration: 'google-places' });
+      return this.parseGooglePlace(place);
     } catch (error) {
-      console.error('Geocode error:', error.message);
-      return this.getMockGeocode(address);
+      return fallbackOrThrow(error, 'geocode', () => this.getMockGeocode(address));
     }
   }
 
@@ -138,31 +100,12 @@ class GooglePlacesService {
    * @returns {Promise<object>} Address details
    */
   async reverseGeocode(lat, lng) {
-    if (!GOOGLE_GEOCODING_API_KEY) {
-      console.warn('⚠️  Google Geocoding API key not configured');
-      return this.getMockGeocode(`${lat},${lng}`);
-    }
-
     try {
-      const response = await axios.get(
-        'https://maps.googleapis.com/maps/api/geocode/json',
-        {
-          params: {
-            latlng: `${lat},${lng}`,
-            key: GOOGLE_GEOCODING_API_KEY
-          }
-        }
-      );
-
-      if (response.data.status === 'OK' && response.data.results.length > 0) {
-        const place = response.data.results[0];
-        return this.parseGooglePlace(place);
-      }
-
-      throw new Error(`Reverse geocoding error: ${response.data.status}`);
+      const [place] = await places.geocode({ latlng: `${lat},${lng}` });
+      if (!place) throw new IntegrationError('INTEGRATION_REJECTED', 'No address found for that location.', { status: 404, integration: 'google-places' });
+      return this.parseGooglePlace(place);
     } catch (error) {
-      console.error('Reverse geocode error:', error.message);
-      return this.getMockGeocode(`${lat},${lng}`);
+      return fallbackOrThrow(error, 'reverse geocode', () => this.getMockGeocode(`${lat},${lng}`));
     }
   }
 

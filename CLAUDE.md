@@ -27,6 +27,8 @@ This file gives Claude essential context for working in this repository.
 - **Auth**: `authUser` middleware in `server/middleware/`; role checked with `requireRole('roleName')`
 - **Cron jobs**: registered in `server/utils/cronRegistry.js`; use `tick()`, `tickStart()`, `tickError()`
 - **LLM calls**: always go through `server/services/ai-brain/llm-provider.js` — never call OpenAI/Groq/Anthropic directly from routes
+- **App-facing API contract**: `server/openapi/` (OpenAPI 3.0.3) is the source of truth for `/api/employee`, `/api/addresses` lookup and admin integrations. Change the spec in the same commit as the route, then `cd server && npm run openapi:export`; `__tests__/openapi-contract.test.js` fails on drift. See [docs/architecture/API_CONTRACT_AND_INTEGRATIONS.md](docs/architecture/API_CONTRACT_AND_INTEGRATIONS.md)
+- **Third-party APIs**: every new outbound vendor call goes through `server/integrations/` (catalogue entry + client on `defineIntegration().fetchJson()`), never a direct `fetch`/`axios` from a service or route. No invented fallback data in production. Status: `GET /api/admin/integrations`
 
 ---
 

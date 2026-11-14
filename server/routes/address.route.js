@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator';
 import { authUser } from '../middleware/auth.middleware.js';
 import Address from '../models/address.model.intelligent.js';
 import googlePlacesService from '../services/google-places.service.js';
+import { sendIntegrationError } from '../integrations/http.js';
 
 const router = express.Router();
 
@@ -34,12 +35,8 @@ router.get('/autocomplete', authUser, async (req, res) => {
       data: predictions
     });
   } catch (error) {
-    console.error('Address autocomplete error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch address suggestions',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('Address autocomplete error:', error.code || error.message);
+    return sendIntegrationError(res, error, 'Failed to fetch address suggestions');
   }
 });
 
@@ -59,12 +56,8 @@ router.get('/place/:placeId', authUser, async (req, res) => {
       data: placeDetails
     });
   } catch (error) {
-    console.error('Get place details error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch place details',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('Get place details error:', error.code || error.message);
+    return sendIntegrationError(res, error, 'Failed to fetch place details');
   }
 });
 

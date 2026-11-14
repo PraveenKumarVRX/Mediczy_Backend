@@ -13,6 +13,7 @@ import { withPatientRelationship } from "../middleware/ringFencing.js";
 import { authLimiter, otpLimiter } from "../middleware/rateLimiter.middleware.js";
 import { addOtpRoutes } from './shared/registrationHelpers.js';
 import googlePlacesService from '../services/google-places.service.js';
+import { sendIntegrationError } from '../integrations/http.js';
 import { Doctor, Appointment, User } from "../models/index.js";
 import { postgresSequelize } from "../db/postgres-sequelize.js";
 import { setRlsContext } from "../middleware/rls-context.middleware.js";
@@ -2016,8 +2017,8 @@ router.get('/places-autocomplete', authLimiter, async (req, res) => {
     const predictions = await googlePlacesService.autocomplete(String(input), options);
     res.json({ success: true, data: predictions });
   } catch (err) {
-    console.error('Doctor places-autocomplete error:', err.message);
-    res.status(500).json({ success: false, message: 'Address lookup failed' });
+    console.error('Doctor places-autocomplete error:', err.code || err.message);
+    sendIntegrationError(res, err, 'Address lookup failed');
   }
 });
 
