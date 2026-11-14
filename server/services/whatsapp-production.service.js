@@ -8,6 +8,14 @@ dotenv.config();
  * WhatsApp Service for Production
  * Handles template-based and session messages
  */
+// Pages a WhatsApp template links to when the caller has no specific URL.
+// A template variable may not be empty (WhatsApp drops the message), so a
+// missing link becomes the app page where the member can find the same thing.
+const APP_LINKS = Object.freeze({
+  healthCheckups: 'https://app.mediqzy.com/health-checkups',
+  myPlans: 'https://app.mediqzy.com/my-plans',
+});
+
 class WhatsAppProductionService {
   constructor() {
     // Validate Twilio credentials before initialization
@@ -197,7 +205,7 @@ class WhatsAppProductionService {
 
     if (this.templates.healthReport) {
       messageParams.contentSid = this.templates.healthReport;
-      messageParams.contentVariables = JSON.stringify({ '1': patientName, '2': reportUrl || '' });
+      messageParams.contentVariables = JSON.stringify({ '1': patientName, '2': reportUrl || APP_LINKS.healthCheckups });
     } else {
       const urlLine = reportUrl ? `\nUrl : ${reportUrl}` : '';
       messageParams.body = `Health Check up Reports\n\nHello ${patientName}\n\nYour Health Check Up reports are ready. Kindly download the reports from the below link.${urlLine}\n\nTeam SmartHealth`;
@@ -296,7 +304,7 @@ class WhatsAppProductionService {
     if (this.templates.membershipRenewalReminder) {
       messageParams.contentSid = this.templates.membershipRenewalReminder;
       messageParams.contentVariables = JSON.stringify({
-        '1': name, '2': planName, '3': expiryDate, '4': String(daysRemaining), '5': renewalUrl || ''
+        '1': name, '2': planName, '3': expiryDate, '4': String(daysRemaining), '5': renewalUrl || APP_LINKS.myPlans
       });
     } else {
       messageParams.body =
@@ -321,7 +329,7 @@ class WhatsAppProductionService {
     if (this.templates.membershipRenewalPayment) {
       messageParams.contentSid = this.templates.membershipRenewalPayment;
       messageParams.contentVariables = JSON.stringify({
-        '1': name, '2': planName, '3': String(amount), '4': renewalUrl || ''
+        '1': name, '2': planName, '3': String(amount), '4': renewalUrl || APP_LINKS.myPlans
       });
     } else {
       messageParams.body =

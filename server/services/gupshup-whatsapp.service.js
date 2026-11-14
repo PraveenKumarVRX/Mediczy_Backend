@@ -57,6 +57,9 @@ export class GupshupWhatsAppService {
   sendTemplate({ to, templateId, params = [] }) {
     if (!templateId || /^HX/i.test(templateId)) throw new Error('An approved Gupshup template ID is required; Twilio Content SIDs cannot be reused');
     if (!Array.isArray(params) || params.some(v => v === undefined || v === null)) throw new Error('Ordered Gupshup template parameters are required');
+    // Meta rejects a template whose variable is empty, after Gupshup has
+    // accepted the call — so an empty value would look sent and never arrive.
+    if (params.some(v => !String(v).trim())) throw new Error('Every WhatsApp template parameter needs a value; an empty one is rejected by WhatsApp');
     return this.submit(to, { template: JSON.stringify({ id: templateId, params: params.map(String) }) }, '/wa/api/v1/template/msg');
   }
   sendMedia({ to, mediaUrl, caption = '', mediaType }) {
