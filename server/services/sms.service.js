@@ -1,5 +1,7 @@
+import { managedFetch } from '../integrations/transport.js';
+import { managedFetch as fetch } from '../integrations/transport.js';
 // SMS Service - Multiple Gateway Support
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 /** Normalize Twilio phone / whatsapp: sender to bare E.164 digits with +. */
 export function normalizeE164(raw) {
@@ -30,7 +32,7 @@ export async function resolveTwilioSmsSender({
   smsFrom,
   senderId,
   messagingServiceSid,
-  fetch = globalThis.fetch,
+  fetch = managedFetch,
   allowDiscover = true,
 } = {}) {
   const wa = whatsappSenderE164();

@@ -12,7 +12,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { createCorporateCheckupOrder, withCorporateBookingContext } from '../services/corporate-health-checkup-booking.service.js';
 import multer from 'multer';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import emailServiceModule from '../services/emailService.js';

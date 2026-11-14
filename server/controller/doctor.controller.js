@@ -238,7 +238,7 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
-import nodemailer from "nodemailer";
+import nodemailer from "../integrations/nodemailer.js";
 import { verifyRegistrationVerificationTicket } from "../routes/shared/registrationHelpers.js";
 
 // ─── Mailer helper (reusable inside this controller) ─────────────────────────

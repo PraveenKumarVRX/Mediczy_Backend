@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import sharedPool from '../db/pgPool.js';
 
 const GRAPH_API_VERSION    = 'v19.0';

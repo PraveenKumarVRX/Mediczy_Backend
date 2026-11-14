@@ -1,3 +1,4 @@
+import { managedFetch as fetch } from '../integrations/transport.js';
 import gupshup, { whatsappProvider } from './gupshup-whatsapp.service.js';
 import crypto from 'crypto';
 import { sendTransactionalEmail } from './welcome-email.service.js';
@@ -11,7 +12,7 @@ import Corporate from '../models/postgres/corporate.model.postgres.js';
 import { SMSService, SMSTemplateManager } from './sms.service.js';
 import emailService from './emailService.js';
 import notificationService from './notification.service.js';
-import twilio from 'twilio';
+import twilio from '../integrations/twilio.js';
 import { col, fn, where as sequelizeWhere } from 'sequelize';
 
 const normalizeEmail = (email) =>

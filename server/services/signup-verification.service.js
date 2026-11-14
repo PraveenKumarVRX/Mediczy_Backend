@@ -2,7 +2,7 @@ import gupshup, { whatsappProvider } from './gupshup-whatsapp.service.js';
 import OTP from '../models/otp.model.intelligent.js';
 import { sendTransactionalEmail } from './welcome-email.service.js';
 import emailService from './emailService.js';
-import twilio from 'twilio';
+import twilio from '../integrations/twilio.js';
 import n8nOTPService from './n8n-otp.service.js';
 import twilioOTPService from './twilio-otp.service.js';
 

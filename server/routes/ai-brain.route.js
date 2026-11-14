@@ -388,7 +388,7 @@ router.get('/health', async (req, res) => {
     // Check SIB embedding
     let sibStatus = 'unknown';
     try {
-      const axios = (await import('axios')).default;
+      const axios = (await import('../integrations/axios.js')).default;
       const { data } = await axios.get(`${resolveSibBaseUrl()}/health`, { timeout: 3000 });
       sibStatus = data.status || 'online';
     } catch (e) {

@@ -1,3 +1,5 @@
+import { vendorFetch } from '../integrations/transport.js';
+const fetch = vendorFetch('abdm');
 /**
  * ABDM / ABHA API Client Service
  *
@@ -34,10 +36,10 @@ const ABDM_CLIENT_ID  = process.env.ABDM_CLIENT_ID    || '';
 const ABDM_CLIENT_SEC = process.env.ABDM_CLIENT_SECRET || '';
 const ABDM_HIP_ID     = process.env.ABDM_HIP_ID       || 'MEDICZY_HMIS_001';
 const ABDM_CALLBACK   = process.env.ABDM_CALLBACK_URL  || 'https://app.mediqzy.com/api/abdm/callback';
-const IS_SANDBOX      = !process.env.ABDM_BASE_URL || process.env.ABDM_BASE_URL.includes('dev.abdm');
+const IS_SANDBOX      = process.env.NODE_ENV !== 'production' && (!process.env.ABDM_BASE_URL || process.env.ABDM_BASE_URL.includes('dev.abdm'));
 // HFR/HPR fallbacks swallow gateway errors ONLY when a sandbox URL is explicitly configured;
 // an unset ABDM_BASE_URL (e.g. a misconfigured production) must surface the error instead.
-const HFR_HPR_SANDBOX_FALLBACK = Boolean(process.env.ABDM_BASE_URL) && process.env.ABDM_BASE_URL.includes('dev.abdm');
+const HFR_HPR_SANDBOX_FALLBACK = process.env.NODE_ENV !== 'production' && Boolean(process.env.ABDM_BASE_URL) && process.env.ABDM_BASE_URL.includes('dev.abdm');
 
 // HFR/HPR (Health Facility Registry / Health Professional Registry) — added
 // 2026-09-18 per audit finding: only patient-side ABHA/consent/PHI flows

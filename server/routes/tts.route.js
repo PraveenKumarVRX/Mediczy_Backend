@@ -6,7 +6,7 @@
  */
 
 import express from 'express';
-import fetch from 'node-fetch';
+import fetch from '../integrations/fetch.js';
 import { authUser } from '../middleware/auth.middleware.js';
 
 // The global ring-fencing middleware intentionally allows /api/tts for

@@ -1,7 +1,7 @@
 import express from 'express';
 import puppeteer from 'puppeteer';
 import { validateAadhaar, isValidMobile } from '../utils/validation.js';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import { authUser } from '../middleware/auth.middleware.js';
 
 const router = express.Router();

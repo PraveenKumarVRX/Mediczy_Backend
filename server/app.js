@@ -2012,7 +2012,7 @@ startCrmAutomationCron();
 import governanceServiceForCron from './services/ai-model-governance.service.js';
 import { tick as cronTick, tickError as cronTickError, beginJob as cronBeginJob } from './utils/cronRegistry.js';
 import cron from 'node-cron';
-import nodemailer from 'nodemailer';
+import nodemailer from './integrations/nodemailer.js';
 import { runWeeklyMisForAllCorporates } from './services/corporate-wellness-mis.service.js';
 
 async function sendDriftAlert(drifted) {

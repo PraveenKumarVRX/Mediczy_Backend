@@ -1,10 +1,12 @@
+import { sendTwilioWhatsApp, sendMetaWhatsApp, sendInfobipWhatsApp } from '../integrations/messaging.js';
+import { IntegrationError } from '../integrations/core/integration.js';
 /**
  * WhatsApp Integration Service
  * Supports multiple WhatsApp Business providers with configuration management
  */
 
 import crypto from 'crypto';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import { GupshupWhatsAppService } from './gupshup-whatsapp.service.js';
 
 class WhatsAppService {
@@ -508,28 +510,11 @@ class WhatsAppService {
    * Provider-specific message sending implementations
    */
   async sendTwilioMessage(messageData, providerConfig) {
-    const data = {
-      accountSid: providerConfig.settings.accountSid,
-      from: `whatsapp:${providerConfig.settings.phoneNumberId}`,
-      to: `whatsapp:${messageData.to}`,
-      body: messageData.content,
-      messageSid: `SM${crypto.randomBytes(16).toString('hex')}`
-    };
-    console.log('Twilio WhatsApp message sent to:', messageData.to);
-    return data;
+    return sendTwilioWhatsApp(messageData, providerConfig.settings);
   }
 
   async sendFacebookMessage(messageData, providerConfig) {
-    const data = {
-      messaging_product: 'whatsapp',
-      to: messageData.to,
-      type: messageData.type,
-      accessToken: providerConfig.settings.accessToken,
-      phoneNumberId: providerConfig.settings.phoneNumberId,
-      messageId: `wamid.${crypto.randomBytes(16).toString('hex')}`
-    };
-    console.log('Facebook WhatsApp message sent to:', messageData.to);
-    return data;
+    return sendMetaWhatsApp(messageData, providerConfig.settings);
   }
 
   async sendGupshupMessage(messageData, providerConfig) {
@@ -546,38 +531,16 @@ class WhatsAppService {
     return sender.sendText({ to: messageData.to, body: messageData.content });
   }
 
-  async sendKarixMessage(messageData, providerConfig) {
-    const data = {
-      channel_id: providerConfig.settings.channelId,
-      to: messageData.to,
-      body: messageData.content,
-      account_id: providerConfig.settings.accountId,
-      messageUid: `karix_${Date.now()}`
-    };
-    console.log('Karix WhatsApp message sent to:', messageData.to);
-    return data;
+  async sendKarixMessage() {
+    throw new IntegrationError('INTEGRATION_NOT_CONFIGURED', 'This messaging provider does not have a delivery adapter.', { status: 503 });
   }
 
   async sendInfobipMessage(messageData, providerConfig) {
-    const data = {
-      from: providerConfig.settings.sender,
-      to: messageData.to,
-      content: { text: messageData.content },
-      messageId: `ib_${Date.now()}`
-    };
-    console.log('Infobip WhatsApp message sent to:', messageData.to);
-    return data;
+    return sendInfobipWhatsApp(messageData, providerConfig.settings);
   }
 
-  async sendMessageBirdMessage(messageData, providerConfig) {
-    const data = {
-      channelId: providerConfig.settings.channelId,
-      to: messageData.to,
-      content: { text: messageData.content },
-      messageId: `mb_${Date.now()}`
-    };
-    console.log('MessageBird WhatsApp message sent to:', messageData.to);
-    return data;
+  async sendMessageBirdMessage() {
+    throw new IntegrationError('INTEGRATION_NOT_CONFIGURED', 'This messaging provider does not have a delivery adapter.', { status: 503 });
   }
 
   /**
@@ -624,7 +587,7 @@ class WhatsAppService {
       throw new Error('Twilio credentials not configured');
     }
     return { 
-      success: true, 
+      success: true, configured: true, verified: false,
       message: 'Twilio configuration valid',
       estimatedCost: '₹0.65-2.50 per message',
       features: ['Global reach', 'Reliable delivery', 'Good documentation']
@@ -636,7 +599,7 @@ class WhatsAppService {
       throw new Error('Facebook access token not configured');
     }
     return { 
-      success: true, 
+      success: true, configured: true, verified: false,
       message: 'Facebook WhatsApp Business API configuration valid',
       estimatedCost: 'Free for first 1000 conversations',
       features: ['Official API', 'Template management', 'Analytics']
@@ -655,7 +618,7 @@ class WhatsAppService {
       throw new Error('Karix credentials not configured');
     }
     return { 
-      success: true, 
+      success: true, configured: true, verified: false,
       message: 'Karix configuration valid - Healthcare focused',
       estimatedCost: 'Healthcare-specific pricing',
       features: ['Healthcare focus', 'Indian company', 'Compliance']
@@ -667,7 +630,7 @@ class WhatsAppService {
       throw new Error('Infobip API key not configured');
     }
     return { 
-      success: true, 
+      success: true, configured: true, verified: false,
       message: 'Infobip configuration valid',
       estimatedCost: 'Enterprise pricing',
       features: ['Global coverage', 'Advanced analytics', 'Enterprise features']
@@ -679,7 +642,7 @@ class WhatsAppService {
       throw new Error('MessageBird access key not configured');
     }
     return { 
-      success: true, 
+      success: true, configured: true, verified: false,
       message: 'MessageBird configuration valid',
       estimatedCost: 'Competitive pricing',
       features: ['Omnichannel', 'Flow builder', 'Good API']

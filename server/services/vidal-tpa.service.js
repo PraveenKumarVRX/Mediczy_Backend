@@ -1,7 +1,7 @@
 // Vidal TPA Service
 // Complete integration with comprehensive endpoint coverage
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import logger from '../config/logger.js';
 
 class VidalTPA {

@@ -1,6 +1,8 @@
-const nodemailer = require('nodemailer');
-const fs = require('fs').promises;
-const path = require('path');
+import nodemailer from '../integrations/nodemailer.js';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Email service for sending transactional emails
@@ -11,7 +13,7 @@ const path = require('path');
 // Import existing email service
 let emailService;
 try {
-    emailService = require('./emailService.js');
+    emailService = await import('./emailService.js');
 } catch (e) {
     console.log('Existing emailService not found, using env config');
 }
@@ -40,8 +42,8 @@ async function getTransporter() {
     // Try to use existing email service with database configs
     if (emailService && emailService.default) {
         try {
-            const { EmailConfig } = require('../models/email.model.simple.js');
-            const defaultConfig = await EmailConfig.findOne({ isDefault: true, isActive: true });
+            const { EmailConfig } = await import('../models/email.model.simple.js');
+            const defaultConfig = await EmailConfig.findOne({ where: { isDefault: true, isActive: true } });
             
             if (defaultConfig) {
                 console.log('Using database SMTP configuration:', defaultConfig.name);
@@ -308,7 +310,11 @@ async function verifyEmailConnection() {
     }
 }
 
-module.exports = {
+export {
+    sendWelcomeEmail, sendPasswordResetEmail, sendPasswordChangedEmail, verifyEmailConnection, getTransporter
+};
+
+export default {
     sendWelcomeEmail,
     sendPasswordResetEmail,
     sendPasswordChangedEmail,

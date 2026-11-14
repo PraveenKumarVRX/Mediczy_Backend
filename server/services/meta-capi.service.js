@@ -4,7 +4,7 @@
  */
 
 import crypto from 'crypto';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 const PIXEL_ID = process.env.FB_PIXEL_ID || '';
 const ACCESS_TOKEN = process.env.FB_CAPI_ACCESS_TOKEN || process.env.FB_PAGE_ACCESS_TOKEN || '';
@@ -72,7 +72,7 @@ async function sendEvent({ eventName, lead, customData = {}, eventId = null }) {
 
   try {
     const url = `https://graph.facebook.com/${API_VERSION}/${PIXEL_ID}/events`;
-    const { data } = await axios.post(url, payload, { timeout: 8000 });
+    const { data } = await axios.post(url, payload, { timeout: 8000, headers: { Authorization: `Bearer ${ACCESS_TOKEN}` } });
     console.info('[Meta CAPI] Event sent', { eventName, leadId: lead?.id, eventsReceived: data?.events_received });
     return { sent: true, data };
   } catch (err) {

@@ -1,7 +1,7 @@
 /**
  * CareOS — Instant MDT / Clinical Board + AI Consensus
  */
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken } from '../../integrations/livekit.js';
 import pool from '../../db/pgPool.js';
 import { up as migrate } from '../../migrations/careos-phase1.migration.js';
 import { appendClinicalEvent } from './clinical-timeline.service.js';

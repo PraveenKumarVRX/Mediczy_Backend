@@ -23,7 +23,7 @@
  * enforce; the retrieval prompt below is written to keep the LLM on the
  * correct side of it.
  */
-import axios from 'axios';
+import axios from '../../integrations/axios.js';
 import pool from '../../db/pgPool.js';
 import { routeEvidence } from './imaging-knowledge-router.service.js';
 

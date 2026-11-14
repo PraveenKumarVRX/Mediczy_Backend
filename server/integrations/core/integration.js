@@ -52,7 +52,8 @@ function percentile(sorted, p) {
  * @param {string}   spec.category      messaging | government | insurance | payments | ai | maps | identity | email | video | storage | push
  * @param {'phi'|'pii'|'none'} spec.dataClass  the most sensitive data sent to the vendor
  * @param {string[]} [spec.requiredEnv] env var NAMES that must be set for the vendor to be usable
- * @param {string[]} [spec.allowedHosts] hosts this vendor's URLs may point at (exact, or '.suffix')
+ * @param {string[]|Function} [spec.allowedHosts] hosts this vendor's URLs may point at (exact, or '.suffix')
+ * @param {string[][]} [spec.requiredAnyEnv] groups where at least one env setting must be present
  * @param {number}   [spec.timeoutMs=8000]
  * @param {{threshold?:number, cooldownMs?:number}} [spec.breaker]
  * @param {{attempts?:number, backoffMs?:number}}  [spec.retry]  attempts beyond the first; idempotent calls only
@@ -67,6 +68,7 @@ export function defineIntegration(spec) {
 
   const cfg = {
     requiredEnv: [],
+    requiredAnyEnv: [],
     allowedHosts: [],
     timeoutMs: 8000,
     managed: 'core',
@@ -94,7 +96,8 @@ export function defineIntegration(spec) {
   };
 
   const enabled = () => String(process.env[killSwitch] ?? 'true').trim().toLowerCase() !== 'false';
-  const missingEnv = () => cfg.requiredEnv.filter((name) => !String(process.env[name] || '').trim());
+  const missingEnv = () => [...cfg.requiredEnv.filter((name) => !String(process.env[name] || '').trim()),
+    ...cfg.requiredAnyEnv.filter(group => !group.some(name => String(process.env[name] || '').trim())).map(group => group.join(' | '))];
   const configured = () => missingEnv().length === 0;
 
   const fail = (code, message, extra = {}) => new IntegrationError(code, message, { integration: cfg.id, ...extra });
@@ -104,18 +107,20 @@ export function defineIntegration(spec) {
     return error;
   };
 
-  const hostAllowed = (host) => cfg.allowedHosts.some((allowed) => (
+  const allowedHosts = () => typeof cfg.allowedHosts === 'function' ? cfg.allowedHosts() : cfg.allowedHosts;
+  const hostAllowed = (host) => allowedHosts().some((allowed) => (
     allowed.startsWith('.') ? host.endsWith(allowed) || host === allowed.slice(1) : host === allowed
   ));
 
   /**
-   * Runs fn(signal) under the integration's rules. fn must honour the signal.
+   * Runs fn(signal) under the integration's rules. The deadline also bounds SDKs
+   * that ignore cancellation; adapters set native transport timeouts where supported.
    * @param {(signal: AbortSignal) => Promise<any>} fn
-   * @param {{ idempotent?: boolean, key?: string, timeoutMs?: number, isRetryable?: (err) => boolean }} [opts]
+   * @param {{ idempotent?: boolean, key?: string, timeoutMs?: number, isRetryable?: (err) => boolean, preserveError?: boolean, statusOf?: Function, configuration?: boolean }} [opts]
    */
-  async function call(fn, { idempotent = false, key = '', timeoutMs = cfg.timeoutMs, isRetryable } = {}) {
+  async function call(fn, { idempotent = false, key = '', timeoutMs = cfg.timeoutMs, isRetryable, preserveError = false, statusOf, configuration = configured() } = {}) {
     if (!enabled()) throw refuse(fail('INTEGRATION_DISABLED', `${cfg.name} is switched off.`));
-    if (!configured()) throw refuse(fail('INTEGRATION_NOT_CONFIGURED', `${cfg.name} is not configured.`));
+    if (!configuration) throw refuse(fail('INTEGRATION_NOT_CONFIGURED', `${cfg.name} is not configured.`));
     const breaker = breakerFor(key);
     const attempts = 1 + (idempotent ? Math.max(0, cfg.retry.attempts) : 0);
 
@@ -123,11 +128,20 @@ export function defineIntegration(spec) {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       if (breaker.isOpen()) throw refuse(fail('INTEGRATION_CIRCUIT_OPEN', `${cfg.name} is temporarily unavailable.`));
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const duration = Math.min(Math.max(Number(timeoutMs) || cfg.timeoutMs, 1), cfg.timeoutMs);
+      let rejectTimeout;
+      const deadline = new Promise((_, reject) => { rejectTimeout = reject; });
+      const timer = setTimeout(() => {
+        controller.abort();
+        rejectTimeout(fail('INTEGRATION_TIMEOUT', `${cfg.name} is temporarily unavailable.`));
+      }, duration);
+      let result;
       const started = Date.now();
       metrics.calls += 1;
       try {
-        const result = await fn(controller.signal);
+        result = await Promise.race([Promise.resolve().then(() => fn(controller.signal)), deadline]);
+        const upstreamStatus = statusOf?.(result);
+        if (upstreamStatus >= 400) throw fail(upstreamStatus >= 500 || upstreamStatus === 429 ? 'INTEGRATION_UPSTREAM_ERROR' : 'INTEGRATION_REJECTED', `${cfg.name} answered ${upstreamStatus}.`, { status: 502, upstreamStatus });
         breaker.onSuccess();
         metrics.ok += 1;
         metrics.lastSuccessAt = new Date().toISOString();
@@ -137,7 +151,7 @@ export function defineIntegration(spec) {
       } catch (raw) {
         const timedOut = controller.signal.aborted;
         const error = raw instanceof IntegrationError ? raw
-          : fail(timedOut ? 'INTEGRATION_TIMEOUT' : 'INTEGRATION_UNAVAILABLE', `${cfg.name} is temporarily unavailable.`);
+          : fail(timedOut ? 'INTEGRATION_TIMEOUT' : 'INTEGRATION_UNAVAILABLE', `${cfg.name} is temporarily unavailable.`, { upstreamStatus: raw?.response?.status ?? raw?.statusCode ?? raw?.status ?? raw?.$metadata?.httpStatusCode });
         // A 4xx is the vendor's answer about our request, not the vendor being down.
         const vendorDown = !(error.upstreamStatus >= 400 && error.upstreamStatus < 500 && error.upstreamStatus !== 429)
           && error.code !== 'INTEGRATION_BAD_RESPONSE' && error.code !== 'INTEGRATION_HOST_NOT_ALLOWED';
@@ -154,6 +168,9 @@ export function defineIntegration(spec) {
           await sleep(cfg.retry.backoffMs * attempt);
           continue;
         }
+        // Fetch and vendor SDK adapters preserve their existing response/error contract.
+        if (!timedOut && statusOf && result !== undefined) return result;
+        if (!timedOut && preserveError && !(raw instanceof IntegrationError)) throw raw;
         throw error;
       } finally {
         clearTimeout(timer);
@@ -168,15 +185,20 @@ export function defineIntegration(spec) {
    * @param {{ method?: string, headers?: object, query?: object, body?: any, idempotent?: boolean, key?: string, timeoutMs?: number, fetchImpl?: Function, accept?: (status:number) => boolean }} [opts]
    * @returns {Promise<{ status: number, body: any, headers: Headers }>}
    */
+  function assertUrl(url) {
+    let target;
+    try { target = new URL(url); } catch { throw refuse(fail('INTEGRATION_HOST_NOT_ALLOWED', 'Bad integration URL.', { status: 500 })); }
+    if (target.protocol !== 'https:' || target.username || target.password || !hostAllowed(target.hostname)) {
+      throw refuse(fail('INTEGRATION_HOST_NOT_ALLOWED', `${cfg.name} URL is not allowed.`, { status: 500 }));
+    }
+    return target;
+  }
+
   async function fetchJson(url, {
     method = 'GET', headers = {}, query, body, idempotent, key, timeoutMs, fetchImpl = globalThis.fetch,
     accept = (status) => status >= 200 && status < 300,
   } = {}) {
-    let target;
-    try { target = new URL(url); } catch { throw refuse(fail('INTEGRATION_HOST_NOT_ALLOWED', 'Bad integration URL.', { status: 500 })); }
-    if (target.protocol !== 'https:' || !hostAllowed(target.hostname)) {
-      throw refuse(fail('INTEGRATION_HOST_NOT_ALLOWED', `${cfg.name} may not call ${target.hostname}.`, { status: 500 }));
-    }
+    const target = assertUrl(url);
     for (const [k, v] of Object.entries(query || {})) {
       if (v !== undefined && v !== null && v !== '') target.searchParams.set(k, String(v));
     }
@@ -218,7 +240,7 @@ export function defineIntegration(spec) {
       killSwitch,
       configured: configured(),
       missingEnv: missingEnv(),
-      allowedHosts: cfg.allowedHosts,
+      allowedHosts: allowedHosts(),
       timeoutMs: cfg.timeoutMs,
       circuit: states.includes('OPEN') ? 'OPEN' : states.includes('HALF-OPEN') ? 'HALF-OPEN' : 'CLOSED',
       metrics: {
@@ -241,7 +263,7 @@ export function defineIntegration(spec) {
 
   return Object.freeze({
     id: cfg.id, name: cfg.name, category: cfg.category, dataClass: cfg.dataClass, managed: cfg.managed,
-    enabled, configured, missingEnv, call, fetchJson, status, _reset,
+    enabled, configured, missingEnv, assertUrl, call, fetchJson, status, _reset,
   });
 }
 

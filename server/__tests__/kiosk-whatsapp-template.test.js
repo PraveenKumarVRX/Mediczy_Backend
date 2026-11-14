@@ -2,7 +2,7 @@ import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
 const create = jest.fn();
 
-jest.unstable_mockModule('twilio', () => ({
+jest.unstable_mockModule('../integrations/twilio.js', () => ({
   default: () => ({
     messages: { create },
   }),

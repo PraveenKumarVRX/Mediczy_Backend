@@ -29,7 +29,7 @@ import whatsAppSIBBrain from '../services/whatsapp-sib-brain.service.js';
 import { cache } from '../db/redis.js';
 import logger from '../config/logger.js';
 import { detectServiceIntent, createAutoTicket } from '../services/autoTicketService.js';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import sharedPool from '../db/pgPool.js';
 import { bridgeInboundWhatsAppToCrm } from '../services/crm-inbound-bridge.service.js';
 import { handleChatwootTwilioInbound } from '../services/chatwoot-bridge.service.js';

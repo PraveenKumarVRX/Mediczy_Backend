@@ -1,4 +1,4 @@
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken } from '../integrations/livekit.js';
 import crypto from 'crypto';
 import videoService from '../services/video.service.js';
 

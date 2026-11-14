@@ -1,7 +1,7 @@
 // Volo TPA Service
 // Complete integration with all TPA endpoints
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import logger from '../config/logger.js';
 
 class VoloTPA {

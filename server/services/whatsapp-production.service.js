@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import twilio from 'twilio';
+import twilio from '../integrations/twilio.js';
 import gupshup, { normalizeGupshupPhone, whatsappProvider } from './gupshup-whatsapp.service.js';
 
 dotenv.config();

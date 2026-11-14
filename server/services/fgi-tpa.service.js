@@ -3,7 +3,7 @@
  * Integration: MDBT (MyDataBuddy) API
  */
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 class FGITPA {
   constructor() {

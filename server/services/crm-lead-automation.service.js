@@ -3,7 +3,7 @@
  * Fire-and-forget safe: never throws to callers.
  */
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import sharedPool from '../db/pgPool.js';
 import { quickScoreLead } from './ai-crm.service.js';
 import metaCapi from './meta-capi.service.js';

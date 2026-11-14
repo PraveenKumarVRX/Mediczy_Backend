@@ -1,7 +1,7 @@
 // MedSave TPA Service
 // Comprehensive TPA integration with full endpoint coverage
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import logger from '../config/logger.js';
 
 class MedSaveTPA {

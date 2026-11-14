@@ -4,7 +4,7 @@
 // =====================================================
 
 import express from 'express';
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken } from '../integrations/livekit.js';
 import { Sequelize } from 'sequelize';
 import webinarNotificationService from '../services/webinar-notification.service.js';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';

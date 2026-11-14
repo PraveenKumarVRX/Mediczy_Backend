@@ -43,7 +43,7 @@ jest.unstable_mockModule('../services/token-revocation.service.js', () => ({
   issuePortalTokenPair: mockIssuePortalTokenPair,
 }));
 
-jest.unstable_mockModule('nodemailer', () => ({
+jest.unstable_mockModule('../integrations/nodemailer.js', () => ({
   default: {
     createTransport: () => ({
       sendMail: jest.fn().mockResolvedValue({ messageId: 'mock-message-id' }),

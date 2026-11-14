@@ -619,7 +619,7 @@ class NotificationService {
       }
 
       // Send via nodemailer directly
-      const nodemailer = (await import('nodemailer')).default;
+      const nodemailer = (await import('../integrations/nodemailer.js')).default;
       const smtpPort = parseInt(process.env.SMTP_PORT) || 465;
       const transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST || 'smtppro.zoho.in',

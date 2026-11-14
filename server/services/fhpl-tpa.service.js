@@ -1,7 +1,7 @@
 // FHPL (Family Health Plan Limited) TPA Service
 // Complete integration with all endpoints
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import logger from '../config/logger.js';
 
 class FHPLTPA {

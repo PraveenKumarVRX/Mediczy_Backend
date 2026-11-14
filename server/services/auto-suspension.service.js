@@ -13,7 +13,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import Tenant from '../models/postgres/tenant.model.postgres.js';
 import saasBillingService from './saas-billing.service.js';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import cron from 'node-cron';
 import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 

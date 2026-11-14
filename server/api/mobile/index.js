@@ -1374,7 +1374,7 @@ router.post('/auth/corporate-login', asyncHandler(async (req, res) => {
 
 // ============== Social Authentication (Google / Facebook) ==============
 
-import axios from 'axios';
+import axios from '../../integrations/axios.js';
 
 /**
  * Find or create a user from a social provider (Google / Facebook).

@@ -1,7 +1,7 @@
 /**
  * CareOS — One-touch clinical video call (LiveKit patient room)
  */
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken } from '../../integrations/livekit.js';
 import { getAIServiceConfig } from '../../config/ai-services.config.js';
 
 export async function createPatientCallToken({ patientId, userId, userName, role = 'clinician' }) {

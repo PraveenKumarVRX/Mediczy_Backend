@@ -1,7 +1,7 @@
 /**
  * Phase C: Structured findings extraction — Python MONAI-ready + triage merge.
  */
-import fetch from 'node-fetch';
+import fetch from '../../integrations/fetch.js';
 import llmProvider from '../ai-brain/llm-provider.js';
 
 const TRIAGE_URL = process.env.IMAGING_TRIAGE_URL || 'http://127.0.0.1:8010';

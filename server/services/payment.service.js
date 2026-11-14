@@ -1,4 +1,4 @@
-import Razorpay from 'razorpay';
+import Razorpay from '../integrations/razorpay.js';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';

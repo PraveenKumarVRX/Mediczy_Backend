@@ -1,6 +1,6 @@
 import express from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import notificationService, { Notification, FCMToken } from '../services/notification.service.js';
 import {

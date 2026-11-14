@@ -9,7 +9,7 @@ import { body, validationResult, param } from 'express-validator';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import { Prescription, Appointment, User, Doctor } from '../models/index.js';
 import { EHRRecord, HealthDiary } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';

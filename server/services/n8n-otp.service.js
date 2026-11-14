@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 /**
  * n8n OTP Service

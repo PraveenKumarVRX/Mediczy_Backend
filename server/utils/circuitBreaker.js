@@ -13,7 +13,7 @@
  */
 
 import CircuitBreaker from 'opossum';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 /**
  * Default circuit breaker options

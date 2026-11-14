@@ -13,7 +13,7 @@
  */
 
 import crypto from 'crypto';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 class VoiceCallService {
   constructor() {

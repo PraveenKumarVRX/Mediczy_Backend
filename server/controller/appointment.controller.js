@@ -628,7 +628,7 @@ export const createAppointment = async (req, res) => {
 
         if (!teamUsers.length) return;
 
-        const nodemailer = (await import('nodemailer')).default;
+        const nodemailer = (await import('../integrations/nodemailer.js')).default;
         const emailServiceModule = (await import('../services/emailService.js')).default;
 
         const apptDate = new Date(appointment.appointmentDate).toLocaleDateString('en-IN', {

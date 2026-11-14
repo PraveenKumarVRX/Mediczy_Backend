@@ -26,9 +26,9 @@ import { requireAIConsent } from '../services/medical-chat-contract.js';
 
 import express from 'express';
 import multer from 'multer';
-import fetch from 'node-fetch';
+import fetch from '../integrations/fetch.js';
 import FormData from 'form-data';
-import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
+import { AccessToken, AgentDispatchClient } from '../integrations/livekit.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import logger from '../config/logger.js';

@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { Appointment, Prescription, Doctor, User } from '../models/index.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, resolveLiveKitApiUrl, resolveLiveKitWsUrl, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
-import { RoomServiceClient } from 'livekit-server-sdk';
+import { RoomServiceClient } from '../integrations/livekit.js';
 import { redisClient } from '../config/redis.js';
 import { isDoctorOwnerFromCandidates, resolveDoctorIdCandidates } from '../utils/doctor-appointment-access.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';

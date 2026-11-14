@@ -1,6 +1,6 @@
 import gupshup, { whatsappProvider } from './gupshup-whatsapp.service.js';
-import axios from 'axios';
-import nodemailer from 'nodemailer';
+import axios from '../integrations/axios.js';
+import nodemailer from '../integrations/nodemailer.js';
 
 // Twilio error codes that are permanent (no point retrying)
 const NON_RETRIABLE_CODES = new Set([

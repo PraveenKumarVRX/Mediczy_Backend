@@ -5,7 +5,7 @@
 
 import express from 'express';
 import { body } from 'express-validator';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import Hospital from '../models/hospital.model.intelligent.js';
 import {

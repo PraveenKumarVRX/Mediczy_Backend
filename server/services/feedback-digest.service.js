@@ -115,7 +115,7 @@ async function sendDigestEmail(html, weekOf) {
     return false;
   }
   try {
-    const { SESv2Client, SendEmailCommand } = await import('@aws-sdk/client-sesv2');
+    const { SESv2Client, SendEmailCommand } = await import('../integrations/ses.js');
     const client = new SESv2Client({ region: process.env.AWS_REGION || 'ap-south-1' });
     await client.send(new SendEmailCommand({
       FromEmailAddress: FROM_EMAIL,

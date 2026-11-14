@@ -14,7 +14,7 @@ import logger from '../config/logger.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { tick, tickError } from '../utils/cronRegistry.js';
 import jwt from 'jsonwebtoken';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 
 // Shared SMTP transporter for system report notifications
 let _smtpTransporter = null;

@@ -1,3 +1,4 @@
+import { manageMessaging } from '../integrations/fcm.js';
 // Firebase Admin SDK configuration for sending push notifications
 import admin from 'firebase-admin';
 import { readFileSync, existsSync } from 'fs';
@@ -125,7 +126,7 @@ if (shouldInitializeFirebase()) {
       }
     }
 
-    messaging = admin.messaging();
+    messaging = manageMessaging(admin.messaging());
     isFirebaseInitialized = true;
     console.log('Firebase Admin SDK initialized successfully');
 
@@ -139,7 +140,7 @@ if (shouldInitializeFirebase()) {
           { credential: admin.credential.cert(dsa), projectId: dsa.project_id },
           'doctor-app'
         );
-        doctorMessaging = doctorApp.messaging();
+        doctorMessaging = manageMessaging(doctorApp.messaging());
         if (doctorSaEnv) {
           console.log(`Firebase (doctor) initialized from FIREBASE_SERVICE_ACCOUNT_DOCTOR_JSON [project: ${dsa.project_id}]`);
         } else {
@@ -169,7 +170,7 @@ if (shouldInitializeFirebase()) {
           { credential: admin.credential.cert(wsa), projectId: wsa.project_id },
           'web-app'
         );
-        webMessaging = webApp.messaging();
+        webMessaging = manageMessaging(webApp.messaging());
         if (webSaEnv) {
           console.log(`Firebase (web) initialized from FIREBASE_SERVICE_ACCOUNT_WEB_JSON [project: ${wsa.project_id}]`);
         } else {

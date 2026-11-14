@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 const N8N_BASE_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678';
 const N8N_AUTH_TOKEN = process.env.N8N_AUTH_TOKEN || '';

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 /**
  * Health India TPA Service

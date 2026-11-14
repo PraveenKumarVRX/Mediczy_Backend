@@ -1,3 +1,4 @@
+import { managedFetch as fetch } from '../integrations/transport.js';
 /**
  * Kiosk walk-in registration invites — WhatsApp/SMS secure link + complete on phone.
  */

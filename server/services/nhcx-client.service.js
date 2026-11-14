@@ -12,7 +12,8 @@
  * process this code doesn't perform — see docs/ai/... and the RAG analysis.
  * This is the technical integration that process will exercise once live.
  */
-import axios from 'axios';
+import { createVendorAxios } from '../integrations/axios.js';
+const axios = createVendorAxios('nhcx');
 import crypto from 'crypto';
 
 export function isNhcxConfigured() {

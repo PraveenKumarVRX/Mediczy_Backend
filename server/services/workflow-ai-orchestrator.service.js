@@ -144,7 +144,7 @@ export async function onPatientDischarged(admission) {
   // Trigger discharge summary generation via offline scribe if not already present
   if (!admission.discharge_summary_id) {
     try {
-      const { default: fetch } = await import('node-fetch').catch(() => ({ default: null }));
+      const { default: fetch } = await import('../integrations/fetch.js').catch(() => ({ default: null }));
       if (fetch) {
         fetch(`http://localhost:${process.env.PORT || 5000}/api/offline-scribe/generate`, {
           method: 'POST',

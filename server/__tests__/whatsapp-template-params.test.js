@@ -13,7 +13,7 @@ process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT = 'tpl-payment';
 process.env.GUPSHUP_TEMPLATE_HEALTH_REPORT = 'tpl-report';
 
 const sendTemplate = jest.fn(async () => ({ messageId: 'm1', status: 'submitted' }));
-jest.unstable_mockModule('twilio', () => ({ default: jest.fn(() => ({})) }));
+jest.unstable_mockModule('../integrations/twilio.js', () => ({ default: jest.fn(() => ({})) }));
 jest.unstable_mockModule('../services/gupshup-whatsapp.service.js', () => ({
   default: { configured: true, sendTemplate },
   normalizeGupshupPhone: (v) => String(v).replace(/\D/g, ''),

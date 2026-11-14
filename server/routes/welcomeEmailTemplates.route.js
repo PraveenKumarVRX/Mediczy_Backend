@@ -1,7 +1,7 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 
 const router = express.Router();
 

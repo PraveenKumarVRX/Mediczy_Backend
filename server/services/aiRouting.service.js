@@ -6,7 +6,7 @@
 import LocalAiNode from '../models/postgres/localAiNode.model.postgres.js';
 import AiRoutingRule from '../models/postgres/aiRoutingRule.model.postgres.js';
 import AiNodeSyncLog from '../models/postgres/aiNodeSyncLog.model.postgres.js';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 class AiRoutingService {
   constructor() {

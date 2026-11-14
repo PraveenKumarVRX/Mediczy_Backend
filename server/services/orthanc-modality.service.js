@@ -2,7 +2,7 @@
  * Orthanc DICOM modality peer registration — sync MediQzy registry ↔ Orthanc /modalities.
  * Also supports C-ECHO, C-FIND (query), and C-MOVE (retrieve/pull) against scanners.
  */
-import fetch from 'node-fetch';
+import fetch from '../integrations/fetch.js';
 import logger from '../config/logger.js';
 import { orthancBasicAuthHeader } from '../utils/orthanc-credentials.js';
 

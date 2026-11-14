@@ -6,7 +6,7 @@
  */
 
 import { Router } from 'express';
-import nodemailer  from 'nodemailer';
+import nodemailer  from '../../integrations/nodemailer.js';
 import { Op }      from 'sequelize';
 import InsuranceEmailInbox from '../../models/postgres/insuranceEmailInbox.model.postgres.js';
 import InsuranceEmailSettings from '../../models/emailSettings.model.js';

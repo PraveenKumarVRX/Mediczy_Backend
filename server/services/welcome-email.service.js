@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import dotenv from 'dotenv';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import {
@@ -18,7 +18,7 @@ let sesClient = null;
 async function getSesClient() {
   if (sesClient) return sesClient;
   try {
-    const { SESv2Client } = await import('@aws-sdk/client-sesv2');
+    const { SESv2Client } = await import('../integrations/ses.js');
     sesClient = new SESv2Client({ region: process.env.AWS_REGION || 'ap-south-1' });
     return sesClient;
   } catch {
@@ -60,7 +60,7 @@ function isBrevoHost(host) {
 }
 
 async function sendViaSes(msg) {
-  const { SendEmailCommand } = await import('@aws-sdk/client-sesv2');
+  const { SendEmailCommand } = await import('../integrations/ses.js');
   const client = await getSesClient();
   if (!client) throw new Error('SES client unavailable');
   const fromAddress = coerceSesFrom(typeof msg.from === 'object'
@@ -1035,7 +1035,7 @@ export async function getEmailProviderStatus() {
 
   if (configuredProvider === 'ses') {
     try {
-      const { GetAccountCommand } = await import('@aws-sdk/client-sesv2');
+      const { GetAccountCommand } = await import('../integrations/ses.js');
       const client = await getSesClient();
       if (!client) throw new Error('SES SDK unavailable');
       const account = await client.send(new GetAccountCommand({}));

@@ -1,6 +1,6 @@
-import axios from 'axios';
-import twilio from 'twilio';
-import nodemailer from 'nodemailer';
+import axios from '../integrations/axios.js';
+import twilio from '../integrations/twilio.js';
+import nodemailer from '../integrations/nodemailer.js';
 import pool from '../db/pgPool.js';
 import { ChatwootService, normalizeChannelAddress } from './chatwoot.service.js';
 

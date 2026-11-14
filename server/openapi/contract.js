@@ -86,11 +86,18 @@ const typeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof
 export function validateAgainst(spec, schema, value, path = '$', errors = []) {
   if (!schema) return errors;
   const s = resolve(spec, schema);
-  if (value === null) {
-    if (!s.nullable && s.type) errors.push(`${path}: null but not nullable`);
+  if (value === null && s.nullable) return errors;
+  if (value === null && s.type) {
+    if (!s.nullable) errors.push(`${path}: null but not nullable`);
     return errors;
   }
   if (value === undefined) return errors;
+  for (const keyword of ['oneOf', 'anyOf']) {
+    if (!s[keyword]) continue;
+    const matches = s[keyword].filter(branch => validateAgainst(spec, branch, value, path, []).length === 0).length;
+    if ((keyword === 'oneOf' && matches !== 1) || (keyword === 'anyOf' && matches === 0)) errors.push(`${path}: expected ${keyword === 'oneOf' ? 'exactly one' : 'at least one'} schema match`);
+  }
+  if (s.allOf) for (const branch of s.allOf) validateAgainst(spec, branch, value, path, errors);
   const actual = typeOf(value);
   if (s.type) {
     const ok = s.type === actual || (s.type === 'number' && actual === 'integer');

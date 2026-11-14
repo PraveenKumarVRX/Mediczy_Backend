@@ -1,6 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import sharedPool from '../db/pgPool.js';
 import {
   findExistingLead,

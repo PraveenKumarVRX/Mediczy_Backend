@@ -6,7 +6,7 @@
  * for the noreply@mediqzy.com mailbox.
  */
 
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import sharedPool from '../db/pgPool.js';
 
 const DEFAULT_CARE_TEAM_EMAIL = 'care@mysmarthealth.in';

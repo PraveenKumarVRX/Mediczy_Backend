@@ -3,7 +3,7 @@
  * Handles Dr.iSHA AI responses and handoff decision logic
  */
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 class WhatsAppBotService {
   constructor() {

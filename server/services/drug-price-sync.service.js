@@ -14,7 +14,7 @@
  */
 
 import cron from 'node-cron';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import XLSX from '../utils/excel-compat.js';
 import { parse as csvParse } from 'csv-parse/sync';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';

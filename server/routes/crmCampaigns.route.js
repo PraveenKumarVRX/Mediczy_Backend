@@ -349,7 +349,7 @@ router.post('/campaigns/:id/test-send', authCRM, async (req, res) => {
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     const smtp = await getSmtpConfig();
-    const nodemailer = (await import('nodemailer')).default;
+    const nodemailer = (await import('../integrations/nodemailer.js')).default;
     const transporter = nodemailer.createTransport({
       host: smtp.host, port: Number(smtp.port || 587), secure: Number(smtp.port) === 465,
       auth: { user: smtp.username, pass: smtp.password },

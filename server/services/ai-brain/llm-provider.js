@@ -1,3 +1,4 @@
+import { managedFetch } from '../../integrations/transport.js';
 import { randomUUID } from 'node:crypto';
 import { requireAIConsent } from '../medical-chat-contract.js';
 import { sibFetch as fetch } from '../sib-client.js';
@@ -294,7 +295,7 @@ function getGroqClient() {
     if (!apiKey || apiKey === 'your_groq_api_key_here') {
       throw new Error('GROQ_API_KEY not configured');
     }
-    _clients.groq = new Groq({ apiKey });
+    _clients.groq = new Groq({ apiKey, fetch: managedFetch, maxRetries: 0 });
   }
   return _clients.groq;
 }
@@ -305,7 +306,7 @@ function getOpenAIClient() {
     if (!apiKey || apiKey.startsWith('sk-proj-test')) {
       throw new Error('OPENAI_API_KEY not configured');
     }
-    _clients.openai = new OpenAI({ apiKey });
+    _clients.openai = new OpenAI({ apiKey, fetch: managedFetch, maxRetries: 0 });
   }
   return _clients.openai;
 }
@@ -315,7 +316,7 @@ function getIshaIncClient() {
     const apiKey = getProviderEnv('ISHA_INC_API_KEY');
     if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
     const baseURL = normalizeProviderUrl(getProviderEnv('ISHA_INC_URL'), 'https://isha-inc.com') + '/v1';
-    _clients.ishaInc = new OpenAI({ baseURL, apiKey });
+    _clients.ishaInc = new OpenAI({ baseURL, apiKey, fetch: managedFetch, maxRetries: 0 });
   }
   return _clients.ishaInc;
 }
@@ -333,7 +334,7 @@ function getWorkstationBimedixClient() {
   if (!_clients.workstationBimedix) {
     const baseURL = normalizeProviderUrl(getProviderEnv('WORKSTATION_BIMEDIX_URL'), 'http://10.99.0.4:8080') + '/v1';
     const apiKey = getProviderEnv('WORKSTATION_LLM_API_KEY') || 'dev-key';
-    _clients.workstationBimedix = new OpenAI({ baseURL, apiKey });
+    _clients.workstationBimedix = new OpenAI({ baseURL, apiKey, fetch: managedFetch, maxRetries: 0 });
   }
   return _clients.workstationBimedix;
 }
@@ -342,7 +343,7 @@ function getWorkstationMedgemmaClient() {
   if (!_clients.workstationMedgemma) {
     const baseURL = normalizeProviderUrl(getProviderEnv('WORKSTATION_MEDGEMMA_URL'), 'http://10.99.0.4:8083') + '/v1';
     const apiKey = getProviderEnv('WORKSTATION_LLM_API_KEY') || 'dev-key';
-    _clients.workstationMedgemma = new OpenAI({ baseURL, apiKey });
+    _clients.workstationMedgemma = new OpenAI({ baseURL, apiKey, fetch: managedFetch, maxRetries: 0 });
   }
   return _clients.workstationMedgemma;
 }

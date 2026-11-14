@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import { EmailConfig, EmailTemplate, EmailLog } from '../models/email.model.simple.js';
 import { checkQuota, recordSent } from '../utils/emailQuota.js';
 
@@ -7,14 +7,14 @@ let _sesClient = null;
 async function getSesClient() {
   if (_sesClient) return _sesClient;
   try {
-    const { SESv2Client } = await import('@aws-sdk/client-sesv2');
+    const { SESv2Client } = await import('../integrations/ses.js');
     _sesClient = new SESv2Client({ region: process.env.AWS_REGION || 'ap-south-1' });
     return _sesClient;
   } catch { return null; }
 }
 
 async function sendViaSes({ from, to, subject, html }) {
-  const { SendEmailCommand } = await import('@aws-sdk/client-sesv2');
+  const { SendEmailCommand } = await import('../integrations/ses.js');
   const client = await getSesClient();
   if (!client) throw new Error('SES unavailable');
   await client.send(new SendEmailCommand({

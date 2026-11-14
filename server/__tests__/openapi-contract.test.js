@@ -79,7 +79,7 @@ describe('the spec and the code agree', () => {
   });
 
   it.each(PARTLY_DOCUMENTED)('$file: every documented route is served', ({ file, mount }) => {
-    const { documentedNotServed } = compareOperations(operationsFromSpec(spec, mount), operationsFromSource(src(file), mount));
+    const { documentedNotServed } = compareOperations(operationsFromSpec(spec, mount), file === 'routes/oauth.route.js' ? [...operationsFromSource(src(file), mount), ...operationsFromSource(src('routes/auth.login.route.js'), mount), ...operationsFromSource(src('routes/auth.token.route.js'), mount)] : operationsFromSource(src(file), mount));
     expect(documentedNotServed).toEqual([]);
   });
 

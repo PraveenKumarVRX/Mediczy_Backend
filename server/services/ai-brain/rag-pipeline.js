@@ -6,7 +6,7 @@ import { sibPost } from '../sib-client.js';
  * Handles knowledge document upload, processing, and retrieval.
  */
 
-import axios from 'axios';
+import axios from '../../integrations/axios.js';
 import pool from '../../db/pgPool.js';
 
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';

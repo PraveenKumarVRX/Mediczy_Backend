@@ -1,7 +1,7 @@
 // Raksha TPA Service
 // Complete integration with all TPA operations
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import logger from '../config/logger.js';
 
 class RakshaTPA {

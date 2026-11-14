@@ -26,7 +26,7 @@
  * broadcast, templates, delivery receipts) has no 1:1 Chatwoot equivalent and is intentionally not
  * reimplemented here. Those routes report unavailable until that work is done deliberately.
  */
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 export class SupportChatUnavailableError extends Error {
   constructor(message = 'Support chat is not configured') {

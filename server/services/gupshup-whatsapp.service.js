@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import crypto from 'node:crypto';
 
 export const whatsappProvider = () => String(process.env.WHATSAPP_PROVIDER || 'twilio').trim().toLowerCase();

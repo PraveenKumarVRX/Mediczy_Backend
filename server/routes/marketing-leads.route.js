@@ -1,5 +1,5 @@
 import express from 'express';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import { body, validationResult } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import sharedPool from '../db/pgPool.js';

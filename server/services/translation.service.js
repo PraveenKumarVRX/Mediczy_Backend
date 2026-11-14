@@ -21,7 +21,7 @@
  */
 
 import { getLaBSEInstance } from '../utils/labseEmbeddings.js';
-import fetch from 'node-fetch';
+import fetch from '../integrations/fetch.js';
 
 // IndicTrans2 API endpoint (self-hosted or Hugging Face Inference API)
 const INDICTRANS_API_URL = process.env.INDICTRANS_API_URL || 'https://ai.isha.buzz/translate';

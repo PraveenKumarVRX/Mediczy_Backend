@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 const INTELLIGENT_DB_URL = process.env.INTELLIGENT_DB_URL || 'http://localhost:5001/api/intelligent-db';
 

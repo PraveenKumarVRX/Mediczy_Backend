@@ -4,7 +4,7 @@ import { hasAvailableChatSlot } from '../services/chat-appointment-transaction.j
 import { getChatMedicationReference } from '../services/chat-medication-context.js';
 import { recordChatTrace } from '../services/chat-trace.service.js';
 import { createChatHandoff } from '../services/chat-handoff.js';
-import { WebhookReceiver } from 'livekit-server-sdk';
+import { WebhookReceiver } from '../integrations/livekit.js';
 import { createChatAppointmentActions } from '../services/chat-appointment-actions.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
@@ -608,7 +608,7 @@ router.post('/emergency-sos', authUser, async (req, res) => {
     // Import required services
     const { default: notificationService } = await import('../services/notification.service.js');
     const { Appointment } = await import('../models/index.js');
-    const nodemailer = await import('nodemailer');
+    const nodemailer = await import('../integrations/nodemailer.js');
     
     // Helper to send simple emergency emails via SMTP
     const sendSosEmail = async (to, subject, body) => {

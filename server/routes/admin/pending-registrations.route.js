@@ -6,7 +6,7 @@
 
 import express from 'express';
 import bcrypt from 'bcrypt';
-import nodemailer from 'nodemailer';
+import nodemailer from '../../integrations/nodemailer.js';
 import { authUser, requireRole } from '../../middleware/auth.middleware.js';
 import Hospital from '../../models/hospital.model.intelligent.js';
 import Lab from '../../models/postgres/lab.model.postgres.js';

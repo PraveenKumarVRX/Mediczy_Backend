@@ -4,7 +4,7 @@
  * Integration: W2W (Way2Wealth) API
  */
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 class CareHealthTPA {
   constructor() {

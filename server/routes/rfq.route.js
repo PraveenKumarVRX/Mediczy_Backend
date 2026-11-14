@@ -7,7 +7,7 @@ import { authCRM } from '../middleware/crm.middleware.js';
 import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RFQ / Insurance module — extracted from crm.route.js on 2026-09-11 to isolate

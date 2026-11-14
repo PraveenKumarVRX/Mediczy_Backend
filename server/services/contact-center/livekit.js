@@ -1,4 +1,4 @@
-import {AccessToken,RoomServiceClient,SipClient,AgentDispatchClient,WebhookReceiver,DataPacket_Kind,TrackSource} from 'livekit-server-sdk';
+import {AccessToken,RoomServiceClient,SipClient,AgentDispatchClient,WebhookReceiver,DataPacket_Kind,TrackSource} from '../../integrations/livekit.js';
 import {createHmac,randomBytes} from 'node:crypto';
 import {fail,phone} from './policy.js';
 

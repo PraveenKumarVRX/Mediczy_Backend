@@ -1,5 +1,5 @@
 import sharedPool from '../db/pgPool.js';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import { sendTransactionalEmail } from './welcome-email.service.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { SMSService } from './sms.service.js';

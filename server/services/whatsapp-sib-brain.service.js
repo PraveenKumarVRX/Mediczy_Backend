@@ -18,7 +18,7 @@ import { sibPost } from './sib-client.js';
  * WhatsApp Message → SIB Brain → Deep Reasoning → Response
  */
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import whatsAppUserContextService from './whatsapp-user-context.service.js';
 import agenticBookingService from './whatsapp-agentic-booking.service.js';
 import detectEmergencyKeywords from '../utils/emergencyKeywords.js';

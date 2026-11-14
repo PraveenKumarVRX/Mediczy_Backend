@@ -1,3 +1,4 @@
+import { managedFetch as fetch } from '../../integrations/transport.js';
 /**
  * Semantic Response Cache
  * =======================

@@ -3,7 +3,7 @@
  * Integrates with various insurance providers (TPAs) for eligibility checks
  */
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 class InsuranceProviderService {
   constructor() {

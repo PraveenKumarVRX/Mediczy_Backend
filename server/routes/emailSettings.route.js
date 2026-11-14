@@ -1,6 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import Imap from 'imap';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import EmailSettings from '../models/emailSettings.model.js';

@@ -1,7 +1,7 @@
 // EWAT TPA Service
 // Employee Welfare Assistance Trust - Specialized TPA integration
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import logger from '../config/logger.js';
 
 class EWATTPA {

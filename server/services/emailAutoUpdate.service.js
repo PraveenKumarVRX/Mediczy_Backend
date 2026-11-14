@@ -5,7 +5,7 @@
 
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { Op } from 'sequelize';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 
 // Shared SMTP transporter (lazy singleton)

@@ -3,7 +3,7 @@
  * Downloads profile pictures from OAuth providers and saves locally
  */
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

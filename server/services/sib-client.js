@@ -1,3 +1,4 @@
+import { createManagedFetch } from '../integrations/transport.js';
 import { resolveSibBaseUrl } from '../config/ai-services.config.js';
 import nodeFetch from 'node-fetch';
 import crypto from 'node:crypto';
@@ -22,7 +23,7 @@ export function isSibUrl(url) {
 }
 
 export async function sibFetch(url, options = {}) {
-  if (!isSibUrl(url)) return options.body?.getHeaders ? nodeFetch(url, options) : globalThis.fetch(url, options);
+  if (!isSibUrl(url)) return options.body?.getHeaders ? createManagedFetch(nodeFetch)(url, options) : createManagedFetch(globalThis.fetch)(url, options);
   if (options.body?.getHeaders) options = { ...options, headers: { ...options.headers,...options.body.getHeaders() }, body: options.body.getBuffer() };
   const canonical=new URL(resolveSibBaseUrl());
   const requested=new URL(url);

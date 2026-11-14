@@ -1,7 +1,7 @@
 // Niva Bupa TPA Service
 // Complete integration with all TPA capabilities
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import logger from '../config/logger.js';
 
 class NivaBupaTPA {

@@ -54,7 +54,7 @@ jest.unstable_mockModule('../middleware/rateLimiter.middleware.js', () => ({
   authLimiter: (_req, _res, next) => next(),
 }));
 
-jest.unstable_mockModule('nodemailer', () => ({
+jest.unstable_mockModule('../integrations/nodemailer.js', () => ({
   default: {
     createTransport: jest.fn(() => ({
       sendMail: jest.fn().mockResolvedValue({ messageId: 'm-1', response: 'ok' }),
@@ -62,7 +62,7 @@ jest.unstable_mockModule('nodemailer', () => ({
   },
 }));
 
-jest.unstable_mockModule('twilio', () => ({
+jest.unstable_mockModule('../integrations/twilio.js', () => ({
   default: jest.fn(() => ({
     messages: {
       create: jest.fn().mockResolvedValue({ sid: 'wa-1', status: 'sent' }),

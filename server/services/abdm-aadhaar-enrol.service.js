@@ -1,3 +1,5 @@
+import { vendorFetch } from '../integrations/transport.js';
+const fetch = vendorFetch('abdm');
 /**
  * Aadhaar-based ABHA self-enrollment (ABDM v3).
  *
@@ -32,9 +34,9 @@ const IS_SANDBOX =
   process.env.ABDM_BASE_URL.includes('dev.abdm') ||
   ABHA_API_BASE.includes('abhasbx');
 
-const FORCE_MOCK =
+const FORCE_MOCK = process.env.NODE_ENV !== 'production' && (
   String(process.env.ABDM_AADHAAR_ENROL_MOCK || '').toLowerCase() === 'true' ||
-  (!process.env.ABDM_CLIENT_ID && IS_SANDBOX);
+  (!process.env.ABDM_CLIENT_ID && IS_SANDBOX));
 
 const TXN_TTL_SEC = 600;
 
@@ -237,6 +239,7 @@ export async function initiateAadhaarAbhaEnrol({
   try {
     const accessToken = await getAccessToken();
     if (accessToken === 'SANDBOX_MOCK_TOKEN') {
+      if (process.env.NODE_ENV === 'production') throw new Error('ABDM is not configured for live enrolment');
       // Credentials missing — degrade to mock
       const txnId = mockTxnId();
       await txnSet(txnId, {
@@ -291,7 +294,7 @@ export async function initiateAadhaarAbhaEnrol({
       mobileHint: null,
     };
   } catch (e) {
-    if (IS_SANDBOX) {
+    if (IS_SANDBOX && process.env.NODE_ENV !== 'production') {
       console.warn('[abha-aadhaar] live enrol init failed, sandbox mock:', e.message);
       const txnId = mockTxnId();
       await txnSet(txnId, {
@@ -341,6 +344,7 @@ export async function verifyAadhaarAbhaEnrol({
   const mobile10 = normalizeMobile10(mobile || pending.mobile);
 
   if (pending.mode === 'mock') {
+    if (process.env.NODE_ENV === 'production') throw Object.assign(new Error('Sandbox enrolment sessions cannot be verified in production'), { status: 403 });
     if (String(otp).trim() !== '123456' && !IS_SANDBOX) {
       throw Object.assign(new Error('Invalid OTP'), { status: 400 });
     }

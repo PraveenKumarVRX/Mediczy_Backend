@@ -4,7 +4,7 @@
 // =====================================================
 
 import express from 'express';
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken } from '../../integrations/livekit.js';
 import { QueryTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 

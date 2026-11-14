@@ -3,7 +3,7 @@
  * SaMD: triage informs workflow; physician must review before clinical action.
  */
 import pool from '../../db/pgPool.js';
-import fetch from 'node-fetch';
+import fetch from '../../integrations/fetch.js';
 import { publishEvent, KAFKA_TOPICS } from '../../config/kafka.js';
 import { recordMetric } from './imaging-observability.service.js';
 

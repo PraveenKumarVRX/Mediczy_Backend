@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import sharedPool from '../db/pgPool.js';
 
 // ─── Template rendering ───────────────────────────────────────────────────────

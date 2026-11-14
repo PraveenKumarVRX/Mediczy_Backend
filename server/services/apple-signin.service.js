@@ -1,3 +1,4 @@
+import { managedFetch as fetch } from '../integrations/transport.js';
 /**
  * Sign in with Apple — identity token verification.
  *
@@ -17,7 +18,7 @@
  * from an earlier sign-in, being replayed at this endpoint.
  */
 import crypto from 'node:crypto';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, jwtVerify, customFetch } from 'jose';
 
 export const APPLE_ISSUER = 'https://appleid.apple.com';
 export const APPLE_JWKS_URL = `${APPLE_ISSUER}/auth/keys`;
@@ -42,7 +43,7 @@ export const allowedAudiences = () => String(
  */
 let jwks = null;
 export function getAppleJwks() {
-  if (!jwks) jwks = createRemoteJWKSet(new URL(APPLE_JWKS_URL));
+  if (!jwks) jwks = createRemoteJWKSet(new URL(APPLE_JWKS_URL), { [customFetch]: fetch });
   return jwks;
 }
 

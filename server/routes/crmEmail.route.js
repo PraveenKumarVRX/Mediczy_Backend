@@ -9,7 +9,7 @@
  */
 
 import express from 'express';
-import nodemailer from 'nodemailer';
+import nodemailer from '../integrations/nodemailer.js';
 import multer from 'multer';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';

@@ -1,6 +1,6 @@
 # API contract (OpenAPI) and integration layer
 
-Status: adopted 2026-11-14. Owner: platform backend.
+Status: implementation expanded 2026-11-14 (OpenAPI 1.2.0). Owner: platform backend.
 
 Two rules came out of the API-tooling review (Postman, OpenAPI, Apigee, Kong, MuleSoft):
 
@@ -32,7 +32,7 @@ The spec is written as JS modules rather than YAML so schemas can be shared with
 in production and so a typo is a syntax error. The older comment-generated docs at `/api-docs`
 still exist; they are not the contract.
 
-### Scope of v1
+### Contract coverage
 
 | Area | Routers | Coverage |
 |---|---|---|
@@ -40,6 +40,18 @@ still exist; they are not the contract.
 | SmartCRM link and in-app enrolment (ADR-001) | `employee-insurance.route.js` | every route |
 | Address lookup | `address.route.js` | autocomplete and place details only |
 | Admin: integrations, the contract itself | `admin-integrations.route.js`, `openapi.route.js` | every route |
+| Account, login/OTP and sessions | `user.route.js`, `auth.login.route.js`, `auth.token.route.js` | every declared operation |
+| Appointments and labs | `appointment.route.js`, `lab.route.enhanced.js`, `lab-tests.route.js` | every declared operation |
+| Pharmacy catalogue and patient orders | `pharmacy.route.js`, `patient-pharmacy-orders.route.js` | every declared operation |
+| Billing, payments and membership | `billing.route.js`, `payment.route.js`, `membership.route.js`, `membership-plans.route.js` | every declared operation |
+
+The expanded contract contains **191 paths / 210 operations**. The static reviewed inventory in
+`server/openapi/mobile-route-manifest.js` is compared against the source route declarations by
+`mobile-openapi-contract.test.js`. `mobile.js` holds the request/response schemas for the main
+booking, history, checkout, payment and membership flows. Extensible resource metadata and
+secondary provider/admin responses permit additional fields; those envelopes do not freeze every
+nested provider-specific field. OAuth redirects are still supplied by their existing routes;
+the code-exchange operation is documented separately.
 
 Response schemas were taken from live responses of the running server and from the route code,
 not written from memory.
@@ -71,9 +83,9 @@ cd server && node scripts/ssm-env-loader.mjs scripts/qa/openapi-contract-smoke.m
    a new endpoint or optional field is **minor**.
 5. Run the contract test and, after deploying, the live check.
 
-To bring another router under the contract, document all its routes and add it to
-`FULLY_DOCUMENTED` in the test. Suggested order: auth/sign-in, appointments, lab orders,
-pharmacy orders, payments, membership — the rest of what the app calls.
+To bring another router under the contract, document its operations and add its static inventory
+to `mobile-route-manifest.js` (or `FULLY_DOCUMENTED` in the original test). Do not generate the
+inventory dynamically from the current source during a test: that would hide route drift.
 
 ### Error shapes
 
@@ -130,11 +142,34 @@ and payloads are never echoed to the client.
 
 | managed | Vendors |
 |---|---|
-| `core` (on the layer) | google-places |
+| `core` (on the layer) | google-places plus all 17 previously unmanaged vendors below |
 | `own-client` (hardened client of its own) | smartcrm (private mTLS link, per-tenant breakers) |
-| `unmanaged` (still called directly; visible, not yet controlled) | abdm, nhcx, whatsapp-cloud, twilio, gupshup, infobip, aws-ses, smtp, razorpay, livekit, firebase-fcm, apple-signin, llm-groq, llm-openai, llm-sarvam, isha, elevenlabs |
+| `core` (migrated through HTTP/SDK adapters) | abdm, nhcx, whatsapp-cloud, twilio, gupshup, infobip, aws-ses, smtp, razorpay, livekit, firebase-fcm, apple-signin, llm-groq, llm-openai, llm-sarvam, isha, elevenlabs |
 
-13 of the 19 receive health information (`dataClass: phi`).
+13 of the 19 receive health information (`dataClass: phi`). There are now **18 core-managed
+entries, 1 own-client entry, and 0 unmanaged entries** in the surveyed catalogue. This is transport
+coverage, not proof that production credentials, vendor approvals or delivery are configured.
+
+Application imports use `integrations/axios.js`, `fetch.js`, `nodemailer.js`, `twilio.js`,
+`razorpay.js`, `livekit.js` and `ses.js`; Firebase objects use `fcm.js`. The LLM cascade keeps its
+routing/prompts and uses a managed custom fetch. Apple JWKS uses jose's custom-fetch hook.
+ABDM/NHCX use vendor-bound transports so an invalid configured URL cannot bypass the allow-list.
+`managed-vendor-imports.test.js` prevents runtime code from importing these raw transports again.
+Internal SIB requests retain their signed transport; external SIB-client requests are managed.
+
+SDK operations preserve existing result/error shapes. Mutating calls have no integration retries.
+SDKs that support cancellation receive an abort signal or native timeout; the integration deadline
+bounds waiting for opaque SDKs too. A timeout cannot prove non-delivery, so callers must reconcile
+uncertain messaging/payment outcomes instead of blindly resubmitting them.
+
+SMTP uses per-mailbox configuration, SES uses the SDK credential chain, Firebase uses an initialized
+Admin app, and public Apple JWKS verification needs no client secret. Their per-operation setup is
+validated by the existing clients rather than requiring unrelated global environment variables.
+
+The legacy WhatsApp service now uses actual Twilio/Meta/Infobip acknowledgements rather than
+invented IDs. Unsupported Karix/MessageBird delivery adapters return an explicit unavailable error.
+Connection checks state `verified: false` until a real provider exchange proves connectivity.
+ABDM fixture tokens/enrolments are unavailable in production, including when sandbox flags are set.
 
 ### Moving a vendor onto the layer
 
@@ -148,10 +183,8 @@ and payloads are never echoed to the client.
 4. Use `sendIntegrationError` in the routes, and document the 503/502 in the OpenAPI spec.
 5. Test: the vendor client against a fake fetch, and the production failure path.
 
-Suggested order, highest risk first: messaging (WhatsApp, Twilio, Gupshup — patient
-notifications), ABDM/NHCX, ElevenLabs, Apple sign-in, FCM. Razorpay last and with care
-(payments). The LLM vendors stay behind `llm-provider.js`, which owns their cascade; the
-cascade's calls can be wrapped in `call()` per provider.
+The surveyed vendors have been migrated. New vendors still need a catalogue entry and managed
+transport. LLM providers remain behind `llm-provider.js`, which continues to own their cascade.
 
 ### Rules for new code
 
@@ -173,7 +206,20 @@ coordinates, which a patient could save as their address for a home collection o
 Production now answers `503 INTEGRATION_NOT_CONFIGURED`, and the app should let the user type
 the address. Set `GOOGLE_PLACES_API_KEY` in SSM `/mediczy/prod` and reload to switch real lookup on.
 
-## Verification at adoption
+## Historical verification at adoption
 
 - `openapi-contract.test.js` 17/17, `integration-layer.test.js` 22/22, full server suite green.
 - Live check against the running server: 19/19 responses match the contract.
+
+
+## Verification of the expanded implementation
+
+Run the full backend suite (`cd server && npm test -- --runInBand`) and the contract export.
+Focused coverage includes `managed-vendor-transports`, `managed-messaging`,
+`managed-vendor-imports`, `mobile-openapi-contract`, `openapi-contract`, `integration-layer`,
+and `abdm-production-no-fixtures` tests. Transport and SDK tests use fake network boundaries:
+no real messages, payments or vendor submissions are made.
+
+The local read-only smoke script now checks the added patient read APIs as well. Run it only
+against the intended locally running staging backend. Actual vendor credentials and delivery,
+database/RLS behavior, and deployment are environment acceptance work, not established by unit tests.

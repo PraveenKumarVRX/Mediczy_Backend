@@ -12,7 +12,7 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import { SMSService } from '../services/sms.service.js';
-import twilio from 'twilio';
+import twilio from '../integrations/twilio.js';
 import emailService from '../services/emailService.js';
 import CommunicationLog from '../models/postgres/communication-log.model.postgres.js';
 import unifiedConversationService from '../services/unified-conversation.service.js';

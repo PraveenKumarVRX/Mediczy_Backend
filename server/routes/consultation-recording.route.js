@@ -7,7 +7,7 @@ import { Appointment as AppointmentModel } from '../models/index.js';   // inclu
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import FormData from 'form-data';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import multer from 'multer';

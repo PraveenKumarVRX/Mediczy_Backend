@@ -1,5 +1,5 @@
 import express from 'express';
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 import { nearbyFromDatabase, supportsType } from '../services/nearby-places.service.js';
 
 const router = express.Router();

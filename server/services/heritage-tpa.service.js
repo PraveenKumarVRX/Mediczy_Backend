@@ -3,7 +3,7 @@
  * Base URL: http://223.31.103.204/HeritageMobileAppNew/MobileAppAPI.svc
  */
 
-import axios from 'axios';
+import axios from '../integrations/axios.js';
 
 class HeritageTPA {
   constructor() {

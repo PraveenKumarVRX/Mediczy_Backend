@@ -2,7 +2,7 @@
  * Orthanc → HyperGrid bridge.
  * On Orthanc NewInstance webhook, forwards DICOM to Mediczy STOW-RS (S3 + hg_dicom_*).
  */
-import fetch from 'node-fetch';
+import fetch from '../integrations/fetch.js';
 import FormData from 'form-data';
 import logger from '../config/logger.js';
 import { orthancBasicAuthHeader } from '../utils/orthanc-credentials.js';

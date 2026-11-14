@@ -59,6 +59,17 @@ await check('get', `${E}/enrolment/window`, `${E}/enrolment/window`, { expectSta
 await check('post', `${E}/insurance/refresh`, `${E}/insurance/refresh`, { expectStatus: [200, 409, 503] });
 await check('get', '/api/addresses/autocomplete', '/api/addresses/autocomplete?input=Chennai%20Anna%20Nagar&country=in', { expectStatus: [200, 503] });
 
+// Patient read APIs added by contract 1.2. No sends, booking mutations or payment creation.
+for (const [path, url] of [
+  ['/api/appointments', '/api/appointments?upcoming=true'],
+  ['/api/lab-tests', '/api/lab-tests?limit=5'],
+  ['/api/pharmacy-orders', '/api/pharmacy-orders?limit=5'],
+  ['/api/pharmacy/medicines', '/api/pharmacy/medicines?q=paracetamol&limit=5'],
+  ['/api/billing/orders', '/api/billing/orders?limit=5'],
+  ['/api/membership/my/current', '/api/membership/my/current'],
+  ['/api/membership/plans', '/api/membership/plans'],
+]) await check('get', path, url, { expectStatus: [200] });
+
 for (const r of results) {
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.status}  ${r.label}`);
   for (const e of r.errors.slice(0, 5)) console.log(`        ${e}`);

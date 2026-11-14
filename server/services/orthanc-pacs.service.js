@@ -3,7 +3,7 @@
  * MediQzy stores metadata; Orthanc is the DICOM source of truth for OHIF.
  */
 import dicomParser from 'dicom-parser';
-import fetch from 'node-fetch';
+import fetch from '../integrations/fetch.js';
 import fs from 'fs';
 import logger from '../config/logger.js';
 import { orthancBasicAuthHeader } from '../utils/orthanc-credentials.js';

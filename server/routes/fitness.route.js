@@ -1,5 +1,5 @@
 import express from "express";
-import axios from "axios";
+import axios from "../integrations/axios.js";
 
 const router = express.Router();
 
