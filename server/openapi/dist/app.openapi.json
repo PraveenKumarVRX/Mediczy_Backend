@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -13623,7 +13623,8 @@
               {
                 "type": "string"
               }
-            ]
+            ],
+            "nullable": true
           },
           "appointmentDate": {
             "type": "string",

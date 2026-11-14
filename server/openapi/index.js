@@ -16,7 +16,7 @@ import { schemas, securitySchemes, responses } from './components.js';
 import { paths } from './paths.js';
 import { mobilePaths, mobileSchemas, mobileResponses } from './mobile.js';
 
-export const APP_SPEC_VERSION = '1.2.0';
+export const APP_SPEC_VERSION = '1.2.1';
 
 export function buildAppSpec() {
   return JSON.parse(JSON.stringify({

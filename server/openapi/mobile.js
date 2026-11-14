@@ -12,7 +12,7 @@ const message = record({ message: string, success: { type: 'boolean' }, code: st
 const pagination = record({ total: { type: 'integer' }, skip: { type: 'integer' }, limit: { type: 'integer' }, page: { type: 'integer' }, pages: { type: 'integer' } });
 const schedule = { appointmentDate: { type: 'string', format: 'date' }, appointmentTime: { type: 'string', description: 'Local appointment time, HH:MM (Asia/Kolkata).' } };
 export const mobileSchemas = {
-  AppAppointment: record({ id, userId: id, doctorId: id, ...schedule, status: { type: 'string', enum: ['scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show', 'rescheduled'] }, patientName: string,
+  AppAppointment: record({ id, userId: id, doctorId: { ...id, nullable: true }, ...schedule, status: { type: 'string', enum: ['scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show', 'rescheduled'] }, patientName: string,
     doctorName: string, consultationType: string, paymentStatus: string, metadata: object }, ['id', 'appointmentDate', 'appointmentTime', 'status']),
   AppLabTest: record({ id, userId: id, testType: string, testName: { ...string, nullable: true }, appointmentDate: { type: 'string', format: 'date-time' }, appointmentTime: { ...string, nullable: true },
     status: { type: 'string', enum: ['pending_confirmation', 'booked', 'completed', 'cancelled', 'no_show', 'rescheduled'] }, confirmationStatus: { type: 'string', enum: ['pending', 'confirmed', 'rejected'] },

@@ -34,4 +34,8 @@ describe('mobile API inventory', () => {
     expect(checkResponse(spec, 'get', '/api/lab-tests', 200, { success: true }).errors.join()).toContain('data');
     expect(validateAgainst(spec, { $ref: '#/components/schemas/AppMembershipCurrent' }, {}).length).toBe(5);
   });
+  it('accepts lab appointments without an assigned doctor', () => {
+    expect(validateAgainst(spec, { $ref: '#/components/schemas/AppAppointment' }, { id: 12, doctorId: null, appointmentDate: '2026-12-01', appointmentTime: '10:00', status: 'scheduled' })).toEqual([]);
+  });
+
 });
