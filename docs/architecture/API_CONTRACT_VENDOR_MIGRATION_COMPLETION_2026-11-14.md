@@ -1,7 +1,7 @@
 # API contract and vendor migration completion — 14 November 2026
 
 The remaining implementation from `API_CONTRACT_AND_INTEGRATIONS.md` is present locally.
-No deployment, real message send, vendor payment or production data repair was performed.
+At implementation handoff, no deployment, real message send, vendor payment or production data repair had been performed. The backend was subsequently deployed; see [the release record](../deployment/API_VENDOR_RELEASE_2026-11-14.md) for live validation and the frontend publishing blocker.
 
 ## Delivered
 

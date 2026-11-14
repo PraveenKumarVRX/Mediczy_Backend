@@ -1,6 +1,6 @@
 # API contract (OpenAPI) and integration layer
 
-Status: implementation expanded 2026-11-14 (OpenAPI 1.2.0). Owner: platform backend.
+Status: implementation expanded 2026-11-14 (OpenAPI 1.2.1). Owner: platform backend.
 
 Two rules came out of the API-tooling review (Postman, OpenAPI, Apigee, Kong, MuleSoft):
 
@@ -223,3 +223,5 @@ no real messages, payments or vendor submissions are made.
 The local read-only smoke script now checks the added patient read APIs as well. Run it only
 against the intended locally running staging backend. Actual vendor credentials and delivery,
 database/RLS behavior, and deployment are environment acceptance work, not established by unit tests.
+
+Release status and live validation: [14 November deployment record](../deployment/API_VENDOR_RELEASE_2026-11-14.md).
