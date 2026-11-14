@@ -6,6 +6,7 @@ import { MembershipPlan, UserPlan } from '../models/postgres/membershipPlan.mode
 import pool from '../db/pgPool.js';
 import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
+import { verifyPlanPayment } from '../services/plan-payment-verification.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
@@ -502,14 +503,26 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
 
     // Paid plans require a Razorpay payment ID — prevent free activation of paid plans.
     // W-PLAN-3: keep the API detail in the server log, not in the patient's face.
-    if (planPrice > 0 && !req.body.razorpay_payment_id) {
-      console.warn(`[membership] subscribe blocked for user ${req.user?.id}: plan ${plan.id} costs ${planPrice} but no razorpay_payment_id was supplied (client must complete payment, then enroll with the verified paymentId)`);
-      return res.status(400).json({
-        success: false,
-        message: 'Please complete payment to activate this plan.',
-        code: 'PAYMENT_REQUIRED',
-        action: 'Complete the payment for this plan to activate it'
-      });
+    // A paid plan activates only against a payment that verifies end to end:
+    // signature, captured amount covering the price, an order made for this
+    // user and plan, and not used before (audit M18). Previously any string in
+    // razorpay_payment_id activated the plan and recorded the price as paid.
+    let verifiedPaymentId = null;
+    if (planPrice > 0) {
+      const verified = await verifyPlanPayment({
+        userId: req.user.id, planId: plan.id, amountDueINR: planPrice,
+        orderId: req.body.razorpay_order_id, paymentId: req.body.razorpay_payment_id, signature: req.body.razorpay_signature,
+      }, { paymentService, UserPlan });
+      if (!verified.ok) {
+        console.warn(`[membership] subscribe refused for user ${req.user?.id}, plan ${plan.id}: ${verified.code}`);
+        return res.status(verified.status).json({
+          success: false,
+          message: verified.message,
+          code: verified.code,
+          action: 'Complete the payment for this plan to activate it'
+        });
+      }
+      verifiedPaymentId = verified.paymentId;
     }
     
     // For primary plans, prevent multiple active subscriptions
@@ -549,6 +562,9 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
       startDate: startDate.toISOString().slice(0,10),
       endDate: endDate.toISOString().slice(0,10),
       paidAmount: Number(plan.discountedPrice != null && plan.discountedPrice !== '0.00' && plan.discountedPrice !== 0 ? plan.discountedPrice : plan.price) || 0,
+      // Recorded so the same payment cannot activate a second plan.
+      paymentId: verifiedPaymentId,
+      paymentMethod: verifiedPaymentId ? 'razorpay' : null,
       metadata: {
         planName: plan.name,
         planType: planType,
@@ -932,9 +948,14 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
           message: 'Payment verification data required for this upgrade'
         });
       }
-      const isValid = paymentService.verifyPaymentSignature({ razorpay_order_id, razorpay_payment_id, razorpay_signature });
-      if (!isValid) {
-        return res.status(400).json({ message: 'Payment verification failed. Please retry.' });
+      // Signature alone proves the payment belongs to the order, not that the
+      // order was for this user, this plan or enough money (audit M18).
+      const verified = await verifyPlanPayment({
+        userId: req.user.id, planId: newPlan.id, amountDueINR: amountDue,
+        orderId: razorpay_order_id, paymentId: razorpay_payment_id, signature: razorpay_signature,
+      }, { paymentService, UserPlan });
+      if (!verified.ok) {
+        return res.status(verified.status).json({ success: false, code: verified.code, message: verified.message, amountDue });
       }
     }
 
