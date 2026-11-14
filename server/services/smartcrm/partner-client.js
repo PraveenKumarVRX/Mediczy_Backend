@@ -19,6 +19,7 @@ import { CircuitBreaker } from '../../utils/circuit-breaker.js';
 import {
   PARTNER_PREFIX, SmartCrmError, apiKeyFor, integrationEnabled, partnerBaseUrl,
 } from './config.js';
+import { createTlsTransport } from './tls-transport.js';
 
 export const PARTNER_PATHS = Object.freeze({
   summary:          { path: 'insurance/summary/',          methods: ['GET'] },
@@ -57,7 +58,7 @@ export const breakerStates = () => [...breakers.values()].map((b) => b.toJSON())
  */
 export async function partnerRequest(binding, link, {
   op, method = 'GET', userId, query = {}, body, idempotencyKey, requestId,
-  timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl,
 } = {}) {
   if (!integrationEnabled()) throw new SmartCrmError('DISABLED', 'Insurance sync is switched off.', 503);
   const spec = PARTNER_PATHS[op];
@@ -74,6 +75,11 @@ export async function partnerRequest(binding, link, {
   if (!Number.isSafeInteger(actor) || actor <= 0) {
     throw new SmartCrmError('NO_ACTOR', 'Partner calls must name the Mediqzy user acting.', 500);
   }
+
+  // Default transport = HTTPS with mutual TLS over the private link (see
+  // tls-transport.js). Refused, before anything is sent, when mTLS is
+  // required and not configured. Tests inject fetchImpl.
+  const send = fetchImpl || createTlsTransport();
 
   const breaker = breakerFor(binding.tenant_slug);
   if (breaker.isOpen()) {
@@ -109,7 +115,7 @@ export async function partnerRequest(binding, link, {
   const started = Date.now();
   let response;
   try {
-    response = await fetchImpl(url.toString(), { method, headers, body: payload, signal: controller.signal, redirect: 'error' });
+    response = await send(url.toString(), { method, headers, body: payload, signal: controller.signal, redirect: 'error' });
   } catch (error) {
     breaker.onFailure();
     const timedOut = error?.name === 'AbortError';
@@ -128,6 +134,10 @@ export async function partnerRequest(binding, link, {
     throw new SmartCrmError('UPSTREAM_ERROR', 'Insurance details are temporarily unavailable.', 502, { upstreamStatus: response.status });
   }
   breaker.onSuccess();
+  if (response.status >= 300 && response.status < 400) {
+    // Never followed: a redirect would carry the partner key somewhere else.
+    throw new SmartCrmError('UPSTREAM_REDIRECT', 'The insurer system answered unexpectedly.', 502, { upstreamStatus: response.status });
+  }
   if (text.length > MAX_BODY_BYTES) {
     throw new SmartCrmError('BAD_UPSTREAM_PAYLOAD', 'The insurer system sent an oversized response.', 502);
   }
