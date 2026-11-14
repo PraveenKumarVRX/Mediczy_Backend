@@ -104,3 +104,35 @@ describe('the routes use it', () => {
     expect(upgrade).not.toMatch(/const isValid = paymentService\.verifyPaymentSignature/);
   });
 });
+
+describe('orders priced by our payment-order (server-v1)', () => {
+  const serverOrder = (over = {}) => ({ id: 'order_1', amount: 400000, notes: { userId: String(USER), planId: String(PLAN), pricing: 'server-v1', kind: 'subscribe', ...over } });
+  const paid = (amount) => ({ ...honestPayment, amount });
+
+  it('accepts a coupon-discounted order the server priced, when paid in full', async () => {
+    await expect(verifyPlanPayment(input({ kind: 'subscribe' }), deps({ order: serverOrder(), payment: paid(400000) }))).resolves.toMatchObject({ ok: true, amountPaidINR: 4000 });
+  });
+
+  it('refuses it when underpaid', async () => {
+    await expect(verifyPlanPayment(input({ kind: 'subscribe' }), deps({ order: serverOrder(), payment: paid(100) }))).resolves.toMatchObject({ ok: false, code: 'PAYMENT_AMOUNT_MISMATCH' });
+  });
+
+  it('refuses a new-plan order used for an upgrade', async () => {
+    await expect(verifyPlanPayment(input({ kind: 'upgrade' }), deps({ order: serverOrder(), payment: paid(400000) }))).resolves.toMatchObject({ ok: false, code: 'PAYMENT_NOT_FOR_THIS_PLAN' });
+  });
+
+  it('a client-priced (legacy) order must still cover the full amount due', async () => {
+    const legacy = { id: 'order_1', amount: 400000, notes: { userId: String(USER), planId: String(PLAN) } };
+    await expect(verifyPlanPayment(input({ kind: 'subscribe' }), deps({ order: legacy, payment: paid(400000) }))).resolves.toMatchObject({ ok: false, code: 'PAYMENT_AMOUNT_MISMATCH' });
+  });
+});
+
+describe('payment-order prices on the server', () => {
+  const src = readFileSync(join(ROOT, 'routes/membership.route.js'), 'utf8');
+  const route = src.slice(src.indexOf("router.post('/payment-order'"), src.indexOf('\nrouter.', src.indexOf("router.post('/payment-order'") + 10));
+  it('quotes the plan itself and marks the order server-priced', () => {
+    expect(route).toMatch(/quotePlanPurchase\(/);
+    expect(route).toMatch(/pricing: 'server-v1'/);
+    expect(route).not.toMatch(/const numericAmount = Number\(amount/);
+  });
+});

@@ -7,6 +7,7 @@ import pool from '../db/pgPool.js';
 import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
 import { verifyPlanPayment } from '../services/plan-payment-verification.service.js';
+import { quotePlanPurchase, upgradeBaseDue } from '../services/plan-pricing.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
@@ -510,7 +511,7 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
     let verifiedPaymentId = null;
     if (planPrice > 0) {
       const verified = await verifyPlanPayment({
-        userId: req.user.id, planId: plan.id, amountDueINR: planPrice,
+        userId: req.user.id, planId: plan.id, amountDueINR: planPrice, kind: 'subscribe',
         orderId: req.body.razorpay_order_id, paymentId: req.body.razorpay_payment_id, signature: req.body.razorpay_signature,
       }, { paymentService, UserPlan });
       if (!verified.ok) {
@@ -764,8 +765,20 @@ router.post('/payment-order', authUser, [
   body('planName').notEmpty()
 ], async (req, res) => {
   try {
-    const { amount, planId, planName, couponCode, scope = COUPON_SCOPES.GYM_MEMBERSHIP } = req.body;
-    const numericAmount = Number(amount || 0);
+    const { amount, planId, couponCode, scope = COUPON_SCOPES.GYM_MEMBERSHIP } = req.body;
+    // The server prices the order (audit M18): plan price for a new plan, the
+    // prorated amount for an upgrade. The app's `amount` is only compared and
+    // logged — an order is never made for what the client asked.
+    const quote = await quotePlanPurchase({ userId: req.user.id, planId: Number(planId) }, { MembershipPlan, UserPlan });
+    if (!quote.ok) return res.status(quote.status).json({ success: false, code: quote.code, message: quote.message });
+    const numericAmount = quote.baseAmount;
+    const planName = quote.plan.name;
+    if (Math.abs(Number(amount || 0) - numericAmount) >= 1) {
+      console.warn(`[membership] payment-order for user ${req.user.id}, plan ${planId}: app sent ${amount}, server price ${numericAmount} (${quote.kind}) — using the server price`);
+    }
+    if (!(numericAmount > 0)) {
+      return res.status(400).json({ success: false, code: 'NOTHING_TO_PAY', message: 'No payment is due for this plan.', pricing: { amount: 0, kind: quote.kind } });
+    }
     const selectedScope = String(scope || COUPON_SCOPES.GYM_MEMBERSHIP).toUpperCase();
 
     let couponValidation = null;
@@ -815,6 +828,11 @@ router.post('/payment-order', authUser, [
         userId: String(req.user.id),
         planName,
         scope: selectedScope,
+        // Server-priced (audit M18): activation may trust this order's amount.
+        pricing: 'server-v1',
+        kind: quote.kind,
+        baseAmount: String(numericAmount),
+        discount: String(discount),
         ...(couponValidation ? { couponCode: couponValidation.coupon.code } : {})
       }
     });
@@ -836,7 +854,9 @@ router.post('/payment-order', authUser, [
         discount,
         finalAmount,
         couponCode: couponValidation?.coupon?.code || null,
-        scope: selectedScope
+        scope: selectedScope,
+        kind: quote.kind,
+        priced: 'server'
       }
     });
   } catch (e) {
@@ -905,21 +925,10 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
       return res.status(400).json({ message: 'You are already on this plan' });
     }
     
-    // Calculate prorated refund for remaining days
+    // Prorated refund for remaining days — the same arithmetic payment-order
+    // uses to price the order (services/plan-pricing.service.js).
     const today = new Date();
-    const endDate = new Date(currentUserPlan.endDate);
-    const startDate = new Date(currentUserPlan.startDate);
-    
-    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-    const remainingDays = Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)));
-    
-    const paidAmount = parseFloat(currentUserPlan.paidAmount || 0);
-    const dailyRate = totalDays > 0 ? paidAmount / totalDays : 0;
-    const proratedRefund = Math.round(dailyRate * remainingDays * 100) / 100;
-    
-    // Calculate new plan price
-    const newPlanPrice = parseFloat(newPlan.discountedPrice || newPlan.price || 0);
-    const baseAmountDue = Math.max(0, newPlanPrice - proratedRefund);
+    const { newPlanPrice, proratedRefund, remainingDays, baseAmountDue } = upgradeBaseDue(currentUserPlan, newPlan, today);
 
     const { couponCode, scope = COUPON_SCOPES.GYM_MEMBERSHIP } = req.body;
     const selectedScope = String(scope || COUPON_SCOPES.GYM_MEMBERSHIP).toUpperCase();
@@ -951,7 +960,7 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
       // Signature alone proves the payment belongs to the order, not that the
       // order was for this user, this plan or enough money (audit M18).
       const verified = await verifyPlanPayment({
-        userId: req.user.id, planId: newPlan.id, amountDueINR: amountDue,
+        userId: req.user.id, planId: newPlan.id, amountDueINR: amountDue, kind: 'upgrade',
         orderId: razorpay_order_id, paymentId: razorpay_payment_id, signature: razorpay_signature,
       }, { paymentService, UserPlan });
       if (!verified.ok) {
