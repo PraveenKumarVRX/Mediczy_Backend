@@ -832,6 +832,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/auth/doctor/oauth/status', // Doctor OAuth status (used by mobile/web clients)
   '/api/auth/facebook', // Facebook OAuth2 initiation (patient)
   '/api/auth/facebook/callback', // Facebook OAuth2 callback (patient)
+  '/api/auth/oauth/exchange', // Social-login PKCE hand-off: no token yet; the one-time code + verifier authenticate it
   '/api/auth/doctor/facebook', // Facebook OAuth2 initiation (doctor)
   '/api/auth/doctor/facebook/callback', // Facebook OAuth2 callback (doctor)
   '/api/users/login',

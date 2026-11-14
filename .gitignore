@@ -25,6 +25,8 @@ config/firebase-service-account-ios.json
 
 # Build outputs
 dist/
+# The app-facing API contract is a committed artifact (npm run openapi:export).
+!server/openapi/dist/
 build/
 client/dist/
 client/build/

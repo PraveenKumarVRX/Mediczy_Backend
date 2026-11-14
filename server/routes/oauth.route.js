@@ -15,6 +15,11 @@ import passport from 'passport';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { generateRefreshToken } from '../api/v2/auth.utils.js';
+import redis from '../config/redis.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import {
+  signState, verifyState, createHandoff, redeemHandoff, pkceRequired, isValidChallenge,
+} from '../services/oauth-handoff.service.js';
 
 const router = express.Router();
 
@@ -29,36 +34,45 @@ const toQueryString = (params = {}) =>
 const isAllowedMobileRedirectUri = (uri = '') =>
   MOBILE_REDIRECT_SCHEMES.some((allowed) => uri.startsWith(allowed));
 
+const appendQuery = (uri, params) => `${uri}${uri.includes('?') ? '&' : '?'}${toQueryString(params)}`;
+
+/**
+ * The state that round-trips through Google/Facebook for a mobile sign-in.
+ * Signed (services/oauth-handoff.service.js), so the redirect URI and the
+ * PKCE challenge cannot be swapped on the way. Returns { state } for a mobile
+ * flow, { state: null } for a web flow, or { error, … } when the app asked
+ * for a mobile flow it may not have (bad PKCE, PKCE required, missing state).
+ */
 const buildMobileState = (req) => {
   const mobileRedirectUri = String(req.query.mobile_redirect_uri || '').trim();
   const clientState = String(req.query.state || '').trim();
 
   if (!mobileRedirectUri || !isAllowedMobileRedirectUri(mobileRedirectUri)) {
-    return null;
+    return { state: null };
   }
 
-  const payload = {
-    mobileRedirectUri,
-    clientState: clientState || undefined,
-    source: 'mobile',
-  };
+  const codeChallenge = String(req.query.code_challenge || '').trim();
+  const method = String(req.query.code_challenge_method || 'S256').trim();
+  if (codeChallenge) {
+    if (method !== 'S256' || !isValidChallenge(codeChallenge)) return { error: 'invalid_pkce', mobileRedirectUri, clientState };
+    if (!clientState) return { error: 'state_required', mobileRedirectUri, clientState };
+  } else if (pkceRequired()) {
+    return { error: 'pkce_required', mobileRedirectUri, clientState };
+  }
 
-  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return {
+    state: signState({
+      mobileRedirectUri,
+      clientState: clientState || undefined,
+      codeChallenge: codeChallenge || undefined,
+      source: 'mobile',
+    }),
+  };
 };
 
 const parseMobileState = (state) => {
-  if (!state) return null;
-
-  try {
-    const decoded = Buffer.from(String(state), 'base64url').toString('utf8');
-    const parsed = JSON.parse(decoded);
-    if (parsed?.mobileRedirectUri && isAllowedMobileRedirectUri(parsed.mobileRedirectUri)) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const payload = verifyState(state);
+  return payload?.mobileRedirectUri && isAllowedMobileRedirectUri(payload.mobileRedirectUri) ? payload : null;
 };
 
 const buildOAuthSuccessRedirect = ({ req, provider, token, refreshToken, tenantId }) => {
@@ -97,10 +111,17 @@ const buildOAuthErrorRedirect = ({ req, provider, error = 'oauth_failed' }) => {
   return `/login?error=${provider}_${error}`;
 };
 
-const handleOAuthProviderSuccess = (req, res, provider) => {
+const handleOAuthProviderSuccess = async (req, res, provider) => {
   const { user } = req.user;
   // Carry tenant context through the callback (app convention: always return tenantId at login).
   const tenantId = user.tenant_id || user.tenantId || user.organization_id || user.organizationId || null;
+  const mobileState = parseMobileState(req.query.state);
+
+  // A mobile app that did not send PKCE gets no tokens once PKCE is required.
+  if (mobileState && !mobileState.codeChallenge && pkceRequired()) {
+    return res.redirect(buildOAuthErrorRedirect({ req, provider, error: 'pkce_required' }));
+  }
+
   const refreshToken = generateRefreshToken(user.id, user.role || 'patient');
   const token = jwt.sign(
     {
@@ -117,9 +138,40 @@ const handleOAuthProviderSuccess = (req, res, provider) => {
     JWT_CONFIG.SECRET || process.env.JWT_SECRET,
     { expiresIn: '30d' }
   );
+
+  // PKCE hand-off: the link carries a one-time code, never a token (audit M20).
+  if (mobileState?.codeChallenge) {
+    const code = await createHandoff({
+      tokens: { token, refreshToken, userType: 'patient', provider, ...(tenantId != null && tenantId !== '' ? { tenantId: String(tenantId) } : {}) },
+      codeChallenge: mobileState.codeChallenge,
+    }, redis);
+    return res.redirect(appendQuery(mobileState.mobileRedirectUri, { code, provider, state: mobileState.clientState }));
+  }
+
+  // Legacy hand-off (token in the link) — only until OAUTH_REQUIRE_PKCE=true.
   const redirectUrl = buildOAuthSuccessRedirect({ req, provider, token, refreshToken, tenantId });
-  res.redirect(redirectUrl);
+  return res.redirect(redirectUrl);
 };
+
+/**
+ * POST /api/auth/oauth/exchange   { code, code_verifier }
+ * Redeems the one-time code from a PKCE mobile sign-in for the tokens.
+ * Single use, 60 seconds; the code is consumed even when the verifier is wrong.
+ */
+router.post('/oauth/exchange', authLimiter, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const { code, code_verifier: codeVerifier } = req.body || {};
+  try {
+    const result = await redeemHandoff({ code, codeVerifier }, redis);
+    if (!result.ok) {
+      return res.status(400).json({ success: false, code: result.code, message: 'This sign-in has expired or was already used. Please sign in again.' });
+    }
+    return res.json({ success: true, ...result.tokens });
+  } catch (error) {
+    console.error('OAuth hand-off exchange failed:', error.message);
+    return res.status(503).json({ success: false, code: 'HANDOFF_UNAVAILABLE', message: 'Sign-in could not be completed. Please try again.' });
+  }
+});
 
 // ============================================================================
 // REMOVED: OAuth 2.0 authorization-server endpoints (RocketChat SSO)
@@ -150,7 +202,8 @@ const handleOAuthProviderSuccess = (req, res, provider) => {
  * Initiates Facebook OAuth2 login for patients
  */
 router.get('/facebook', (req, res, next) => {
-  const state = buildMobileState(req);
+  const { state, error, mobileRedirectUri, clientState } = buildMobileState(req);
+  if (error) return res.redirect(appendQuery(mobileRedirectUri, { error, provider: 'facebook', state: clientState }));
   const options = {
     scope: ['email', 'public_profile'],
     session: false,
@@ -173,7 +226,10 @@ router.get('/facebook/callback',
 
       req.user = authResult;
       try {
-        return handleOAuthProviderSuccess(req, res, 'facebook');
+        return Promise.resolve(handleOAuthProviderSuccess(req, res, 'facebook')).catch((error) => {
+          console.error('Patient Facebook OAuth hand-off error:', error.message);
+          if (!res.headersSent) res.redirect(buildOAuthErrorRedirect({ req, provider: 'facebook' }));
+        });
       } catch (error) {
         console.error('Patient Facebook OAuth success handler error:', error);
         const redirectUrl = buildOAuthErrorRedirect({ req, provider: 'facebook' });
@@ -188,7 +244,8 @@ router.get('/facebook/callback',
  * Initiates Google OAuth2 login for patients
  */
 router.get('/google', (req, res, next) => {
-  const state = buildMobileState(req);
+  const { state, error, mobileRedirectUri, clientState } = buildMobileState(req);
+  if (error) return res.redirect(appendQuery(mobileRedirectUri, { error, provider: 'google', state: clientState }));
   const options = {
     scope: ['profile', 'email'],
     session: false,
@@ -211,7 +268,10 @@ router.get('/google/callback',
 
       req.user = authResult;
       try {
-        return handleOAuthProviderSuccess(req, res, 'google');
+        return Promise.resolve(handleOAuthProviderSuccess(req, res, 'google')).catch((error) => {
+          console.error('Patient Google OAuth hand-off error:', error.message);
+          if (!res.headersSent) res.redirect(buildOAuthErrorRedirect({ req, provider: 'google' }));
+        });
       } catch (error) {
         console.error('Patient Google OAuth success handler error:', error);
         const redirectUrl = buildOAuthErrorRedirect({ req, provider: 'google' });

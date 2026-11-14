@@ -15,7 +15,7 @@
 import { schemas, securitySchemes, responses } from './components.js';
 import { paths } from './paths.js';
 
-export const APP_SPEC_VERSION = '1.0.0';
+export const APP_SPEC_VERSION = '1.1.0';
 
 export function buildAppSpec() {
   return JSON.parse(JSON.stringify({
@@ -27,14 +27,14 @@ export function buildAppSpec() {
         'The contract the My SmartHealth mobile app and partners build against.',
         'Authentication is a bearer JWT from sign-in. Every endpoint acts only for the caller; none takes a user, member or corporate id that would let one caller act for another.',
         'Errors carry `success: false` and a `message`; integration and SmartCRM errors add a stable `code` to branch on.',
-        'Scope of v1: /api/employee (corporate employee, policy wallet, SmartCRM link and enrolment), /api/addresses lookup, and admin integration status. Other endpoints are not yet part of the contract.',
+        'Scope: /api/employee (corporate employee, policy wallet, SmartCRM link and enrolment), /api/addresses lookup, the social sign-in hand-off, and admin integration status. Other endpoints are not yet part of the contract.',
       ].join('\n\n'),
     },
     servers: [{ url: '/', description: 'Same origin as the app backend' }],
     security: [{ bearerAuth: [] }],
     tags: [
       { name: 'Employee' }, { name: 'Employee network' }, { name: 'Benefits' }, { name: 'Policy wallet' },
-      { name: 'Claims' }, { name: 'Insurance (SmartCRM)' }, { name: 'Addresses' }, { name: 'Admin' },
+      { name: 'Claims' }, { name: 'Insurance (SmartCRM)' }, { name: 'Addresses' }, { name: 'Sign-in' }, { name: 'Admin' },
     ],
     paths,
     components: { schemas, securitySchemes, responses },

@@ -157,6 +157,31 @@ const addresses = {
   },
 };
 
+// ── /api/auth — social sign-in hand-off (PKCE, audit M20)
+const auth = {
+  '/api/auth/oauth/exchange': {
+    post: {
+      tags: ['Sign-in'],
+      summary: 'Redeem the one-time code from a Google/Facebook mobile sign-in for the tokens',
+      description: [
+        'Mobile flow: open /api/auth/google (or /facebook) with mobile_redirect_uri=mysmarthealth://oauth-callback, your own random `state`, and code_challenge = BASE64URL(SHA256(code_verifier)) with code_challenge_method=S256.',
+        'The app is called back with `code` and your `state` (check it matches) — never a token. Post the code with the original code_verifier here within 60 seconds. A code works once; a wrong verifier consumes it.',
+      ].join('\n\n'),
+      security: [],
+      requestBody: body({ type: 'object', required: ['code', 'code_verifier'], properties: {
+        code: { type: 'string', pattern: '^[A-Za-z0-9_-]{43}$' },
+        code_verifier: { type: 'string', minLength: 43, maxLength: 128, pattern: '^[A-Za-z0-9\\-._~]{43,128}$' },
+      } }),
+      responses: {
+        200: okWith({ token: { type: 'string' }, refreshToken: { type: 'string' }, userType: { type: 'string' }, provider: { type: 'string', enum: ['google', 'facebook'] }, tenantId: { type: 'string' } }, ['success', 'token', 'refreshToken']),
+        400: json({ type: 'object', required: ['success', 'code'], properties: { success: { type: 'boolean' }, code: { type: 'string', enum: ['INVALID_GRANT', 'INVALID_VERIFIER'] }, message: { type: 'string' } } }, 'Expired, already used, or the verifier does not match.'),
+        429: json(ref('Error'), 'Too many attempts.'),
+        503: json(ref('Error'), 'Hand-off storage unavailable; sign in again.'),
+      },
+    },
+  },
+};
+
 // ── /api/admin — operations for admins (internal)
 const admin = {
   '/api/admin/integrations': {
@@ -175,5 +200,5 @@ const admin = {
   },
 };
 
-export const paths = { ...employee, ...insurance, ...addresses, ...admin };
+export const paths = { ...employee, ...insurance, ...addresses, ...auth, ...admin };
 export default paths;

@@ -26,7 +26,7 @@ const FULLY_DOCUMENTED = [
   { file: 'routes/openapi.route.js', mount: '/api/admin/openapi' },
 ];
 /** Routers only partly in the contract: whatever is documented must exist. */
-const PARTLY_DOCUMENTED = [{ file: 'routes/address.route.js', mount: '/api/addresses' }];
+const PARTLY_DOCUMENTED = [{ file: 'routes/address.route.js', mount: '/api/addresses' }, { file: 'routes/oauth.route.js', mount: '/api/auth' }];
 
 describe('the spec itself', () => {
   it('is valid OpenAPI 3.0', async () => {
@@ -47,7 +47,8 @@ describe('the spec itself', () => {
   it('every operation documents 401 and at least one success response', () => {
     for (const { method, path } of operationsFromSpec(spec)) {
       const responses = spec.paths[path][method].responses;
-      expect([path, method, Boolean(responses['401'])]).toEqual([path, method, true]);
+      // Sign-in endpoints are called before there is a token to reject.
+      if (spec.paths[path][method].security?.length !== 0) expect([path, method, Boolean(responses['401'])]).toEqual([path, method, true]);
       expect([path, method, Object.keys(responses).some((s) => /^2\d\d$/.test(s))]).toEqual([path, method, true]);
     }
   });

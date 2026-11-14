@@ -1,0 +1,3593 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "My SmartHealth app API (Mediqzy)",
+    "version": "1.1.0",
+    "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication is a bearer JWT from sign-in. Every endpoint acts only for the caller; none takes a user, member or corporate id that would let one caller act for another.\n\nErrors carry `success: false` and a `message`; integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: /api/employee (corporate employee, policy wallet, SmartCRM link and enrolment), /api/addresses lookup, the social sign-in hand-off, and admin integration status. Other endpoints are not yet part of the contract."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin as the app backend"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Employee"
+    },
+    {
+      "name": "Employee network"
+    },
+    {
+      "name": "Benefits"
+    },
+    {
+      "name": "Policy wallet"
+    },
+    {
+      "name": "Claims"
+    },
+    {
+      "name": "Insurance (SmartCRM)"
+    },
+    {
+      "name": "Addresses"
+    },
+    {
+      "name": "Sign-in"
+    },
+    {
+      "name": "Admin"
+    }
+  ],
+  "paths": {
+    "/api/employee/my-corporate": {
+      "get": {
+        "tags": [
+          "Employee"
+        ],
+        "summary": "The caller's corporate, if they are a corporate employee",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyCorporate"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/context": {
+      "get": {
+        "tags": [
+          "Employee"
+        ],
+        "summary": "Corporate and employee context for the app shell",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmployeeContext"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/home": {
+      "get": {
+        "tags": [
+          "Employee"
+        ],
+        "summary": "Home screen aggregate: context, benefits, next appointment, wellness",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmployeeHome"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/my-labs": {
+      "get": {
+        "tags": [
+          "Employee network"
+        ],
+        "summary": "Labs assigned to the caller's corporate",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "isCorporateEmployee",
+                    "labs"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "isCorporateEmployee": {
+                      "type": "boolean"
+                    },
+                    "corporateId": {
+                      "type": "number"
+                    },
+                    "corporateName": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "number"
+                    },
+                    "labs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NetworkProvider"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/my-hospitals": {
+      "get": {
+        "tags": [
+          "Employee network"
+        ],
+        "summary": "Hospitals assigned to the caller's corporate",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "isCorporateEmployee",
+                    "hospitals"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "isCorporateEmployee": {
+                      "type": "boolean"
+                    },
+                    "corporateId": {
+                      "type": "number"
+                    },
+                    "corporateName": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "number"
+                    },
+                    "hospitals": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NetworkProvider"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/my-clinics": {
+      "get": {
+        "tags": [
+          "Employee network"
+        ],
+        "summary": "Clinics assigned to the caller's corporate",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "isCorporateEmployee",
+                    "clinics"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "isCorporateEmployee": {
+                      "type": "boolean"
+                    },
+                    "corporateId": {
+                      "type": "number"
+                    },
+                    "corporateName": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "number"
+                    },
+                    "clinics": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NetworkProvider"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/benefits": {
+      "get": {
+        "tags": [
+          "Benefits"
+        ],
+        "summary": "Benefits hub: plans, health check-ups, typed group policies and the SmartCRM link state",
+        "description": "An individual (non-corporate) member gets the same keys with empty lists. If the policy wallet cannot be read, `policiesUnavailable` is set and the rest still returns.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Benefits"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/policies/types": {
+      "get": {
+        "tags": [
+          "Policy wallet"
+        ],
+        "summary": "The seven group policy types and their display groups",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "types",
+                    "groups"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "types": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/PolicyTypeSpec"
+                      }
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/policies": {
+      "get": {
+        "tags": [
+          "Policy wallet"
+        ],
+        "summary": "Every policy the caller's family is on, typed, with enrolment state",
+        "description": "Members are filtered to the caller's own family. Each policy carries `enrolment` (mode in_app/web/off, status, web URL, last submission). `insurance` is the SmartCRM link state.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyWallet"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "description": "Policy tables not migrated in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/employee/policies/coverage-matrix": {
+      "get": {
+        "tags": [
+          "Policy wallet"
+        ],
+        "summary": "Who in the family is covered by which policy",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageMatrix"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/policies/{policyId}": {
+      "get": {
+        "tags": [
+          "Policy wallet"
+        ],
+        "summary": "One policy, with its top-up ladder",
+        "parameters": [
+          {
+            "name": "policyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "policy"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "policy": {
+                      "$ref": "#/components/schemas/Policy"
+                    },
+                    "ladder": {
+                      "$ref": "#/components/schemas/PolicyLadder",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/policies/{policyId}/claims": {
+      "get": {
+        "tags": [
+          "Policy wallet"
+        ],
+        "summary": "Claims against one policy",
+        "parameters": [
+          {
+            "name": "policyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "claims"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "policyId": {
+                      "type": "string"
+                    },
+                    "policyType": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/policies/{policyId}/members/{memberId}/e-card": {
+      "get": {
+        "tags": [
+          "Policy wallet"
+        ],
+        "summary": "E-card for one family member on one policy",
+        "parameters": [
+          {
+            "name": "policyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ECard"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/claims": {
+      "get": {
+        "tags": [
+          "Claims"
+        ],
+        "summary": "The caller's claims, newest first (max 50)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "claims"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "isCorporateEmployee": {
+                      "type": "boolean"
+                    },
+                    "corporateId": {
+                      "type": "number"
+                    },
+                    "corporateName": {
+                      "type": "string"
+                    },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Claim"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Claims"
+        ],
+        "summary": "Submit a claim with the member's own uploaded reports as documents",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "claim"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "claim": {
+                      "$ref": "#/components/schemas/Claim"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing provider/date/type, bad amount, or documents not the caller's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller's plan does not include insurance claims.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/employee/claims/eligibility": {
+      "get": {
+        "tags": [
+          "Claims"
+        ],
+        "summary": "Whether the caller may submit a claim, and why not",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "eligible"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "eligible": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "description": "Eligibility could not be checked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/employee/insurance/link": {
+      "get": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Link state, and whether the caller can link",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/InsuranceLinkState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Link the caller's insurance membership (explicit consent required)",
+        "description": "The employee code comes from the corporate roster, never from the request. Records DATA_SHARING consent, then performs a first refresh; `data.sync` reports that refresh.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "consent",
+                  "policyVersion"
+                ],
+                "properties": {
+                  "consent": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "policyVersion": {
+                    "type": "string",
+                    "example": "smartcrm-insurance-link-2026-11"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/InsuranceLinkState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/InsuranceLinkState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Unlink: withdraw consent and hide SmartCRM-projected policies",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "unlinked": {
+                          "type": "boolean"
+                        },
+                        "membersHidden": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/insurance/refresh": {
+      "post": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Re-read the caller's policies from SmartCRM (throttled to once a minute)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/enrolment/window": {
+      "get": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Enrolment window state (fails closed: only state \"open\" is open)",
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/enrolment/session": {
+      "post": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Start an enrolment session",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "SmartCRM's own payload, passed through unchanged."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/enrolment/draft": {
+      "get": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Read the server-side draft",
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Save the draft (refused while the window is closed)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "SmartCRM's own payload, passed through unchanged."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Discard the draft",
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/enrolment/quote": {
+      "post": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Price a selection (refused while the window is closed)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "SmartCRM's own payload, passed through unchanged."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/enrolment/payment/initiate": {
+      "post": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Start an online payment",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,128}$"
+            },
+            "description": "Same key + same body replays the stored answer (header Idempotent-Replayed: true); same key + different body is 422."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "SmartCRM's own payload, passed through unchanged."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Saved (submit)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Pending HR approval, with request_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Payment pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "422": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/enrolment/payment/status": {
+      "get": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Payment status",
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "order_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "session_token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/enrolment/submit": {
+      "post": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Submit the enrolment",
+        "description": "201 saved · 202 pending HR with request_id · 402 payment pending · 400 with detail. Refused (409 ENROLMENT_CLOSED) while the window is not open.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,128}$"
+            },
+            "description": "Same key + same body replays the stored answer (header Idempotent-Replayed: true); same key + different body is 422."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "SmartCRM's own payload, passed through unchanged."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Saved (submit)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Pending HR approval, with request_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Payment pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "422": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/enrolment/dependents": {
+      "post": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "Mid-term dependant addition (creates an HR approval request)",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,128}$"
+            },
+            "description": "Same key + same body replays the stored answer (header Idempotent-Replayed: true); same key + different body is 422."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "SmartCRM's own payload, passed through unchanged."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SmartCRM's answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Saved (submit)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Pending HR approval, with request_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Payment pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "SmartCRM's own payload, passed through unchanged."
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "422": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/addresses/autocomplete": {
+      "get": {
+        "tags": [
+          "Addresses"
+        ],
+        "summary": "Address suggestions as the user types",
+        "description": "Never returns invented addresses in production: if Google is unavailable or not configured the answer is 503 with an IntegrationError, and the app should let the user type the address.",
+        "parameters": [
+          {
+            "name": "input",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "in"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AddressPrediction"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/IntegrationUnavailable"
+          },
+          "503": {
+            "$ref": "#/components/responses/IntegrationUnavailable"
+          }
+        }
+      }
+    },
+    "/api/addresses/place/{placeId}": {
+      "get": {
+        "tags": [
+          "Addresses"
+        ],
+        "summary": "Full address for a suggestion the user picked",
+        "parameters": [
+          {
+            "name": "placeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PlaceDetails"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/IntegrationUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/IntegrationUnavailable"
+          },
+          "503": {
+            "$ref": "#/components/responses/IntegrationUnavailable"
+          }
+        }
+      }
+    },
+    "/api/auth/oauth/exchange": {
+      "post": {
+        "tags": [
+          "Sign-in"
+        ],
+        "summary": "Redeem the one-time code from a Google/Facebook mobile sign-in for the tokens",
+        "description": "Mobile flow: open /api/auth/google (or /facebook) with mobile_redirect_uri=mysmarthealth://oauth-callback, your own random `state`, and code_challenge = BASE64URL(SHA256(code_verifier)) with code_challenge_method=S256.\n\nThe app is called back with `code` and your `state` (check it matches) — never a token. Post the code with the original code_verifier here within 60 seconds. A code works once; a wrong verifier consumes it.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "code_verifier"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43}$"
+                  },
+                  "code_verifier": {
+                    "type": "string",
+                    "minLength": 43,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9\\-._~]{43,128}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "token",
+                    "refreshToken"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    },
+                    "userType": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "google",
+                        "facebook"
+                      ]
+                    },
+                    "tenantId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Expired, already used, or the verifier does not match.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "code"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "INVALID_GRANT",
+                        "INVALID_VERIFIER"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Hand-off storage unavailable; sign in again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Every third-party API: managed?, enabled, configured, circuit, metrics",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "summary",
+                    "integrations"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "generatedAt": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    },
+                    "integrations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IntegrationStatus"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/{id}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "One third-party API's status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "e.g. google-places"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "integration": {
+                      "$ref": "#/components/schemas/IntegrationStatus"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/admin/openapi/app.json": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "This contract, as JSON",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "IntegrationError": {
+        "type": "object",
+        "required": [
+          "success",
+          "code",
+          "message",
+          "retryable"
+        ],
+        "description": "A third-party API Mediqzy depends on is unavailable, switched off, not configured or answered badly. `retryable` says whether trying again later can help.",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "INTEGRATION_DISABLED",
+              "INTEGRATION_NOT_CONFIGURED",
+              "INTEGRATION_CIRCUIT_OPEN",
+              "INTEGRATION_TIMEOUT",
+              "INTEGRATION_UNAVAILABLE",
+              "INTEGRATION_UPSTREAM_ERROR",
+              "INTEGRATION_BAD_RESPONSE",
+              "INTEGRATION_REJECTED",
+              "INTEGRATION_HOST_NOT_ALLOWED"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SmartCrmError": {
+        "type": "object",
+        "required": [
+          "success",
+          "code",
+          "message"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "code": {
+            "type": "string",
+            "example": "NOT_LINKED"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "CorporateRef": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "EmployeeRef": {
+        "type": "object",
+        "properties": {
+          "employeeId": {
+            "type": "string"
+          },
+          "department": {
+            "type": "string",
+            "nullable": true
+          },
+          "designation": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MyCorporate": {
+        "type": "object",
+        "required": [
+          "success",
+          "isCorporateEmployee"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "isCorporateEmployee": {
+            "type": "boolean"
+          },
+          "corporate": {
+            "$ref": "#/components/schemas/CorporateRef",
+            "nullable": true
+          }
+        }
+      },
+      "EmployeeContext": {
+        "type": "object",
+        "required": [
+          "success",
+          "isCorporateEmployee"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "audience": {
+            "type": "string"
+          },
+          "isCorporateEmployee": {
+            "type": "boolean"
+          },
+          "corporate": {
+            "$ref": "#/components/schemas/CorporateRef",
+            "nullable": true
+          },
+          "employee": {
+            "$ref": "#/components/schemas/EmployeeRef",
+            "nullable": true
+          }
+        }
+      },
+      "EmployeeHome": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "audience": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "corporate": {
+                "$ref": "#/components/schemas/CorporateRef",
+                "nullable": true
+              },
+              "employee": {
+                "$ref": "#/components/schemas/EmployeeRef",
+                "nullable": true
+              }
+            }
+          },
+          "benefits": {
+            "type": "object",
+            "properties": {
+              "wallets": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "annualHealthCheckups": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "sponsoredPlans": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "networkProviders": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "upcomingAppointment": {
+            "type": "object",
+            "nullable": true
+          },
+          "wellness": {
+            "type": "object",
+            "properties": {
+              "events": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "challenges": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "privacyNotice": {
+            "type": "string"
+          }
+        }
+      },
+      "NetworkProvider": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "services": {
+            "type": "array",
+            "items": {}
+          },
+          "rating": {
+            "type": "number"
+          },
+          "accreditation": {
+            "nullable": true
+          },
+          "facilities": {
+            "type": "array",
+            "items": {}
+          },
+          "isCorpAssigned": {
+            "type": "boolean"
+          },
+          "corporateId": {
+            "type": "number"
+          },
+          "corporateName": {
+            "type": "string"
+          },
+          "corpDiscount": {
+            "type": "number"
+          }
+        }
+      },
+      "Claim": {
+        "type": "object",
+        "required": [
+          "id",
+          "claimNumber",
+          "status",
+          "amount"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "claimNumber": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "benefitCategory": {
+            "type": "string",
+            "enum": [
+              "insurance",
+              "wellness"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "approvedAmount": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "submitted",
+              "under_review",
+              "info_needed",
+              "approved",
+              "rejected",
+              "settled"
+            ]
+          },
+          "hospital": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "member": {
+            "type": "string"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "ClaimCreate": {
+        "type": "object",
+        "required": [
+          "claimType",
+          "hospital",
+          "date",
+          "amount",
+          "documents"
+        ],
+        "properties": {
+          "claimType": {
+            "type": "string",
+            "enum": [
+              "Cashless",
+              "Reimbursement"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Category, e.g. opd, pharmacy, dental, hospitalization, maternity."
+          },
+          "hospital": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          },
+          "diagnosis": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "documents": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "pattern": "^report:\\d+$"
+            },
+            "description": "The member's own uploaded reports, as report:<id>."
+          },
+          "memberId": {
+            "type": "string",
+            "default": "self",
+            "description": "\"self\" or the id of one of the member's own family members."
+          }
+        }
+      },
+      "PolicyMember": {
+        "type": "object",
+        "required": [
+          "memberId",
+          "relation",
+          "isSelf"
+        ],
+        "properties": {
+          "memberId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "relation": {
+            "type": "string"
+          },
+          "relationGroup": {
+            "type": "string"
+          },
+          "dob": {
+            "type": "string",
+            "nullable": true
+          },
+          "sumInsured": {
+            "type": "number",
+            "nullable": true
+          },
+          "used": {
+            "type": "number",
+            "nullable": true
+          },
+          "remaining": {
+            "type": "number",
+            "nullable": true
+          },
+          "isSelf": {
+            "type": "boolean"
+          },
+          "cardNumber": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Enrolment": {
+        "type": "object",
+        "required": [
+          "open",
+          "status",
+          "mode"
+        ],
+        "description": "How and whether the member can enrol on this policy (ADR-001 phase 1).",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "upcoming",
+              "closed",
+              "not_set",
+              "live_check"
+            ],
+            "description": "live_check: SmartCRM owns the window; ask GET /api/employee/enrolment/window."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "in_app",
+              "web",
+              "off"
+            ]
+          },
+          "webUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "submission": {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "saved",
+                  "pending_hr",
+                  "payment_pending",
+                  "rejected"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "nullable": true
+              },
+              "detail": {
+                "nullable": true
+              },
+              "at": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "nullable": true
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Policy": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "name",
+          "status",
+          "members",
+          "enrolment",
+          "missing"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "insurance_policies",
+              "smartcrm"
+            ],
+            "description": "smartcrm = projected from SmartCRM, the system of record."
+          },
+          "policyType": {
+            "type": "string",
+            "nullable": true
+          },
+          "policyTypeRecognised": {
+            "type": "boolean"
+          },
+          "group": {
+            "type": "string"
+          },
+          "typeLabel": {
+            "type": "string",
+            "nullable": true
+          },
+          "typeBadge": {
+            "type": "string",
+            "nullable": true
+          },
+          "protects": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "policyNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "insurer": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string",
+            "nullable": true
+          },
+          "validTo": {
+            "type": "string",
+            "nullable": true
+          },
+          "keyNumberField": {
+            "type": "string",
+            "nullable": true
+          },
+          "sumInsured": {
+            "type": "number",
+            "nullable": true
+          },
+          "utilized": {
+            "type": "number",
+            "nullable": true
+          },
+          "remaining": {
+            "type": "number",
+            "nullable": true
+          },
+          "coverAmount": {
+            "type": "number",
+            "nullable": true
+          },
+          "floater": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "deductible": {
+            "type": "number",
+            "nullable": true
+          },
+          "baseSumInsured": {
+            "type": "number",
+            "nullable": true
+          },
+          "linkedBasePolicyId": {
+            "type": "string",
+            "nullable": true
+          },
+          "copayPercent": {
+            "type": "number",
+            "nullable": true
+          },
+          "roomRentLimit": {
+            "type": "number",
+            "nullable": true
+          },
+          "maternity": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "waitingPeriods": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "benefitSchedule": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "opLimits": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "nominee": {
+            "type": "object",
+            "nullable": true
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyMember"
+            }
+          },
+          "familyCovered": {
+            "type": "number"
+          },
+          "hasECard": {
+            "type": "boolean"
+          },
+          "hasNominee": {
+            "type": "boolean"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "voluntary": {
+            "type": "boolean"
+          },
+          "premiumPerYear": {
+            "type": "number",
+            "nullable": true
+          },
+          "enrolment": {
+            "$ref": "#/components/schemas/Enrolment"
+          },
+          "policyDocumentUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimFormUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Terms the employer never supplied — shown as missing, never defaulted."
+          },
+          "tpa": {
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "PolicyGroup": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "policies"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "emptyLine": {
+            "type": "string",
+            "nullable": true
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PolicyLadder": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "string"
+          },
+          "basePolicyId": {
+            "type": "string",
+            "nullable": true
+          },
+          "basePolicyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "baseSumInsured": {
+            "type": "number",
+            "nullable": true
+          },
+          "baseUsed": {
+            "type": "number",
+            "nullable": true
+          },
+          "topUpPolicyId": {
+            "type": "string"
+          },
+          "topUpPolicyName": {
+            "type": "string"
+          },
+          "topUpSumInsured": {
+            "type": "number",
+            "nullable": true
+          },
+          "deductible": {
+            "type": "number"
+          },
+          "startsPayingAfter": {
+            "type": "number"
+          },
+          "copayPercent": {
+            "type": "number",
+            "nullable": true
+          },
+          "roomRentLimit": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "PolicySummary": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "number",
+              "nullable": true
+            },
+            "group": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "InsuranceLinkState": {
+        "type": "object",
+        "required": [
+          "linked"
+        ],
+        "description": "Whether this member's insurance is linked to SmartCRM (ADR-001).",
+        "properties": {
+          "linked": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "unlinked",
+              "mismatch"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "employeeCodeHint": {
+            "type": "string",
+            "nullable": true
+          },
+          "linkedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "syncedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          },
+          "readEnabled": {
+            "type": "boolean"
+          },
+          "canLink": {
+            "type": "object",
+            "properties": {
+              "eligible": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "consentPolicyVersion": {
+                "type": "string"
+              }
+            },
+            "nullable": true
+          }
+        }
+      },
+      "PolicyWallet": {
+        "type": "object",
+        "required": [
+          "success",
+          "policies",
+          "groups",
+          "summary",
+          "ladders",
+          "insurance"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Policy"
+            }
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyGroup"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PolicySummary"
+          },
+          "ladders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyLadder"
+            }
+          },
+          "insurance": {
+            "$ref": "#/components/schemas/InsuranceLinkState"
+          }
+        }
+      },
+      "PolicyTypeSpec": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "shortLabel": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "protects": {
+            "type": "string"
+          },
+          "keyNumberField": {
+            "type": "string"
+          },
+          "hasECard": {
+            "type": "boolean"
+          },
+          "hasNominee": {
+            "type": "boolean"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CoverageMatrix": {
+        "type": "object",
+        "required": [
+          "success",
+          "columns",
+          "rows"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "policyId": {
+                  "type": "string"
+                },
+                "policyType": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "label": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "group": {
+                  "type": "string"
+                },
+                "hasECard": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "relation": {
+                  "type": "string"
+                },
+                "relationGroup": {
+                  "type": "string"
+                },
+                "dob": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "isSelf": {
+                  "type": "boolean"
+                },
+                "cover": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "covered": {
+                        "type": "boolean"
+                      },
+                      "shared": {
+                        "type": "boolean"
+                      },
+                      "sumInsured": {
+                        "type": "number",
+                        "nullable": true
+                      },
+                      "memberId": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "hasCard": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ECard": {
+        "type": "object",
+        "required": [
+          "success",
+          "ecard"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "ecard": {
+            "type": "object",
+            "properties": {
+              "cardNumber": {
+                "type": "string",
+                "nullable": true
+              },
+              "policyId": {
+                "type": "string"
+              },
+              "policyType": {
+                "type": "string",
+                "nullable": true
+              },
+              "policyNumber": {
+                "type": "string",
+                "nullable": true
+              },
+              "planName": {
+                "type": "string",
+                "nullable": true
+              },
+              "insurer": {
+                "type": "string",
+                "nullable": true
+              },
+              "memberId": {
+                "type": "string"
+              },
+              "memberName": {
+                "type": "string",
+                "nullable": true
+              },
+              "relation": {
+                "type": "string"
+              },
+              "relationGroup": {
+                "type": "string"
+              },
+              "dob": {
+                "type": "string",
+                "nullable": true
+              },
+              "validFrom": {
+                "type": "string",
+                "nullable": true
+              },
+              "validTill": {
+                "type": "string",
+                "nullable": true
+              },
+              "sumInsured": {
+                "type": "number",
+                "nullable": true
+              },
+              "shared": {
+                "type": "boolean"
+              },
+              "copayPercent": {
+                "type": "number",
+                "nullable": true
+              },
+              "roomRentLimit": {
+                "type": "number",
+                "nullable": true
+              },
+              "tpa": {
+                "type": "object",
+                "nullable": true
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "topUp": {
+            "type": "object",
+            "properties": {
+              "policyId": {
+                "type": "string"
+              },
+              "startsPayingAfter": {
+                "type": "number"
+              }
+            },
+            "nullable": true
+          }
+        }
+      },
+      "Benefits": {
+        "type": "object",
+        "required": [
+          "success",
+          "isCorporateEmployee",
+          "policies",
+          "insuranceLink"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "isCorporateEmployee": {
+            "type": "boolean"
+          },
+          "corporateId": {
+            "type": "number"
+          },
+          "corporateName": {
+            "type": "string"
+          },
+          "plans": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "healthCheckups": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Policy"
+            }
+          },
+          "policyGroups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyGroup"
+            }
+          },
+          "policySummary": {
+            "$ref": "#/components/schemas/PolicySummary",
+            "nullable": true
+          },
+          "policyLadders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyLadder"
+            }
+          },
+          "insuranceLink": {
+            "$ref": "#/components/schemas/InsuranceLinkState"
+          },
+          "policiesUnavailable": {
+            "type": "string",
+            "description": "Set when the policy wallet could not be read; the rest of the response still stands.",
+            "nullable": true
+          }
+        }
+      },
+      "AddressPrediction": {
+        "type": "object",
+        "required": [
+          "placeId",
+          "description"
+        ],
+        "properties": {
+          "placeId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "mainText": {
+            "type": "string"
+          },
+          "secondaryText": {
+            "type": "string"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PlaceDetails": {
+        "type": "object",
+        "required": [
+          "placeId",
+          "formattedAddress"
+        ],
+        "properties": {
+          "placeId": {
+            "type": "string"
+          },
+          "formattedAddress": {
+            "type": "string"
+          },
+          "street": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "nullable": true
+          },
+          "placeData": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "IntegrationStatus": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "dataClass",
+          "managed",
+          "enabled",
+          "configured",
+          "circuit"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "dataClass": {
+            "type": "string",
+            "enum": [
+              "phi",
+              "pii",
+              "none"
+            ]
+          },
+          "managed": {
+            "type": "string",
+            "enum": [
+              "core",
+              "own-client",
+              "unmanaged"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "killSwitch": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "missingEnv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedHosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "timeoutMs": {
+            "type": "number"
+          },
+          "circuit": {
+            "type": "string",
+            "enum": [
+              "CLOSED",
+              "HALF-OPEN",
+              "OPEN"
+            ]
+          },
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "calls": {
+                "type": "number"
+              },
+              "ok": {
+                "type": "number"
+              },
+              "failed": {
+                "type": "number"
+              },
+              "refused": {
+                "type": "number"
+              },
+              "retries": {
+                "type": "number"
+              },
+              "p50Ms": {
+                "type": "number",
+                "nullable": true
+              },
+              "p95Ms": {
+                "type": "number",
+                "nullable": true
+              },
+              "lastSuccessAt": {
+                "type": "string",
+                "nullable": true
+              },
+              "lastFailureAt": {
+                "type": "string",
+                "nullable": true
+              },
+              "lastErrorCode": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "health": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "The token returned by sign-in."
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing, expired or invalid token.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The caller's account type may not use this endpoint.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not found, or not the caller's.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Unexpected server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "IntegrationUnavailable": {
+        "description": "A third-party API this endpoint depends on is unavailable. See `retryable`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IntegrationError"
+            }
+          }
+        }
+      },
+      "SmartCrmRefusal": {
+        "description": "Refused by the SmartCRM integration (not linked, switched off, window closed, …). Branch on `code`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SmartCrmError"
+            }
+          }
+        }
+      }
+    }
+  }
+}
