@@ -1,6 +1,6 @@
 # API and vendor-layer release — 14 November 2026
 
-Status: **backend deployed and verified; frontend build ready, publication blocked by AWS IAM**.
+Status: **backend and frontend deployed and verified**.
 
 ## Source and build
 
@@ -36,27 +36,32 @@ No frontend source changed between the build commit and the contract correction.
   `SMOKE_READ_ONLY=true`; mutation/call/notification scenarios were deliberately skipped.
 - The contract correction passed 35 focused contract tests. Before deployment the full
   backend suite passed 3,081 tests; final transport/contact-center checks passed 96 tests.
-- Existing public frontend HTTPS returns 200. Direct localhost:443 with the app hostname instead
-  reaches the server's separate self-signed `smart-chat.live` certificate; it is not the public
-  frontend TLS termination and was not treated as the app's certificate check.
+- Frontend published with `scripts/deploy/deploy-frontend-nginx.sh` to the active document root,
+  `/home/ubuntu/Mediczy/client/dist`. Nginx configuration validation and reload passed.
+- Public `https://app.mediqzy.com/index.html` exactly matches the prepared build. The main
+  bundle is `/assets/index-CC4uAVjv.js`. All four entry-point JavaScript/CSS files returned 200
+  and their SHA-256 hashes match the local build.
+- `verify-spa-routes.sh` passed: `/scm/dashboard`, `/scm/login`, `/doctor/login`, and
+  `/team/settings` all return 200 HTML; the main bundle contains the SCM route.
+- Backend health remained healthy after frontend publication. Old hashed assets were retained;
+  the previous entry point is backed up at
+  `.deploy/releases/2026-11-14-api-vendor/frontend-nginx/previous-index.html`.
 
 Detailed build, reload and smoke logs are in the directory recorded by `.deploy/active-release-dir`.
 The canonical runner's generated report was copied there, and the pre-existing local
 `SANITY_CHECK_RESULTS.json` was restored. Unrelated local reference files were retained.
 
-## Remaining external blocker: frontend publication
+## Deployment-path correction
 
-The existing EC2 identity `EC2-SSM-Role` was denied both:
+The initial S3 deployment attempt was denied `s3:ListBucket` and `s3:PutObject` under the
+existing EC2 role. Subsequent origin verification established that **the live app is served
+from Nginx `client/dist`, not from that S3 bucket**: the pre-deploy public bundle matched the
+Nginx document root and differed from the S3 entry point. The S3 permission denial therefore
+did not block the actual frontend deployment. No IAM permissions or CDN topology were changed.
 
-- `s3:ListBucket` on `arn:aws:s3:::app.mediqzy.com` during the normal deploy script.
-- `s3:PutObject` on the known build asset when attempting an upload without listing.
+The frontend-only shell script verifies the configured Nginx root and build references, copies
+assets first without deletion, atomically replaces `index.html`, reloads Nginx, and verifies the
+served index. If a step after publication fails, it restores the backed-up entry point.
+The deployment neither reinstalled dependencies nor restarted the already-verified backend.
 
-Only the default AWS profile is present; neither local environment files nor the approved
-SSM runtime environment provides another deployment identity. No IAM permissions were changed.
-The existing S3 `index.html` is byte-for-byte unchanged after the denied uploads. No frontend
-entry point was replaced and no production assets were deleted.
-
-An approved deployment identity/environment with S3 publishing and the intended CloudFront
-permissions is required to finish. The build is already packaged; extract it to a build directory
-and run `BUILD_DIR=<that-directory> bash scripts/deploy/deploy-frontend-s3.sh` under that identity.
-Then verify the published index/assets and SPA routes before marking frontend deployment complete.
+The current public frontend and backend are both verified. No frontend publishing task remains.
