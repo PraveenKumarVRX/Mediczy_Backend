@@ -1,27 +1,65 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
+import { redeemOAuthCode } from './oauthPkce';
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.VITE_API_URL
+    ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '')
+    : typeof window !== 'undefined' ? window.location.origin : '');
 
 /**
  * OAuth Callback Handler
  * 
- * Handles OAuth2 callback from Google and Facebook
- * Exchanges authorization code for JWT token
+ * Handles OAuth2 callback from Google and Facebook.
+ *
+ * PKCE flow (audit M20): the URL carries a one-time `code` and our `state`;
+ * the code is redeemed with the verifier this browser kept (oauthPkce.ts).
+ * Legacy flow: the URL carries `token` — only for pages started before the
+ * PKCE release, and refused by the server once OAUTH_REQUIRE_PKCE is on.
  */
 const OAuthCallback = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
   const [isProcessing, setIsProcessing] = useState(true);
+  // A one-time code may be redeemed once; React may run this effect twice.
+  const started = useRef(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     const handleOAuthCallback = async () => {
       try {
         // Get parameters from callback
-        const token = searchParams.get('token');
-        const userType = searchParams.get('userType');
-        const provider = searchParams.get('provider');
+        const code = searchParams.get('code');
+        let token = searchParams.get('token');
+        let userType = searchParams.get('userType');
+        let provider = searchParams.get('provider');
+        let refreshToken: string | undefined;
         const error = searchParams.get('error');
+
+        // Remove the code/token from the address bar and history right away.
+        if (code || token) window.history.replaceState(null, '', window.location.pathname);
+
+        if (code && !error) {
+          try {
+            const tokens = await redeemOAuthCode(API_BASE_URL, code, searchParams.get('state'));
+            token = tokens.token;
+            userType = tokens.userType;
+            provider = tokens.provider || provider;
+            refreshToken = tokens.refreshToken;
+          } catch (exchangeError) {
+            toast({
+              variant: "destructive",
+              title: "Sign-in not completed",
+              description: exchangeError instanceof Error ? exchangeError.message : 'Please sign in again.'
+            });
+            navigate('/login', { replace: true });
+            return;
+          }
+        }
 
         // Check for errors
         if (error) {
@@ -53,12 +91,14 @@ const OAuthCallback = () => {
         if (userType === 'doctor') {
           localStorage.setItem('doctorToken', token);
           localStorage.setItem('userType', 'doctor');
+          if (refreshToken) localStorage.setItem('doctorRefreshToken', refreshToken);
         } else {
           localStorage.setItem('token', token);
           localStorage.setItem('userType', userType);
+          if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
         }
         
-        localStorage.setItem('oauthProvider', provider);
+        if (provider) localStorage.setItem('oauthProvider', provider);
 
         // Dispatch auth change event
         window.dispatchEvent(new Event('authChange'));

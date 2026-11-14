@@ -6,6 +6,8 @@ import Doctor from '../models/doctor.model.intelligent.js';
 import { processOAuthProfilePicture } from '../utils/oauth-profile-picture.js';
 import { issuePortalTokenPair } from '../services/token-revocation.service.js';
 import { generateOAuthPassword, isOAuthEmailVerified } from '../utils/oauth-security.js';
+import redis from '../config/redis.js';
+import { signState, verifyState, createHandoff, pkceRequired, isValidChallenge } from '../services/oauth-handoff.service.js';
 
 const router = express.Router();
 
@@ -23,42 +25,57 @@ const toQueryString = (params = {}) =>
 const isAllowedDoctorMobileRedirectUri = (uri = '') =>
   DOCTOR_MOBILE_REDIRECT_SCHEMES.some((allowed) => uri.startsWith(allowed));
 
+const appendQuery = (uri, params) => `${uri}${uri.includes('?') ? '&' : '?'}${toQueryString(params)}`;
+const doctorWebBase = () => (process.env.NODE_ENV === 'production' ? 'https://app.mediqzy.com' : 'http://localhost:3001');
+
+/**
+ * Signed round-trip state for a doctor sign-in (audit M20; same scheme as the
+ * patient router, services/oauth-handoff.service.js). PKCE is accepted for the
+ * doctor app (mobile_redirect_uri) and for the web portal; with it the callback
+ * hands over a one-time code, never a token.
+ * Returns { state } | { state: null } (legacy web) | { error, mobileRedirectUri, clientState }.
+ */
 const buildDoctorMobileState = (req) => {
   const mobileRedirectUri = String(req.query.mobile_redirect_uri || '').trim();
   const clientState = String(req.query.state || '').trim();
+  const isMobile = Boolean(mobileRedirectUri) && isAllowedDoctorMobileRedirectUri(mobileRedirectUri);
+  const target = isMobile ? mobileRedirectUri : null;
+  const codeChallenge = String(req.query.code_challenge || '').trim();
+  const method = String(req.query.code_challenge_method || 'S256').trim();
 
-  if (!mobileRedirectUri || !isAllowedDoctorMobileRedirectUri(mobileRedirectUri)) {
-    return null;
+  if (codeChallenge) {
+    if (method !== 'S256' || !isValidChallenge(codeChallenge)) return { error: 'invalid_pkce', mobileRedirectUri: target, clientState };
+    if (!clientState) return { error: 'state_required', mobileRedirectUri: target, clientState };
+  } else if (isMobile && pkceRequired()) {
+    return { error: 'pkce_required', mobileRedirectUri, clientState };
   }
+  if (!isMobile && !codeChallenge) return { state: null };
 
-  const payload = {
-    mobileRedirectUri,
-    clientState: clientState || undefined,
-    source: 'doctor-mobile',
+  return {
+    state: signState({
+      mobileRedirectUri: target || undefined,
+      clientState: clientState || undefined,
+      codeChallenge: codeChallenge || undefined,
+      source: isMobile ? 'doctor-mobile' : 'doctor-web',
+    }),
   };
-
-  return Buffer.from(JSON.stringify(payload)).toString('base64url');
 };
 
 const parseDoctorMobileState = (state) => {
-  if (!state) return null;
-
-  try {
-    const decoded = Buffer.from(String(state), 'base64url').toString('utf8');
-    const parsed = JSON.parse(decoded);
-    if (parsed?.mobileRedirectUri && isAllowedDoctorMobileRedirectUri(parsed.mobileRedirectUri)) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const payload = verifyState(state);
+  if (!payload) return null;
+  if (payload.mobileRedirectUri && !isAllowedDoctorMobileRedirectUri(payload.mobileRedirectUri)) return null;
+  return payload;
 };
+
+const doctorStartErrorRedirect = ({ error, mobileRedirectUri, clientState, provider }) => (mobileRedirectUri
+  ? appendQuery(mobileRedirectUri, { error, provider, state: clientState })
+  : `${doctorWebBase()}/doctor/login?error=${error}&provider=${provider}`);
 
 const buildDoctorOAuthSuccessRedirect = ({ req, provider, token, refreshToken, expiresIn }) => {
   const mobileState = parseDoctorMobileState(req.query.state);
 
-  if (mobileState?.mobileRedirectUri) {
+  if (mobileState?.mobileRedirectUri && !mobileState.codeChallenge) {
     const params = {
       token,
       refreshToken,
@@ -244,6 +261,11 @@ async function findOrCreateDoctor(profile, provider) {
 async function handleOAuthSuccess(req, res, doctorData, provider) {
   try {
     const { doctor } = doctorData;
+    const handoffState = parseDoctorMobileState(req.query.state);
+    // Without PKCE there are no tokens once PKCE is required (mobile and web).
+    if (!handoffState?.codeChallenge && pkceRequired()) {
+      return res.redirect(buildDoctorOAuthErrorRedirect({ req, provider, error: 'pkce_required' }));
+    }
     const deviceFp = req.headers['x-device-fingerprint'] || null;
     const { accessToken: token, refreshToken } = await issuePortalTokenPair(
       { id: doctor.id, email: doctor.email, role: 'doctor' },
@@ -253,7 +275,17 @@ async function handleOAuthSuccess(req, res, doctorData, provider) {
     
     console.log(`✅ Doctor ${provider} OAuth successful for: ${doctor.email}`);
     
-    // Redirect to frontend with token
+    // PKCE hand-off: a one-time code in the link, redeemed at POST /api/auth/oauth/exchange.
+    if (handoffState?.codeChallenge) {
+      const code = await createHandoff({
+        tokens: { token, refreshToken, expiresIn, userType: 'doctor', provider },
+        codeChallenge: handoffState.codeChallenge,
+      }, redis);
+      const target = handoffState.mobileRedirectUri || `${doctorWebBase()}/oauth-callback`;
+      return res.redirect(appendQuery(target, { code, provider, state: handoffState.clientState }));
+    }
+
+    // Legacy: token in the link — only until OAUTH_REQUIRE_PKCE=true.
     const redirectUrl = buildDoctorOAuthSuccessRedirect({ req, provider, token, refreshToken, expiresIn });
     
     res.redirect(redirectUrl);
@@ -269,7 +301,8 @@ async function handleOAuthSuccess(req, res, doctorData, provider) {
 router.get(
   '/google',
   (req, res, next) => {
-    const state = buildDoctorMobileState(req);
+    const { state, error, mobileRedirectUri, clientState } = buildDoctorMobileState(req);
+    if (error) return res.redirect(doctorStartErrorRedirect({ error, mobileRedirectUri, clientState, provider: 'google' }));
     const options = {
       scope: ['profile', 'email'],
       session: false,
@@ -298,7 +331,8 @@ router.get(
 router.get(
   '/facebook',
   (req, res, next) => {
-    const state = buildDoctorMobileState(req);
+    const { state, error, mobileRedirectUri, clientState } = buildDoctorMobileState(req);
+    if (error) return res.redirect(doctorStartErrorRedirect({ error, mobileRedirectUri, clientState, provider: 'facebook' }));
     const options = {
       scope: ['email', 'public_profile'],
       session: false,

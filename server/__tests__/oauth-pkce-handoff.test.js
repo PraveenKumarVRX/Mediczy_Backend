@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import express from 'express';
 import request from 'supertest';
 
@@ -138,5 +139,40 @@ describe('the hand-off service', () => {
   it('refuses a malformed code or verifier without touching storage', async () => {
     await expect(handoff.redeemHandoff({ code: 'x', codeVerifier: VERIFIER }, fakeRedis)).resolves.toEqual({ ok: false, code: 'INVALID_GRANT' });
     await expect(handoff.redeemHandoff({ code: 'a'.repeat(43), codeVerifier: 'too-short' }, fakeRedis)).resolves.toEqual({ ok: false, code: 'INVALID_VERIFIER' });
+  });
+});
+
+describe('the web sign-in uses the same one-time code', () => {
+  it('a web start with PKCE comes back to the web callback with a code, not a token', async () => {
+    const start = await request(app).get('/api/auth/google').query({ state: 'web-state', code_challenge: CHALLENGE, code_challenge_method: 'S256' });
+    const location = await signInVia(start.body.options.state);
+    expect(location).toMatch(/\/oauth-callback\?/);
+    expect(location.startsWith(SCHEME)).toBe(false);
+    const q = new URL(location, 'https://app.mediqzy.com').searchParams;
+    expect(q.get('code')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(q.get('state')).toBe('web-state');
+    expect(location).not.toMatch(/token=/);
+    const exchanged = await request(app).post('/api/auth/oauth/exchange').send({ code: q.get('code'), code_verifier: VERIFIER });
+    expect(exchanged.status).toBe(200);
+  });
+
+  it('a legacy web sign-in (no PKCE) is refused once OAUTH_REQUIRE_PKCE=true', async () => {
+    process.env.OAUTH_REQUIRE_PKCE = 'true';
+    const location = await signInVia(undefined);
+    expect(location).not.toMatch(/token=/);
+    expect(location).toMatch(/pkce_required/);
+  });
+});
+
+describe('the doctor sign-in router follows the same rules', () => {
+  const src = readFileSync(new URL('../routes/doctor-oauth.route.js', import.meta.url), 'utf8');
+  it('signs and verifies its state, and hands over a code via the shared service', () => {
+    expect(src).toMatch(/signState\(/);
+    expect(src).toMatch(/verifyState\(/);
+    expect(src).toMatch(/createHandoff\(/);
+    expect(src).not.toMatch(/Buffer\.from\(JSON\.stringify\(payload\)\)\.toString\('base64url'\)/);
+  });
+  it('refuses the legacy token hand-off once PKCE is required', () => {
+    expect(src).toMatch(/!handoffState\?\.codeChallenge && pkceRequired\(\)/);
   });
 });

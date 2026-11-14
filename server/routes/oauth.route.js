@@ -47,39 +47,51 @@ const buildMobileState = (req) => {
   const mobileRedirectUri = String(req.query.mobile_redirect_uri || '').trim();
   const clientState = String(req.query.state || '').trim();
 
-  if (!mobileRedirectUri || !isAllowedMobileRedirectUri(mobileRedirectUri)) {
-    return { state: null };
-  }
-
+  const isMobile = Boolean(mobileRedirectUri) && isAllowedMobileRedirectUri(mobileRedirectUri);
   const codeChallenge = String(req.query.code_challenge || '').trim();
   const method = String(req.query.code_challenge_method || 'S256').trim();
+  const target = isMobile ? mobileRedirectUri : null;
   if (codeChallenge) {
-    if (method !== 'S256' || !isValidChallenge(codeChallenge)) return { error: 'invalid_pkce', mobileRedirectUri, clientState };
-    if (!clientState) return { error: 'state_required', mobileRedirectUri, clientState };
-  } else if (pkceRequired()) {
+    if (method !== 'S256' || !isValidChallenge(codeChallenge)) return { error: 'invalid_pkce', mobileRedirectUri: target, clientState };
+    if (!clientState) return { error: 'state_required', mobileRedirectUri: target, clientState };
+  } else if (isMobile && pkceRequired()) {
     return { error: 'pkce_required', mobileRedirectUri, clientState };
   }
+  // A web sign-in without PKCE keeps the legacy hand-off (until OAUTH_REQUIRE_PKCE).
+  if (!isMobile && !codeChallenge) return { state: null };
 
   return {
     state: signState({
-      mobileRedirectUri,
+      mobileRedirectUri: target || undefined,
       clientState: clientState || undefined,
       codeChallenge: codeChallenge || undefined,
-      source: 'mobile',
+      source: isMobile ? 'mobile' : 'web',
     }),
   };
 };
 
+/** The verified round-trip state (mobile or web PKCE), or null. */
 const parseMobileState = (state) => {
   const payload = verifyState(state);
-  return payload?.mobileRedirectUri && isAllowedMobileRedirectUri(payload.mobileRedirectUri) ? payload : null;
+  if (!payload) return null;
+  if (payload.mobileRedirectUri && !isAllowedMobileRedirectUri(payload.mobileRedirectUri)) return null;
+  return payload;
 };
+
+const webCallbackUrl = () => (process.env.NODE_ENV === 'production'
+  ? 'https://app.mediqzy.com/oauth-callback'
+  : 'http://localhost:5173/oauth-callback');
+
+/** Where an error goes when the app asked for a flow it may not have. */
+const startErrorRedirect = ({ error, mobileRedirectUri, clientState, provider }) => (mobileRedirectUri
+  ? appendQuery(mobileRedirectUri, { error, provider, state: clientState })
+  : `/login?error=${provider}_${error}`);
 
 const buildOAuthSuccessRedirect = ({ req, provider, token, refreshToken, tenantId }) => {
   const mobileState = parseMobileState(req.query.state);
   const tenantQs = tenantId != null && tenantId !== '' ? `&tenantId=${encodeURIComponent(String(tenantId))}` : '';
 
-  if (mobileState?.mobileRedirectUri) {
+  if (mobileState?.mobileRedirectUri && !mobileState.codeChallenge) {
     const params = {
       token,
       refreshToken,
@@ -117,8 +129,8 @@ const handleOAuthProviderSuccess = async (req, res, provider) => {
   const tenantId = user.tenant_id || user.tenantId || user.organization_id || user.organizationId || null;
   const mobileState = parseMobileState(req.query.state);
 
-  // A mobile app that did not send PKCE gets no tokens once PKCE is required.
-  if (mobileState && !mobileState.codeChallenge && pkceRequired()) {
+  // Without PKCE there are no tokens once PKCE is required (mobile and web).
+  if (!mobileState?.codeChallenge && pkceRequired()) {
     return res.redirect(buildOAuthErrorRedirect({ req, provider, error: 'pkce_required' }));
   }
 
@@ -145,7 +157,7 @@ const handleOAuthProviderSuccess = async (req, res, provider) => {
       tokens: { token, refreshToken, userType: 'patient', provider, ...(tenantId != null && tenantId !== '' ? { tenantId: String(tenantId) } : {}) },
       codeChallenge: mobileState.codeChallenge,
     }, redis);
-    return res.redirect(appendQuery(mobileState.mobileRedirectUri, { code, provider, state: mobileState.clientState }));
+    return res.redirect(appendQuery(mobileState.mobileRedirectUri || webCallbackUrl(), { code, provider, state: mobileState.clientState }));
   }
 
   // Legacy hand-off (token in the link) — only until OAUTH_REQUIRE_PKCE=true.
@@ -203,7 +215,7 @@ router.post('/oauth/exchange', authLimiter, async (req, res) => {
  */
 router.get('/facebook', (req, res, next) => {
   const { state, error, mobileRedirectUri, clientState } = buildMobileState(req);
-  if (error) return res.redirect(appendQuery(mobileRedirectUri, { error, provider: 'facebook', state: clientState }));
+  if (error) return res.redirect(startErrorRedirect({ error, mobileRedirectUri, clientState, provider: 'facebook' }));
   const options = {
     scope: ['email', 'public_profile'],
     session: false,
@@ -245,7 +257,7 @@ router.get('/facebook/callback',
  */
 router.get('/google', (req, res, next) => {
   const { state, error, mobileRedirectUri, clientState } = buildMobileState(req);
-  if (error) return res.redirect(appendQuery(mobileRedirectUri, { error, provider: 'google', state: clientState }));
+  if (error) return res.redirect(startErrorRedirect({ error, mobileRedirectUri, clientState, provider: 'google' }));
   const options = {
     scope: ['profile', 'email'],
     session: false,
