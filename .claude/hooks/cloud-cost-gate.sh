@@ -11,8 +11,23 @@ set -u
 cmd="$(jq -r '.tool_input.command // empty' 2>/dev/null)"
 [ -z "$cmd" ] && exit 0
 
+# Text that is only being written, never run, is not checked: a commit message
+# (-m "…" / -F - heredoc) and the body of a file written with cat >, tee or a
+# heredoc into a file. Otherwise every commit or doc that mentions
+# "terraform apply" would stop, and people learn to click yes unread.
+# Anything executed — including bash -c "…" — is still checked.
+scrub="$cmd"
+if printf '%s' "$cmd" | grep -Eq '(^|[;&| ])git +commit|(^|[;&| ])(cat|tee)( +-a)? *>?|<<-?'; then
+  scrub="$(printf '%s' "$cmd" | perl -0pe '
+    # heredoc bodies that feed git commit, cat or tee (not bash/sh)
+    s/((?:git\s+commit|cat|tee)[^\n]*?<<-?\s*([\x27"]?)(\w+)\2[^\n]*\n).*?\n\3[ \t]*(?=\n|$)/$1/sg;
+    # git commit -m "…" / -m \x27…\x27 messages
+    s/(git\s+commit[^\n]*?\s-m\s*)("(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27)/$1""/sg;
+  ')"
+fi
+
 # One line, lower case, so flags split across lines still match.
-c="$(printf '%s' "$cmd" | tr '\n' ' ' | tr '[:upper:]' '[:lower:]')"
+c="$(printf '%s' "$scrub" | tr '\n' ' ' | tr '[:upper:]' '[:lower:]')"
 
 patterns=(
   # AWS compute, storage, network
