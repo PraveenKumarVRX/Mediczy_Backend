@@ -1092,6 +1092,8 @@ const ringFencingMiddleware = (req, res, next) => {
   // Installation connectors use a scoped machine credential, validated and
   // rate-limited by the reports route. Keep every other admin path JWT-gated.
   if (requestMethod === 'POST' && requestPath === '/api/admin/dedicated-installations/reports') return next();
+  // ...and pull their settings with the same credential (validated, rate-limited by the config route).
+  if (requestMethod === 'GET' && requestPath === '/api/admin/dedicated-installations/config') return next();
 
   // Medical-device edge gateways submit events over an Ed25519 signature verified inside
   // the route (medical-device-gateway.service.js ingestSignedEvent); an on-premise gateway
