@@ -24,9 +24,11 @@ const FULLY_DOCUMENTED = [
   { file: 'routes/employee-insurance.route.js', mount: '/api/employee' },
   { file: 'routes/admin-integrations.route.js', mount: '/api/admin/integrations' },
   { file: 'routes/openapi.route.js', mount: '/api/admin/openapi' },
+  { file: 'routes/mental-health.route.js', mount: '/api/mental-health' },
 ];
 /** Routers only partly in the contract: whatever is documented must exist. */
-const PARTLY_DOCUMENTED = [{ file: 'routes/address.route.js', mount: '/api/addresses' }, { file: 'routes/oauth.route.js', mount: '/api/auth' }];
+const PARTLY_DOCUMENTED = [{ file: 'routes/address.route.js', mount: '/api/addresses' }, { file: 'routes/oauth.route.js', mount: '/api/auth' },
+  { file: 'routes/call-notification.route.js', mount: '/api/call-notification' }, { file: 'routes/reports.route.js', mount: '/api/reports' }];
 
 describe('the spec itself', () => {
   it('is valid OpenAPI 3.0', async () => {
@@ -89,6 +91,7 @@ describe('the spec and the code agree', () => {
     expect(app).toMatch(/app\.use\("\/api\/employee", employeeNetworkRouter\)/);
     expect(app).toMatch(/app\.use\('\/api\/admin\/integrations', adminIntegrationsRouter\)/);
     expect(app).toMatch(/app\.use\('\/api\/admin\/openapi', openapiRouter\)/);
+    expect(app).toMatch(/app\.use\("\/api\/mental-health", mentalHealthRouter\)/);
   });
 });
 

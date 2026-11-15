@@ -81,7 +81,7 @@ async function fixture({ failHistory = false, failLink = false, failHistoryUpdat
     } } },
     sequelize: { Op: { in: inOperator }, Sequelize: {} },
     '../models/postgres/lab.model.postgres.js': { default: { findByPk: async id => ({ id, name: 'QA Lab', address: { city: 'Pune' } }) } },
-    '../models/postgres/family-member.model.postgres.js': { default: {} },
+    '../models/postgres/family-member.model.postgres.js': { default: { sequelize: { transaction: async () => ({ commit: async () => {}, rollback: async () => {} }), query: async () => [] } } },
     '../models/index.js': { Appointment, LabTest, Report: {} },
     '../models/billing.model.intelligent.js': { Order: { create: async () => ({ id: 'billing-1' }) } },
     '../middleware/auth.middleware.js': { authUser: () => {} },
@@ -89,6 +89,18 @@ async function fixture({ failHistory = false, failLink = false, failHistoryUpdat
     '../db/orchestrator.js': { orchestrator: {} },
     '../db/pgPool.js': { default: {} },
     '../utils/placeholder-contact.js': { sanitiseContact: value => value },
+    // Pricing is covered by __tests__/lab-booking-pricing.test.js; here every
+    // test is a ₹299 catalogue test so the booking path runs end to end.
+    '../services/lab-booking-pricing.service.js': {
+      CORPORATE_BENEFIT_SOURCES: ['corporate-benefit', 'corporate-family-benefit'],
+      LabPricingError: class LabPricingError extends Error {},
+      listBookableLabTests: async () => [],
+      priceLabBooking: async ({ tests = [] }) => {
+        const priced = tests.map(test => ({ id: test.id, catalogTestId: String(test.id).toUpperCase(), name: test.name, price: 299, currency: 'INR' }));
+        const total = priced.reduce((sum, test) => sum + test.price, 0);
+        return { basis: 'catalog', tests: priced, testsSubtotal: total, collectionFee: 0, totalFee: total, currency: 'INR', paymentRequired: total > 0 };
+      },
+    },
     '../services/lab-appointment-history.service.js': { ensureLabAppointmentHistory, updateLinkedLabHistory },
     '../services/patient-lab-checkout.service.js': { prepareLabCheckout: () => {}, completeLabCheckout: () => {} },
     '../services/minio-upload.service.js': { uploadEncryptedReport: () => {} },

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "1.2.1",
+    "version": "1.3.0",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -1982,6 +1982,1139 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/call-notification/decline": {
+      "post": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Decline an incoming doctor call",
+        "description": "For the caller's own appointment only. Marks the incoming-call notification read and tells the doctor live (socket room doctor-<doctorId>, event `call-declined` with { appointmentId, declinedAt, reason }), so the doctor stops waiting. `notified` is false when the doctor is not connected; the decline is still recorded. Safe to repeat.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "appointmentId"
+                ],
+                "properties": {
+                  "appointmentId": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Optional, shown to the doctor. Longer text is cut."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "notified"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "notified": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "appointmentId missing or not a positive integer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No appointment with this id belongs to the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/reports/{id}/share-link": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Create a time-limited share link for one of your reports",
+        "description": "Anyone holding `shareUrl` can open the report until `expiresAt`, without an account — share it only with the intended person. The link cannot be revoked early; keep the expiry short. Only the owner's reports.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Report id from GET /api/reports"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expiresInHours": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 720,
+                    "default": 72,
+                    "description": "Clamped to 1–720 hours; missing or invalid means 72."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "shareUrl",
+                    "token",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "shareUrl": {
+                      "type": "string",
+                      "description": "https://…/api/reports/shared/{token} — open in a browser or hand to the OS share sheet."
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No report with this id belongs to the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/reports/shared/{token}": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Open a shared report (the recipient's side of Scan & Share)",
+        "description": "No sign-in: the signed, expiring token is the authorisation. Streams the file inline (PDF or image) or redirects to it.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The token from POST /api/reports/{id}/share-link"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report file",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "302": {
+            "description": "Redirect to the stored file"
+          },
+          "401": {
+            "description": "Link invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The report was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/mental-health/moods/log": {
+      "post": {
+        "tags": [
+          "Mind"
+        ],
+        "summary": "Save a mood check-in",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,80}$",
+                    "description": "The app's local id. Repeating a create with the same clientId returns the existing entry (duplicate: true) instead of a second one."
+                  },
+                  "moodId": {
+                    "type": "string",
+                    "enum": [
+                      "very_positive",
+                      "positive",
+                      "neutral",
+                      "negative",
+                      "very_negative"
+                    ],
+                    "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1"
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "intensity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "Used only when moodId is absent."
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "recordedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "duplicate": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "intensity",
+                        "recordedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "moodId": {
+                          "type": "string",
+                          "enum": [
+                            "very_positive",
+                            "positive",
+                            "neutral",
+                            "negative",
+                            "very_negative"
+                          ],
+                          "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1",
+                          "nullable": true
+                        },
+                        "label": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "intensity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 5
+                        },
+                        "note": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "recordedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "clientId": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "intensity",
+                        "recordedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "moodId": {
+                          "type": "string",
+                          "enum": [
+                            "very_positive",
+                            "positive",
+                            "neutral",
+                            "negative",
+                            "very_negative"
+                          ],
+                          "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1",
+                          "nullable": true
+                        },
+                        "label": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "intensity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 5
+                        },
+                        "note": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "recordedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "clientId": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    },
+                    "support": {
+                      "type": "object",
+                      "description": "Present only when the saved text contains crisis language: helpline numbers to show. Nothing is flagged or reported to anyone."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown moodId and no valid intensity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/mental-health/moods": {
+      "get": {
+        "tags": [
+          "Mind"
+        ],
+        "summary": "Your mood check-ins, newest first",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3650
+            },
+            "description": "Only entries from the last N days."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "intensity",
+                          "recordedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "moodId": {
+                            "type": "string",
+                            "enum": [
+                              "very_positive",
+                              "positive",
+                              "neutral",
+                              "negative",
+                              "very_negative"
+                            ],
+                            "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1",
+                            "nullable": true
+                          },
+                          "label": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "intensity": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5
+                          },
+                          "note": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "recordedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "clientId": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/mental-health/journal": {
+      "get": {
+        "tags": [
+          "Mind"
+        ],
+        "summary": "Your private journal, newest first",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3650
+            },
+            "description": "Only entries from the last N days."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "text"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "moodId": {
+                            "type": "string",
+                            "enum": [
+                              "very_positive",
+                              "positive",
+                              "neutral",
+                              "negative",
+                              "very_negative"
+                            ],
+                            "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1",
+                            "nullable": true
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "clientId": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Mind"
+        ],
+        "summary": "Write a journal entry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "clientId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,80}$",
+                    "description": "The app's local id. Repeating a create with the same clientId returns the existing entry (duplicate: true) instead of a second one."
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000
+                  },
+                  "moodId": {
+                    "type": "string",
+                    "enum": [
+                      "very_positive",
+                      "positive",
+                      "neutral",
+                      "negative",
+                      "very_negative"
+                    ],
+                    "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "duplicate": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "text"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "moodId": {
+                          "type": "string",
+                          "enum": [
+                            "very_positive",
+                            "positive",
+                            "neutral",
+                            "negative",
+                            "very_negative"
+                          ],
+                          "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1",
+                          "nullable": true
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "clientId": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "text"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "moodId": {
+                          "type": "string",
+                          "enum": [
+                            "very_positive",
+                            "positive",
+                            "neutral",
+                            "negative",
+                            "very_negative"
+                          ],
+                          "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1",
+                          "nullable": true
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "clientId": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    },
+                    "support": {
+                      "type": "object",
+                      "description": "Present only when the saved text contains crisis language: helpline numbers to show. Nothing is flagged or reported to anyone."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "text missing or moodId unknown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/mental-health/journal/{id}": {
+      "put": {
+        "tags": [
+          "Mind"
+        ],
+        "summary": "Edit one of your journal entries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "clientId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,80}$",
+                    "description": "The app's local id. Repeating a create with the same clientId returns the existing entry (duplicate: true) instead of a second one."
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000
+                  },
+                  "moodId": {
+                    "type": "string",
+                    "enum": [
+                      "very_positive",
+                      "positive",
+                      "neutral",
+                      "negative",
+                      "very_negative"
+                    ],
+                    "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "text"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "moodId": {
+                          "type": "string",
+                          "enum": [
+                            "very_positive",
+                            "positive",
+                            "neutral",
+                            "negative",
+                            "very_negative"
+                          ],
+                          "description": "Great=5, Good=4, Okay=3, Low=2, Struggling=1",
+                          "nullable": true
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "clientId": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    },
+                    "support": {
+                      "type": "object",
+                      "description": "Present only when the saved text contains crisis language: helpline numbers to show. Nothing is flagged or reported to anyone."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "text missing or moodId unknown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not one of your journal entries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Mind"
+        ],
+        "summary": "Delete one of your journal entries",
+        "description": "Deleting an entry that is already gone succeeds with deleted: false, so a retried delete settles.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "deleted"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/mental-health/crisis/resources": {
+      "get": {
+        "tags": [
+          "Mind"
+        ],
+        "summary": "Verified crisis helplines (adds to the app's built-in numbers)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "label",
+                          "number"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "number": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "operator": {
+                            "type": "string"
+                          },
+                          "verifiedOn": {
+                            "type": "string",
+                            "format": "date"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
           }
         }
       }
@@ -4338,13 +5471,278 @@
         }
       }
     },
+    "/api/labs/book/quote": {
+      "post": {
+        "tags": [
+          "Labs"
+        ],
+        "summary": "Price a lab booking before it is made",
+        "description": "Send the POST /api/labs/book body (appointmentDate/appointmentTime optional). Returns the total POST /api/labs/book will charge for it; both use one pricing function. Creates nothing. A test that is not bookable is refused with 400 errorCode TEST_NOT_BOOKABLE and unavailableTests [{id, name}].",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "labId": {
+                    "description": "Database identifier of the specified resource.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "serviceType": {
+                    "type": "string",
+                    "enum": [
+                      "checkup",
+                      "diagnostic"
+                    ]
+                  },
+                  "tests": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "description": "The test id from GET /api/labs/{labId}/tests (a catalogue test id).",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "price": {
+                          "type": "number",
+                          "description": "Ignored: the server prices every test from the catalogue."
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ]
+                    }
+                  },
+                  "bookingFor": {
+                    "type": "string",
+                    "enum": [
+                      "self",
+                      "family"
+                    ]
+                  },
+                  "familyMemberId": {
+                    "description": "Database identifier of the specified resource.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "corporateBenefitSource": {
+                    "type": "string"
+                  },
+                  "corporatePackageId": {
+                    "description": "Database identifier of the specified resource.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "familyDiscountedPrice": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "labId",
+                  "serviceType",
+                  "tests"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "quote": {
+                      "type": "object",
+                      "properties": {
+                        "labId": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "labName": {
+                          "type": "string"
+                        },
+                        "serviceType": {
+                          "type": "string",
+                          "enum": [
+                            "checkup",
+                            "diagnostic"
+                          ]
+                        },
+                        "currency": {
+                          "type": "string",
+                          "enum": [
+                            "INR"
+                          ]
+                        },
+                        "tests": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "description": "Database identifier of the specified resource.",
+                                "oneOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "catalogTestId": {
+                                "type": "string"
+                              },
+                              "code": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "price": {
+                                "type": "number"
+                              },
+                              "currency": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ]
+                          }
+                        },
+                        "testsSubtotal": {
+                          "type": "number"
+                        },
+                        "collectionFee": {
+                          "type": "number",
+                          "description": "Always 0 for a lab-visit booking; no visit or base fee is charged."
+                        },
+                        "totalFee": {
+                          "type": "number",
+                          "description": "What POST /api/labs/book charges for this body."
+                        },
+                        "paymentRequired": {
+                          "type": "boolean"
+                        },
+                        "basis": {
+                          "type": "string",
+                          "enum": [
+                            "catalog",
+                            "corporate-package",
+                            "corporate-family-discount",
+                            "no-tests-selected"
+                          ],
+                          "description": "catalog = sum of catalogue prices; corporate-package = prepaid by the employer, free to the employee."
+                        }
+                      },
+                      "required": [
+                        "labId",
+                        "currency",
+                        "tests",
+                        "testsSubtotal",
+                        "collectionFee",
+                        "totalFee",
+                        "paymentRequired",
+                        "basis"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "quote"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
+      }
+    },
     "/api/labs/book": {
       "post": {
         "tags": [
           "Labs"
         ],
         "summary": "Book a lab appointment and linked patient history atomically",
-        "description": "Use labTestId for /api/lab-tests/{id} and mobile Orders. appointment.id is a separate reference for /api/appointments operations. Billing metadata preserves both references.",
+        "description": "Server-priced: each test is priced from the bookable catalogue by its id (a client price is ignored) and no other fee is added, so appointment.totalFee and payment.amount equal quote.totalFee from POST /api/labs/book/quote for the same body. A test that is not bookable is refused with 400 errorCode TEST_NOT_BOOKABLE and unavailableTests. Use labTestId for /api/lab-tests/{id} and mobile Orders. appointment.id is a separate reference for /api/appointments operations. Billing metadata preserves both references.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4386,13 +5784,28 @@
                     "items": {
                       "type": "object",
                       "properties": {
+                        "id": {
+                          "description": "The test id from GET /api/labs/{labId}/tests (a catalogue test id).",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "name": {
                           "type": "string"
                         },
                         "price": {
-                          "type": "number"
+                          "type": "number",
+                          "description": "Ignored: the server prices every test from the catalogue."
                         }
-                      }
+                      },
+                      "required": [
+                        "id"
+                      ]
                     }
                   },
                   "patientName": {
@@ -4511,6 +5924,111 @@
                         "amount",
                         "currency"
                       ]
+                    },
+                    "quote": {
+                      "type": "object",
+                      "properties": {
+                        "labId": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "labName": {
+                          "type": "string"
+                        },
+                        "serviceType": {
+                          "type": "string",
+                          "enum": [
+                            "checkup",
+                            "diagnostic"
+                          ]
+                        },
+                        "currency": {
+                          "type": "string",
+                          "enum": [
+                            "INR"
+                          ]
+                        },
+                        "tests": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "description": "Database identifier of the specified resource.",
+                                "oneOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "catalogTestId": {
+                                "type": "string"
+                              },
+                              "code": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "price": {
+                                "type": "number"
+                              },
+                              "currency": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ]
+                          }
+                        },
+                        "testsSubtotal": {
+                          "type": "number"
+                        },
+                        "collectionFee": {
+                          "type": "number",
+                          "description": "Always 0 for a lab-visit booking; no visit or base fee is charged."
+                        },
+                        "totalFee": {
+                          "type": "number",
+                          "description": "What POST /api/labs/book charges for this body."
+                        },
+                        "paymentRequired": {
+                          "type": "boolean"
+                        },
+                        "basis": {
+                          "type": "string",
+                          "enum": [
+                            "catalog",
+                            "corporate-package",
+                            "corporate-family-discount",
+                            "no-tests-selected"
+                          ],
+                          "description": "catalog = sum of catalogue prices; corporate-package = prepaid by the employer, free to the employee."
+                        }
+                      },
+                      "required": [
+                        "labId",
+                        "currency",
+                        "tests",
+                        "testsSubtotal",
+                        "collectionFee",
+                        "totalFee",
+                        "paymentRequired",
+                        "basis"
+                      ]
                     }
                   },
                   "required": [
@@ -4617,8 +6135,8 @@
         "tags": [
           "Labs"
         ],
-        "summary": "GET /api/labs/{labId}/tests",
-        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "summary": "Tests a lab can be booked for",
+        "description": "Priced from the bookable catalogue: every id listed is accepted by POST /api/cart/add and priced identically by POST /api/labs/book. 404 for an unknown or inactive lab.",
         "security": [],
         "parameters": [
           {
@@ -4628,11 +6146,92 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "serviceType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "checkup",
+                "diagnostic"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/AppObject"
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "tests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "catalogTestId": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "sampleType": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "price": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "homeCollectionCharge": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "duration": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "priceSource": {
+                            "type": "string",
+                            "enum": [
+                              "catalog"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "price"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "tests"
+                  ]
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/AppError"

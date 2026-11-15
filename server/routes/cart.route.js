@@ -1,6 +1,6 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
-import pool from '../db/pgPool.js';
+import { catalogueByIdentifier } from '../services/lab-booking-pricing.service.js';
 
 const router = express.Router();
 
@@ -22,32 +22,9 @@ const cartStore = new Map();
  * refused on add and dropped on sync (consistent with BUG-04 hiding unpriced tests).
  */
 
-const CATALOGUE_SQL = `
-  SELECT test_id, name, test_code, price, currency, home_collection_charge
-    FROM api_lab_tests
-   WHERE status = 'active'
-     AND price IS NOT NULL
-     AND price::numeric >= 0
-     AND (
-       test_id::text = ANY($1::text[])
-       OR LOWER(test_code) IN (SELECT LOWER(x) FROM unnest($1::text[]) AS x)
-       OR LOWER(name)      IN (SELECT LOWER(x) FROM unnest($1::text[]) AS x)
-     )`;
-
-/** Look up catalogue rows by test_id / test_code / name, keyed lowercase. */
-async function catalogueByIdentifier(identifiers) {
-  const ids = [...new Set((identifiers || []).filter((v) => v !== null && v !== undefined).map(String))];
-  const map = new Map();
-  if (!ids.length) return map;
-  const { rows } = await pool.query(CATALOGUE_SQL, [ids]);
-  for (const row of rows) {
-    for (const key of [row.test_id, row.test_code, row.name]) {
-      if (key !== null && key !== undefined) map.set(String(key).toLowerCase(), row);
-    }
-  }
-  return map;
-}
-
+// The catalogue lookup is shared with GET /labs/:labId/tests and POST
+// /labs/book(/quote), so a test the listing offers is one the cart accepts and
+// the booking prices the same way (QA-06).
 const itemIdentifier = (item) => (item?.test?.id ?? item?.id ?? null);
 
 /**

@@ -38,6 +38,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/health',  // Unified health metrics
       '/api/apple-health',  // Apple Health integration
       '/api/health-diary',  // Health diary entries
+      '/api/mental-health',  // Mind & Mood sync: own moods/journal (stored as health diary rows) + helplines
       '/api/health-data',  // BLE device health data sync
       '/api/vitals',  // Patient vitals alias -> /health-data/vitals (mobile app)
       '/api/abdm',  // ABHA / ABDM self-service (the router enforces staff-only HPR/HFR sub-routes)
@@ -131,6 +132,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/activity-tracker',  // Daily activity: steps, stairs, sleep, exercise, calories, vitals
       '/api/apple-health',  // Apple Health integration
       '/api/health-diary',  // Health diary entries
+      '/api/mental-health',  // Mind & Mood sync: own moods/journal (stored as health diary rows) + helplines
       '/api/health-data',  // BLE device health data sync
       '/api/vitals',  // Patient vitals alias -> /health-data/vitals (mobile app)
       '/api/abdm',  // ABHA / ABDM self-service (the router enforces staff-only HPR/HFR sub-routes)

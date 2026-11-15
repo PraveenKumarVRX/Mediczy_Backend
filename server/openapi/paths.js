@@ -182,6 +182,116 @@ const auth = {
   },
 };
 
+// ── /api/call-notification — the patient declines an incoming doctor call (audit M6)
+const calls = {
+  '/api/call-notification/decline': {
+    post: op('Calls', 'Decline an incoming doctor call', {
+      description: 'For the caller\'s own appointment only. Marks the incoming-call notification read and tells the doctor live (socket room doctor-<doctorId>, event `call-declined` with { appointmentId, declinedAt, reason }), so the doctor stops waiting. `notified` is false when the doctor is not connected; the decline is still recorded. Safe to repeat.',
+      requestBody: body({ type: 'object', required: ['appointmentId'], properties: {
+        appointmentId: { type: 'integer', minimum: 1 },
+        reason: { type: 'string', maxLength: 120, description: 'Optional, shown to the doctor. Longer text is cut.' },
+      } }),
+      responses: {
+        200: okWith({ notified: { type: 'boolean' } }, ['success', 'notified']),
+        400: json(ref('Error'), 'appointmentId missing or not a positive integer.'),
+        404: json(ref('Error'), 'No appointment with this id belongs to the caller.'),
+      },
+    }),
+  },
+};
+
+// ── /api/reports — Scan & Share: a time-limited link to one of the caller's uploaded reports
+const reports = {
+  '/api/reports/{id}/share-link': {
+    post: op('Reports', 'Create a time-limited share link for one of your reports', {
+      description: 'Anyone holding `shareUrl` can open the report until `expiresAt`, without an account — share it only with the intended person. The link cannot be revoked early; keep the expiry short. Only the owner\'s reports.',
+      params: [pathParam('id', 'Report id from GET /api/reports')],
+      requestBody: body({ type: 'object', properties: {
+        expiresInHours: { type: 'integer', minimum: 1, maximum: 720, default: 72, description: 'Clamped to 1–720 hours; missing or invalid means 72.' },
+      } }, false),
+      responses: {
+        200: okWith({
+          shareUrl: { type: 'string', description: 'https://…/api/reports/shared/{token} — open in a browser or hand to the OS share sheet.' },
+          token: { type: 'string' },
+          expiresAt: { type: 'string', format: 'date-time' },
+        }, ['success', 'shareUrl', 'token', 'expiresAt']),
+        404: json(ref('Error'), 'No report with this id belongs to the caller.'),
+      },
+    }),
+  },
+  '/api/reports/shared/{token}': {
+    get: {
+      tags: ['Reports'],
+      summary: 'Open a shared report (the recipient\'s side of Scan & Share)',
+      description: 'No sign-in: the signed, expiring token is the authorisation. Streams the file inline (PDF or image) or redirects to it.',
+      security: [],
+      parameters: [pathParam('token', 'The token from POST /api/reports/{id}/share-link')],
+      responses: {
+        200: { description: 'The report file', content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } }, 'image/*': { schema: { type: 'string', format: 'binary' } } } },
+        302: { description: 'Redirect to the stored file' },
+        401: json(ref('Error'), 'Link invalid or expired.'),
+        404: json(ref('Error'), 'The report was deleted.'),
+        500: R('ServerError'),
+      },
+    },
+  },
+};
+
+// ── /api/mental-health — the app's Mind & Mood sync (QA-09). Stored as the caller's own private
+// health-diary rows, so web and app share one record. Assessments and AI coaching are deliberately
+// not served (screening is a governed SaMD feature; coaching is an ungoverned LLM output): 404.
+const moodIds = { type: 'string', enum: ['very_positive', 'positive', 'neutral', 'negative', 'very_negative'], description: 'Great=5, Good=4, Okay=3, Low=2, Struggling=1' };
+const crisisSupport = { type: 'object', description: 'Present only when the saved text contains crisis language: helpline numbers to show. Nothing is flagged or reported to anyone.' };
+const listParams = [
+  { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 } },
+  { name: 'days', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 3650 }, description: 'Only entries from the last N days.' },
+];
+const moodItem = { type: 'object', required: ['id', 'intensity', 'recordedAt'], properties: { id: { type: 'integer' }, moodId: { ...moodIds, nullable: true }, label: { type: 'string', nullable: true }, intensity: { type: 'integer', minimum: 1, maximum: 5 }, note: { type: 'string', nullable: true }, recordedAt: { type: 'string', format: 'date-time' }, clientId: { type: 'string', nullable: true } } };
+const journalItem = { type: 'object', required: ['id', 'text'], properties: { id: { type: 'integer' }, title: { type: 'string', nullable: true }, text: { type: 'string' }, moodId: { ...moodIds, nullable: true }, createdAt: { type: 'string', format: 'date-time' }, updatedAt: { type: 'string', format: 'date-time' }, clientId: { type: 'string', nullable: true } } };
+const clientId = { type: 'string', pattern: '^[A-Za-z0-9_.:-]{1,80}$', description: 'The app\'s local id. Repeating a create with the same clientId returns the existing entry (duplicate: true) instead of a second one.' };
+const journalBody = { type: 'object', required: ['text'], properties: { clientId, title: { type: 'string', maxLength: 200 }, text: { type: 'string', minLength: 1, maxLength: 20000 }, moodId: moodIds, createdAt: { type: 'string', format: 'date-time' }, updatedAt: { type: 'string', format: 'date-time' } } };
+const mind = {
+  '/api/mental-health/moods/log': {
+    post: op('Mind', 'Save a mood check-in', {
+      requestBody: body({ type: 'object', properties: { clientId, moodId: moodIds, label: { type: 'string', maxLength: 120 }, intensity: { type: 'integer', minimum: 1, maximum: 5, description: 'Used only when moodId is absent.' }, note: { type: 'string', maxLength: 2000 }, recordedAt: { type: 'string', format: 'date-time' } } }),
+      responses: {
+        201: okWith({ data: moodItem, support: crisisSupport }, ['success', 'data']),
+        200: okWith({ duplicate: { type: 'boolean' }, data: moodItem }, ['success', 'data']),
+        400: json(ref('Error'), 'Unknown moodId and no valid intensity.'),
+      },
+    }),
+  },
+  '/api/mental-health/moods': {
+    get: op('Mind', 'Your mood check-ins, newest first', { params: listParams, responses: { 200: okWith({ data: { type: 'array', items: moodItem } }, ['success', 'data']) } }),
+  },
+  '/api/mental-health/journal': {
+    get: op('Mind', 'Your private journal, newest first', { params: listParams, responses: { 200: okWith({ data: { type: 'array', items: journalItem } }, ['success', 'data']) } }),
+    post: op('Mind', 'Write a journal entry', {
+      requestBody: body(journalBody),
+      responses: {
+        201: okWith({ data: journalItem, support: crisisSupport }, ['success', 'data']),
+        200: okWith({ duplicate: { type: 'boolean' }, data: journalItem }, ['success', 'data']),
+        400: json(ref('Error'), 'text missing or moodId unknown.'),
+      },
+    }),
+  },
+  '/api/mental-health/journal/{id}': {
+    put: op('Mind', 'Edit one of your journal entries', {
+      params: [pathParam('id')], requestBody: body(journalBody),
+      responses: { 200: okWith({ data: journalItem, support: crisisSupport }, ['success', 'data']), 400: json(ref('Error'), 'text missing or moodId unknown.'), 404: json(ref('Error'), 'Not one of your journal entries.') },
+    }),
+    delete: op('Mind', 'Delete one of your journal entries', {
+      description: 'Deleting an entry that is already gone succeeds with deleted: false, so a retried delete settles.',
+      params: [pathParam('id')], responses: { 200: okWith({ deleted: { type: 'boolean' } }, ['success', 'deleted']) },
+    }),
+  },
+  '/api/mental-health/crisis/resources': {
+    get: op('Mind', 'Verified crisis helplines (adds to the app\'s built-in numbers)', {
+      responses: { 200: okWith({ data: { type: 'array', items: { type: 'object', required: ['id', 'label', 'number'], properties: { id: { type: 'string' }, label: { type: 'string' }, number: { type: 'string' }, description: { type: 'string' }, operator: { type: 'string' }, verifiedOn: { type: 'string', format: 'date' } } } } }, ['success', 'data']) },
+    }),
+  },
+};
+
 // ── /api/admin — operations for admins (internal)
 const admin = {
   '/api/admin/integrations': {
@@ -200,5 +310,5 @@ const admin = {
   },
 };
 
-export const paths = { ...employee, ...insurance, ...addresses, ...auth, ...admin };
+export const paths = { ...employee, ...insurance, ...addresses, ...auth, ...calls, ...reports, ...mind, ...admin };
 export default paths;

@@ -233,6 +233,7 @@ import hospitalDownloadsRouter from './routes/hospital-downloads.route.js';
 import hospitalOpenApiRouter from './routes/hospital-openapi.route.js';
 import emrRouter from './routes/emr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
+import mentalHealthRouter from './routes/mental-health.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
 import sibControlRouter from './routes/sib-control.route.js';
 import sibChatbotsRouter from './routes/sib-chatbots.route.js';
@@ -1442,6 +1443,7 @@ app.use('/api/v1/queue', hospitalQueueRouter);
 app.use('/api/qms', qmsRouter); // Unified QMS — hospital / clinic / lab + Aadhaar QR
 app.use("/api/emr", emrRouter); // EMR folder per user — accessible by team members
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
+app.use("/api/mental-health", mentalHealthRouter); // App Mind & Mood sync over the health diary (QA-09)
 app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard
 app.use("/api/sib", sibControlRouter); // SIB Control Layer - AI decision management, kill switch, approvals
 app.use("/api/sib-chatbots", sibChatbotsRouter); // SIB Chatbots - Admin dashboard AI chatbots (Health, Appointment, Emergency)

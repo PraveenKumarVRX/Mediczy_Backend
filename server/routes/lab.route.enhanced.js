@@ -8,6 +8,7 @@ import { Order as BillingOrder } from '../models/billing.model.intelligent.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { orchestrator } from '../db/orchestrator.js';
 import { sanitiseContact } from '../utils/placeholder-contact.js';
+import { priceLabBooking, LabPricingError, listBookableLabTests, CORPORATE_BENEFIT_SOURCES } from '../services/lab-booking-pricing.service.js';
 
 const router = express.Router();
 
@@ -771,6 +772,170 @@ router.get('/:id', async (req, res) => {
 });
 
 /**
+ * Validate a POST /labs/book body, load the lab and family member, and price
+ * it. Shared by /book and /book/quote so the quote is exactly what booking
+ * charges. Returns { error: {status, body} } or the prepared booking.
+ */
+/** Run `work` in a transaction whose RLS user is the caller (for FORCED-RLS tables). */
+async function withUserRls(req, work) {
+  const transaction = await FamilyMember.sequelize.transaction();
+  try {
+    await FamilyMember.sequelize.query(
+      "SELECT set_config('app.current_org_id', '0', true), set_config('app.current_user_id', :uid, true)",
+      { replacements: { uid: String(req.user?.id ?? '') }, transaction }
+    );
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
+
+/** True when the user holds this package now (active status, inside its validity window). */
+async function hasActivePackage(userId, packageId) {
+  const uid = Number(userId);
+  if (!Number.isSafeInteger(uid) || uid <= 0) return false;
+  const rows = await FamilyMember.sequelize.query(
+    `SELECT 1 FROM user_health_packages
+      WHERE "userId" = :uid AND "packageId" = :pid
+        AND LOWER(COALESCE(status, 'active')) = 'active'
+        AND ("validFrom" IS NULL OR "validFrom" <= NOW())
+        AND ("validTo" IS NULL OR "validTo" >= NOW())
+      LIMIT 1`,
+    { replacements: { uid, pid: String(packageId) }, type: Sequelize.QueryTypes.SELECT }
+  );
+  return rows.length > 0;
+}
+
+async function prepareLabBooking(req, { requireSchedule }) {
+  const {
+    labId,
+    appointmentDate,
+    appointmentTime,
+    serviceType, // 'checkup' or 'diagnostic'
+    tests = [],
+    bookingFor = 'self',
+    familyMemberId,
+    corporateBenefitSource,
+    corporatePackageId,
+    familyDiscountedPrice
+  } = req.body || {};
+
+  if (!labId || (requireSchedule && (!appointmentDate || !appointmentTime))) {
+    return { error: { status: 400, body: {
+      success: false,
+      message: requireSchedule ? 'Lab ID, appointment date, and time are required' : 'Lab ID is required'
+    } } };
+  }
+
+  if (!serviceType || !['checkup', 'diagnostic'].includes(serviceType)) {
+    return { error: { status: 400, body: {
+      success: false,
+      message: 'Service type must be either "checkup" or "diagnostic"'
+    } } };
+  }
+
+  const lab = await Lab.findByPk(labId);
+  if (!lab) {
+    return { error: { status: 404, body: { success: false, message: 'Lab not found' } } };
+  }
+
+  let familyMember = null;
+  if (bookingFor === 'family' || familyMemberId) {
+    if (!familyMemberId) {
+      return { error: { status: 400, body: {
+        success: false,
+        message: 'Family member is required for a family health checkup booking'
+      } } };
+    }
+
+    // family_members has FORCED row-level security: outside a transaction that
+    // sets app.current_user_id this lookup silently finds nothing.
+    familyMember = await withUserRls(req, (transaction) => FamilyMember.findOne({
+      where: {
+        id: familyMemberId,
+        userId: req.user?.id,
+        isActive: true
+      },
+      transaction,
+    }));
+
+    if (!familyMember) {
+      return { error: { status: 400, body: {
+        success: false,
+        message: 'Selected family member was not found on your profile'
+      } } };
+    }
+  }
+
+  // A corporate-benefit booking is free (or at the benefit's family price) only
+  // when this account really holds the package: an active, in-date row in
+  // user_health_packages. Before, any client could send these two fields and
+  // book at ₹0.
+  if (CORPORATE_BENEFIT_SOURCES.includes(corporateBenefitSource)) {
+    const entitled = corporatePackageId && await hasActivePackage(req.user?.id, corporatePackageId);
+    if (!entitled) {
+      return { error: { status: 403, body: {
+        success: false,
+        errorCode: 'PACKAGE_NOT_ENTITLED',
+        message: 'This health package is not active on your account. Book the tests individually or contact your HR team.'
+      } } };
+    }
+  }
+
+  let pricing;
+  try {
+    pricing = await priceLabBooking({
+      tests,
+      corporateBenefitSource,
+      corporatePackageId,
+      isFamilyBooking: Boolean(familyMember),
+      familyDiscountedPrice,
+    });
+  } catch (err) {
+    if (err instanceof LabPricingError) return { error: { status: err.statusCode, body: err.toJSON() } };
+    throw err;
+  }
+
+  return { lab, familyMember, pricing };
+}
+
+/** The quote both endpoints return: what the patient will be charged, and why. */
+const labBookingQuote = (lab, serviceType, pricing) => ({
+  labId: lab.id,
+  labName: lab.name,
+  serviceType,
+  currency: pricing.currency,
+  tests: pricing.tests,
+  testsSubtotal: pricing.testsSubtotal,
+  collectionFee: pricing.collectionFee,
+  totalFee: pricing.totalFee,
+  paymentRequired: pricing.paymentRequired,
+  basis: pricing.basis,
+});
+
+/**
+ * POST /api/labs/book/quote
+ * Price a booking before it is made. Takes the POST /labs/book body (the
+ * appointment date/time are optional here) and returns the total /labs/book
+ * will charge for it — the same pricing function computes both. Creates
+ * nothing.
+ */
+router.post('/book/quote', authUser, async (req, res) => {
+  try {
+    const prepared = await prepareLabBooking(req, { requireSchedule: false });
+    if (prepared.error) return res.status(prepared.error.status).json(prepared.error.body);
+    const { lab, pricing } = prepared;
+    return res.json({ success: true, quote: labBookingQuote(lab, req.body.serviceType, pricing) });
+  } catch (error) {
+    console.error('[Lab Booking] quote error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to price this booking right now' });
+  }
+});
+
+/**
  * POST /api/labs/book
  * Book a lab test appointment
  */
@@ -782,95 +947,30 @@ router.post('/book', authUser, async (req, res) => {
       appointmentTime,
       serviceType, // 'checkup' or 'diagnostic'
       testType,
-      tests = [],
       symptoms,
       notes,
       patientName,
       patientPhone,
       patientAddress,
       prescriptionUrl,
-      bookingFor = 'self',
-      familyMemberId,
       corporateBenefitSource,
       corporatePackageId,
       corporatePackageName,
       corporatePackagePrice,
-      familyDiscountPercent,
-      familyDiscountedPrice
+      familyDiscountPercent
     } = req.body;
 
-    // Validate required fields
-    if (!labId || !appointmentDate || !appointmentTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'Lab ID, appointment date, and time are required'
-      });
-    }
+    const prepared = await prepareLabBooking(req, { requireSchedule: true });
+    if (prepared.error) return res.status(prepared.error.status).json(prepared.error.body);
+    const { lab, familyMember, pricing } = prepared;
 
-    if (!serviceType || !['checkup', 'diagnostic'].includes(serviceType)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Service type must be either "checkup" or "diagnostic"'
-      });
-    }
-
-    // Calculate estimated fee based on service type
-    let baseFee = serviceType === 'checkup' ? 1500 : 2500;
-    let testFees = tests.reduce((sum, test) => sum + (Number(test.price) || 0), 0);
-    let totalFee = baseFee + testFees;
-
-    // Get lab details
-    const lab = await Lab.findByPk(labId);
-    if (!lab) {
-      return res.status(404).json({
-        success: false,
-        message: 'Lab not found'
-      });
-    }
-
-    let familyMember = null;
-    if (bookingFor === 'family' || familyMemberId) {
-      if (!familyMemberId) {
-        return res.status(400).json({
-          success: false,
-          message: 'Family member is required for a family health checkup booking'
-        });
-      }
-
-      familyMember = await FamilyMember.findOne({
-        where: {
-          id: familyMemberId,
-          userId: req.user?.id,
-          isActive: true
-        }
-      });
-
-      if (!familyMember) {
-        return res.status(400).json({
-          success: false,
-          message: 'Selected family member was not found on your profile'
-        });
-      }
-    }
-
-    const isCorporateBenefitBooking = ['corporate-benefit', 'corporate-family-benefit'].includes(corporateBenefitSource);
-    const requestedDiscountedPrice = Number(familyDiscountedPrice);
-    const safeDiscountedPrice = Number.isFinite(requestedDiscountedPrice) && requestedDiscountedPrice >= 0
-      ? requestedDiscountedPrice
-      : null;
-
-    if (isCorporateBenefitBooking) {
-      baseFee = 0;
-      if (familyMember && safeDiscountedPrice !== null) {
-        testFees = safeDiscountedPrice;
-        totalFee = safeDiscountedPrice;
-      } else if (corporatePackageId) {
-        testFees = 0;
-        totalFee = 0;
-      } else {
-        totalFee = testFees;
-      }
-    }
+    // Server-priced (services/lab-booking-pricing.service.js): catalogue
+    // prices, never the client's, and no invented base fee (QA-07).
+    const tests = pricing.tests;
+    const testFees = pricing.testsSubtotal;
+    const collectionFee = pricing.collectionFee;
+    const totalFee = pricing.totalFee;
+    const safeDiscountedPrice = pricing.basis === 'corporate-family-discount' ? pricing.totalFee : null;
 
     // Create appointment inside an RLS-scoped transaction. `appointments` enforces FORCE RLS and
     // the global rls-context middleware's GUC is not guaranteed on this Sequelize pooled connection,
@@ -927,8 +1027,9 @@ router.post('/book', authUser, async (req, res) => {
         testType,
         tests,
         totalFee,
-        baseFee,
         testFees,
+        collectionFee,
+        pricingBasis: pricing.basis,
         prescriptionUrl: prescriptionUrl || null,
         corporateBenefitSource: corporateBenefitSource || null,
         corporatePackageId: corporatePackageId || null,
@@ -1002,7 +1103,9 @@ router.post('/book', authUser, async (req, res) => {
         status: 'scheduled',
         paymentStatus: paymentRequired ? 'payment_pending' : 'not_required'
       },
-      payment: { required: paymentRequired, orderId: paymentOrder?.id || null, amount: Number(totalFee) || 0, currency: 'INR' }
+      payment: { required: paymentRequired, orderId: paymentOrder?.id || null, amount: Number(totalFee) || 0, currency: 'INR' },
+      // The same object POST /labs/book/quote returns for this body.
+      quote: labBookingQuote(lab, serviceType, pricing)
     });
   } catch (error) {
     console.error('[Lab Booking] ❌ Error:', error);
@@ -1046,82 +1149,38 @@ router.get('/:labId/slots', authUser, async (req, res) => {
 
 /**
  * GET /api/labs/:labId/tests
- * Get available tests for a lab
+ * The tests this lab can be booked for, priced from the bookable catalogue —
+ * the same rows POST /cart/add accepts and POST /labs/book charges.
+ *
+ * QA-06: labs without a `testCatalog` (2,381 of 2,418 active labs) used to get
+ * eight hardcoded sample tests (ids 1-8, "CBC ₹500"); none is in the catalogue,
+ * so the cart refused every one. The per-lab `testCatalog` JSON (37 labs, two
+ * seeded templates whose codes mostly match nothing in the catalogue) is not a
+ * price list booking can honour, so it is not listed either.
  */
 router.get('/:labId/tests', async (req, res) => {
   try {
-    const { labId } = req.params;
-    const { serviceType } = req.query;
-
-    // Fallback sample tests used when lab has no real catalog
-    const fallbackTests = {
-      checkup: [
-        { id: 1, name: 'Complete Blood Count (CBC)', price: 500, duration: '2 hours' },
-        { id: 2, name: 'Lipid Profile', price: 800, duration: '4 hours' },
-        { id: 3, name: 'Blood Sugar (Fasting)', price: 200, duration: '1 hour' },
-        { id: 4, name: 'Thyroid Profile', price: 1200, duration: '6 hours' }
-      ],
-      diagnostic: [
-        { id: 5, name: 'X-Ray', price: 1500, duration: '30 minutes' },
-        { id: 6, name: 'Ultrasound', price: 2000, duration: '45 minutes' },
-        { id: 7, name: 'ECG', price: 800, duration: '15 minutes' },
-        { id: 8, name: 'MRI Scan', price: 8000, duration: '1 hour' }
-      ]
-    };
-
-    // Try to use real testCatalog data from the database
-    const lab = await Lab.findByPk(labId, { attributes: ['id', 'testCatalog'] });
-    let availableTests = null;
-
-    if (lab && lab.testCatalog && typeof lab.testCatalog === 'object' && !Array.isArray(lab.testCatalog)) {
-      const catalog = lab.testCatalog;
-      // Flatten all categories into a single array, ensuring every test has a price
-      const allTests = Object.values(catalog)
-        .filter(Array.isArray)
-        .flat()
-        .filter(t => t && t.name)
-        .map((t, idx) => ({
-          id: t.code || `${labId}-${idx + 1}`,
-          name: t.name,
-          price: (t.price && !isNaN(Number(t.price))) ? Number(t.price) : null,
-          duration: t.duration || 'Contact lab'
-        }));
-
-      if (allTests.length > 0) {
-        // Only use real data if at least some tests have prices
-        const withPrice = allTests.filter(t => t.price !== null);
-        if (withPrice.length > 0) {
-          // Ensure all tests have a price (null → 0 to show as "Contact for pricing")
-          availableTests = serviceType
-            ? allTests.filter(t =>
-                (serviceType === 'checkup'
-                  ? ['CBC', 'blood', 'sugar', 'thyroid', 'urine'].some(k => t.name.toLowerCase().includes(k))
-                  : ['x-ray', 'ultrasound', 'ecg', 'mri', 'scan', 'imaging'].some(k => t.name.toLowerCase().includes(k))
-                )
-              )
-            : allTests;
-          if (availableTests.length === 0) availableTests = allTests; // fallback to all if filter produces nothing
-        }
-      }
+    const labId = Number(req.params.labId);
+    if (!Number.isInteger(labId) || labId <= 0) {
+      return res.status(404).json({ success: false, message: 'Laboratory not found' });
     }
-
-    // Fall back to hardcoded tests if no real catalog
-    if (!availableTests) {
-      availableTests = serviceType
-        ? fallbackTests[serviceType] || []
-        : [...fallbackTests.checkup, ...fallbackTests.diagnostic];
+    const lab = await Lab.findOne({ where: { id: labId, status: 'active' }, attributes: ['id'] });
+    if (!lab) {
+      return res.status(404).json({ success: false, message: 'Laboratory not found' });
     }
-
+    const serviceType = typeof req.query.serviceType === 'string' ? req.query.serviceType : undefined;
+    const tests = await listBookableLabTests({ serviceType });
     res.json({
       success: true,
-      tests: availableTests
+      labId: String(labId),
+      priceSource: 'catalog',
+      tests
     });
   } catch (error) {
     console.error('Get tests error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch tests',
-      error: error.message
+      message: 'Failed to fetch tests'
     });
   }
 });

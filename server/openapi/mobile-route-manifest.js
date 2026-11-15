@@ -40,6 +40,7 @@ export const mobileRouters = [
     {"method":"get","path":"/api/labs/equipment/types","public":true,"statuses":[200],"tag":"Labs"},
     {"method":"get","path":"/api/labs/statistics","public":true,"statuses":[200],"tag":"Labs"},
     {"method":"get","path":"/api/labs/{id}","public":true,"statuses":[200],"tag":"Labs"},
+    {"method":"post","path":"/api/labs/book/quote","public":false,"statuses":[200],"tag":"Labs"},
     {"method":"post","path":"/api/labs/book","public":false,"statuses":[200,201],"tag":"Labs"},
     {"method":"get","path":"/api/labs/{labId}/slots","public":false,"statuses":[200],"tag":"Labs"},
     {"method":"get","path":"/api/labs/{labId}/tests","public":true,"statuses":[200],"tag":"Labs"},
