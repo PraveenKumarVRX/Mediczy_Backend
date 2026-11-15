@@ -45,6 +45,14 @@ export const mobileRouters = [
     {"method":"get","path":"/api/labs/{labId}/slots","public":false,"statuses":[200],"tag":"Labs"},
     {"method":"get","path":"/api/labs/{labId}/tests","public":true,"statuses":[200],"tag":"Labs"},
   ] },
+  { file: "routes/cart.route.js", mount: "/api/cart", operations: [
+    {"method":"get","path":"/api/cart","public":false,"statuses":[200],"tag":"Labs"},
+    {"method":"post","path":"/api/cart/add","public":false,"statuses":[200],"tag":"Labs"},
+    {"method":"delete","path":"/api/cart/remove/{testId}","public":false,"statuses":[200],"tag":"Labs"},
+    {"method":"put","path":"/api/cart/update/{testId}","public":false,"statuses":[200],"tag":"Labs"},
+    {"method":"delete","path":"/api/cart/clear","public":false,"statuses":[200],"tag":"Labs"},
+    {"method":"post","path":"/api/cart/sync","public":false,"statuses":[200],"tag":"Labs"},
+  ] },
   { file: "routes/lab-tests.route.js", mount: "/api/lab-tests", operations: [
     {"method":"post","path":"/api/lab-tests/checkout","public":false,"statuses":[200,201],"tag":"Lab orders"},
     {"method":"post","path":"/api/lab-tests/checkout/{orderId}/complete","public":false,"statuses":[200,201],"tag":"Lab orders"},

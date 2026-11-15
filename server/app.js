@@ -1352,6 +1352,7 @@ app.use('/docs', authUser, requireRole('admin'), documentationRouter);
 app.use('/api/circuit-breakers', circuitBreakerRouter);
 // Third-party API integration status (admin, read-only) — integrations/catalog.js
 app.use('/api/admin/integrations', adminIntegrationsRouter);
+mountLabRoutes(app, 'adminPricing'); // lab test price lists for admins — see routes/lab/registry.js
 // App-facing API contract (OpenAPI 3.0.3, admin) — server/openapi/
 app.use('/api/admin/openapi', openapiRouter);
 

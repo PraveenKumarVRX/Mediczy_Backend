@@ -820,7 +820,8 @@ async function prepareLabBooking(req, { requireSchedule }) {
     familyMemberId,
     corporateBenefitSource,
     corporatePackageId,
-    familyDiscountedPrice
+    // familyDiscountedPrice is no longer read: the server prices a family
+    // booking from the employee's own package entitlement.
   } = req.body || {};
 
   if (!labId || (requireSchedule && (!appointmentDate || !appointmentTime))) {
@@ -885,36 +886,55 @@ async function prepareLabBooking(req, { requireSchedule }) {
     }
   }
 
+  // One input for the quote, the booking and the booking's re-check: the
+  // lab's own price list (or the Standard catalogue) and the booking user's
+  // plan, which covers the verified family member found above too.
+  const pricingInput = {
+    labId: lab.id,
+    userId: req.user?.id,
+    tests,
+    corporateBenefitSource,
+    corporatePackageId,
+    isFamilyBooking: Boolean(familyMember),
+  };
   let pricing;
   try {
-    pricing = await priceLabBooking({
-      tests,
-      corporateBenefitSource,
-      corporatePackageId,
-      isFamilyBooking: Boolean(familyMember),
-      familyDiscountedPrice,
-    });
+    pricing = await priceLabBooking(pricingInput);
   } catch (err) {
     if (err instanceof LabPricingError) return { error: { status: err.statusCode, body: err.toJSON() } };
     throw err;
   }
 
-  return { lab, familyMember, pricing };
+  return { lab, familyMember, pricing, pricingInput };
 }
 
 /** The quote both endpoints return: what the patient will be charged, and why. */
 const labBookingQuote = (lab, serviceType, pricing) => ({
   labId: lab.id,
+  labUid: lab.unique_id ?? null,
   labName: lab.name,
   serviceType,
   currency: pricing.currency,
+  priceSource: pricing.priceSource ?? null,
   tests: pricing.tests,
   testsSubtotal: pricing.testsSubtotal,
+  planDiscount: pricing.planDiscount ?? 0,
+  coveredAmount: pricing.coveredAmount ?? 0,
   collectionFee: pricing.collectionFee,
   totalFee: pricing.totalFee,
   paymentRequired: pricing.paymentRequired,
   basis: pricing.basis,
+  planBenefit: pricing.planBenefit ?? null,
+  corporatePackage: pricing.corporatePackage ?? null,
 });
+
+/** Thrown inside the booking transaction when a plan allowance moved since pricing. */
+class QuoteChangedError extends Error {
+  constructor(pricing) {
+    super('The price of this booking changed while it was being made');
+    this.pricing = pricing;
+  }
+}
 
 /**
  * POST /api/labs/book/quote
@@ -956,21 +976,12 @@ router.post('/book', authUser, async (req, res) => {
       corporateBenefitSource,
       corporatePackageId,
       corporatePackageName,
-      corporatePackagePrice,
-      familyDiscountPercent
     } = req.body;
 
     const prepared = await prepareLabBooking(req, { requireSchedule: true });
     if (prepared.error) return res.status(prepared.error.status).json(prepared.error.body);
-    const { lab, familyMember, pricing } = prepared;
-
-    // Server-priced (services/lab-booking-pricing.service.js): catalogue
-    // prices, never the client's, and no invented base fee (QA-07).
-    const tests = pricing.tests;
-    const testFees = pricing.testsSubtotal;
-    const collectionFee = pricing.collectionFee;
-    const totalFee = pricing.totalFee;
-    const safeDiscountedPrice = pricing.basis === 'corporate-family-discount' ? pricing.totalFee : null;
+    const { lab, familyMember, pricingInput } = prepared;
+    let { pricing } = prepared;
 
     // Create appointment inside an RLS-scoped transaction. `appointments` enforces FORCE RLS and
     // the global rls-context middleware's GUC is not guaranteed on this Sequelize pooled connection,
@@ -980,6 +991,10 @@ router.post('/book', authUser, async (req, res) => {
     const labBookingTx = await Appointment.sequelize.transaction();
     let appointment;
     let labTest;
+    let tests;
+    let testFees;
+    let collectionFee;
+    let totalFee;
     try {
       const orgRaw = Number(req.user?.organization_id ?? req.user?.organizationId);
       const orgId = Number.isFinite(orgRaw) && orgRaw > 0 ? orgRaw : 0;
@@ -987,6 +1002,28 @@ router.post('/book', authUser, async (req, res) => {
         "SELECT set_config('app.current_org_id', :org, true), set_config('app.current_user_id', :uid, true)",
         { replacements: { org: String(orgId), uid: String(req.user?.id ?? '') }, transaction: labBookingTx }
       );
+      // A plan allowance is spent by the bookings recorded against it. Two
+      // bookings at once must not both spend the same balance: hold the user
+      // plan's lock until this booking commits, then re-price. If the balance
+      // moved since the quote, nothing is booked and the new quote is returned.
+      if (pricing.coveredAmount > 0 && pricing.planBenefit?.userPlanId) {
+        await Appointment.sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', {
+          replacements: { key: `lab-plan-allowance:${pricing.planBenefit.userPlanId}` },
+          transaction: labBookingTx,
+        });
+        const repriced = await priceLabBooking(pricingInput);
+        if (repriced.totalFee !== pricing.totalFee || repriced.coveredAmount !== pricing.coveredAmount) {
+          throw Object.assign(new QuoteChangedError(repriced), { lab });
+        }
+        pricing = repriced;
+      }
+      // Server-priced (services/lab-booking-pricing.service.js): the lab's
+      // own or the Standard price, never the client's, less the plan benefit,
+      // and no invented base fee (QA-07).
+      tests = pricing.tests;
+      testFees = pricing.testsSubtotal;
+      collectionFee = pricing.collectionFee;
+      totalFee = pricing.totalFee;
       appointment = await Appointment.create({
       userId: req.user?.id,
       organization_id: orgId || null,
@@ -1007,6 +1044,7 @@ router.post('/book', authUser, async (req, res) => {
       specialization: 'Laboratory',
       doctorDetails: {
         labId,
+        labUid: lab.unique_id ?? null,
         labName: lab.name,
         labAddress: lab.address,
         labPhone: lab.phone
@@ -1030,13 +1068,23 @@ router.post('/book', authUser, async (req, res) => {
         testFees,
         collectionFee,
         pricingBasis: pricing.basis,
+        priceSource: pricing.priceSource ?? null,
+        // The plan benefit taken off testFees. planCoveredAmount is what a
+        // plan allowance paid; later bookings on the same user plan subtract
+        // it from the allowance (services/lab-booking-pricing.service.js).
+        planDiscount: pricing.planDiscount ?? 0,
+        planCoveredAmount: pricing.coveredAmount ?? 0,
+        planUserPlanId: pricing.planBenefit?.applied ? pricing.planBenefit.userPlanId : null,
+        planId: pricing.planBenefit?.applied ? pricing.planBenefit.planId : null,
         prescriptionUrl: prescriptionUrl || null,
         corporateBenefitSource: corporateBenefitSource || null,
         corporatePackageId: corporatePackageId || null,
         corporatePackageName: corporatePackageName || null,
-        corporatePackagePrice: corporatePackagePrice || null,
-        familyDiscountPercent: familyMember ? familyDiscountPercent || null : null,
-        familyDiscountedPrice: familyMember ? safeDiscountedPrice : null,
+        // Server-derived from the employee's package entitlement, never the
+        // client's figures (the client used to send these three).
+        corporatePackagePrice: pricing.corporatePackage?.packagePrice ?? null,
+        familyDiscountPercent: familyMember ? pricing.corporatePackage?.familyDiscountPercent ?? null : null,
+        familyDiscountedPrice: familyMember && pricing.basis === 'corporate-family-discount' ? pricing.totalFee : null,
         bookingFor: familyMember ? 'family' : 'self',
         familyMemberId: familyMember ? familyMember.id : null
       }
@@ -1108,6 +1156,14 @@ router.post('/book', authUser, async (req, res) => {
       quote: labBookingQuote(lab, serviceType, pricing)
     });
   } catch (error) {
+    if (error instanceof QuoteChangedError) {
+      return res.status(409).json({
+        success: false,
+        errorCode: 'QUOTE_CHANGED',
+        message: 'Your plan balance changed while this booking was being made. Please review the new total and book again.',
+        quote: labBookingQuote(error.lab, req.body?.serviceType, error.pricing),
+      });
+    }
     console.error('[Lab Booking] ❌ Error:', error);
     res.status(500).json({
       success: false,
@@ -1149,7 +1205,8 @@ router.get('/:labId/slots', authUser, async (req, res) => {
 
 /**
  * GET /api/labs/:labId/tests
- * The tests this lab can be booked for, priced from the bookable catalogue —
+ * The tests this lab can be booked for, at this lab's prices: its own price
+ * list (lab_test_prices) when it has one, otherwise the Standard catalogue —
  * the same rows POST /cart/add accepts and POST /labs/book charges.
  *
  * QA-06: labs without a `testCatalog` (2,381 of 2,418 active labs) used to get
@@ -1164,16 +1221,19 @@ router.get('/:labId/tests', async (req, res) => {
     if (!Number.isInteger(labId) || labId <= 0) {
       return res.status(404).json({ success: false, message: 'Laboratory not found' });
     }
-    const lab = await Lab.findOne({ where: { id: labId, status: 'active' }, attributes: ['id'] });
+    const lab = await Lab.findOne({ where: { id: labId, status: 'active' }, attributes: ['id', 'unique_id'] });
     if (!lab) {
       return res.status(404).json({ success: false, message: 'Laboratory not found' });
     }
     const serviceType = typeof req.query.serviceType === 'string' ? req.query.serviceType : undefined;
-    const tests = await listBookableLabTests({ serviceType });
+    // The lab's own price list when it has one ('lab'), else the Standard
+    // catalogue ('standard') — the source POST /cart/add and /labs/book use.
+    const { priceSource, tests } = await listBookableLabTests({ serviceType, labId });
     res.json({
       success: true,
       labId: String(labId),
-      priceSource: 'catalog',
+      labUid: lab.unique_id ?? null,
+      priceSource,
       tests
     });
   } catch (error) {

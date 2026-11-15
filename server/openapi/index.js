@@ -16,7 +16,7 @@ import { schemas, securitySchemes, responses } from './components.js';
 import { paths } from './paths.js';
 import { mobilePaths, mobileSchemas, mobileResponses } from './mobile.js';
 
-export const APP_SPEC_VERSION = '1.3.0';
+export const APP_SPEC_VERSION = '1.4.0';
 
 export function buildAppSpec() {
   return JSON.parse(JSON.stringify({
@@ -28,7 +28,7 @@ export function buildAppSpec() {
         'The contract the My SmartHealth mobile app and partners build against.',
         'Authentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.',
         'Error envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.',
-        'Scope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status.',
+        'Scope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/cart/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status.',
       ].join('\n\n'),
     },
     servers: [{ url: '/', description: 'Same origin as the app backend' }],

@@ -1,6 +1,6 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
-import { catalogueByIdentifier } from '../services/lab-booking-pricing.service.js';
+import { catalogueByIdentifier, normaliseLabId } from '../services/lab-booking-pricing.service.js';
 
 const router = express.Router();
 
@@ -14,18 +14,33 @@ const cartStore = new Map();
  * API endpoints for lab test cart management.
  *
  * Pricing is SERVER-AUTHORITATIVE (W-LAB-2 / D-8): the client may send a test
- * object, but its `price` is never trusted. Every item is re-priced from the
- * api_lab_tests catalogue — the same source the booking endpoint recomputes
- * from — so the cart can never disagree with the catalogue (CBC showed ₹1,000
- * in the cart and ₹500 in the app) and a crafted payload can't set its own price.
- * Tests that are not in the active catalogue, or have no confirmed price, are
- * refused on add and dropped on sync (consistent with BUG-04 hiding unpriced tests).
+ * object, but its `price` is never trusted. Every item is re-priced by the
+ * lab-booking pricing service — the same source the booking endpoint
+ * recomputes from — so the cart can never disagree with the booking (CBC
+ * showed ₹1,000 in the cart and ₹500 in the app) and a crafted payload can't
+ * set its own price. Tests that are not bookable, or have no confirmed price,
+ * are refused on add and dropped on sync (consistent with BUG-04 hiding
+ * unpriced tests).
+ *
+ * Prices are per lab (owner decision 2026-11-15). An item names its lab as
+ * `labId` (on the item, on item.test, or item.labInfo.id), or the request
+ * body's `labId` applies to every item that names none. A lab with its own
+ * price list offers only those tests at its prices (priceSource 'lab'); a lab
+ * without one, or an item with no lab (the shipped app 1.3.0 sends none), is
+ * priced from the Standard catalogue (priceSource 'standard'). The cart shows
+ * list prices; a member's plan benefit is applied by POST /labs/book/quote.
  */
 
 // The catalogue lookup is shared with GET /labs/:labId/tests and POST
 // /labs/book(/quote), so a test the listing offers is one the cart accepts and
 // the booking prices the same way (QA-06).
 const itemIdentifier = (item) => (item?.test?.id ?? item?.id ?? null);
+
+/** The lab an item is priced at, or null for the Standard catalogue. */
+const itemLabId = (item, fallbackLabId = null) => normaliseLabId(
+  item?.labId ?? item?.test?.labId ?? item?.labInfo?.id ?? fallbackLabId,
+);
+const labKey = (labId) => (labId === null ? 'standard' : `lab:${labId}`);
 
 /**
  * The catalogue row an item resolved to, which is what makes two items "the
@@ -38,7 +53,8 @@ const catalogueKey = (item) => {
   const test = item?.test || item;
   return test?.catalogTestId === null || test?.catalogTestId === undefined
     ? null
-    : String(test.catalogTestId).toLowerCase();
+    // The same test at two labs is two lines: each lab sets its own price.
+    : `${labKey(itemLabId(item))}:${String(test.catalogTestId).toLowerCase()}`;
 };
 
 /** Does this cart item answer to `identifier` in any of the forms the catalogue accepts? */
@@ -74,21 +90,33 @@ const LAB_TEST_QUANTITY = 1;
  * single test (mobile 1.3.0 QA row 113). Collapsing inside repriceItems also
  * means GET /api/cart heals a cart that already holds duplicates.
  */
-async function repriceItems(rawItems) {
+async function repriceItems(rawItems, { labId: defaultLabId = null } = {}) {
   const source = Array.isArray(rawItems) ? rawItems : [];
-  const map = await catalogueByIdentifier(source.map(itemIdentifier));
+  // One price lookup per lab in the cart.
+  const identifiersByLab = new Map();
+  for (const item of source) {
+    const key = labKey(itemLabId(item, defaultLabId));
+    if (!identifiersByLab.has(key)) identifiersByLab.set(key, []);
+    identifiersByLab.get(key).push(itemIdentifier(item));
+  }
+  const pricesByLab = new Map();
+  for (const [key, identifiers] of identifiersByLab) {
+    const labId = key === 'standard' ? null : Number(key.slice(4));
+    pricesByLab.set(key, await catalogueByIdentifier(identifiers, { labId }));
+  }
   const items = [];
   const dropped = [];
   const merged = [];
-  // catalogue test_id -> index in `items`, so a second arrival adds quantity.
+  // lab + catalogue test_id -> index in `items`, so a second arrival is merged.
   const seen = new Map();
 
   for (const item of source) {
     const test = item?.test || item;
-    const row = map.get(String(itemIdentifier(item) ?? '').toLowerCase());
+    const labId = itemLabId(item, defaultLabId);
+    const row = pricesByLab.get(labKey(labId))?.get(String(itemIdentifier(item) ?? '').toLowerCase());
     if (!row) { dropped.push(itemIdentifier(item)); continue; }
 
-    const dedupeKey = String(row.test_id).toLowerCase();
+    const dedupeKey = `${labKey(labId)}:${String(row.test_id).toLowerCase()}`;
     const alreadyAt = seen.get(dedupeKey);
     if (alreadyAt !== undefined) {
       // Not accumulated into a quantity: see LAB_TEST_QUANTITY below.
@@ -99,9 +127,11 @@ async function repriceItems(rawItems) {
     seen.set(dedupeKey, items.length);
     items.push({
       ...item,
+      labId,
       quantity: LAB_TEST_QUANTITY,
       test: {
         ...test,
+        labId,
         id: test?.id ?? row.test_id,
         catalogTestId: row.test_id,
         // Carry the catalogue code so the item can later be matched by it —
@@ -113,7 +143,7 @@ async function repriceItems(rawItems) {
         homeCollectionCharge: row.home_collection_charge === null || row.home_collection_charge === undefined
           ? null
           : Number(row.home_collection_charge),
-        priceSource: 'catalog',
+        priceSource: row.price_source === 'lab' ? 'lab' : 'standard',
       },
     });
   }
@@ -167,12 +197,14 @@ router.post('/add', authUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Test item is required' });
     }
 
-    // Resolve against the catalogue — the client's price is ignored.
-    const { items: resolved } = await repriceItems([{ test, quantity }]);
+    // Resolve against the lab's prices (or the Standard catalogue) — the
+    // client's price is ignored.
+    const labId = itemLabId({ test, labId: req.body?.labId ?? req.body?.test?.labId });
+    const { items: resolved } = await repriceItems([{ test, quantity, labId }]);
     if (!resolved.length) {
       return res.status(400).json({
         success: false,
-        message: 'This test is not available for booking right now.',
+        message: labId ? 'This lab does not offer this test, or it is not available for booking right now.' : 'This test is not available for booking right now.',
         errorCode: 'TEST_NOT_BOOKABLE',
       });
     }
@@ -185,7 +217,7 @@ router.post('/add', authUser, async (req, res) => {
     const existingIndex = cart.items.findIndex((item) => {
       const key = catalogueKey(item);
       if (key && pricedKey && key === pricedKey) return true;
-      return itemAnswersTo(item, test.id);
+      return itemLabId(item) === itemLabId(pricedItem) && itemAnswersTo(item, test.id);
     });
 
     if (existingIndex >= 0) {
@@ -304,7 +336,7 @@ router.post('/sync', authUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Items must be an array' });
     }
 
-    const { items: priced, dropped, merged } = await repriceItems(items);
+    const { items: priced, dropped, merged } = await repriceItems(items, { labId: req.body?.labId });
     const cart = { items: priced, updatedAt: new Date() };
     cartStore.set(userId, cart);
 

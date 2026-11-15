@@ -21,6 +21,7 @@ import labBranchesRouter from './branches.route.js';
 import labRuleEngineRouter from '../lab-rule-engine.route.js';
 import labCollectionRouter from './collection.route.js';
 import phlebotomyRouter from '../phlebotomy.route.js';
+import { labPortalTestPricesRouter, adminLabTestPricesRouter } from './test-prices.route.js';
 
 export const LAB_ROUTE_STAGES = {
   // Clinical workflow block: lab results, abnormal flagging, patient notifications
@@ -31,12 +32,17 @@ export const LAB_ROUTE_STAGES = {
   directory: [['/api/labs', enhancedLabRouter]],
   // Admin lab CRUD operations
   admin: [['/api/admin/labs', adminLabsRouter]],
+  // Admin maintenance of any lab's test price list. Mounted beside the other
+  // narrow /api/admin/* routers, ahead of the broad '/api/admin' ones.
+  adminPricing: [['/api/admin/lab-test-prices', adminLabTestPricesRouter]],
   // Lab portal: auth, incoming EMR orders, RIS (PACS/DICOM; the clinic RIS
   // mount reuses the same router for dental OPG / C-arm / angio), branch registry
   portal: [
     // Collection platform (home + ward). Mounted BEFORE '/api/lab' so the lab auth router never sees these paths.
     ['/api/lab/collection', labCollectionRouter],
     ['/api/phlebotomy', phlebotomyRouter],
+    // The lab's own test price list. Also before '/api/lab', for the same reason.
+    ['/api/lab/test-prices', labPortalTestPricesRouter],
     ['/api/lab', labAuthRouter],
     ['/api/lab/orders', labOrdersRouter],
     ['/api/lab/ris', labRisImagingRouter],
