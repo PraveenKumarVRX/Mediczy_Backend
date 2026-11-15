@@ -73,7 +73,19 @@ export async function processDataExport(jobData) {
     );
 
     // ── Collect all user data ─────────────────────────────────────────────────
-    const exportPackage = await _collectUserData(userId, client);
+    // Under the member's own RLS context: FORCED-RLS tables (family_members,
+    // appointments, patient_consents, …) otherwise return no rows, and the
+    // export silently leaves them out.
+    let exportPackage;
+    await client.query('BEGIN');
+    try {
+      await setUserRlsContext(client, userId);
+      exportPackage = await _collectUserData(userId, client);
+      await client.query('COMMIT');
+    } catch (collectError) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw collectError;
+    }
 
     // ── Serialize ─────────────────────────────────────────────────────────────
     const exportJson = JSON.stringify(exportPackage, null, 2);
@@ -115,6 +127,19 @@ export async function processDataExport(jobData) {
   } finally {
     client.release();
   }
+}
+
+/**
+ * Inside an open transaction: act as the member for row-level security
+ * (app.current_user_id = the member; org from their account, else 0).
+ */
+async function setUserRlsContext(client, userId) {
+  const { rows: [account] } = await client.query('SELECT organization_id FROM users WHERE id = $1', [userId]);
+  const org = Number(account?.organization_id);
+  await client.query(
+    "SELECT set_config('app.current_org_id', $1, true), set_config('app.current_user_id', $2, true), set_config('app.is_platform_admin', 'false', true)",
+    [String(Number.isSafeInteger(org) && org > 0 ? org : 0), String(userId)]
+  );
 }
 
 // ── Data collection ────────────────────────────────────────────────────────────
@@ -249,6 +274,10 @@ export async function executeErasure(userId, requestId) {
 
   try {
     await client.query('BEGIN');
+    // The member's own RLS context, or every DELETE/UPDATE on a FORCED-RLS
+    // table (family_members, appointments) matches 0 rows and the erasure
+    // reports success while the data stays.
+    await setUserRlsContext(client, userId);
 
     // 1. Anonymize user record (keep ID for referential integrity)
     const anonymizedEmail = `deleted_${userId}_${Date.now()}@mediczy.invalid`;
