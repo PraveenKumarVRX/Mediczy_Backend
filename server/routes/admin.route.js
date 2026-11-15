@@ -64,6 +64,11 @@ import {
   createInternalUser
 } from '../controller/admin.controller.js';
 import {
+  familyCoverageFromPlanBody,
+  withFamilyCoverage,
+  withoutFamilyCoverage
+} from '../utils/familyCoverage.js';
+import {
   createHealthRiskAssessment,
   getMemberHealthRiskHistory,
   runHealthRiskInference
@@ -5799,6 +5804,13 @@ router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), requir
     // corporateId comes from the ring-fenced resolved corporate (not req.body)
     const corporateId = req.resolvedCorporate?.id || null;
 
+    // Family coverage tier: who the plan covers besides the employee
+    // (utils/familyCoverage.js). Stored as metadata.familyCoverage.
+    const familyTier = familyCoverageFromPlanBody(req.body);
+    if (familyTier.error) {
+      return res.status(400).json({ success: false, message: familyTier.error });
+    }
+
     const resolvedName = planName || name;
     const resolvedPrice = premiumPerEmployee != null ? Number(premiumPerEmployee) : (price != null ? Number(price) : null);
 
@@ -5837,6 +5849,7 @@ router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), requir
       benefits: benefits || [],
       coverage: coverage || {},
       healthPackageIds: Array.isArray(healthPackageIds) ? healthPackageIds : [],
+      ...(familyTier.present && familyTier.value ? { familyCoverage: familyTier.value } : {}),
     };
 
     const [inserted] = await postgresSequelize.query(`
@@ -5862,7 +5875,7 @@ router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), requir
         currency,
         billingCycle: resolvedCycle,
         description: description || null,
-        features: features ? JSON.stringify(features) : null,
+        features: features ? JSON.stringify(withoutFamilyCoverage(features)) : null,
         metadata: JSON.stringify(metadata),
         isActive: status === 'Active',
       },
@@ -5918,6 +5931,10 @@ router.put('/corporate-plans/:planId', authUser, requireRole(['admin', 'team']),
     if (!resolvedName) {
       return res.status(400).json({ success: false, message: 'Plan name is required' });
     }
+    const familyTier = familyCoverageFromPlanBody(req.body);
+    if (familyTier.error) {
+      return res.status(400).json({ success: false, message: familyTier.error });
+    }
 
     // Fetch existing plan
     const [existing] = await postgresSequelize.query(
@@ -5931,8 +5948,9 @@ router.put('/corporate-plans/:planId', authUser, requireRole(['admin', 'team']),
     const existingMeta = typeof existing.metadata === 'string'
       ? JSON.parse(existing.metadata) : (existing.metadata || {});
 
+    // Without familyCoverage in the body the stored tier is kept.
     const metadata = {
-      ...existingMeta,
+      ...(familyTier.present ? withFamilyCoverage(existingMeta, familyTier.value) : existingMeta),
       planType: planType || existingMeta.planType,
       status: status || existingMeta.status,
       validFrom: validFrom || existingMeta.validFrom,
@@ -5966,7 +5984,7 @@ router.put('/corporate-plans/:planId', authUser, requireRole(['admin', 'team']),
         name: resolvedName,
         description: description || '',
         currency: currency || 'INR',
-        features: JSON.stringify(features || {}),
+        features: JSON.stringify(withoutFamilyCoverage(features) || {}),
         metadata: JSON.stringify(metadata),
         isActive: (status || existingMeta.status) === 'Active',
         ...(resolvedPrice !== null ? { price: resolvedPrice } : {}),

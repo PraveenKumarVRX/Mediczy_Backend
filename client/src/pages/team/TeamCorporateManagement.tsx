@@ -66,6 +66,13 @@ import {
   LogIn,
 } from 'lucide-react';
 import api from '@/utils/api';
+import {
+  FAMILY_COVERAGE_NONE,
+  FAMILY_COVERAGE_OPTIONS,
+  familyCoverageFromSelect,
+  familyCoverageLabel,
+  familyCoverageSelectValue,
+} from '@/constants/familyCoverage';
 import { useNavigate } from 'react-router-dom';
 import CorporateWelcomeEmailBatchDialog, { WelcomeEmailDraft } from './CorporateWelcomeEmailBatchDialog';
 import {
@@ -264,6 +271,7 @@ interface CorporatePlan {
   features?: Record<string, boolean>;
   coverage?: Record<string, any>;
   healthPackageIds?: string[];
+  familyCoverage?: string | null;
   benefits?: Array<{
     id: string;
     name: string;
@@ -1054,6 +1062,7 @@ const TeamCorporateManagement = () => {
     features: mergePlanFeatures(),
     coverage: { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
     healthPackageIds: [] as string[],
+    familyCoverage: FAMILY_COVERAGE_NONE as string,
   });
   const [newPlan, setNewPlan] = useState({
     planName: '',
@@ -1075,6 +1084,7 @@ const TeamCorporateManagement = () => {
       postPolicyMedical: '60 days',
     },
     healthPackageIds: [] as string[],
+    familyCoverage: FAMILY_COVERAGE_NONE as string,
   });
   
   // Wellness Calendar
@@ -3128,6 +3138,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
             features: mergePlanFeatures(features),
             coverage: metadata.coverage || {},
             healthPackageIds: metadata.healthPackageIds || [],
+            familyCoverage: metadata.familyCoverage || null,
             benefits: metadata.benefits || [...defaultBenefits],
           };
         });
@@ -3176,6 +3187,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       features: mergePlanFeatures(plan.features),
       coverage: plan.coverage || { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
       healthPackageIds: plan.healthPackageIds || [],
+      familyCoverage: familyCoverageSelectValue(plan.familyCoverage),
     });
     setShowEditPlanDialog(true);
   };
@@ -3210,6 +3222,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         postPolicyMedical: String(plan.coverage?.postPolicyMedical ?? '60 days'),
       },
       healthPackageIds: [...(plan.healthPackageIds || [])].map(String),
+      familyCoverage: familyCoverageSelectValue(plan.familyCoverage),
     });
     setShowCreatePlanDialog(true);
   };
@@ -3244,6 +3257,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         benefits: editPlanForm.benefits,
         coverage: { ...editPlanForm.coverage, sumInsured: parseFloat(editPlanForm.coverage.sumInsured || '0') },
         healthPackageIds: editPlanForm.healthPackageIds,
+        familyCoverage: familyCoverageFromSelect(editPlanForm.familyCoverage),
       }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
       toast({ title: 'Plan Updated', description: `${editPlanForm.planName} has been updated.` });
       setShowEditPlanDialog(false);
@@ -6012,6 +6026,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
           sumInsured: parseFloat(newPlan.coverage.sumInsured || '0'),
         },
         healthPackageIds: newPlan.healthPackageIds,
+        familyCoverage: familyCoverageFromSelect(newPlan.familyCoverage),
       };
       await api.post('/admin/corporate-plans', planData, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
@@ -6040,6 +6055,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
           prePolicyMedical: '30 days', postPolicyMedical: '60 days',
         },
         healthPackageIds: [],
+        familyCoverage: FAMILY_COVERAGE_NONE,
       });
       if (selectedCorporate?.id) {
         fetchCorporatePlans(selectedCorporate.id);
@@ -10232,6 +10248,17 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                       rows={3}
                     />
                   </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label>Family coverage</Label>
+                    <Select value={newPlan.familyCoverage} onValueChange={(v) => setNewPlan({ ...newPlan, familyCoverage: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={FAMILY_COVERAGE_NONE}>Not set (employee only)</SelectItem>
+                        {FAMILY_COVERAGE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Which family members employees on this plan can add in the app.</p>
+                  </div>
                 </div>
               </div>
 
@@ -10523,6 +10550,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     <p className="text-sm">{editingPlan.description}</p>
                   </div>
                 )}
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Family coverage</div>
+                  <p className="text-sm">{familyCoverageLabel(editingPlan.familyCoverage) || 'Not set (employee only)'}</p>
+                </div>
                 {editingPlan.features && Object.values(editingPlan.features).some(Boolean) && (
                   <div>
                     <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Features</div>
@@ -10616,6 +10647,17 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                   <div className="col-span-2 space-y-2">
                     <Label>Description</Label>
                     <Textarea rows={3} value={editPlanForm.description} onChange={(e) => setEditPlanForm({ ...editPlanForm, description: e.target.value })} />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label>Family coverage</Label>
+                    <Select value={editPlanForm.familyCoverage} onValueChange={(v) => setEditPlanForm({ ...editPlanForm, familyCoverage: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={FAMILY_COVERAGE_NONE}>Not set (employee only)</SelectItem>
+                        {FAMILY_COVERAGE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Which family members employees on this plan can add in the app.</p>
                   </div>
                 </div>
               </div>

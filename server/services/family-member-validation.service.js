@@ -4,6 +4,14 @@ import UserSubscription from '../models/postgres/user-subscription.model.postgre
 import SubscriptionMembershipPlan from '../models/postgres/membership-plan.model.postgres.js';
 import { UserPlan as AssignedUserPlan, MembershipPlan as AssignedMembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import {
+  FAMILY_COVERAGE_TIERS,
+  RELATION_GROUPS,
+  IN_LAW_RELATIONSHIPS,
+  familyCoverageOf,
+  familyCoverageLabel,
+  relationGroupOf
+} from '../utils/familyCoverage.js';
 
 /**
  * Membership Type Limits
@@ -21,9 +29,12 @@ const MEMBERSHIP_LIMITS = {
     maxMembers: 4,
     allowedRelations: ['spouse', 'partner', 'son', 'daughter', 'child']
   },
+  // Corporate members are covered by their benefit plan's coverage tier
+  // (metadata.familyCoverage), never by a count. Without a tier the employee
+  // alone is covered; the old flat default of 6 dependents is gone.
   corporate: {
-    maxMembers: 6, // Default for corporate, can be overridden by policy
-    allowedRelations: ['spouse', 'partner', 'son', 'daughter', 'child', 'father', 'mother']
+    maxMembers: 0,
+    allowedRelations: []
   }
 };
 
@@ -39,16 +50,31 @@ export const STORABLE_RELATIONSHIPS = Object.freeze([
   'nephew', 'niece', 'cousin', 'guardian', 'other'
 ]);
 
+/**
+ * Parents-in-law. Accepted as input, but storable only once migration
+ * 20261115000300-family-relationship-in-laws has added them to the enum; until
+ * then an add is refused with a clear message (see inLawRelationshipsStorable).
+ */
+export { IN_LAW_RELATIONSHIPS };
+export const KNOWN_RELATIONSHIPS = Object.freeze([...STORABLE_RELATIONSHIPS, ...IN_LAW_RELATIONSHIPS]);
+
 // Gender-neutral words the enum cannot store, resolved when the gender is known.
 const GENDERED_RELATIONS = {
   child: { Male: 'son', Female: 'daughter' },
   parent: { Male: 'father', Female: 'mother' },
   sibling: { Male: 'brother', Female: 'sister' },
   grandchild: { Male: 'grandson', Female: 'granddaughter' },
-  grandparent: { Male: 'grandfather', Female: 'grandmother' }
+  grandparent: { Male: 'grandfather', Female: 'grandmother' },
+  parent_in_law: { Male: 'father_in_law', Female: 'mother_in_law' }
 };
 
 const RELATION_ALIASES = {
+  // In-laws first, so the fuzzy keyword match below does not read
+  // 'fatherinlaw' as 'father'.
+  fatherinlaw: 'father_in_law',
+  motherinlaw: 'mother_in_law',
+  parentinlaw: 'parent_in_law',
+  parentsinlaw: 'parent_in_law',
   spouse: 'spouse',
   wife: 'spouse',
   husband: 'spouse',
@@ -84,6 +110,8 @@ const RELATION_ALIASES = {
 };
 
 const RELATION_GENDER_HINTS = {
+  father_in_law: 'Male',
+  mother_in_law: 'Female',
   father: 'Male',
   dad: 'Male',
   grandfather: 'Male',
@@ -135,6 +163,11 @@ function normalizeRelation(value = '') {
 
   // Fallback fuzzy keyword match.
   const compact = cleaned.replace(/\s+/g, '');
+  // Any other in-law ('sister in law', 'son in law') is not a relationship we
+  // store; never let the fuzzy match turn it into 'sister' or 'son'.
+  if (compact.includes('inlaw')) {
+    return cleaned.replace(/\s+/g, '_');
+  }
   for (const [alias, canonical] of Object.entries(RELATION_ALIASES)) {
     if (compact.includes(alias)) {
       return canonical;
@@ -247,12 +280,24 @@ async function hasActiveCorporateRoster(userId, transaction) {
 }
 
 function buildLimitsFromPlan(plan, membershipTypeFallback, source) {
+  const planType = plan?.slug || plan?.name || membershipTypeFallback;
+  const tier = familyCoverageOf(plan);
+  if (tier) {
+    return buildTierLimits(tier, {
+      membershipType: planType,
+      source: `${source}-tier`,
+      planSlug: plan?.slug || null,
+      planName: plan?.name || null
+    });
+  }
+
   const maxMembers = parseFamilyLimit(plan?.features?.familyMembers);
   const allowedRelations = allowedRelationsFromPlan(plan, maxMembers);
-  const planType = plan?.slug || plan?.name || membershipTypeFallback;
 
   return {
     membershipType: planType,
+    coverageMode: 'count',
+    familyCoverage: null,
     maxMembers,
     allowedRelations,
     source,
@@ -261,168 +306,96 @@ function buildLimitsFromPlan(plan, membershipTypeFallback, source) {
   };
 }
 
-function normalizeAllowedRelations(relations, fallback = []) {
-  if (!Array.isArray(relations)) return fallback;
-  const normalized = relations
-    .map((item) => normalizeRelation(item))
-    .filter(Boolean);
-  return normalized.length > 0 ? Array.from(new Set(normalized)) : fallback;
-}
-
-function normalizeComponent(component = {}, defaults = {}) {
-  const enabled = component.enabled === true || component.isEnabled === true;
-  const maxMembers = Number(component.maxMembers ?? component.familyMembers ?? component.dependentLimit);
-  return {
-    enabled,
-    maxMembers: Number.isFinite(maxMembers) ? maxMembers : (defaults.maxMembers ?? 0),
-    allowedRelations: normalizeAllowedRelations(
-      component.allowedRelations || component.allowed_relationships,
-      defaults.allowedRelations || []
-    )
-  };
-}
-
-function resolveCorporateComponentBenefits(userRecord) {
-  const metadata = parseJsonSafe(userRecord?.metadata);
-
-  // These root keys are aliases for the same payload shape.
-  // Canonical preference is employeeBenefits; others are backward-compatible.
-  const benefitRoots = [
-    metadata?.employeeBenefits,
-    metadata?.hrAssignedBenefits,
-    metadata?.corporateBenefits,
-    metadata?.benefits
+/** Limits for a coverage tier (see utils/familyCoverage.js). */
+function buildTierLimits(tier, base) {
+  const rules = FAMILY_COVERAGE_TIERS[tier];
+  const allowedRelations = [
+    ...(rules.spouse > 0 ? RELATION_GROUPS.spouse : []),
+    ...(rules.children > 0 ? RELATION_GROUPS.children : []),
+    ...(rules.parents > 0 ? [...RELATION_GROUPS.parents, ...RELATION_GROUPS.parentsInLaw] : [])
   ];
-
-  const canonicalBenefits = benefitRoots
-    .map((item) => parseJsonSafe(item))
-    .find((item) => item && typeof item === 'object' && Object.keys(item).length > 0);
-
-  if (!canonicalBenefits || Object.keys(canonicalBenefits).length === 0) {
-    return null;
-  }
-
-  const merged = canonicalBenefits;
-
-  const insuranceRaw = merged.insurance || merged.insurancePlan || merged.insuranceBenefits || {};
-  const opWellnessRaw =
-    merged.opWellness ||
-    merged.opdWellness ||
-    merged.opd ||
-    merged.wellness ||
-    merged.opdBenefits ||
-    merged.wellnessBenefits ||
-    {};
-
-  const insurance = normalizeComponent(insuranceRaw, {
-    maxMembers: 0,
-    allowedRelations: MEMBERSHIP_LIMITS.corporate.allowedRelations
-  });
-  const opWellness = normalizeComponent(opWellnessRaw, {
-    maxMembers: 0,
-    allowedRelations: MEMBERSHIP_LIMITS.corporate.allowedRelations
-  });
-
-  // Top-level fallbacks: allow HR to send flattened flags.
-  const insuranceEnabledTop = merged.insuranceEnabled === true;
-  const opWellnessEnabledTop = merged.opWellnessEnabled === true || merged.opdEnabled === true || merged.wellnessEnabled === true;
-  if (!insurance.enabled && insuranceEnabledTop) {
-    insurance.enabled = true;
-    if (insurance.maxMembers <= 0) insurance.maxMembers = MEMBERSHIP_LIMITS.corporate.maxMembers;
-  }
-  if (!opWellness.enabled && opWellnessEnabledTop) {
-    opWellness.enabled = true;
-    if (opWellness.maxMembers <= 0) opWellness.maxMembers = MEMBERSHIP_LIMITS.corporate.maxMembers;
-  }
-
   return {
-    insurance,
-    opWellness,
-    source: 'corporate-employee-benefits'
+    ...base,
+    coverageMode: 'tier',
+    familyCoverage: tier,
+    maxMembers: rules.spouse + rules.children + rules.parents,
+    allowedRelations
   };
 }
 
-function mergeLimitsWithCorporateComponents(baseLimits, corporateComponents) {
-  if (!corporateComponents) return baseLimits;
+const isCorporatePlan = (plan) => String(plan?.type || '').toLowerCase() === 'corporate'
+  || String(plan?.organizationType || '').toLowerCase() === 'corporate';
 
-  const insurance = corporateComponents.insurance || {};
-  const opWellness = corporateComponents.opWellness || {};
-
-  const activeComponents = [insurance, opWellness].filter((c) => c.enabled);
-  if (activeComponents.length === 0) {
-    return baseLimits;
-  }
-
-  const componentMax = Math.max(...activeComponents.map((c) => Number(c.maxMembers) || 0), 0);
-  const componentRelations = Array.from(new Set(
-    activeComponents.flatMap((c) => Array.isArray(c.allowedRelations) ? c.allowedRelations : [])
-  ));
-
-  return {
-    ...baseLimits,
-    maxMembers: Math.max(baseLimits.maxMembers || 0, componentMax),
-    allowedRelations: componentRelations.length > 0
-      ? Array.from(new Set([...(baseLimits.allowedRelations || []), ...componentRelations]))
-      : baseLimits.allowedRelations,
-    source: `${baseLimits.source}+${corporateComponents.source}`,
-    componentBenefits: {
-      insurance,
-      opWellness
-    }
-  };
+/**
+ * The corporate benefit plans (subscription_plans, type CORPORATE) that can
+ * carry the member's coverage tier: the one a membership plan links to through
+ * metadata.subscriptionPlanId, then the member's active corporate subscriptions.
+ */
+async function corporateSubscriptionPlans(userId, linkedPlanId, transaction) {
+  const rows = await postgresSequelize.query(
+    `SELECT sp.id, sp.name, sp.slug, sp.type, sp.features, sp.metadata,
+            (sp.id = :linkedPlanId) AS linked
+       FROM subscription_plans sp
+      WHERE sp.type = 'CORPORATE'
+        AND (sp.id = :linkedPlanId
+             OR sp.id IN (SELECT us.plan_id FROM user_subscriptions us
+                           WHERE us.user_id = :userId AND us.status = 'ACTIVE'))
+      ORDER BY (sp.id = :linkedPlanId) DESC, sp.id DESC`,
+    { replacements: { userId, linkedPlanId: linkedPlanId || 0 }, type: 'SELECT', transaction }
+  );
+  return Array.isArray(rows) ? rows : [];
 }
 
 async function resolvePlanLimits(userId, membershipTypeFallback = 'individual', userRecord = null, { transaction } = {}) {
   const corporateScoped = isCorporateUser(userRecord, membershipTypeFallback)
     || await hasActiveCorporateRoster(userId, transaction);
-  const corporateComponents = corporateScoped ? resolveCorporateComponentBenefits(userRecord) : null;
 
-  // 1) Resolve from user_plans/membership_plans first.
-  // This includes team-managed corporate assignments and legacy active plan assignments.
+  // 1) The active user_plans/membership_plans assignment (team-managed corporate
+  // assignments and legacy plan assignments).
   const activeAssignedPlan = await AssignedUserPlan.findOne({
     where: { userId, status: 'active' },
     include: [{ model: AssignedMembershipPlan, as: 'plan' }],
     order: [['createdAt', 'DESC']],
     transaction
   });
+  const assignedPlan = activeAssignedPlan?.plan || null;
 
-  if (activeAssignedPlan?.plan) {
-    const limitsFromPlan = buildLimitsFromPlan(
-      activeAssignedPlan.plan,
-      membershipTypeFallback,
-      corporateScoped ? 'corporate-assigned-plan' : 'active-user-plan'
-    );
-    return corporateScoped
-      ? mergeLimitsWithCorporateComponents(limitsFromPlan, corporateComponents)
-      : limitsFromPlan;
-  }
-
-  // Corporate users must derive limits from corporate assignment/policy.
-  // Do not fallback to personal user_subscriptions for corporate-scoped users.
   if (corporateScoped) {
-    if (corporateComponents) {
-      return mergeLimitsWithCorporateComponents(
-        {
-          membershipType: 'corporate',
-          maxMembers: 0,
-          allowedRelations: [],
-          source: 'corporate-without-assigned-plan',
-          planSlug: null,
-          planName: 'Corporate Policy'
-        },
-        corporateComponents
-      );
+    // Corporate members are covered by their benefit plan's coverage tier, never
+    // by a count and never by a personal user_subscriptions plan.
+    const assignedCorporatePlan = assignedPlan && isCorporatePlan(assignedPlan) ? assignedPlan : null;
+    const linkedPlanId = toPositiveInt(parseJsonSafe(assignedCorporatePlan?.metadata)?.subscriptionPlanId);
+    const candidates = [
+      ...(assignedCorporatePlan ? [assignedCorporatePlan] : []),
+      ...await corporateSubscriptionPlans(userId, linkedPlanId, transaction)
+    ];
+    const tiered = candidates.find((plan) => familyCoverageOf(plan));
+    if (tiered) {
+      return buildTierLimits(familyCoverageOf(tiered), {
+        membershipType: 'corporate',
+        source: 'corporate-plan-tier',
+        planSlug: tiered.slug || tiered.code || null,
+        planName: tiered.name || null
+      });
     }
 
-    const corporateFallback = MEMBERSHIP_LIMITS.corporate;
-    return {
+    // A plan the member holds personally (not a corporate plan) keeps its own rules.
+    if (assignedPlan && !assignedCorporatePlan) {
+      return buildLimitsFromPlan(assignedPlan, membershipTypeFallback, 'active-user-plan');
+    }
+
+    // No tier on any corporate plan: the employee alone is covered.
+    const corporatePlan = candidates[0] || null;
+    return buildTierLimits('employee', {
       membershipType: 'corporate',
-      maxMembers: corporateFallback.maxMembers,
-      allowedRelations: corporateFallback.allowedRelations,
-      source: 'corporate-default-policy',
-      planSlug: null,
-      planName: 'Corporate Policy'
-    };
+      source: corporatePlan ? 'corporate-plan-without-tier' : 'corporate-without-plan',
+      planSlug: corporatePlan?.slug || corporatePlan?.code || null,
+      planName: corporatePlan?.name || null
+    });
+  }
+
+  if (assignedPlan) {
+    return buildLimitsFromPlan(assignedPlan, membershipTypeFallback, 'active-user-plan');
   }
 
   // 2) Fallback to user_subscriptions/subscription_plans.
@@ -442,6 +415,8 @@ async function resolvePlanLimits(userId, membershipTypeFallback = 'individual', 
   const fallback = MEMBERSHIP_LIMITS[membershipTypeFallback] || MEMBERSHIP_LIMITS.individual;
   return {
     membershipType: membershipTypeFallback,
+    coverageMode: 'count',
+    familyCoverage: null,
     maxMembers: fallback.maxMembers,
     allowedRelations: fallback.allowedRelations,
     source: 'membership-type',
@@ -475,127 +450,269 @@ function userNotFound() {
   return error;
 }
 
+// Whether the relationship enum can store parents-in-law yet. A positive answer
+// is final; a negative one is re-checked every few minutes so applying the
+// migration takes effect without a restart.
+const IN_LAW_RECHECK_MS = 5 * 60 * 1000;
+let inLawEnumState = { storable: false, checkedAt: 0 };
+
+export async function inLawRelationshipsStorable(transaction) {
+  if (inLawEnumState.storable) return true;
+  if (inLawEnumState.checkedAt && Date.now() - inLawEnumState.checkedAt < IN_LAW_RECHECK_MS) return false;
+  let storable = false;
+  try {
+    const rows = await postgresSequelize.query(
+      `SELECT e.enumlabel
+         FROM pg_enum e
+         JOIN pg_type t ON t.oid = e.enumtypid
+        WHERE t.typname = 'enum_family_members_relationship'
+          AND e.enumlabel IN ('father_in_law', 'mother_in_law')`,
+      { type: 'SELECT', transaction }
+    );
+    storable = Array.isArray(rows) && rows.length === IN_LAW_RELATIONSHIPS.length;
+  } catch {
+    storable = false;
+  }
+  inLawEnumState = { storable, checkedAt: Date.now() };
+  return storable;
+}
+
+/** Test hook: forget the cached enum answer. */
+export function resetInLawRelationshipCache() {
+  inLawEnumState = { storable: false, checkedAt: 0 };
+}
+
+export const IN_LAW_UNAVAILABLE_MESSAGE =
+  'Parents-in-law cannot be added yet. Please try again later or contact support.';
+
+/** The member's active family members as { id, relationship }, read under the RLS context. */
+async function activeMembers(userId, transaction, excludeMemberId = null) {
+  const rows = await FamilyMember.findAll({
+    where: { userId, isActive: true },
+    attributes: ['id', 'relationship'],
+    transaction
+  });
+  return (rows || []).filter((row) => !excludeMemberId || Number(row.id) !== Number(excludeMemberId));
+}
+
+function countByGroup(members) {
+  const counts = { spouse: 0, children: 0, parents: 0, parentsInLaw: 0, other: 0 };
+  for (const member of members) {
+    const group = relationGroupOf(member.relationship);
+    counts[group || 'other'] += 1;
+  }
+  return counts;
+}
+
+const planLabelOf = (limits) => limits.planName
+  || (limits.membershipType === 'corporate' ? 'Your corporate' : limits.membershipType);
+
+const refuse = (reason, extra = {}) => ({ allowed: false, reason, ...extra });
+
+/** Coverage-tier rules: spouse <= 1; children <= 2; parents <= 2 from one side only. */
+function checkTierAllowance(limits, members, relation, relationship, inLawsAvailable) {
+  const rules = FAMILY_COVERAGE_TIERS[limits.familyCoverage];
+  const planLabel = planLabelOf(limits);
+  if (limits.maxMembers === 0) {
+    return refuse(`${planLabel} plan covers the employee only and does not allow family members`);
+  }
+
+  const group = relationGroupOf(relation);
+  const groupMax = group === 'parentsInLaw' ? rules.parents : (group ? rules[group] : 0);
+  if (!group || groupMax === 0) {
+    const allowed = limits.allowedRelations.filter((r) => inLawsAvailable || !IN_LAW_RELATIONSHIPS.includes(r));
+    return refuse(`Relationship '${relationship}' not allowed for ${planLabel} plan. Allowed: ${allowed.join(', ')}`);
+  }
+
+  const counts = countByGroup(members);
+  if (group === 'spouse' && counts.spouse >= rules.spouse) {
+    return refuse('You already have a spouse/partner added');
+  }
+  if (group === 'children' && counts.children >= rules.children) {
+    return refuse(`Maximum children (${rules.children}) reached for ${planLabel} plan`);
+  }
+  if (group === 'parents' && counts.parentsInLaw > 0) {
+    return refuse(`${planLabel} plan covers either your parents or your parents-in-law, not both. You have already added a parent-in-law`);
+  }
+  if (group === 'parentsInLaw' && counts.parents > 0) {
+    return refuse(`${planLabel} plan covers either your parents or your parents-in-law, not both. You have already added a parent`);
+  }
+  if ((group === 'parents' || group === 'parentsInLaw') && counts[group] >= rules.parents) {
+    return refuse(`Maximum parents (${rules.parents}) reached for ${planLabel} plan`);
+  }
+  return null;
+}
+
+/** Count-based rules (individual plans without a tier). */
+function checkCountAllowance(limits, members, relation, relationship) {
+  if (limits.maxMembers === 0) {
+    return refuse(`${limits.membershipType} plan does not allow family members`);
+  }
+  if (members.length >= limits.maxMembers) {
+    return refuse(`Maximum family members (${limits.maxMembers}) reached for ${limits.membershipType} plan`);
+  }
+  if (!limits.allowedRelations.includes(relation)) {
+    return refuse(`Relationship '${relationship}' not allowed for ${limits.membershipType} plan. Allowed: ${limits.allowedRelations.join(', ')}`);
+  }
+  // A partner is stored as 'spouse' (the enum has no 'partner').
+  if (relation === 'spouse' && members.some((m) => m.relationship === 'spouse')) {
+    return refuse('You already have a spouse/partner added');
+  }
+  return null;
+}
+
+function remainingFor(limits, members) {
+  if (!Number.isFinite(limits.maxMembers)) return null;
+  if (limits.coverageMode === 'tier') {
+    const groups = relationLimitsFor(limits, members, true);
+    return groups.spouse.remaining + groups.children.remaining + groups.parents.remaining;
+  }
+  return Math.max(0, limits.maxMembers - members.length);
+}
+
 /**
- * Validate if user can add family member based on membership type.
+ * Validate whether the member may add a family member with `relationship`, or
+ * change an existing one (`excludeMemberId`) to it.
  *
- * family_members has FORCED row-level security, so the counts below only see
+ * family_members has FORCED row-level security, so the reads below only see
  * the member's rows when `transaction` carries app.current_user_id (see
  * routes/family-member.route.js). Without it they always read 0.
  */
-export const validateFamilyMemberAddition = async (userId, relationship, { transaction } = {}) => {
-  // Get user with membership type
+export const validateFamilyMemberAddition = async (userId, relationship, { transaction, excludeMemberId = null } = {}) => {
   const user = await User.findByPk(userId);
-  
   if (!user) {
     throw userNotFound();
   }
 
   const membershipType = user.membershipType || 'individual';
   const limits = await resolvePlanLimits(userId, membershipType, user, { transaction });
+  const members = await activeMembers(userId, transaction, excludeMemberId);
+  const relation = normalizeRelation(relationship);
+  const inLawsAvailable = await inLawRelationshipsStorable(transaction);
 
-  // Check if membership allows family members
-  if (limits.maxMembers === 0) {
-    return {
-      allowed: false,
-      reason: `${limits.membershipType} plan does not allow family members`
-    };
+  const refusal = limits.coverageMode === 'tier'
+    ? checkTierAllowance(limits, members, relation, relationship, inLawsAvailable)
+    : checkCountAllowance(limits, members, relation, relationship);
+  if (refusal) return refusal;
+
+  if (IN_LAW_RELATIONSHIPS.includes(relation) && !inLawsAvailable) {
+    return refuse(IN_LAW_UNAVAILABLE_MESSAGE, { status: 400 });
   }
 
-  // Check current family member count
-  const currentCount = await FamilyMember.count({
-    where: { userId, isActive: true },
-    transaction
-  });
-
-  if (currentCount >= limits.maxMembers) {
-    return {
-      allowed: false,
-      reason: `Maximum family members (${limits.maxMembers}) reached for ${limits.membershipType} plan`
-    };
-  }
-
-  // Validate relationship type
-  const normalizedRelation = normalizeRelation(relationship);
-  if (!limits.allowedRelations.includes(normalizedRelation)) {
-    return {
-      allowed: false,
-      reason: `Relationship '${relationship}' not allowed for ${limits.membershipType} plan. Allowed: ${limits.allowedRelations.join(', ')}`
-    };
-  }
-
-  // Check for duplicate spouse/partner. A partner is stored as 'spouse'; the
-  // enum has no 'partner', so querying for it failed with a 500.
-  if (normalizedRelation === 'spouse') {
-    const existingSpouse = await FamilyMember.findOne({
-      where: {
-        userId,
-        relationship: 'spouse',
-        isActive: true
-      },
-      transaction
-    });
-
-    if (existingSpouse) {
-      return {
-        allowed: false,
-        reason: 'You already have a spouse/partner added'
-      };
-    }
-  }
-
+  const remaining = remainingFor(limits, members);
   return {
     allowed: true,
-    remaining: Number.isFinite(limits.maxMembers) ? limits.maxMembers - currentCount - 1 : null,
+    remaining: remaining === null ? null : Math.max(0, remaining - 1),
     membershipType: limits.membershipType,
     allowedRelations: limits.allowedRelations,
+    familyCoverage: limits.familyCoverage,
     planSlug: limits.planSlug,
     planName: limits.planName,
     source: limits.source,
-    componentBenefits: limits.componentBenefits || null
+    componentBenefits: null
   };
 };
+
+/** Per-group allowance for a tier: { spouse, children, parents } with max/current/remaining. */
+function relationLimitsFor(limits, members, inLawsAvailable) {
+  const rules = FAMILY_COVERAGE_TIERS[limits.familyCoverage];
+  const counts = countByGroup(members);
+  const group = (max, current, relations) => ({
+    max,
+    current,
+    remaining: Math.max(0, max - current),
+    relations: max > 0 ? relations : []
+  });
+
+  let side = null;
+  if (counts.parents > 0) side = 'parents';
+  else if (counts.parentsInLaw > 0) side = 'parents_in_law';
+  const parentRelations = side === 'parents'
+    ? [...RELATION_GROUPS.parents]
+    : side === 'parents_in_law'
+      ? [...RELATION_GROUPS.parentsInLaw]
+      : [...RELATION_GROUPS.parents, ...(inLawsAvailable ? RELATION_GROUPS.parentsInLaw : [])];
+
+  return {
+    spouse: group(rules.spouse, counts.spouse, [...RELATION_GROUPS.spouse]),
+    children: group(rules.children, counts.children, [...RELATION_GROUPS.children]),
+    parents: {
+      ...group(rules.parents, counts.parents + counts.parentsInLaw, parentRelations),
+      side,
+      sides: rules.parents > 0 ? ['parents', ...(inLawsAvailable ? ['parents_in_law'] : [])] : []
+    }
+  };
+}
 
 /**
  * Get family member limits for user
  */
 export const getFamilyMemberLimits = async (userId, { transaction } = {}) => {
   const user = await User.findByPk(userId);
-  
   if (!user) {
     throw userNotFound();
   }
 
   const membershipType = user.membershipType || 'individual';
   const limits = await resolvePlanLimits(userId, membershipType, user, { transaction });
-
-  const currentCount = await FamilyMember.count({
-    where: { userId, isActive: true },
-    transaction
-  });
+  const members = await activeMembers(userId, transaction);
+  const currentCount = members.length;
   const unlimited = !Number.isFinite(limits.maxMembers);
+  const inLawsAvailable = await inLawRelationshipsStorable(transaction);
+  const storable = (relation) => !IN_LAW_RELATIONSHIPS.includes(relation) || inLawsAvailable;
+
+  let relationLimits = null;
+  let remaining;
+  let addableRelations;
+  if (limits.coverageMode === 'tier') {
+    relationLimits = relationLimitsFor(limits, members, inLawsAvailable);
+    remaining = relationLimits.spouse.remaining + relationLimits.children.remaining + relationLimits.parents.remaining;
+    addableRelations = Object.values(relationLimits)
+      .filter((g) => g.remaining > 0)
+      .flatMap((g) => g.relations);
+  } else {
+    remaining = unlimited ? null : Math.max(0, limits.maxMembers - currentCount);
+    const hasSpouse = members.some((m) => m.relationship === 'spouse');
+    addableRelations = (unlimited || remaining > 0)
+      ? limits.allowedRelations.filter((r) => !(hasSpouse && (r === 'spouse' || r === 'partner')))
+      : [];
+  }
+  addableRelations = Array.from(new Set(addableRelations.filter(storable)));
 
   return {
     membershipType: limits.membershipType,
     source: limits.source,
     planSlug: limits.planSlug,
     planName: limits.planName,
-    componentBenefits: limits.componentBenefits || null,
+    // Kept for app compatibility; HR per-employee benefit overrides no longer
+    // change the allowance (corporate members are covered by plan tier).
+    componentBenefits: null,
     // Unlimited plans: maxMembers/remaining are null (JSON has no Infinity).
     maxMembers: unlimited ? null : limits.maxMembers,
     unlimited,
     currentCount,
     currentMembers: currentCount,
-    remaining: unlimited ? null : Math.max(0, limits.maxMembers - currentCount),
-    canAddMore: currentCount < limits.maxMembers,
-    allowedRelations: limits.allowedRelations
+    remaining,
+    canAddMore: unlimited || remaining > 0,
+    allowedRelations: limits.allowedRelations.filter(storable),
+    // Coverage tier (null for count-based plans) and what can still be added.
+    coverageMode: limits.coverageMode,
+    familyCoverage: limits.familyCoverage,
+    familyCoverageLabel: familyCoverageLabel(limits.familyCoverage),
+    relationLimits,
+    addableRelations,
+    inLawsAvailable
   };
 };
 
 export default {
   STORABLE_RELATIONSHIPS,
+  KNOWN_RELATIONSHIPS,
+  IN_LAW_RELATIONSHIPS,
   normalizeGender,
   inferFamilyMemberAttributes,
   validateFamilyMemberAddition,
   getFamilyMemberLimits,
+  inLawRelationshipsStorable,
   MEMBERSHIP_LIMITS
 };

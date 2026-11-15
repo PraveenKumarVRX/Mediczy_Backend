@@ -7,6 +7,7 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 const FAMILY_TEMPLATES = {
   PATIENT_REGISTERED: (d) =>
@@ -34,12 +35,47 @@ const FAMILY_TEMPLATES = {
     `🚨 *${d.patientName}* has been registered in our Emergency Department.\nPatient ID: ${d.tempId}\nOur team is attending to them. We will keep you updated.`
 };
 
-async function getFamilyContacts(patientId, organizationId) {
-  const rows = await sequelize.query(
-    `SELECT phone, name, relationship FROM family_members WHERE user_id = :patientId LIMIT 3`,
-    { replacements: { patientId }, type: QueryTypes.SELECT }
-  );
-  return rows;
+const toPositiveInt = (value) => {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 && n <= 2147483647 ? n : null;
+};
+
+/**
+ * Up to three active family members of the member account `patientId` that have
+ * a phone number.
+ *
+ * family_members belongs to a member account (family_members."userId" ->
+ * users.id), so `patientId` is read as that account's users.id, as every caller
+ * so far intends. The table has FORCED row-level security
+ * (family_members_isolation: "userId" = current_app_user_id()), so the read runs
+ * in a transaction carrying the member's context; without it every read returned
+ * no rows. The real columns are "userId", "phoneNumber", "firstName"/"lastName"
+ * (the old query asked for user_id, phone and name, which do not exist, and threw).
+ */
+export async function getFamilyContacts(patientId) {
+  const userId = toPositiveInt(patientId);
+  if (!userId) return [];
+  const transaction = await sequelize.transaction();
+  try {
+    await setRlsContext(transaction, { orgId: 0, userId });
+    const rows = await sequelize.query(
+      `SELECT "phoneNumber" AS phone,
+              TRIM(CONCAT_WS(' ', "firstName", "lastName")) AS name,
+              relationship
+         FROM family_members
+        WHERE "userId" = :userId
+          AND "isActive" = true
+          AND COALESCE(TRIM("phoneNumber"), '') <> ''
+        ORDER BY "createdAt" ASC
+        LIMIT 3`,
+      { replacements: { userId }, type: QueryTypes.SELECT, transaction }
+    );
+    await transaction.commit();
+    return rows;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
 }
 
 async function sendWhatsApp(phone, message) {
@@ -69,7 +105,7 @@ async function sendSMS(phone, message) {
 }
 
 async function notify(patientId, organizationId, templateKey, templateData) {
-  const contacts = await getFamilyContacts(patientId, organizationId);
+  const contacts = await getFamilyContacts(patientId);
   if (!contacts.length) return { sent: 0 };
 
   const message = FAMILY_TEMPLATES[templateKey]?.(templateData);

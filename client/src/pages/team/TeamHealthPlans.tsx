@@ -14,6 +14,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
 import {
+  FAMILY_COVERAGE_NONE,
+  FAMILY_COVERAGE_OPTIONS,
+  familyCoverageFromSelect,
+  familyCoverageSelectValue,
+} from "@/constants/familyCoverage";
+import {
   Plus, Edit, Trash2, Shield, Star, Crown, Gem, CheckCircle2,
   Loader2, Users, Search, ToggleLeft, ToggleRight, Video, MapPin,
   FlaskConical, Pill, Home, Ambulance, HeartPulse, Stethoscope, Smile,
@@ -229,6 +235,27 @@ function PlanFormDialog({
               <Label>Duration (months)</Label>
               <Input type="number" min={1} value={form.durationMonths} onChange={e => set("durationMonths", e.target.value)} />
             </div>
+          </div>
+
+          {/* Family coverage tier (metadata.familyCoverage) */}
+          <div>
+            <Label>Family coverage</Label>
+            <Select
+              value={familyCoverageSelectValue(form.metadata?.familyCoverage)}
+              onValueChange={v => setMeta("familyCoverage", familyCoverageFromSelect(v))}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={FAMILY_COVERAGE_NONE}>Not set</SelectItem>
+                {FAMILY_COVERAGE_OPTIONS.map(o => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Who the plan covers besides the member. Corporate plans use this tier; a corporate plan left
+              "Not set" covers the employee only. Individual plans without a tier keep their member count.
+            </p>
           </div>
 
           {/* Toggles */}

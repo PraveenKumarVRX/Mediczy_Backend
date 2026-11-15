@@ -11,6 +11,12 @@ import { quotePlanPurchase, upgradeBaseDue, SELF_SERVICE_PLAN_TYPES } from '../s
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
+import {
+  familyCoverageFromPlanBody,
+  familyCoverageOf,
+  withFamilyCoverage,
+  withoutFamilyCoverage
+} from '../utils/familyCoverage.js';
 
 import { tpaClaimsLifecycleService } from '../services/tpa-claims-lifecycle.service.js';
 import { resolveMemberCard } from '../services/member-ecard.service.js';
@@ -281,6 +287,10 @@ router.post('/admin/plans', authUser, requireRole(['admin', 'team']), [
   body('isMaster').optional().isBoolean()
 ], async (req,res) => {
   try {
+    // Family coverage tier (metadata.familyCoverage): validated, kept in metadata only.
+    const coverage = familyCoverageFromPlanBody(req.body);
+    if (coverage.error) return res.status(400).json({ message: coverage.error });
+
     // Mark as master plan if created by super admin
     const planData = {
       ...req.body,
@@ -289,6 +299,9 @@ router.post('/admin/plans', authUser, requireRole(['admin', 'team']), [
       organizationType: null,
       customizedBy: null
     };
+    delete planData.familyCoverage;
+    planData.features = withoutFamilyCoverage(planData.features);
+    if (coverage.present) planData.metadata = withFamilyCoverage(req.body.metadata, coverage.value);
     
     const plan = await MembershipPlan.create(planData);
     res.status(201).json({ 
@@ -341,7 +354,18 @@ router.put('/admin/plans/:id', authUser, requireRole(['admin', 'team']), [ param
   try {
     const plan = await MembershipPlan.findByPk(req.params.id);
     if(!plan) return res.status(404).json({ message:'Plan not found' });
-    await plan.update(req.body);
+    const coverage = familyCoverageFromPlanBody(req.body);
+    if (coverage.error) return res.status(400).json({ message: coverage.error });
+    const update = { ...req.body };
+    delete update.familyCoverage;
+    if ('features' in update) update.features = withoutFamilyCoverage(update.features);
+    if (coverage.present) {
+      update.metadata = withFamilyCoverage(update.metadata ?? plan.metadata, coverage.value);
+    } else if (update.metadata && typeof update.metadata === 'object') {
+      // An editor that sends metadata without the tier keeps the stored tier.
+      update.metadata = withFamilyCoverage(update.metadata, familyCoverageOf({ metadata: plan.metadata }));
+    }
+    await plan.update(update);
     res.json({ plan });
   } catch(e){
     res.status(500).json({ message:'Failed to update', error:e.message });

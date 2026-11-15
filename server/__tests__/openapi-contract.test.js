@@ -28,7 +28,8 @@ const FULLY_DOCUMENTED = [
 ];
 /** Routers only partly in the contract: whatever is documented must exist. */
 const PARTLY_DOCUMENTED = [{ file: 'routes/address.route.js', mount: '/api/addresses' }, { file: 'routes/oauth.route.js', mount: '/api/auth' },
-  { file: 'routes/call-notification.route.js', mount: '/api/call-notification' }, { file: 'routes/reports.route.js', mount: '/api/reports' }];
+  { file: 'routes/call-notification.route.js', mount: '/api/call-notification' }, { file: 'routes/reports.route.js', mount: '/api/reports' },
+  { file: 'routes/family-member.route.js', mount: '/api/family-members' }];
 
 describe('the spec itself', () => {
   it('is valid OpenAPI 3.0', async () => {

@@ -143,6 +143,8 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261113000100-corporate-roster-financial-year.migration.js',
   '20261113000200-smartcrm-integration.migration.js',
   '20261115000100-patient-consent-ai-assistant.migration.js',
+  '20261115000200-lab-test-prices.migration.js',
+  '20261115000300-family-relationship-in-laws.migration.js',
 ];
 
 function runStep(step) {

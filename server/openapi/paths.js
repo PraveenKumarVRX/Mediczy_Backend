@@ -292,6 +292,76 @@ const mind = {
   },
 };
 
+// ── /api/family-members — the member's dependants (partly documented: the plan allowance and add/edit)
+const relationValues = ['spouse', 'son', 'daughter', 'father', 'mother', 'father_in_law', 'mother_in_law', 'brother', 'sister', 'grandfather', 'grandmother', 'grandson', 'granddaughter', 'uncle', 'aunt', 'nephew', 'niece', 'cousin', 'guardian', 'other'];
+const relationGroup = (extra = {}) => ({ type: 'object', required: ['max', 'current', 'remaining', 'relations'], properties: {
+  max: { type: 'integer' }, current: { type: 'integer' }, remaining: { type: 'integer' },
+  relations: { type: 'array', items: { type: 'string' }, description: 'Relationships that count against this group and may still be chosen.' }, ...extra,
+} });
+const familyLimits = { type: 'object', required: ['membershipType', 'source', 'maxMembers', 'unlimited', 'currentCount', 'remaining', 'canAddMore', 'allowedRelations', 'coverageMode', 'familyCoverage', 'relationLimits', 'addableRelations', 'inLawsAvailable'], properties: {
+  membershipType: { type: 'string', description: '"corporate" for a corporate member, else the plan slug/name or membership type.' },
+  source: { type: 'string', description: 'Where the allowance came from, e.g. corporate-plan-tier, corporate-plan-without-tier, corporate-without-plan, active-user-plan, active-subscription-plan.' },
+  planSlug: { type: 'string', nullable: true }, planName: { type: 'string', nullable: true },
+  componentBenefits: { type: 'object', nullable: true, description: 'Always null; kept for older app builds.' },
+  maxMembers: { type: 'integer', nullable: true, description: 'null when unlimited.' },
+  unlimited: { type: 'boolean' }, currentCount: { type: 'integer' }, currentMembers: { type: 'integer' },
+  remaining: { type: 'integer', nullable: true, description: 'Dependants that can still be added; null when unlimited. For a tier, the sum of relationLimits remaining.' },
+  canAddMore: { type: 'boolean' },
+  allowedRelations: { type: 'array', items: { type: 'string' }, description: 'Every relationship the plan covers (count plans may include the legacy aliases partner and child).' },
+  coverageMode: { type: 'string', enum: ['tier', 'count'], description: 'tier: corporate benefit plans (and any plan with a tier) cover by coverage tier; count: individual plans cover a number of members.' },
+  familyCoverage: { type: 'string', nullable: true, enum: ['employee', 'employee_spouse_children', 'employee_spouse_children_parents', null], description: 'The plan\'s coverage tier; null for count plans. A corporate member whose plan has no tier gets employee (no dependants).' },
+  familyCoverageLabel: { type: 'string', nullable: true },
+  relationLimits: { type: 'object', nullable: true, description: 'Per-group allowance for a tier; null for count plans.', properties: {
+    spouse: relationGroup(), children: relationGroup(),
+    parents: relationGroup({
+      side: { type: 'string', nullable: true, enum: ['parents', 'parents_in_law', null], description: 'Which side is already chosen: parents are taken from the employee\'s own parents OR the parents-in-law, never both.' },
+      sides: { type: 'array', items: { type: 'string', enum: ['parents', 'parents_in_law'] } },
+    }),
+  } },
+  addableRelations: { type: 'array', items: { type: 'string' }, description: 'Relationships that can be added right now.' },
+  inLawsAvailable: { type: 'boolean', description: 'false until the server can store father_in_law/mother_in_law.' },
+} };
+const familyMemberBody = { type: 'object', properties: {
+  firstName: { type: 'string', maxLength: 100 }, lastName: { type: 'string', maxLength: 100 },
+  relationship: { type: 'string', description: `Stored values: ${relationValues.join(', ')}. Also accepted: partner/wife/husband (stored as spouse); child, parent, parent_in_law with a gender; "father-in-law" style spellings.` },
+  relationshipHint: { type: 'string' }, gender: { type: 'string', enum: ['Male', 'Female', 'Other'] },
+  dateOfBirth: { type: 'string', format: 'date' }, phoneNumber: { type: 'string', maxLength: 20 }, email: { type: 'string' },
+  bloodType: { type: 'string', nullable: true }, abhaHealthId: { type: 'string' },
+} };
+const planRefusal = json(ref('Error'), 'The plan does not cover this dependant. `message` is written for the member, e.g. "Maximum children (2) reached for Corporate Basic Plus plan" or "... plan covers either your parents or your parents-in-law, not both".');
+const family = {
+  '/api/family-members/limits': {
+    get: op('Family', 'What the caller\'s plan allows them to add', {
+      description: 'Corporate members are covered by their benefit plan\'s coverage tier: employee (no dependants); employee_spouse_children (1 spouse, 2 children); employee_spouse_children_parents (additionally 2 parents, from the employee\'s parents OR the parents-in-law). Individual plans keep a member count unless the plan sets a tier.',
+      responses: { 200: okWith({ limits: familyLimits }, ['success', 'limits']) },
+    }),
+  },
+  '/api/family-members': {
+    post: op('Family', 'Add a family member', {
+      requestBody: body({ ...familyMemberBody, required: ['firstName', 'lastName', 'relationship'] }),
+      responses: {
+        201: okWith({ message: { type: 'string' }, data: { type: 'object' }, remaining: { type: 'integer', nullable: true }, aiInference: { type: 'object' } }, ['success', 'data']),
+        400: json(ref('Error'), 'Invalid input, an unsupported relationship, or a parent-in-law before the server can store one.'),
+        403: planRefusal,
+        409: json(ref('Error'), 'ABHA Health ID already registered.'),
+      },
+    }),
+  },
+  '/api/family-members/{id}': {
+    put: op('Family', 'Edit one of your family members', {
+      description: 'Changing the relationship is checked against the plan exactly like an add (the member being edited is not counted).',
+      params: [pathParam('id')], requestBody: body(familyMemberBody),
+      responses: {
+        200: okWith({ message: { type: 'string' }, data: { type: 'object' }, aiInference: { type: 'object' } }, ['success', 'data']),
+        400: json(ref('Error'), 'Invalid input or unsupported relationship.'),
+        403: planRefusal,
+        404: json(ref('Error'), 'Not one of your family members.'),
+        409: json(ref('Error'), 'ABHA Health ID already registered.'),
+      },
+    }),
+  },
+};
+
 // ── /api/admin — operations for admins (internal)
 const admin = {
   '/api/admin/integrations': {
@@ -310,5 +380,5 @@ const admin = {
   },
 };
 
-export const paths = { ...employee, ...insurance, ...addresses, ...auth, ...calls, ...reports, ...mind, ...admin };
+export const paths = { ...employee, ...insurance, ...addresses, ...auth, ...calls, ...reports, ...mind, ...family, ...admin };
 export default paths;

@@ -14,7 +14,7 @@ import {
   validateFamilyMemberAddition,
   getFamilyMemberLimits,
   normalizeGender,
-  STORABLE_RELATIONSHIPS
+  KNOWN_RELATIONSHIPS
 } from '../services/family-member-validation.service.js';
 
 const router = express.Router();
@@ -45,6 +45,14 @@ async function withFamilyRls(req, work) {
     await transaction.rollback().catch(() => {});
     throw error;
   }
+}
+
+/** Serialises one member's family changes so two saves cannot both pass the plan check. */
+function lockMemberFamily(req, transaction) {
+  return postgresSequelize.query('SELECT pg_advisory_xact_lock(:ns, :userId)', {
+    replacements: { ns: FAMILY_LOCK_NAMESPACE, userId: req.user.id },
+    transaction
+  });
 }
 
 class FamilyInputError extends Error {
@@ -153,14 +161,17 @@ function readMemberInput(body = {}) {
   return input;
 }
 
-/** 400 unless the inferred relationship is one the enum can store. */
+/**
+ * 400 unless the inferred relationship is one we store. Parents-in-law are
+ * known here; whether the enum can hold them yet is checked with the plan rules.
+ */
 function assertStorableRelationship(relationship) {
-  if (!STORABLE_RELATIONSHIPS.includes(relationship)) {
-    const genderNeeded = ['child', 'parent', 'sibling', 'grandchild', 'grandparent'].includes(relationship);
+  if (!KNOWN_RELATIONSHIPS.includes(relationship)) {
+    const genderNeeded = ['child', 'parent', 'sibling', 'grandchild', 'grandparent', 'parent_in_law'].includes(relationship);
     throw new FamilyInputError(
       genderNeeded
         ? `Relationship '${relationship}' needs a gender (Male or Female), or choose e.g. son/daughter`
-        : `Relationship '${relationship}' is not supported. Use one of: ${STORABLE_RELATIONSHIPS.join(', ')}`
+        : `Relationship '${relationship}' is not supported. Use one of: ${KNOWN_RELATIONSHIPS.join(', ')}`
     );
   }
 }
@@ -311,15 +322,12 @@ router.post('/', authUser, async (req, res) => {
     assertStorableRelationship(inferred.relationship);
 
     const outcome = await withFamilyRls(req, async (transaction) => {
-      await postgresSequelize.query('SELECT pg_advisory_xact_lock(:ns, :userId)', {
-        replacements: { ns: FAMILY_LOCK_NAMESPACE, userId: req.user.id },
-        transaction
-      });
+      await lockMemberFamily(req, transaction);
 
       // Validate family member addition based on membership type
       const validation = await validateFamilyMemberAddition(req.user.id, inferred.relationship, { transaction });
       if (!validation.allowed) {
-        return { status: 403, body: { success: false, message: validation.reason } };
+        return { status: validation.status || 403, body: { success: false, message: validation.reason } };
       }
 
       // A duplicate ABHA ID on another account is caught by the unique
@@ -414,6 +422,20 @@ router.put('/:id', authUser, async (req, res) => {
         return { status: 400, body: { success: false, message: 'Relationship is required' } };
       }
       assertStorableRelationship(inferred.relationship);
+
+      // Changing an active member's relationship is checked against the plan
+      // exactly like an add (the member itself is left out of the counts), so a
+      // child cannot be edited into a third parent or a second spouse.
+      if (familyMember.isActive !== false && inferred.relationship !== familyMember.relationship) {
+        await lockMemberFamily(req, transaction);
+        const validation = await validateFamilyMemberAddition(req.user.id, inferred.relationship, {
+          transaction,
+          excludeMemberId: familyMember.id
+        });
+        if (!validation.allowed) {
+          return { status: validation.status || 403, body: { success: false, message: validation.reason } };
+        }
+      }
 
       // Check if ABHA ID already exists (excluding current member)
       if (input.abhaHealthId && input.abhaHealthId !== familyMember.abhaHealthId) {

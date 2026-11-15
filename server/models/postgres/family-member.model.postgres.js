@@ -41,7 +41,11 @@ const FamilyMember = sequelize.define('FamilyMember', {
       'spouse', 'father', 'mother', 'son', 'daughter', 
       'brother', 'sister', 'grandfather', 'grandmother',
       'grandson', 'granddaughter', 'uncle', 'aunt',
-      'nephew', 'niece', 'cousin', 'guardian', 'other'
+      'nephew', 'niece', 'cousin', 'guardian', 'other',
+      // Added to enum_family_members_relationship by migration
+      // 20261115000300-family-relationship-in-laws. Until it is applied the
+      // route refuses them (inLawRelationshipsStorable) instead of failing.
+      'father_in_law', 'mother_in_law'
     ),
     allowNull: false
   },
