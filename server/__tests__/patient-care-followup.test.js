@@ -27,3 +27,11 @@ it('does not create notifications when there are no pending records', async () =
   expect(await followUpUnconfirmedCare({ database, setContext: jest.fn() })).toEqual({ appointments: 0, labTests: 0, pharmacyOrders: 0 });
   expect(query).toHaveBeenCalledTimes(3);
 });
+it('sends the doctor-confirmation reminder for doctor consultations only, never for lab bookings', async () => {
+  const query = jest.fn().mockResolvedValue([]);
+  const database = { QueryTypes: { SELECT: 'SELECT' }, transaction: async work => work({}), query };
+  await followUpUnconfirmedCare({ database, setContext: jest.fn() });
+  const appointmentSql = query.mock.calls.map(([sql]) => sql).find(sql => sql.startsWith('SELECT id, "userId", "doctorName"'));
+  expect(appointmentSql).toContain('"doctorId" IS NOT NULL');
+  expect(appointmentSql).toContain("<> 'lab-test'");
+});

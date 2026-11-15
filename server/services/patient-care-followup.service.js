@@ -14,6 +14,10 @@ export async function followUpUnconfirmedCare({ database = db, setContext = setR
 
     const appointments = await query(`SELECT id, "userId", "doctorName", "appointmentDate", "appointmentTime" FROM appointments
       WHERE status::text IN ('scheduled','pending','rescheduled','pending_confirmation')
+        -- Doctor consultations only: a lab booking (consultationType 'lab-test', no doctor)
+        -- has its own 48-hour lab follow-up below and is never "waiting for the call".
+        AND "doctorId" IS NOT NULL
+        AND COALESCE("consultationType"::text, '') <> 'lab-test'
         AND ("appointmentDate"::text || 'T' || LEFT("appointmentTime"::text,5) || ':00+05:30')::timestamptz BETWEEN NOW() AND NOW() + INTERVAL '30 minutes'
         AND COALESCE(metadata->>'confirmationFollowupSlot','') <> ("appointmentDate"::text || '/' || "appointmentTime"::text)
       ORDER BY "appointmentDate", "appointmentTime" FOR UPDATE SKIP LOCKED LIMIT 100`);
