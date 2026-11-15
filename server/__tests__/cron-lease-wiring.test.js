@@ -63,6 +63,13 @@ describe('audit OPS-01: beginJob combines the in-process flag and the cross-proc
     expect(ran).toBe(false);
     expect(res).toMatchObject({ skipped: true });
   });
+
+  it('withCron returns the job result, so callers can log it', async () => {
+    acquireCronLease.mockResolvedValue({ acquired: true });
+    const res = await withCron('device_heartbeat', async () => ({ pharmaciesScanned: 3, alertsCreated: 1 }));
+    expect(res).toEqual({ pharmaciesScanned: 3, alertsCreated: 1 });
+    tickEnd('device_heartbeat');
+  });
 });
 
 describe('a stale running flag can never stop a job for good', () => {

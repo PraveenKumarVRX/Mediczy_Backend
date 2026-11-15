@@ -300,6 +300,8 @@ export async function withCron(key, fn) {
   try {
     const details = await fn();
     tick(key, details || {});
+    // Callers log from this result; returning nothing made them throw after a successful run.
+    return details || {};
   } catch (err) {
     tickError(key, err.message);
     throw err;
