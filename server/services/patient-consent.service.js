@@ -12,6 +12,17 @@
  * consentStatus() so the app can ask before continuing.
  */
 import pool from '../db/pgPool.js';
+import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
+
+/**
+ * patient_consents has FORCED row-level security: a row is visible and
+ * writable only when app.current_user_id is its user_id. Every statement here
+ * runs inside a transaction that sets it (a fake db without connect() in
+ * tests is used directly).
+ */
+const asUser = (userId, db, fn) => (typeof db.connect === 'function'
+  ? withRlsTransaction(db, { userId }, (client) => fn(client))
+  : fn(db));
 
 /** The privacy notice version members agree to. Bump it to ask everyone again. */
 export const CURRENT_POLICY_VERSION = process.env.PRIVACY_POLICY_VERSION || 'privacy-2026-11';
@@ -56,15 +67,15 @@ export async function recordConsent({
   if (!Number.isSafeInteger(id) || id <= 0) throw Object.assign(new Error('Unknown user'), { status: 400 });
 
   if (granted !== true) {
-    const { rowCount } = await db.query(
+    const { rowCount } = await asUser(id, db, (q) => q.query(
       `UPDATE patient_consents SET consented = FALSE, withdrawn_at = NOW(), updated_at = NOW()
         WHERE user_id = $1 AND consent_type = $2 AND consented = TRUE AND withdrawn_at IS NULL`,
       [id, type]
-    );
+    ));
     return { recorded: true, withdrawn: rowCount };
   }
 
-  const { rows: [row] } = await db.query(
+  const { rows: [row] } = await asUser(id, db, (q) => q.query(
     `INSERT INTO patient_consents
        (id, user_id, consent_type, consent_category, consented, consented_at, policy_version,
         ip_address, user_agent, consent_method, metadata, created_at, updated_at)
@@ -73,7 +84,7 @@ export async function recordConsent({
     [id, type, String(policyVersion || versionFor(type)).slice(0, 60),
       ip ? String(ip).slice(0, 64) : null, userAgent ? String(userAgent).slice(0, 500) : null,
       JSON.stringify({ source, ...metadata })]
-  );
+  ));
   return { recorded: true, id: row.id };
 }
 
@@ -103,14 +114,14 @@ export async function recordSignupConsent({ userId, req, source }, db = pool) {
 
 /** Latest open grant per type. */
 async function openGrants(userId, db) {
-  const { rows } = await db.query(
+  const { rows } = await asUser(Number(userId), db, (q) => q.query(
     `SELECT DISTINCT ON (consent_type) consent_type, policy_version, consented_at
        FROM patient_consents
       WHERE user_id = $1 AND consented = TRUE AND withdrawn_at IS NULL
         AND (expires_at IS NULL OR expires_at > NOW())
       ORDER BY consent_type, consented_at DESC`,
     [Number(userId)]
-  );
+  ));
   return new Map(rows.map((r) => [r.consent_type, r]));
 }
 

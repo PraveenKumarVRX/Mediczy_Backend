@@ -21,6 +21,7 @@ import { partnerRequest } from './partner-client.js';
 import { mapSummary } from './summary-mapper.js';
 import { applyProjection, retireProjection } from './projection.service.js';
 import { auditPartnerEvent } from './audit.js';
+import { withRlsTransaction } from '../../middleware/rls-context.middleware.js';
 
 export const CONSENT_POLICY_VERSION = 'smartcrm-insurance-link-2026-11';
 const REFRESH_MIN_INTERVAL_MS = 60_000;
@@ -126,6 +127,8 @@ export async function linkMember({ userId, consent, policyVersion, ip = null, us
   let link;
   try {
     await client.query('BEGIN');
+    // patient_consents has forced row-level security keyed on app.current_user_id.
+    await client.query("SELECT set_config('app.current_user_id', $1, true)", [String(id)]);
     const { rows: [consentRow] } = await client.query(
       `INSERT INTO patient_consents
          (id, user_id, consent_type, consent_category, consented, consented_at,
@@ -175,10 +178,13 @@ export async function unlinkMember({ userId, requestId = null }, db = pool) {
     [link.id]
   );
   if (link.consent_id) {
-    await db.query(
+    const withdraw = (q) => q.query(
       `UPDATE patient_consents SET consented = FALSE, withdrawn_at = NOW(), updated_at = NOW() WHERE id = $1 AND user_id = $2`,
       [link.consent_id, id]
     );
+    // patient_consents has forced row-level security keyed on app.current_user_id.
+    if (typeof db.connect === 'function') await withRlsTransaction(db, { userId: id }, withdraw);
+    else await withdraw(db);
   }
   const hidden = await retireProjection(link, db);
   await auditPartnerEvent({ action: 'smartcrm.link.removed', userId: id, corporateId: link.corporate_id, requestId, resourceId: link.id, metadata: { members_hidden: hidden } }, db);
