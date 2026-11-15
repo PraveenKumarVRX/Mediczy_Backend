@@ -53,7 +53,7 @@ const modules = {
   '../db/postgres-sequelize.js': { postgresSequelize: {} },
   '../db/pgPool.js': { default: { query: consentQuery } },
   '../services/ai-quality-gates.service.js': { default: {} },
-  '../middleware/rls-context.middleware.js': { setRlsContext: jest.fn() },
+  '../middleware/rls-context.middleware.js': { setRlsContext: jest.fn(), withRlsTransaction: jest.fn(async (_pool, _ctx, fn) => fn({ query: jest.fn(async () => ({ rows: [], rowCount: 0 })) })) },
 };
 for (const [name, exports] of Object.entries(modules)) jest.unstable_mockModule(name, () => exports);
 let app;
