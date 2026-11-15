@@ -30,14 +30,14 @@ console.log('  - Cleanup Queue\n');
 // Keep process alive
 process.on('SIGTERM', async () => {
   console.log('\n🛑 SIGTERM received. Shutting down workers gracefully...');
-  await Promise.all(Object.values(workers).map(w => w.close()));
+  await Promise.all(Object.values(workers).filter(Boolean).map(w => w.close())); // disabled queues are null
   console.log('✅ All workers shut down');
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('\n🛑 SIGINT received. Shutting down workers gracefully...');
-  await Promise.all(Object.values(workers).map(w => w.close()));
+  await Promise.all(Object.values(workers).filter(Boolean).map(w => w.close())); // disabled queues are null
   console.log('✅ All workers shut down');
   process.exit(0);
 });
