@@ -1,5 +1,6 @@
 import { patientVideoAccess } from '../utils/patient-video-access.js';
 import DoctorAvailability from '../models/doctorAvailability.model.intelligent.js';
+import { requireAiAssistantConsent } from '../middleware/ai-consent.middleware.js';
 import { hasAvailableChatSlot } from '../services/chat-appointment-transaction.js';
 import { getChatMedicationReference } from '../services/chat-medication-context.js';
 import { recordChatTrace } from '../services/chat-trace.service.js';
@@ -334,7 +335,7 @@ router.post('/actions/confirm', authUser, async (req, res) => {
   catch (error) { res.status(error.statusCode || 503).json({ success: false, error: error.statusCode ? error.message : 'Appointment action unavailable' }); }
 });
 
-router.post('/consult', authUser, consultLimiter, async (req, res) => {
+router.post('/consult', authUser, requireAiAssistantConsent, consultLimiter, async (req, res) => {
   try {
     const { query, language = 'en', userContext = {}, sessionId: requested } = req.body;
     const queryError = validateMedicalQuery(query);
@@ -417,7 +418,7 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
  * @desc    Symptom analysis with Dr. Isha
  * @access  Private
  */
-router.post('/analyze-symptoms', authUser, async (req, res) => {
+router.post('/analyze-symptoms', authUser, requireAiAssistantConsent, async (req, res) => {
   try {
     const {
       symptoms,

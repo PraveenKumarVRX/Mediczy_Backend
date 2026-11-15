@@ -10,6 +10,7 @@ import {
   auditDataDeletion
 } from '../middleware/audit.middleware.js';
 import { revokeAppleToken } from '../services/apple-signin.service.js';
+import { recordConsent, consentStatus, normaliseConsentType } from '../services/patient-consent.service.js';
 import { getAppleRefreshToken, markAppleTokenRevoked } from '../services/apple-token-store.service.js';
 
 const router = express.Router();
@@ -68,17 +69,26 @@ router.get('/consents', authUser, async (req, res) => {
  */
 router.post('/consents', authUser, async (req, res) => {
   try {
-    const {
-      consentType,
-      purpose,
-      dataCategories,
-      expiresInDays
-    } = req.body;
-    
-    // Validation
+    const { consentType, purpose, dataCategories, expiresInDays, granted, version } = req.body || {};
+
+    // The app's shape (audit M22): { consentType, granted, version? }. Recorded
+    // as a versioned, explicit, digital consent in patient_consents. The old
+    // shape required purpose + dataCategories, so every app call 400'd.
+    if (typeof granted === 'boolean' && !(purpose && dataCategories)) {
+      const type = normaliseConsentType(consentType);
+      if (!type) return res.status(400).json({ success: false, code: 'CONSENT_TYPE_UNKNOWN', message: 'Unknown consent type' });
+      const result = await recordConsent({
+        userId: req.user.id, consentType: type, granted, policyVersion: version,
+        ip: req.ip, userAgent: req.get('user-agent'), source: 'privacy-settings',
+      });
+      await auditConsent(req, req.user.id, type, granted ? 'grant' : 'withdraw');
+      return res.status(granted ? 201 : 200).json({ success: true, consentType: type, granted, ...result, status: await consentStatus(req.user.id) });
+    }
+
+    // Legacy shape (web): purpose + dataCategories, kept for existing callers.
     if (!consentType || !purpose || !dataCategories) {
       return res.status(400).json({
-        error: 'Missing required fields: consentType, purpose, dataCategories'
+        error: 'Missing required fields: consentType and granted, or consentType, purpose and dataCategories'
       });
     }
     
@@ -93,6 +103,11 @@ router.post('/consents', authUser, async (req, res) => {
       expiresInDays,
       consentVersion: '1.0'
     });
+    const type = normaliseConsentType(consentType);
+    if (type) {
+      await recordConsent({ userId: req.user.id, consentType: type, granted: true, policyVersion: version, ip: req.ip, userAgent: req.get('user-agent'), source: 'privacy-settings-legacy' })
+        .catch((e) => console.error('[consent] versioned copy failed:', e.message));
+    }
     
     // Audit the consent
     await auditConsent(req, req.user.id, consentType, 'grant');
@@ -108,8 +123,23 @@ router.post('/consents', authUser, async (req, res) => {
       }
     });
   } catch (error) {
+    if (error.status === 400) return res.status(400).json({ success: false, code: error.code, message: error.message });
     console.error('Error granting consent:', error);
     res.status(500).json({ error: 'Failed to grant consent' });
+  }
+});
+
+/**
+ * GET /api/privacy/consents/status
+ * Which consents the member has given for the current policy versions, and
+ * which required ones the app must still ask for before continuing.
+ */
+router.get('/consents/status', authUser, async (req, res) => {
+  try {
+    return res.json({ success: true, data: await consentStatus(req.user.id) });
+  } catch (error) {
+    console.error('Error reading consent status:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not read consent status' });
   }
 });
 
@@ -129,6 +159,13 @@ router.delete('/consents/:consentType', authUser, async (req, res) => {
       req.user.role
     );
     
+    // Close the versioned record too (patient_consents), so a withdrawal is provable.
+    const versionedType = normaliseConsentType(consentType);
+    if (versionedType) {
+      await recordConsent({ userId: req.user.id, consentType: versionedType, granted: false, source: 'privacy-settings' })
+        .catch((e) => console.error('[consent] versioned withdrawal failed:', e.message));
+    }
+
     // Audit the withdrawal
     await auditConsent(req, req.user.id, consentType, 'withdraw');
     

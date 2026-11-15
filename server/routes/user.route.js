@@ -1,5 +1,6 @@
 import { managedFetch as fetch } from '../integrations/transport.js';
 import express from "express";
+import { recordSignupConsent } from '../services/patient-consent.service.js';
 import { body, validationResult } from "express-validator";
 import { col, fn, where as sequelizeWhere } from "sequelize";
 import crypto from "crypto";
@@ -1045,6 +1046,8 @@ router.post(
         req,
         consentVersion: '1.0'
       });
+      // Versioned, provable consent when the app sends the person's acceptance (audit M22).
+      await recordSignupConsent({ userId: newUser.id, req, source: 'otp-signup' });
 
       // Audit the successful login after registration
       await auditLoginAttempt(req, newUser.id, newUser.email, true);

@@ -20,6 +20,7 @@ import Assistant from "../models/assistant.model.intelligent.js";
 import { UserPlan, MembershipPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import postgresSequelize from "../db/postgres-sequelize.js";
 import { tryAutoActivateCorporateEmployeeForLogin } from "../services/corporate-employee-activation.service.js";
+import { recordSignupConsent } from "../services/patient-consent.service.js";
 
 const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
   String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
@@ -237,6 +238,8 @@ export async function registerUser(req, res) {
       req,
       consentVersion: '1.0'
     });
+    // Versioned, provable consent when the app sends the person's acceptance (audit M22).
+    await recordSignupConsent({ userId: newUser.id, req, source: 'register' });
 
     // Auto-create trial membership for new users (30-day free trial)
     try {

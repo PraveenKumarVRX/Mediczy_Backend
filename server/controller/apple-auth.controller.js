@@ -28,6 +28,7 @@ import {
   exchangeAppleAuthorizationCode,
 } from '../services/apple-signin.service.js';
 import { rememberAppleRefreshToken } from '../services/apple-token-store.service.js';
+import { recordSignupConsent } from '../services/patient-consent.service.js';
 
 /** The user object POST /users/login returns, so clients need no second shape. */
 const loginUserPayload = (user) => ({
@@ -146,6 +147,10 @@ export async function signInWithApple(req, res) {
           signupSource: 'apple',
         },
       });
+      // New account: record consent if the app sent the person's acceptance
+      // alongside the Apple credential (audit M22). Otherwise consent status
+      // reports it as required and the app asks.
+      await recordSignupConsent({ userId: user.id, req, source: 'apple' });
     }
 
     // Trade Apple's one-time authorization code for a refresh token, so that

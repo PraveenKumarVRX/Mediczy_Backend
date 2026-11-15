@@ -142,6 +142,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261112000100-chat-message-translations.migration.js',
   '20261113000100-corporate-roster-financial-year.migration.js',
   '20261113000200-smartcrm-integration.migration.js',
+  '20261115000100-patient-consent-ai-assistant.migration.js',
 ];
 
 function runStep(step) {
