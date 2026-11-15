@@ -30,3 +30,8 @@ export async function down(db = pool) {
 }
 
 export default { up, down };
+
+if (process.argv.slice(1).some((arg) => String(arg).includes('20261115000300-family-relationship-in-laws'))) {
+  up().then(() => { console.log('family relationship in-law values applied'); process.exit(0); })
+      .catch((error) => { console.error(error); process.exit(1); });
+}
