@@ -3,6 +3,7 @@ import FamilyMember from '../models/postgres/family-member.model.postgres.js';
 import UserSubscription from '../models/postgres/user-subscription.model.postgres.js';
 import SubscriptionMembershipPlan from '../models/postgres/membership-plan.model.postgres.js';
 import { UserPlan as AssignedUserPlan, MembershipPlan as AssignedMembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 /**
  * Membership Type Limits
@@ -26,11 +27,43 @@ const MEMBERSHIP_LIMITS = {
   }
 };
 
+/**
+ * Relationships the family_members.relationship enum can store
+ * (enum_family_members_relationship). Anything else is refused with a 400
+ * before it reaches the database, where it used to fail as a 500.
+ */
+export const STORABLE_RELATIONSHIPS = Object.freeze([
+  'spouse', 'father', 'mother', 'son', 'daughter',
+  'brother', 'sister', 'grandfather', 'grandmother',
+  'grandson', 'granddaughter', 'uncle', 'aunt',
+  'nephew', 'niece', 'cousin', 'guardian', 'other'
+]);
+
+// Gender-neutral words the enum cannot store, resolved when the gender is known.
+const GENDERED_RELATIONS = {
+  child: { Male: 'son', Female: 'daughter' },
+  parent: { Male: 'father', Female: 'mother' },
+  sibling: { Male: 'brother', Female: 'sister' },
+  grandchild: { Male: 'grandson', Female: 'granddaughter' },
+  grandparent: { Male: 'grandfather', Female: 'grandmother' }
+};
+
 const RELATION_ALIASES = {
+  spouse: 'spouse',
   wife: 'spouse',
   husband: 'spouse',
-  partner: 'partner',
+  // The enum has no 'partner': a partner is stored as spouse (the app does the same).
+  partner: 'spouse',
+  grandson: 'grandson',
+  granddaughter: 'granddaughter',
+  grandchild: 'grandchild',
+  grandparent: 'grandparent',
+  nephew: 'nephew',
+  niece: 'niece',
+  cousin: 'cousin',
   child: 'child',
+  parent: 'parent',
+  sibling: 'sibling',
   son: 'son',
   daughter: 'daughter',
   father: 'father',
@@ -45,7 +78,9 @@ const RELATION_ALIASES = {
   sister: 'sister',
   uncle: 'uncle',
   aunt: 'aunt',
-  guardian: 'guardian'
+  guardian: 'guardian',
+  // Last, so the fuzzy keyword match below tries 'mother'/'brother' first.
+  other: 'other'
 };
 
 const RELATION_GENDER_HINTS = {
@@ -109,10 +144,24 @@ function normalizeRelation(value = '') {
   return cleaned.replace(/\s+/g, '_');
 }
 
+const GENDER_ALIASES = { male: 'Male', m: 'Male', female: 'Female', f: 'Female', other: 'Other', o: 'Other' };
+
+/**
+ * 'Male' | 'Female' | 'Other' for a gender in any case; null when blank;
+ * undefined when it is not a gender the enum can store.
+ */
+export function normalizeGender(value) {
+  if (value === undefined || value === null) return null;
+  const key = String(value).trim().toLowerCase();
+  if (!key) return null;
+  return GENDER_ALIASES[key];
+}
+
 function inferGenderFromRelationship(relationship = '', providedGender = '') {
   const normalized = String(relationship || '').toLowerCase();
-  if (providedGender && ['Male', 'Female', 'Other'].includes(providedGender)) {
-    return { gender: providedGender, inferred: false, confidence: 1 };
+  const gender = normalizeGender(providedGender);
+  if (gender) {
+    return { gender, inferred: false, confidence: 1 };
   }
 
   const hinted = RELATION_GENDER_HINTS[normalized];
@@ -120,7 +169,24 @@ function inferGenderFromRelationship(relationship = '', providedGender = '') {
     return { gender: hinted, inferred: true, confidence: 0.92 };
   }
 
-  return { gender: providedGender || 'Other', inferred: !providedGender, confidence: 0.5 };
+  return { gender: 'Other', inferred: true, confidence: 0.5 };
+}
+
+/**
+ * The plan's family-member allowance as a number: a count, Infinity for
+ * "unlimited" (Corporate Exclusive stores the string), 0 when missing.
+ * Number('unlimited') used to turn that plan into "does not allow family members".
+ */
+function parseFamilyLimit(value) {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'object') {
+    return parseFamilyLimit(value.limit ?? value.maxMembers ?? null);
+  }
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'unlimited') {
+    return Infinity;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
 function allowedRelationsFromPlan(plan, maxMembers) {
@@ -146,6 +212,9 @@ function allowedRelationsFromPlan(plan, maxMembers) {
     return ['spouse', 'partner', 'son', 'daughter', 'child', 'father', 'mother'];
   }
 
+  if (maxMembers === Infinity) {
+    return DEFAULT_RELATIONS_BY_LIMIT[6];
+  }
   return DEFAULT_RELATIONS_BY_LIMIT[maxMembers] || MEMBERSHIP_LIMITS.family.allowedRelations;
 }
 
@@ -156,13 +225,29 @@ function isCorporateUser(userRecord, membershipTypeFallback) {
   return hasCorporateId || membershipType === 'corporate' || orgType === 'corporate';
 }
 
+/**
+ * True when the user is an active employee on a corporate roster. Most
+ * rostered employees (e.g. the corporate QA login, user 7646) carry no
+ * users.corporate_id and organization_type 'individual', so without this they
+ * were treated as individual-plan members. The roster row is keyed to its
+ * corporate by corporate_uid (entity UID rule), never by a bare integer.
+ */
+async function hasActiveCorporateRoster(userId, transaction) {
+  const rows = await postgresSequelize.query(
+    `SELECT 1
+       FROM corporate_employees ce
+      WHERE ce."userId" = :userId
+        AND ce."isActive" = true
+        AND ce.corporate_uid IS NOT NULL
+        AND (ce."exitDate" IS NULL OR ce."exitDate" >= CURRENT_DATE)
+      LIMIT 1`,
+    { replacements: { userId }, type: 'SELECT', transaction }
+  );
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 function buildLimitsFromPlan(plan, membershipTypeFallback, source) {
-  const familyFeature = plan?.features?.familyMembers;
-  const maxMembers = Number(
-    typeof familyFeature === 'number'
-      ? familyFeature
-      : (familyFeature?.limit ?? familyFeature?.maxMembers ?? 0)
-  ) || 0;
+  const maxMembers = parseFamilyLimit(plan?.features?.familyMembers);
   const allowedRelations = allowedRelationsFromPlan(plan, maxMembers);
   const planType = plan?.slug || plan?.name || membershipTypeFallback;
 
@@ -287,8 +372,9 @@ function mergeLimitsWithCorporateComponents(baseLimits, corporateComponents) {
   };
 }
 
-async function resolvePlanLimits(userId, membershipTypeFallback = 'individual', userRecord = null) {
-  const corporateScoped = isCorporateUser(userRecord, membershipTypeFallback);
+async function resolvePlanLimits(userId, membershipTypeFallback = 'individual', userRecord = null, { transaction } = {}) {
+  const corporateScoped = isCorporateUser(userRecord, membershipTypeFallback)
+    || await hasActiveCorporateRoster(userId, transaction);
   const corporateComponents = corporateScoped ? resolveCorporateComponentBenefits(userRecord) : null;
 
   // 1) Resolve from user_plans/membership_plans first.
@@ -296,7 +382,8 @@ async function resolvePlanLimits(userId, membershipTypeFallback = 'individual', 
   const activeAssignedPlan = await AssignedUserPlan.findOne({
     where: { userId, status: 'active' },
     include: [{ model: AssignedMembershipPlan, as: 'plan' }],
-    order: [['createdAt', 'DESC']]
+    order: [['createdAt', 'DESC']],
+    transaction
   });
 
   if (activeAssignedPlan?.plan) {
@@ -341,11 +428,12 @@ async function resolvePlanLimits(userId, membershipTypeFallback = 'individual', 
   // 2) Fallback to user_subscriptions/subscription_plans.
   const activeSubscription = await UserSubscription.findOne({
     where: { userId, status: 'ACTIVE' },
-    order: [['createdAt', 'DESC']]
+    order: [['createdAt', 'DESC']],
+    transaction
   });
 
   const plan = activeSubscription?.planId
-    ? await SubscriptionMembershipPlan.findByPk(activeSubscription.planId)
+    ? await SubscriptionMembershipPlan.findByPk(activeSubscription.planId, { transaction })
     : null;
   if (plan) {
     return buildLimitsFromPlan(plan, membershipTypeFallback, 'active-subscription-plan');
@@ -363,7 +451,11 @@ async function resolvePlanLimits(userId, membershipTypeFallback = 'individual', 
 }
 
 export const inferFamilyMemberAttributes = ({ relationship, relationshipHint, gender }) => {
-  const inferredRelationship = normalizeRelation(relationship || relationshipHint || '');
+  let inferredRelationship = normalizeRelation(relationship || relationshipHint || '');
+  const providedGender = normalizeGender(gender);
+  if (GENDERED_RELATIONS[inferredRelationship] && providedGender) {
+    inferredRelationship = GENDERED_RELATIONS[inferredRelationship][providedGender] || inferredRelationship;
+  }
   const genderResult = inferGenderFromRelationship(inferredRelationship, gender);
 
   return {
@@ -377,19 +469,29 @@ export const inferFamilyMemberAttributes = ({ relationship, relationshipHint, ge
   };
 };
 
+function userNotFound() {
+  const error = new Error('User not found');
+  error.statusCode = 404;
+  return error;
+}
+
 /**
- * Validate if user can add family member based on membership type
+ * Validate if user can add family member based on membership type.
+ *
+ * family_members has FORCED row-level security, so the counts below only see
+ * the member's rows when `transaction` carries app.current_user_id (see
+ * routes/family-member.route.js). Without it they always read 0.
  */
-export const validateFamilyMemberAddition = async (userId, relationship) => {
+export const validateFamilyMemberAddition = async (userId, relationship, { transaction } = {}) => {
   // Get user with membership type
   const user = await User.findByPk(userId);
   
   if (!user) {
-    throw new Error('User not found');
+    throw userNotFound();
   }
 
   const membershipType = user.membershipType || 'individual';
-  const limits = await resolvePlanLimits(userId, membershipType, user);
+  const limits = await resolvePlanLimits(userId, membershipType, user, { transaction });
 
   // Check if membership allows family members
   if (limits.maxMembers === 0) {
@@ -401,7 +503,8 @@ export const validateFamilyMemberAddition = async (userId, relationship) => {
 
   // Check current family member count
   const currentCount = await FamilyMember.count({
-    where: { userId, isActive: true }
+    where: { userId, isActive: true },
+    transaction
   });
 
   if (currentCount >= limits.maxMembers) {
@@ -420,14 +523,16 @@ export const validateFamilyMemberAddition = async (userId, relationship) => {
     };
   }
 
-  // Check for duplicate spouse/partner
-  if (['spouse', 'partner'].includes(normalizedRelation)) {
+  // Check for duplicate spouse/partner. A partner is stored as 'spouse'; the
+  // enum has no 'partner', so querying for it failed with a 500.
+  if (normalizedRelation === 'spouse') {
     const existingSpouse = await FamilyMember.findOne({
       where: {
         userId,
-        relationship: ['spouse', 'partner'],
+        relationship: 'spouse',
         isActive: true
-      }
+      },
+      transaction
     });
 
     if (existingSpouse) {
@@ -440,7 +545,7 @@ export const validateFamilyMemberAddition = async (userId, relationship) => {
 
   return {
     allowed: true,
-    remaining: limits.maxMembers - currentCount - 1,
+    remaining: Number.isFinite(limits.maxMembers) ? limits.maxMembers - currentCount - 1 : null,
     membershipType: limits.membershipType,
     allowedRelations: limits.allowedRelations,
     planSlug: limits.planSlug,
@@ -453,19 +558,21 @@ export const validateFamilyMemberAddition = async (userId, relationship) => {
 /**
  * Get family member limits for user
  */
-export const getFamilyMemberLimits = async (userId) => {
+export const getFamilyMemberLimits = async (userId, { transaction } = {}) => {
   const user = await User.findByPk(userId);
   
   if (!user) {
-    throw new Error('User not found');
+    throw userNotFound();
   }
 
   const membershipType = user.membershipType || 'individual';
-  const limits = await resolvePlanLimits(userId, membershipType, user);
+  const limits = await resolvePlanLimits(userId, membershipType, user, { transaction });
 
   const currentCount = await FamilyMember.count({
-    where: { userId, isActive: true }
+    where: { userId, isActive: true },
+    transaction
   });
+  const unlimited = !Number.isFinite(limits.maxMembers);
 
   return {
     membershipType: limits.membershipType,
@@ -473,16 +580,20 @@ export const getFamilyMemberLimits = async (userId) => {
     planSlug: limits.planSlug,
     planName: limits.planName,
     componentBenefits: limits.componentBenefits || null,
-    maxMembers: limits.maxMembers,
+    // Unlimited plans: maxMembers/remaining are null (JSON has no Infinity).
+    maxMembers: unlimited ? null : limits.maxMembers,
+    unlimited,
     currentCount,
     currentMembers: currentCount,
-    remaining: Math.max(0, limits.maxMembers - currentCount),
+    remaining: unlimited ? null : Math.max(0, limits.maxMembers - currentCount),
     canAddMore: currentCount < limits.maxMembers,
     allowedRelations: limits.allowedRelations
   };
 };
 
 export default {
+  STORABLE_RELATIONSHIPS,
+  normalizeGender,
   inferFamilyMemberAttributes,
   validateFamilyMemberAddition,
   getFamilyMemberLimits,

@@ -976,7 +976,11 @@ router.post('/claims', authUser, async (req, res) => {
     if (!['Cashless', 'Reimbursement'].includes(claimType) || !String(hospital || '').trim() || !toISODate(date)) return res.status(400).json({ success: false, message: 'Provider, treatment date and claim type are required.' });
     const [activePlan] = await postgresSequelize.query(`SELECT id FROM user_plans WHERE "userId" = :userId AND status = 'active' AND ("endDate" IS NULL OR "endDate" >= NOW()) LIMIT 1`, { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT });
     if (!activePlan) return res.status(403).json({ success: false, message: 'An active benefit plan with insurance cover is required.' });
-    const member = memberId === 'self' ? await User.findByPk(req.user.id) : await FamilyMember.findOne({ where: { id: Number(memberId) || 0, userId: req.user.id } });
+    // family_members has FORCED row-level security: look the member up as this user, or it is never found.
+    const member = memberId === 'self' ? await User.findByPk(req.user.id) : await postgresSequelize.transaction(async (transaction) => {
+      await setRlsContext(transaction, { orgId: 0, userId: req.user.id });
+      return FamilyMember.findOne({ where: { id: Number(memberId) || 0, userId: req.user.id }, transaction });
+    });
     if (!member) return res.status(400).json({ success: false, message: 'Choose a member from your own family list.' });
     const memberName = [member.firstName, member.lastName].filter(Boolean).join(' ');
     const reportIds = Array.isArray(documents) ? documents.map(value => /^report:(\d+)$/.exec(String(value))?.[1]).filter(Boolean) : [];
