@@ -41,7 +41,8 @@ fi
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-${POSTGRES_PRIMARY_PASSWORD:-${DB_PASSWORD:-${DB_PASS:-}}}}"
 export POSTGRES_USER="${POSTGRES_USER:-mediczy_helper}"
 export POSTGRES_DATABASE="${POSTGRES_DATABASE:-mediczy_prod}"
-export POSTGRES_HOST="${POSTGRES_HOST:-mediczy-prod.cloqkwiey4k0.ap-south-1.rds.amazonaws.com}"
+# Live database since 2026-10-19 (the old unencrypted mediczy-prod is being retired).
+export POSTGRES_HOST="${POSTGRES_HOST:-mediczy-prod-encrypted-20261019.cloqkwiey4k0.ap-south-1.rds.amazonaws.com}"
 export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
 # Optional RDS master credentials — set ONLY in .env when RDS_MASTER_BACKUP=true
