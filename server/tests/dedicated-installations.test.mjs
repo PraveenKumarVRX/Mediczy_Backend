@@ -164,3 +164,56 @@ test('report client uses HTTPS, refuses redirects and preserves caller event ide
   await assert.rejects(sendInstallationReport({ ...options, origin: 'https://user:secret@control.example' }));
   await assert.rejects(sendInstallationReport({ ...options, fetcher: async () => ({ ok: false, status: 503 }) }), /HTTP 503/);
 });
+
+test('connector config pull: opt-in fields, token-bound, ETag/304, revocation', async () => {
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS branding JSONB`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS settings JSONB`);
+  await pool.query(`UPDATE tenants SET settings=NULL`);
+  await pool.query(`UPDATE tenants SET branding=$1 WHERE unique_id='VTEST1'`,
+    [JSON.stringify({ logo_url: '/brand/h.svg', favicon_url: null, primary_color: '#7c3aed', secondary_color: '#5b21b6', internal_note: 'never sent' })]);
+  await pool.query(`UPDATE tenants SET branding=$1 WHERE unique_id='VTEST2'`, [JSON.stringify({ primary_color: '#000000' })]);
+  const created = await request(app).post('/installations').set('x-test-user', '1').send(crm).expect(201);
+  const other = await request(app).post('/installations').set('x-test-user', '1').send(lab).expect(201);
+  const key = await request(app).post(`/installations/${created.body.installation.id}/connector/rotate`).set('x-test-user', '1').send({ version: 1 }).expect(200);
+  const otherKey = await request(app).post(`/installations/${other.body.installation.id}/connector/rotate`).set('x-test-user', '1').send({ version: 1 }).expect(200);
+  const auth = { Authorization: `Bearer ${key.body.token}` };
+
+  await request(app).get('/installations/config').expect(401);
+  await request(app).get('/installations/config').set('Authorization', `Bearer mdi_${'0'.repeat(64)}`).expect(401);
+  // An admin session is not a connector credential.
+  await request(app).get('/installations/config').set('x-test-user', '1').expect(401);
+
+  // Nothing is published until the tenant opts a field in: the installation keeps its own copy.
+  const unpublished = await request(app).get('/installations/config').set(auth).expect(200);
+  assert.equal(unpublished.body.branding, null);
+  assert.equal(unpublished.body.mobileApps, null);
+  await pool.query(`UPDATE tenants SET settings=$1 WHERE unique_id IN ('VTEST1','VTEST2')`,
+    [JSON.stringify({ dedicatedConfig: { publish: ['branding'] }, mobileApps: { enabled: true, apps: [] } })]);
+
+  const first = await request(app).get('/installations/config').set(auth).expect(200);
+  assert.notEqual(first.body.revision, unpublished.body.revision);
+  assert.equal(first.headers['cache-control'], 'no-store');
+  assert.match(first.body.revision, /^[a-f0-9]{32}$/);
+  assert.equal(first.headers.etag, `"${first.body.revision}"`);
+  assert.equal(first.body.mobileApps, null);
+  assert.deepEqual(first.body.branding, { logo_url: '/brand/h.svg', favicon_url: null, primary_color: '#7c3aed', secondary_color: '#5b21b6' });
+
+  // Bound to the token's own tenant.
+  const theirs = await request(app).get('/installations/config').set('Authorization', `Bearer ${otherKey.body.token}`).expect(200);
+  assert.deepEqual(theirs.body.branding, { primary_color: '#000000' });
+  assert.notEqual(theirs.body.revision, first.body.revision);
+
+  await request(app).get('/installations/config').set(auth).set('If-None-Match', `"${first.body.revision}"`).expect(304);
+  await request(app).get('/installations/config').set(auth).set('If-None-Match', '"stale"').expect(200);
+
+  // A console change produces a new revision; revocation is immediate.
+  await pool.query(`UPDATE tenants SET branding = branding || '{"primary_color":"#123456"}' WHERE unique_id='VTEST1'`);
+  const changed = await request(app).get('/installations/config').set(auth).set('If-None-Match', `"${first.body.revision}"`).expect(200);
+  assert.notEqual(changed.body.revision, first.body.revision);
+  assert.equal(changed.body.branding.primary_color, '#123456');
+  // mobileApps only when published too.
+  await pool.query(`UPDATE tenants SET settings=jsonb_set(settings,'{dedicatedConfig,publish}','["branding","mobileApps"]') WHERE unique_id='VTEST1'`);
+  assert.deepEqual((await request(app).get('/installations/config').set(auth).expect(200)).body.mobileApps, { enabled: true, apps: [] });
+  await request(app).post(`/installations/${created.body.installation.id}/connector/revoke`).set('x-test-user', '1').send({ version: 2 }).expect(200);
+  await request(app).get('/installations/config').set(auth).expect(401);
+});

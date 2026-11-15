@@ -2,6 +2,19 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { INSTALLATION_PROFILES, InstallationError, validateInstallation, validateReport, installationFreshness } from '../config/dedicated-installation-profiles.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
+
+// Branding fields a dedicated installation accepts from the control plane (it rejects any other key, and
+// any value that is not null or a string of at most 500 characters).
+const BRANDING_KEYS = ['logo_url', 'favicon_url', 'primary_color', 'secondary_color'];
+const publishableBranding = (branding) => {
+  if (!branding || typeof branding !== 'object' || Array.isArray(branding)) return null;
+  const out = {};
+  for (const key of BRANDING_KEYS) {
+    const value = branding[key];
+    if (value === null || (typeof value === 'string' && value.length <= 500)) out[key] = value;
+  }
+  return Object.keys(out).length ? out : null;
+};
 const publicRow = row => {
   const { token_hash, ...rest } = row;
   return { ...rest, connector_enrolled: Boolean(token_hash), freshness: installationFreshness(row),
@@ -81,6 +94,30 @@ export class DedicatedInstallationsService {
       return { installation: publicRow(updated), ...(token ? { token } : {}) };
     });
   }
+  /**
+   * GET /config: the settings a dedicated installation pulls from the control plane (it has no inbound
+   * port). Contract, agreed with the installation (medstar-crm scripts/fetch-dedicated-config.mjs):
+   * { revision, mobileApps, branding }, revision doubling as the ETag.
+   *
+   * Nothing is published unless the tenant record opts in per field: settings.dedicatedConfig.publish,
+   * e.g. ["branding"]. The installation applies whatever it receives over its own copy, and on 2026-11-15
+   * the central copies were stale (default branding with no logo; different app and deployment IDs, which
+   * would break app sign-in). Reconcile a field with the installation, then add it to publish.
+   */
+  async config(token) {
+    if (!/^mdi_[a-f0-9]{64}$/.test(token || '')) throw new InstallationError(401, 'invalid_connector', 'Invalid connector credential');
+    const row = (await this.pool.query('SELECT id, tenant_uid FROM dedicated_installations WHERE token_hash=$1', [hash(token)])).rows[0];
+    if (!row) throw new InstallationError(401, 'invalid_connector', 'Invalid connector credential');
+    const tenant = (await this.pool.query('SELECT branding, settings FROM tenants WHERE unique_id=$1', [row.tenant_uid])).rows[0];
+    const publish = Array.isArray(tenant?.settings?.dedicatedConfig?.publish) ? tenant.settings.dedicatedConfig.publish : [];
+    const mobileApps = tenant?.settings?.mobileApps;
+    const published = {
+      mobileApps: publish.includes('mobileApps') && mobileApps && typeof mobileApps === 'object' && !Array.isArray(mobileApps) ? mobileApps : null,
+      branding: publish.includes('branding') ? publishableBranding(tenant?.branding) : null,
+    };
+    return { revision: hash(JSON.stringify(published)).slice(0, 32), ...published };
+  }
+
   async report(token, input) {
     if (!/^mdi_[a-f0-9]{64}$/.test(token || '')) throw new InstallationError(401, 'invalid_connector', 'Invalid connector credential');
     return this.transaction(async db => {

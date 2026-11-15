@@ -32,6 +32,18 @@ export function dedicatedInstallationsRouter({ pool, authenticate }) {
       const result = await service.report(token, req.body);
       res.json({ success: true, ...result });
     }));
+  // Pull-only settings for the installation's connector (same credential as /reports). Answers 304 when
+  // If-None-Match carries the current revision.
+  router.get('/config', rateLimit({ windowMs: 60000, max: 60, standardHeaders: true, legacyHeaders: false }),
+    wrap(async (req, res) => {
+      const token = /^Bearer (mdi_[a-f0-9]{64})$/.exec(req.get('authorization') || '')?.[1];
+      const config = await service.config(token);
+      const etag = `"${config.revision}"`;
+      res.set('ETag', etag);
+      const sent = String(req.get('if-none-match') || '').split(',').map((tag) => tag.trim().replace(/^W\//, ''));
+      if (sent.includes(etag)) return res.status(304).end();
+      res.json(config);
+    }));
   router.use(authenticate, installationAdminGuard(pool));
   router.use(express.json({ limit: '16kb' }));
   router.get('/catalog', (req, res) => res.json({ success: true, profiles: INSTALLATION_PROFILES }));
