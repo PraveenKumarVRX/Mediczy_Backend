@@ -109,14 +109,21 @@ export async function createDiagnosticProduct(input) {
   return result.rows[0];
 }
 
+// Lab bookings come from the separate Lab product. Installations without it (e.g. dedicated CRM-only
+// tenants) have no api_lab_bookings table; the dashboard must still load from CRM-native bookings.
+let labBookingsInstalled;
+async function hasLabBookings() {
+  if (labBookingsInstalled === undefined) {
+    labBookingsInstalled = (await sharedPool.query(`SELECT to_regclass('public.api_lab_bookings') IS NOT NULL AS present`)).rows[0].present;
+  }
+  return labBookingsInstalled;
+}
+
 export async function getDiagnosticDashboard(tenant, { from, to } = {}) {
   const id = tenantId(tenant);
   const start = from || '1970-01-01';
   const end = to || '2999-12-31';
-  const [summary, centres, products, channels, referrals] = await Promise.all([
-    sharedPool.query(`SELECT COUNT(*)::int AS bookings, COUNT(*) FILTER (WHERE booking_status IN ('sample_collected', 'completed'))::int AS collections, COUNT(*) FILTER (WHERE booking_status = 'completed')::int AS completed_tests, COUNT(*) FILTER (WHERE collection_mode = 'home_collection')::int AS home_collection_bookings, COALESCE(SUM(revenue_amount), 0)::numeric AS revenue, COALESCE(AVG(NULLIF(booking_value, 0)), 0)::numeric AS average_order_value FROM (
-      SELECT booking_status, collection_mode, revenue_amount, booking_value FROM crm_diagnostic_bookings
-      WHERE tenant_id=$1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz
+  const labSource = await hasLabBookings() ? `
       UNION ALL
       SELECT b.status AS booking_status,
         CASE WHEN b.collection_type IN ('home-collection','home_collection') THEN 'home_collection' ELSE 'centre' END,
@@ -124,7 +131,11 @@ export async function getDiagnosticDashboard(tenant, { from, to } = {}) {
         COALESCE(b.total_amount,0)
       FROM api_lab_bookings b WHERE b.tenant_uid=(SELECT unique_id FROM tenants WHERE id=$1)
         AND b.created_at >= $2::timestamptz AND b.created_at < $3::timestamptz
-        AND NOT EXISTS (SELECT 1 FROM crm_diagnostic_bookings c WHERE c.tenant_id=$1 AND c.source_system='api_lab_bookings' AND c.source_ref=b.booking_id)
+        AND NOT EXISTS (SELECT 1 FROM crm_diagnostic_bookings c WHERE c.tenant_id=$1 AND c.source_system='api_lab_bookings' AND c.source_ref=b.booking_id)` : '';
+  const [summary, centres, products, channels, referrals] = await Promise.all([
+    sharedPool.query(`SELECT COUNT(*)::int AS bookings, COUNT(*) FILTER (WHERE booking_status IN ('sample_collected', 'completed'))::int AS collections, COUNT(*) FILTER (WHERE booking_status = 'completed')::int AS completed_tests, COUNT(*) FILTER (WHERE collection_mode = 'home_collection')::int AS home_collection_bookings, COALESCE(SUM(revenue_amount), 0)::numeric AS revenue, COALESCE(AVG(NULLIF(booking_value, 0)), 0)::numeric AS average_order_value FROM (
+      SELECT booking_status, collection_mode, revenue_amount, booking_value FROM crm_diagnostic_bookings
+      WHERE tenant_id=$1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz${labSource}
     ) diagnostic_bookings`, [id, start, end]),
     sharedPool.query(`SELECT c.id, c.centre_name, c.city, COUNT(b.id)::int AS bookings, COUNT(b.id) FILTER (WHERE b.booking_status = 'completed')::int AS completed_tests, COALESCE(SUM(b.revenue_amount), 0)::numeric AS revenue FROM crm_diagnostic_centres c LEFT JOIN crm_diagnostic_bookings b ON b.centre_id = c.id AND b.tenant_id = c.tenant_id AND b.created_at >= $2::timestamptz AND b.created_at < $3::timestamptz WHERE c.tenant_id = $1 GROUP BY c.id ORDER BY revenue DESC, bookings DESC`, [id, start, end]),
     sharedPool.query(`SELECT p.id, p.product_name, p.product_type, COUNT(b.id)::int AS bookings, COUNT(b.id) FILTER (WHERE b.booking_status = 'completed')::int AS completed_tests, COALESCE(SUM(b.revenue_amount), 0)::numeric AS revenue FROM crm_diagnostic_products p LEFT JOIN crm_diagnostic_bookings b ON b.product_id = p.id AND b.tenant_id = p.tenant_id AND b.created_at >= $2::timestamptz AND b.created_at < $3::timestamptz WHERE p.tenant_id = $1 GROUP BY p.id ORDER BY revenue DESC, bookings DESC LIMIT 30`, [id, start, end]),

@@ -4,6 +4,7 @@ import { sendTransactionalEmail } from './welcome-email.service.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { SMSService } from './sms.service.js';
 import { resolveV2LeadByLegacyId, CRM_V2_DEFAULT_TENANT_ID } from './crm-v2-sync.service.js';
+import { sendTenantEmail, sendTenantSms, sendTenantWhatsApp } from './crm-channel-delivery.service.js';
 
 const CHANNELS = new Set(['email', 'whatsapp', 'sms', 'push', 'in_app']);
 const CAMPAIGN_STATUSES = new Set(['draft', 'active', 'paused', 'completed', 'archived']);
@@ -194,7 +195,7 @@ export async function updateCommunicationHubCampaignStatus(tenant, campaignId, s
   if (!CAMPAIGN_STATUSES.has(status)) throw Object.assign(new Error('Unsupported campaign status'), { statusCode: 400 });
   const result = await sharedPool.query(`
     UPDATE crm_campaigns_unified
-    SET lifecycle_status = $1, updated_at = NOW(), last_error = CASE WHEN $1 = 'active' THEN NULL ELSE last_error END
+    SET lifecycle_status = $1::varchar, updated_at = NOW(), last_error = CASE WHEN $1::varchar = 'active' THEN NULL ELSE last_error END
     WHERE tenant_id = $2 AND id = $3 AND deleted_at IS NULL
     RETURNING *
   `, [status, id, positiveInt(campaignId)]);
@@ -216,6 +217,15 @@ export async function createCommunicationHubTemplate(input, actorUserId) {
   const channel = String(input.channel || '').toLowerCase();
   if (!CHANNELS.has(channel)) throw Object.assign(new Error('A supported template channel is required'), { statusCode: 400 });
   if (!String(input.name || '').trim()) throw Object.assign(new Error('Template name is required'), { statusCode: 400 });
+  // WhatsApp templates only work once Meta approves them: when the tenant's Gupshup app is connected,
+  // apply the naming/content rules and submit for review instead of saving an unusable local draft.
+  if (channel === 'whatsapp') {
+    const gupshup = await import('./gupshup-control.service.js');
+    if (await gupshup.getGupshupApp(id)) {
+      return gupshup.createTemplate(id, { purpose: input.name, body: input.body, category: input.category,
+        languageCode: input.languageCode || input.language || 'en', examples: input.examples }, actorUserId);
+    }
+  }
   const result = await sharedPool.query(`
     INSERT INTO crm_communication_templates (tenant_id, name, channel, category, subject, body, variables, status, created_by)
     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'draft', $8)
@@ -400,6 +410,10 @@ async function _logCrmCommunication({ channel, recipientLabel, subject, message,
         JSON.stringify({ recipientLabel }),
       ]
     );
+    // A delivered reply is the lead's first response (feeds the Home dashboard's response-time KPI).
+    if (!failed && v2LeadId) {
+      await sharedPool.query(`UPDATE crm_leads_v2 SET first_response_at = COALESCE(first_response_at, NOW()) WHERE id = $1 AND tenant_id = $2`, [v2LeadId, tenantId]).catch(() => {});
+    }
     return;
   }
 
@@ -423,7 +437,7 @@ async function _logCrmCommunication({ channel, recipientLabel, subject, message,
  * used by the segment blast worker, which already has recipient info from
  * the segment membership query. sendCrmMessage() (below) is the 1:1 path.
  */
-export async function dispatchToChannel({ channel, to, subject, message }) {
+export async function dispatchToChannel({ channel, to, subject, message, tenantId }) {
   const safeChannel = String(channel || '').toLowerCase();
   const safeMessage = String(message || '').trim();
 
@@ -431,8 +445,18 @@ export async function dispatchToChannel({ channel, to, subject, message }) {
     const email = _normalizeEmail(to);
     if (!/^\S+@\S+\.\S+$/.test(email)) return { success: false, provider: 'unified', error: 'Invalid email address' };
     const safeSubject = String(subject || 'Hospital CRM Communication').slice(0, 200);
+    const html = _buildCrmEmailHtml({ subject: safeSubject, message: safeMessage });
     try {
-      await sendTransactionalEmail({ to: email, subject: safeSubject, html: _buildCrmEmailHtml({ subject: safeSubject, message: safeMessage }), text: safeMessage, fromName: 'Hospital CRM' });
+      // Each tenant's own configured SMTP (Communication Hub > Integrations) takes priority;
+      // the shared unified sender is the fallback for tenants that haven't configured one.
+      if (tenantId) {
+        const tenantResult = await sendTenantEmail(tenantId, { to: email, subject: safeSubject, html, text: safeMessage });
+        if (tenantResult.configured) {
+          if (!tenantResult.success) return { success: false, provider: tenantResult.provider, recipient: email, error: tenantResult.error };
+          return { success: true, provider: tenantResult.provider, recipient: email, providerMessageId: tenantResult.providerMessageId };
+        }
+      }
+      await sendTransactionalEmail({ to: email, subject: safeSubject, html, text: safeMessage, fromName: 'Hospital CRM' });
       return { success: true, provider: 'unified', recipient: email };
     } catch (err) {
       return { success: false, provider: 'unified', recipient: email, error: err?.message || 'Email send failed' };
@@ -442,6 +466,13 @@ export async function dispatchToChannel({ channel, to, subject, message }) {
   if (safeChannel === 'whatsapp') {
     const phone = _normalizePhone(to);
     if (!phone || phone.length < 10) return { success: false, provider: whatsappProductionService.provider, error: 'Invalid WhatsApp number' };
+    if (tenantId) {
+      const tenantResult = await sendTenantWhatsApp(tenantId, { to: phone, body: safeMessage.slice(0, 4096) });
+      if (tenantResult.configured) {
+        if (!tenantResult.success) return { success: false, provider: tenantResult.provider, recipient: phone, error: tenantResult.error };
+        return { success: true, provider: tenantResult.provider, recipient: phone, providerMessageId: tenantResult.providerMessageId };
+      }
+    }
     if (whatsappProductionService?.configured) {
       try {
         const response = await whatsappProductionService.sendSessionMessage({ to: phone, body: safeMessage.slice(0, 4096) });
@@ -466,10 +497,17 @@ export async function dispatchToChannel({ channel, to, subject, message }) {
   }
 
   // sms
-  const smsService = _smsService();
-  if (!smsService) return { success: false, provider: 'sms', error: 'SMS not configured' };
   const phone = _normalizePhone(to);
   if (!phone || phone.length < 10) return { success: false, provider: 'sms', error: 'Invalid mobile number' };
+  if (tenantId) {
+    const tenantResult = await sendTenantSms(tenantId, { to: phone, message: safeMessage });
+    if (tenantResult.configured) {
+      if (!tenantResult.success) return { success: false, provider: tenantResult.provider, recipient: phone, error: tenantResult.error };
+      return { success: true, provider: tenantResult.provider, recipient: phone, providerMessageId: tenantResult.providerMessageId };
+    }
+  }
+  const smsService = _smsService();
+  if (!smsService) return { success: false, provider: 'sms', error: 'SMS not configured' };
   try {
     const result = await smsService.sendSMS({ to: phone, message: safeMessage, templateId: process.env.SMS_TEMPLATE_ID });
     if (!result?.success) return { success: false, provider: result?.provider || 'sms', recipient: phone, error: result?.error || 'SMS provider rejected the message' };
@@ -507,19 +545,39 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
     const to = _normalizeEmail(recipient.email);
     if (!/^\S+@\S+\.\S+$/.test(to)) throw Object.assign(new Error(`${recipientLabel} has no valid email address on file`), { statusCode: 400 });
     const safeSubject = String(subject || 'Hospital CRM Communication').slice(0, 200);
+    const html = _buildCrmEmailHtml({ subject: safeSubject, message: safeMessage });
     try {
-      await sendTransactionalEmail({ to, subject: safeSubject, html: _buildCrmEmailHtml({ subject: safeSubject, message: safeMessage }), text: safeMessage, fromName: 'Hospital CRM' });
+      if (tenantId) {
+        const tenantResult = await sendTenantEmail(tenantId, { to, subject: safeSubject, html, text: safeMessage });
+        if (tenantResult.configured) {
+          if (!tenantResult.success) throw Object.assign(new Error(tenantResult.error || 'Email send failed'), { statusCode: 502 });
+          await _logCrmCommunication({ ...logBase, channel: 'email', recipientLabel, subject: safeSubject, status: 'sent', provider: tenantResult.provider });
+          return { success: true, channel: safeChannel, recipient: to, status: 'sent', provider: tenantResult.provider };
+        }
+      }
+      await sendTransactionalEmail({ to, subject: safeSubject, html, text: safeMessage, fromName: 'Hospital CRM' });
       await _logCrmCommunication({ ...logBase, channel: 'email', recipientLabel, subject: safeSubject, status: 'sent', provider: 'unified' });
       return { success: true, channel: safeChannel, recipient: to, status: 'sent' };
     } catch (err) {
       await _logCrmCommunication({ ...logBase, channel: 'email', recipientLabel, subject: safeSubject, status: 'failed', provider: 'unified', errorMessage: err?.message });
-      throw Object.assign(new Error(err?.message || 'Email send failed'), { statusCode: 502 });
+      throw Object.assign(new Error(err?.message || 'Email send failed'), { statusCode: err?.statusCode || 502 });
     }
   }
 
   if (safeChannel === 'whatsapp') {
     const to = _normalizePhone(recipient.phone);
     if (!to || to.length < 10) throw Object.assign(new Error(`${recipientLabel} has no valid WhatsApp number on file`), { statusCode: 400 });
+    if (tenantId) {
+      const tenantResult = await sendTenantWhatsApp(tenantId, { to, body: safeMessage.slice(0, 4096) });
+      if (tenantResult.configured) {
+        if (!tenantResult.success) {
+          await _logCrmCommunication({ ...logBase, channel: 'whatsapp', recipientLabel, status: 'failed', provider: tenantResult.provider, errorMessage: tenantResult.error });
+          throw Object.assign(new Error(tenantResult.error || 'WhatsApp send failed'), { statusCode: 502 });
+        }
+        await _logCrmCommunication({ ...logBase, channel: 'whatsapp', recipientLabel, status: 'sent', provider: tenantResult.provider, providerMessageId: tenantResult.providerMessageId });
+        return { success: true, channel: safeChannel, recipient: to, status: 'sent', provider: tenantResult.provider };
+      }
+    }
     if (whatsappProductionService?.configured) {
       try {
         const response = await whatsappProductionService.sendSessionMessage({ to, body: safeMessage.slice(0, 4096) });
@@ -549,10 +607,21 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
   }
 
   // sms
-  const smsService = _smsService();
-  if (!smsService) throw Object.assign(new Error('SMS is not configured on server'), { statusCode: 503 });
   const to = _normalizePhone(recipient.phone);
   if (!to || to.length < 10) throw Object.assign(new Error(`${recipientLabel} has no valid mobile number on file`), { statusCode: 400 });
+  if (tenantId) {
+    const tenantResult = await sendTenantSms(tenantId, { to, message: safeMessage });
+    if (tenantResult.configured) {
+      if (!tenantResult.success) {
+        await _logCrmCommunication({ ...logBase, channel: 'sms', recipientLabel, status: 'failed', provider: tenantResult.provider, errorMessage: tenantResult.error });
+        throw Object.assign(new Error(tenantResult.error || 'SMS provider rejected the message'), { statusCode: 502 });
+      }
+      await _logCrmCommunication({ ...logBase, channel: 'sms', recipientLabel, status: 'sent', provider: tenantResult.provider, providerMessageId: tenantResult.providerMessageId });
+      return { success: true, channel: safeChannel, recipient: to, status: 'sent', provider: tenantResult.provider };
+    }
+  }
+  const smsService = _smsService();
+  if (!smsService) throw Object.assign(new Error('SMS is not configured on server'), { statusCode: 503 });
   try {
     const result = await smsService.sendSMS({ to, message: safeMessage, templateId: process.env.SMS_TEMPLATE_ID });
     if (!result?.success) {
@@ -569,27 +638,49 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
   }
 }
 
-export async function listCrmCallActivity({ tenantUid, leadId, dealId, limit } = {}) {
+export async function listCrmCallActivity({ tenantUid, leadId, dealId, limit, ownerUserId = null } = {}) {
   requireTenantUid(tenantUid);
   const conditions = [`a.type = 'call'`];
   const params = [];
   if (tenantUid) { params.push(tenantUid); conditions.push(`a.tenant_uid=$${params.length}`); }
+  if (ownerUserId) { params.push(Number(ownerUserId)); conditions.push(`a.lead_id IN (SELECT id FROM crm_leads WHERE assigned_to = $${params.length})`); }
   if (leadId) { params.push(positiveInt(leadId)); conditions.push(`a.lead_id = $${params.length}`); }
   if (dealId) { params.push(positiveInt(dealId)); conditions.push(`a.deal_id = $${params.length}`); }
   params.push(Math.min(Math.max(positiveInt(limit) || 50, 1), 200));
   const { rows } = await sharedPool.query(`
     SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title
     FROM crm_activities a
-    LEFT JOIN crm_leads l ON l.id = a.lead_id AND l.tenant_uid = a.tenant_uid
+    LEFT JOIN crm_leads l ON l.id = a.lead_id
     LEFT JOIN crm_deals d ON d.id = a.deal_id AND d.tenant_uid = a.tenant_uid
     WHERE ${conditions.join(' AND ')}
     ORDER BY COALESCE(a.completed_at, a.scheduled_at, a.created_at) DESC
     LIMIT $${params.length}
   `, params);
-  return rows;
+  if (!leadId || dealId) return rows;
+  // Contact-center calls (cc_calls) carry no lead link; match them to the lead by phone so they show
+  // on the lead's Calls tab alongside calls logged by hand.
+  const { rows: ccRows } = await sharedPool.query(`
+    SELECT 'cc-' || c.id AS id, 'call' AS type,
+           CASE WHEN c.direction = 'inbound' THEN 'Incoming call' ELSE 'Outgoing call' END AS title,
+           CASE WHEN c.provider_duration_seconds IS NOT NULL THEN (c.provider_duration_seconds / 60) || 'm ' || (c.provider_duration_seconds % 60) || 's' END AS description,
+           initcap(replace(COALESCE(c.disposition, c.state), '-', ' ')) AS outcome,
+           COALESCE(c.started_at, c.updated_at) AS created_at, c.ended_at AS completed_at, l.name AS lead_name, c.provider
+      FROM cc_calls c JOIN crm_leads l ON l.id = $2
+     WHERE c.tenant_uid = $1 AND right(regexp_replace(COALESCE(l.phone, ''), '[^0-9]', '', 'g'), 10) <> ''
+       AND right(regexp_replace(COALESCE(c.destination, ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace(l.phone, '[^0-9]', '', 'g'), 10)
+     ORDER BY 6 DESC LIMIT $3`, [tenantUid, positiveInt(leadId), params[params.length - 1]]).catch(() => ({ rows: [] }));
+  const { rows: evRows } = await sharedPool.query(`
+    SELECT 'evt-' || e.id AS id, 'call' AS type, CASE WHEN e.direction = 'inbound' THEN 'Incoming call' ELSE 'Outgoing call' END AS title,
+           e.body_preview AS description, e.status AS outcome, e.created_at, e.created_at AS completed_at, l.name AS lead_name, e.provider
+      FROM crm_communication_events e JOIN crm_leads_v2 lv ON lv.id = e.lead_id AND lv.tenant_id = e.tenant_id JOIN crm_leads l ON l.id = lv.legacy_lead_id
+     WHERE e.channel = 'call' AND lv.legacy_lead_id = $1 AND lv.tenant_uid = $2 ORDER BY e.created_at DESC LIMIT $3`,
+    [positiveInt(leadId), tenantUid, params[params.length - 1]]).catch(() => ({ rows: [] }));
+  return [...rows, ...ccRows, ...evRows]
+    .sort((a, b) => new Date(b.completed_at || b.created_at) - new Date(a.completed_at || a.created_at))
+    .slice(0, params[params.length - 1]);
 }
 
-export async function listCrmCommunicationLog({ tenantId, tenantUid, leadId, dealId, channel, limit } = {}) {
+export async function listCrmCommunicationLog({ tenantId, tenantUid, leadId, dealId, channel, limit, ownerUserId = null } = {}) {
   requireTenantUid(tenantUid);
   tenantId = Number(tenantId);
   if (!Number.isInteger(tenantId) || tenantId < 1) throw Object.assign(new Error('CRM tenant context is required'), { statusCode: 403 });
@@ -606,8 +697,10 @@ export async function listCrmCommunicationLog({ tenantId, tenantUid, leadId, dea
       if (channel && CHANNELS.has(channel)) { params.push(channel); channelClause = `AND channel = $${params.length}`; }
       params.push(cappedLimit);
       const { rows } = await sharedPool.query(`
-        SELECT id, channel AS type, body_preview AS description,
-               CASE WHEN status = 'failed' THEN ('failed: ' || COALESCE(failure_reason, '')) ELSE status END AS outcome,
+        SELECT id, channel AS type, direction, body_preview AS description,
+               -- The lead drawer shows type / description / outcome only, so say which way it went.
+               CASE WHEN direction = 'inbound' THEN 'received from patient'
+                    WHEN status = 'failed' THEN ('failed: ' || COALESCE(failure_reason, '')) ELSE status END AS outcome,
                created_at
         FROM crm_communication_events
         WHERE tenant_id = $1 AND lead_id = $2 ${channelClause}
@@ -622,6 +715,7 @@ export async function listCrmCommunicationLog({ tenantId, tenantUid, leadId, dea
   const conditions = [`a.type IN ('email', 'whatsapp', 'sms')`];
   const params = [];
   if (tenantUid) { params.push(tenantUid); conditions.push(`a.tenant_uid=$${params.length}`); }
+  if (ownerUserId) { params.push(Number(ownerUserId)); conditions.push(`a.lead_id IN (SELECT id FROM crm_leads WHERE assigned_to = $${params.length})`); }
   if (leadId) { params.push(positiveInt(leadId)); conditions.push(`a.lead_id = $${params.length}`); }
   if (dealId) { params.push(positiveInt(dealId)); conditions.push(`a.deal_id = $${params.length}`); }
   if (channel && CHANNELS.has(channel)) { params.push(channel); conditions.push(`a.type = $${params.length}`); }
@@ -629,7 +723,7 @@ export async function listCrmCommunicationLog({ tenantId, tenantUid, leadId, dea
   const { rows } = await sharedPool.query(`
     SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title
     FROM crm_activities a
-    LEFT JOIN crm_leads l ON l.id = a.lead_id AND l.tenant_uid = a.tenant_uid
+    LEFT JOIN crm_leads l ON l.id = a.lead_id
     LEFT JOIN crm_deals d ON d.id = a.deal_id AND d.tenant_uid = a.tenant_uid
     WHERE ${conditions.join(' AND ')}
     ORDER BY a.created_at DESC

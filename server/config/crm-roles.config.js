@@ -19,9 +19,9 @@ export const CRM_ROLE_LABELS = Object.freeze({
   [CRM_ROLES.BUSINESS_HEAD]: 'Business Head',
   [CRM_ROLES.MARKETING_HEAD]: 'Marketing Head',
   [CRM_ROLES.MARKETING]: 'Marketing',
-  [CRM_ROLES.TELECALLER]: 'Telecaller',
+  [CRM_ROLES.TELECALLER]: 'Call Centre Agent',
   [CRM_ROLES.CONVERSION]: 'Conversion',
-  [CRM_ROLES.SALES_REP]: 'Sales Representative',
+  [CRM_ROLES.SALES_REP]: 'Field Marketing Executive',
 });
 
 // Legacy default: any CRM login created before this role model existed has no
@@ -57,6 +57,8 @@ export const CRM_CAPABILITY_ROLES = Object.freeze({
 
   'automations:read': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION, CRM_ROLES.SALES_REP],
   'automations:write': [CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING],
+  // Running campaigns and editing campaign templates (Engage). Front-line roles message one patient at a time.
+  'campaigns:manage': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING],
 
   'communication:configure': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD],
   'communication:read': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION, CRM_ROLES.SALES_REP],

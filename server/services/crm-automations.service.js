@@ -180,7 +180,7 @@ async function _scheduleNewMatches(automation) {
 async function _runAction(automation, execution) {
   const { action_type: actionType, action_config: actionConfig, tenant_id: tenantId } = automation;
   const { rows } = await guardedSharedPool(
-    `SELECT lv.id AS lead_id, ct.id AS contact_id, ct.name, ct.email, ct.phone_e164 AS phone
+    `SELECT lv.id AS lead_id, lv.legacy_lead_id, ct.id AS contact_id, ct.name, ct.email, ct.phone_e164 AS phone
      FROM crm_leads_v2 lv JOIN crm_contacts_v2 ct ON ct.id = lv.contact_id
      WHERE lv.id = $1`,
     [execution.lead_id]
@@ -190,9 +190,17 @@ async function _runAction(automation, execution) {
 
   if (actionType === 'send_message') {
     const channel = actionConfig.channel;
+    // WhatsApp only allows free text within 24h of the patient's last message, so automations send an
+    // approved template (a family picks each patient's language) whenever one is configured.
+    if (channel === 'whatsapp' && (actionConfig.templateId || actionConfig.family)) {
+      const { sendTemplate } = await import('./gupshup-control.service.js');
+      const params = (Array.isArray(actionConfig.params) ? actionConfig.params : []).map((p) => (p === '{{lead.name}}' ? (lead.name || 'there') : p));
+      await sendTemplate(tenantId, { templateId: actionConfig.templateId, family: actionConfig.family, leadId: lead.legacy_lead_id, params }, null);
+      return;
+    }
     const to = channel === 'email' ? lead.email : lead.phone;
     if (!to) throw new Error(`Lead has no ${channel === 'email' ? 'email' : 'phone number'} on file`);
-    const result = await dispatchToChannel({ channel, to, subject: actionConfig.subject, message: actionConfig.message });
+    const result = await dispatchToChannel({ channel, to, subject: actionConfig.subject, message: actionConfig.message, tenantId });
     if (!result.success) throw new Error(result.error || 'Send failed');
     const conversationId = await findOrCreateConversation({ tenantId, leadId: lead.lead_id, channel }).catch(() => null);
     await guardedSharedPool(

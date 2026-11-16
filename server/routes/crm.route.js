@@ -1,3 +1,4 @@
+import { ownScope, assertLegacyLeadAccess, assertV2LeadAccess, assertCanAssign, assertRecordingAccess } from '../services/crm-access.service.js';
 import { mobileUserBelongsToTenant } from '../services/mobile-tenant-membership.service.js';
 import express from 'express';
 import { recordCRMChange } from '../services/crm/record-change.js';
@@ -373,12 +374,15 @@ router.get('/profile', authCRM, async (req, res) => {
 router.get('/dashboard/stats', authCRM, async (req, res) => {
   try {
     const pool = sharedPool;
-    // Leads carry real, multi-tenant data → scope by the caller's tenant (via the v2 twin). Deals,
-    // activities and legacy contacts have no tenant column and are currently empty; they stay
-    // un-scoped until a schema migration adds tenant_uid to them (see follow-up notes).
+    const u = req.crmUser;
+    // Front-line roles see their own work; admins, business and marketing heads see the hospital.
+    const orgWide = u.isAdmin || ['admin', 'business_head', 'marketing_head', 'marketing'].includes(u.crmRole);
+    const mine = orgWide ? null : Number(u.id) || -1;
     const leadStatParams = [];
-    const leadStatScope = scopeLeadToTenant('id', req.crmUser.tenantUid, leadStatParams);
-    const [leads, deals, activities, contacts] = await Promise.all([
+    const leadStatScope = scopeLeadToTenant('id', u.tenantUid, leadStatParams);
+    leadStatParams.push(mine);
+    const leadOwner = `AND ($${leadStatParams.length}::int IS NULL OR assigned_to = $${leadStatParams.length})`;
+    const [leads, deals, activities, contacts, comms] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         COUNT(*) FILTER (WHERE status = 'new')        AS new_leads,
@@ -388,7 +392,7 @@ router.get('/dashboard/stats', authCRM, async (req, res) => {
         COUNT(*) FILTER (WHERE status = 'lost')        AS lost,
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS this_week,
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS this_month
-      FROM crm_leads WHERE ${leadStatScope}`, leadStatParams),
+      FROM crm_leads WHERE ${leadStatScope} ${leadOwner}`, leadStatParams),
       pool.query(`SELECT
         COUNT(*) AS total,
         COALESCE(SUM(value), 0) AS total_value,
@@ -398,7 +402,7 @@ router.get('/dashboard/stats', authCRM, async (req, res) => {
         COUNT(*) FILTER (WHERE stage NOT IN ('won','lost')) AS active_count,
         COALESCE(AVG(probability) FILTER (WHERE stage NOT IN ('won','lost')), 0) AS avg_probability,
         COALESCE(SUM(value * probability / 100.0) FILTER (WHERE stage NOT IN ('won','lost')), 0) AS weighted_pipeline
-      FROM crm_deals WHERE tenant_uid = $1`, [req.crmUser.tenantUid || null]),
+      FROM crm_deals WHERE tenant_uid = $1 AND ($2::int IS NULL OR assigned_to = $2)`, [u.tenantUid || null, mine]),
       pool.query(`SELECT
         COUNT(*) AS total,
         COUNT(*) FILTER (WHERE completed_at IS NOT NULL) AS completed,
@@ -407,12 +411,28 @@ router.get('/dashboard/stats', authCRM, async (req, res) => {
         COUNT(*) FILTER (WHERE type = 'call')  AS calls,
         COUNT(*) FILTER (WHERE type = 'email') AS emails,
         COUNT(*) FILTER (WHERE type = 'meeting') AS meetings
-      FROM crm_activities WHERE tenant_uid = $1`, [req.crmUser.tenantUid || null]),
-      pool.query(`SELECT COUNT(*) AS total FROM crm_contacts WHERE tenant_uid = $1`, [req.crmUser.tenantUid || null])
+      FROM crm_activities WHERE tenant_uid = $1 AND ($2::int IS NULL OR created_by = $2)`, [u.tenantUid || null, mine]),
+      pool.query(`SELECT COUNT(*) AS total FROM crm_contacts WHERE tenant_uid = $1`, [u.tenantUid || null]),
+      // Calls (TeleCMI) and messages (WhatsApp, SMS, email) are recorded in the communication log,
+      // not as activities. Count them too, so the dashboard matches the Inbox.
+      pool.query(`SELECT
+        COUNT(*) FILTER (WHERE channel = 'call') AS calls,
+        COUNT(*) FILTER (WHERE channel = 'email') AS emails,
+        COUNT(*) FILTER (WHERE channel IN ('whatsapp','sms')) AS messages,
+        COUNT(*) AS total
+      FROM crm_communication_events WHERE tenant_id = $1 AND ($2::int IS NULL OR owner_user_id = $2)`, [Number(u.tenantId) || null, mine]),
     ]);
+    const act = activities.rows[0], c = comms.rows[0];
+    const n = (v) => Number(v) || 0;
     return res.status(200).json({
       success: true,
-      data: { leads: leads.rows[0], deals: deals.rows[0], activities: activities.rows[0], contacts: { total: contacts.rows[0].total } }
+      data: {
+        scope: orgWide ? 'organisation' : 'personal',
+        leads: leads.rows[0], deals: deals.rows[0],
+        activities: { ...act, total: String(n(act.total) + n(c.total)), completed: String(n(act.completed) + n(c.total)),
+          calls: String(n(act.calls) + n(c.calls)), emails: String(n(act.emails) + n(c.emails)), messages: String(n(c.messages)) },
+        contacts: { total: contacts.rows[0].total }
+      }
     });
   } catch (error) {
     console.error('[CRM Stats] Error:', error.message);
@@ -444,6 +464,7 @@ router.get('/leads', authCRM, async (req, res) => {
     if (assigned_to) { params.push(parseInt(assigned_to)); conditions.push(`assigned_to = $${params.length}`); }
     if (search) { params.push(`%${search}%`); conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length} OR company ILIKE $${params.length} OR phone ILIKE $${params.length})`); }
     conditions.push(scopeLeadToTenant('id', req.crmUser.tenantUid, params)); // tenant isolation (always applied)
+    if (ownScope(req.crmUser)) { params.push(req.crmUser.id); conditions.push(`assigned_to = $${params.length}`); } // field executives: own leads only
     const where = `WHERE ${conditions.join(' AND ')}`;
     const allowedSorts = ['created_at', 'updated_at', 'name', 'status', 'priority', 'next_followup'];
     const sort = allowedSorts.includes(sortBy) ? sortBy : 'created_at';
@@ -492,6 +513,7 @@ router.post('/leads', authCRM, [body('name').notEmpty().withMessage('Lead name i
 
 router.get('/leads/:id', authCRM, async (req, res) => {
   try {
+    try { await assertLegacyLeadAccess(req.crmUser, req.params.id); } catch (e) { return res.status(e.statusCode || 500).json({ success: false, message: e.statusCode ? e.message : 'Not allowed' }); }
     const params = [req.params.id];
     const scope = scopeLeadToTenant('id', req.crmUser.tenantUid, params);
     const { rows } = await sharedPool.query(`SELECT * FROM crm_leads WHERE id = $1 AND ${scope}`, params);
@@ -507,6 +529,7 @@ router.get('/leads/:id', authCRM, async (req, res) => {
 // id space throughout (matches every other CRM endpoint's contract).
 router.get('/leads/:id/context', authCRM, async (req, res) => {
   try {
+    try { await assertLegacyLeadAccess(req.crmUser, req.params.id); } catch (e) { return res.status(e.statusCode || 500).json({ success: false, message: e.statusCode ? e.message : 'Not allowed' }); }
     const legacyLeadId = parseInt(req.params.id, 10);
     const visible = await sharedPool.query(`SELECT 1 FROM crm_leads_v2 WHERE legacy_lead_id=$1 AND tenant_uid=$2`, [legacyLeadId, req.crmUser.tenantUid]);
     if (!visible.rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
@@ -555,8 +578,12 @@ router.put('/leads/:id', authCRM, async (req, res) => {
 
     const prevParams = [req.params.id];
     const prevScope = scopeLeadToTenant('id', req.crmUser.tenantUid, prevParams);
-    const prevRes = await client.query(`SELECT status, deal_id FROM crm_leads WHERE id = $1 AND ${prevScope}`, prevParams);
+    const prevRes = await client.query(`SELECT status, deal_id, assigned_to FROM crm_leads WHERE id = $1 AND ${prevScope}`, prevParams);
     if (!prevRes.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Lead not found' }); }
+    try {
+      await assertLegacyLeadAccess(req.crmUser, req.params.id);
+      if (assigned_to !== undefined) assertCanAssign(req.crmUser, prevRes.rows[0].assigned_to, assigned_to);
+    } catch (e) { await client.query('ROLLBACK'); return res.status(e.statusCode || 500).json({ success: false, message: e.statusCode ? e.message : 'Not allowed' }); }
     const previousStatus = prevRes.rows[0].status;
     if (status === 'converted' && previousStatus !== 'converted' && !prevRes.rows[0].deal_id) {
       await client.query('ROLLBACK');
@@ -592,6 +619,7 @@ router.put('/leads/:id', authCRM, async (req, res) => {
 
 router.delete('/leads/:id', authCRM, async (req, res) => {
   try {
+    try { await assertLegacyLeadAccess(req.crmUser, req.params.id); } catch (e) { return res.status(e.statusCode || 500).json({ success: false, message: e.statusCode ? e.message : 'Not allowed' }); }
     const delParams = [req.params.id];
     const delScope = scopeLeadToTenant('id', req.crmUser.tenantUid, delParams);
     const { rowCount } = await sharedPool.query(`DELETE FROM crm_leads WHERE id = $1 AND ${delScope}`, delParams);
@@ -866,6 +894,8 @@ router.put('/contacts/:id', authCRM, validateCRMReferences, async (req, res) => 
 router.delete('/contacts/:id', authCRM, async (req, res) => {
   try {
     const { rowCount } = await sharedPool.query(`DELETE FROM crm_contacts WHERE id = $1 AND tenant_uid = $2`, [req.params.id, req.crmUser.tenantUid || null]);
+    // The v2 mirror is written one way on create/update; retire it too so deleted contacts don't linger there.
+    if (rowCount) await sharedPool.query(`UPDATE crm_contacts_v2 SET deleted_at = now() WHERE legacy_contact_id = $1 AND tenant_uid = $2 AND deleted_at IS NULL`, [req.params.id, req.crmUser.tenantUid || null]).catch(() => {});
     if (!rowCount) return res.status(404).json({ success: false, message: 'Contact not found' });
     return res.status(200).json({ success: true, message: 'Contact deleted' });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete contact' }); }
@@ -944,7 +974,8 @@ router.get('/funnel-analytics', authCRM, async (req, res) => {
           COUNT(*) FILTER (WHERE status='won' AND updated_at >= NOW() - INTERVAL '30 days') AS won_30d,
           COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/86400) FILTER (WHERE status IN ('won','lost')), 0)::NUMERIC(8,1) AS avg_cycle_days
         FROM crm_rfqs
-      `),
+        WHERE COALESCE(created_by, assigned_to) IN (SELECT id FROM users WHERE tenant_id = $1)
+      `, [Number(req.crmUser.tenantId) || null]),
       sharedPool.query(`
         SELECT
           COUNT(*) FILTER (WHERE status='new')       AS new_leads,
@@ -1000,7 +1031,10 @@ router.get('/funnel-analytics', authCRM, async (req, res) => {
         velocity: v,
       }
     });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) {
+    console.error('[CRM Funnel] Error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load funnel analytics' });
+  }
 });
 
 export default router;

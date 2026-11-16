@@ -1,3 +1,4 @@
+import { ownScope, assertLegacyLeadAccess } from '../services/crm-access.service.js';
 import express from 'express';
 import { authCRM } from '../middleware/crm.middleware.js';
 import { CRM_CAPABILITY_ROLES, hasCRMCapability } from '../config/crm-roles.config.js';
@@ -74,9 +75,9 @@ router.patch('/integrations/:id/health', action((req, tenantId) => recordCommuni
 router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeCommunicationHubAlert(tenantId, req.params.id, req.crmUser.id), 'communication:write'));
 
 // ─── Real send + calls, scoped to this CRM user's own leads/contacts/deals ───
-router.post('/send', action((req) => sendCrmMessage({ ...req.body, tenantId: req.crmUser.tenantId, tenantUid: req.crmUser.tenantUid, userId: req.crmUser.id }), 'communication:write'));
-router.get('/calls', action((req) => listCrmCallActivity({ ...req.query, tenantUid: req.crmUser.tenantUid })));
-router.get('/log', action((req) => listCrmCommunicationLog({ ...req.query, tenantId: req.crmUser.tenantId, tenantUid: req.crmUser.tenantUid })));
+router.post('/send', action(async (req) => { if (req.body?.leadId) await assertLegacyLeadAccess(req.crmUser, req.body.leadId); return sendCrmMessage({ ...req.body, tenantId: req.crmUser.tenantId, tenantUid: req.crmUser.tenantUid, userId: req.crmUser.id }); }, 'communication:write'));
+router.get('/calls', action(async (req) => { if (req.query.leadId) await assertLegacyLeadAccess(req.crmUser, req.query.leadId); return listCrmCallActivity({ ...req.query, tenantUid: req.crmUser.tenantUid, ownerUserId: ownScope(req.crmUser) ? req.crmUser.id : null }); }));
+router.get('/log', action(async (req) => { if (req.query.leadId) await assertLegacyLeadAccess(req.crmUser, req.query.leadId); return listCrmCommunicationLog({ ...req.query, tenantId: req.crmUser.tenantId, tenantUid: req.crmUser.tenantUid, ownerUserId: ownScope(req.crmUser) ? req.crmUser.id : null }); }));
 router.get('/conversations/:id', action(async (req, tenantId) => {
   const thread = await getConversationThread(tenantId, req.params.id);
   if (thread.conversation.metadata?.provider === 'chatwoot') {

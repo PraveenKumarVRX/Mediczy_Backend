@@ -10,6 +10,7 @@ import { up as crmSocialContentUp } from '../migrations/20261015007000-crm-socia
 
 import { up as reportRemediationUp } from '../migrations/20261024000000-crm-report-remediation.migration.js';
 import { up as webhookEventLogUp } from '../migrations/20261028000000-idempotent-webhook-event-log.migration.js';
+import { up as medstarModulesUp } from '../migrations/20261116000100-crm-medstar-modules.migration.js';
 
 const client = await pool.connect();
 try {
@@ -29,6 +30,7 @@ try {
   await crmSocialContentUp(client);
   await reportRemediationUp(client);
   await webhookEventLogUp(client);
+  await medstarModulesUp(client);
   await client.query('COMMIT');
   console.log('Hospital CRM migrations completed');
 } catch (error) {

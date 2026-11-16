@@ -8,7 +8,6 @@ import {request} from 'node:http';
 import {postgresTls} from '../../db/postgres-tls.js';
 const secretDirectory=process.env.CRM_BOOTSTRAP_SECRET_DIRECTORY||'/run/bootstrap';
 const db=new pg.Client({host:process.env.POSTGRES_HOST,port:Number(process.env.POSTGRES_PORT),database:process.env.POSTGRES_DATABASE,user:'medstar_owner',password:readFileSync(join(secretDirectory,'owner-password'),'utf8').trim(),ssl:postgresTls()});
-const admin=JSON.parse(readFileSync(join(secretDirectory,'admin.json'),'utf8'));
 const checks=[];let tenantId,userId,contactId;
 async function call(path,token,method='GET',body){return new Promise((resolve,reject)=>{
  const req=request('http://api:8888'+path,{method,headers:{Host:'medstar.mediqzy.com','Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})}},res=>{let text='';res.on('data',chunk=>text+=chunk);res.on('end',()=>{try{resolve({status:res.statusCode,data:JSON.parse(text)});}catch(error){reject(error);}});});
@@ -17,8 +16,13 @@ async function call(path,token,method='GET',body){return new Promise((resolve,re
 function check(name,condition,status){checks.push({name,passed:condition,status});if(!condition)process.exitCode=1;}
 try{
  await db.connect();if(process.env.CRM_TENANT_UID!=='H98VG4')throw Error('Wrong installation');
- const login=await call('/api/crm/login',null,'POST',admin);check('real administrator login',login.status===200,login.status);if(login.status!==200)throw Error('Login failed');
- const token=login.data.token,stamp=randomUUID().replaceAll('-','').slice(0,12);
+ // Signed in-process like the foreign token below: a stored admin password goes stale as soon as the
+ // owner changes it, which silently disabled this suite. The admin row is read from the database.
+ const adminRow=(await db.query(`SELECT u.id,u.role,u.metadata FROM users u WHERE u.tenant_id=$1 AND u.status='active' ORDER BY u.id LIMIT 1`,[Number(process.env.CRM_TENANT_ID)])).rows[0];
+ if(!adminRow)throw Error('No active administrator');
+ const token=jwt.sign({id:adminRow.id,role:adminRow.role,isCRM:true,userType:'crm',tenantId:Number(process.env.CRM_TENANT_ID||70),crmRole:adminRow.metadata?.crmRole||'admin',tokenType:'access',jti:randomUUID()},process.env.JWT_SECRET,{expiresIn:120});
+ const login={data:{crmUser:{id:adminRow.id}}};let r0=await call('/api/crm/profile',token);check('administrator session',r0.status===200,r0.status);
+ const stamp=randomUUID().replaceAll('-','').slice(0,12);
  const fixture=(await db.query(`INSERT INTO tenants(uid,name,slug,subdomain,type,email,phone,address,plan,status,settings,metadata,created_at,updated_at) VALUES($1,'CRM Isolation QA',$2,$2,'hospital',$3,'0000000000','{}','free','active','{}','{"synthetic_acceptance":true}',now(),now()) RETURNING id,unique_id`,[randomUUID(),'isolation-'+stamp,'qa-'+stamp+'@example.invalid'])).rows[0];tenantId=fixture.id;
  const user=(await db.query(`INSERT INTO users("firstName","lastName",email,password,"phoneNumber",role,status,"isAdmin","isTeam",tenant_id,organization_id,organization_type,organization_uid,metadata,"createdAt","updatedAt") VALUES('Isolation','QA',$1,'not-a-login-password','0000000000','team','active',false,true,$2,$2,'hospital',$3,$4,now(),now()) RETURNING id`,['foreign-'+stamp+'@example.invalid',tenantId,fixture.unique_id,JSON.stringify({isCRM:true,crmRole:'admin',tenantId})])).rows[0];userId=user.id;
  contactId=(await db.query(`INSERT INTO crm_contacts(name,email,created_by,tenant_uid) VALUES($1,$2,$3,$4) RETURNING id`,['Foreign QA '+stamp,'contact-'+stamp+'@example.invalid',userId,fixture.unique_id])).rows[0].id;

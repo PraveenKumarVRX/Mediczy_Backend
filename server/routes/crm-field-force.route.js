@@ -14,8 +14,10 @@
 import { Router } from 'express';
 import pool from '../db/pgPool.js';
 import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
+import { syncLegacyLeadToV2 } from '../services/crm-v2-sync.service.js';
 
 const router = Router();
+
 const FF_READ   = requireCRMCapability('field_force:read');
 const FF_MANAGE = requireCRMCapability('field_force:manage');
 
@@ -676,6 +678,8 @@ router.patch('/leads/:id/push-to-crm', authCRM, FF_MANAGE, async (req, res) => {
        l.entity_name, l.designation, l.notes, req.crmUser.id]
     );
     const crmLeadId = crm[0].id;
+    // The Leads page, Inbox and dashboards read the lead's v2 record; without it a pushed lead was invisible.
+    await syncLegacyLeadToV2(crmLeadId, tenantId, { strict: true });
 
     await pool.query(
       `UPDATE field_leads SET crm_lead_id=$1, updated_at=NOW() WHERE id=$2`,
@@ -683,7 +687,8 @@ router.patch('/leads/:id/push-to-crm', authCRM, FF_MANAGE, async (req, res) => {
     );
     res.json({ crm_lead_id: crmLeadId, field_lead_id: req.params.id });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[field-force] push to CRM failed:', err.message);
+    res.status(500).json({ error: 'Could not push this lead to the CRM' });
   }
 });
 

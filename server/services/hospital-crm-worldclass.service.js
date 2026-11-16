@@ -1,6 +1,15 @@
 import sharedPool from '../db/pgPool.js';
 import { classifySentiment } from './ai-brain/sentiment-classifier.service.js';
 
+let fieldForceInstalled;
+async function hasFieldForceTables() {
+  if (fieldForceInstalled === undefined) {
+    fieldForceInstalled = (await sharedPool.query(
+      `SELECT to_regclass('public.field_leads') IS NOT NULL AND to_regclass('public.field_visits') IS NOT NULL AS present`)).rows[0].present;
+  }
+  return fieldForceInstalled;
+}
+
 const CHANNELS = new Set(['whatsapp', 'sms', 'email', 'call', 'push', 'in_app']);
 const STAGE_FOR_VISIT_EVENT = {
   checked_in: 'visited',
@@ -605,6 +614,14 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
   const roleFilter = String(role || '').trim().toLowerCase();
   const searchFilter = String(search || '').trim();
 
+  // field_leads/field_visits belong to the separate Field Force product; CRM-only installations
+  // don't have them, and the team dashboard must still load (with field counts as zero).
+  const fieldColumns = await hasFieldForceTables() ? `
+           (SELECT COUNT(*)::int FROM field_leads f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND f.created_at >= $2::timestamptz AND f.created_at < $3::timestamptz) AS field_leads,
+           (SELECT COUNT(*)::int FROM field_leads f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND f.created_at >= $2::timestamptz AND f.created_at < $3::timestamptz AND NOT EXISTS (SELECT 1 FROM crm_leads_v2 l WHERE l.tenant_id=$1 AND l.legacy_lead_id=f.crm_lead_id AND l.owner_user_id=tm.user_id AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz)) AS unlinked_field_leads,
+           (SELECT COUNT(*)::int FROM field_visits f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND COALESCE(f.planned_at,f.created_at) >= $2::timestamptz AND COALESCE(f.planned_at,f.created_at) < $3::timestamptz) AS field_visits,`
+    : `
+           0 AS field_leads, 0 AS unlinked_field_leads, 0 AS field_visits,`;
   const membersQuery = `
     WITH team_members AS (
       SELECT u.id AS user_id,
@@ -623,10 +640,7 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
          AND COALESCE(u.status, 'active') <> 'deleted'
          AND (u."isTeam" = TRUE OR u."isAdmin" = TRUE OR u.role IN ('team', 'admin') OR u.metadata->>'isCRM' = 'true' OR u.metadata->>'crmAccess' = 'true' OR u.metadata ? 'crmRole')
     )
-    SELECT tm.user_id,
-           (SELECT COUNT(*)::int FROM field_leads f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND f.created_at >= $2::timestamptz AND f.created_at < $3::timestamptz) AS field_leads,
-           (SELECT COUNT(*)::int FROM field_leads f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND f.created_at >= $2::timestamptz AND f.created_at < $3::timestamptz AND NOT EXISTS (SELECT 1 FROM crm_leads_v2 l WHERE l.tenant_id=$1 AND l.legacy_lead_id=f.crm_lead_id AND l.owner_user_id=tm.user_id AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz)) AS unlinked_field_leads,
-           (SELECT COUNT(*)::int FROM field_visits f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND COALESCE(f.planned_at,f.created_at) >= $2::timestamptz AND COALESCE(f.planned_at,f.created_at) < $3::timestamptz) AS field_visits,
+    SELECT tm.user_id,${fieldColumns}
            tm.first_name,
            tm.last_name,
            tm.email,
