@@ -12,6 +12,7 @@
 import sharedPool from '../db/pgPool.js';
 import { syncLegacyLeadToV2 } from './crm-v2-sync.service.js';
 import { sendTemplateToNumber } from './gupshup-control.service.js';
+import { placeCall } from './crm-unified-inbox.service.js';
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const positive = (v) => { const n = Number(v); return Number.isSafeInteger(n) && n > 0 ? n : null; };
@@ -158,6 +159,7 @@ export async function createDoctor(ctx, input = {}) {
     `INSERT INTO field_doctor_crm (${cols.join(', ')}, assigned_exec_id, tenant_id, created_at, updated_at)
      VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')}, $${cols.length + 1}, $${cols.length + 2}, now(), now()) RETURNING id`,
     [...cols.map((k) => f[k]), owner, ctx.tenantId]);
+  await ensureDoctorContact(ctx.tenantId, ctx.tenantUid, d.id, ctx.userId).catch((e) => console.error('[referral-network] contact link', e.message));
   return loadDoctor(ctx, d.id);
 }
 
@@ -174,6 +176,7 @@ export async function updateDoctor(ctx, id, input = {}) {
   if (!cols.length) return d;
   await sharedPool.query(`UPDATE field_doctor_crm SET ${cols.map((k, i) => `${k} = $${i + 1}`).join(', ')}, updated_at = now() WHERE id = $${cols.length + 1} AND tenant_id = $${cols.length + 2}`,
     [...cols.map((k) => f[k]), d.id, ctx.tenantId]);
+  await ensureDoctorContact(ctx.tenantId, ctx.tenantUid, d.id, ctx.userId).catch((e) => console.error('[referral-network] contact link', e.message));
   return loadDoctor(ctx, d.id);
 }
 
@@ -214,6 +217,7 @@ export async function importDoctors(ctx, rows = []) {
     }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  await linkAllDoctorContacts(ctx).catch((e) => console.error('[referral-network] contact link', e.message));
   return result;
 }
 
@@ -340,12 +344,27 @@ export async function recordReferral(ctx, doctorId, input = {}, { channel = 'web
     }
     await client.query('COMMIT');
     let notified = null;
-    if (input.notify_doctor) {
+    const outboundOff = process.env.CRM_OUTBOUND_ENABLED !== 'true' ? { sent: false, reason: 'Outbound messaging is switched off on this CRM.' } : null;
+    if (input.notify_doctor && outboundOff) notified = outboundOff;
+    else if (input.notify_doctor) {
       // A thank-you on WhatsApp, if the doctor template is approved. Never fails the referral.
       notified = await sendDoctorMessage({ ...ctx, own: false, canEdit: true }, d.id, { family: 'doctor_referral_thanks', params: [shortDoctorName(d.doctor_name), String(name).split(/\s+/)[0]] })
         .then(() => ({ sent: true })).catch((e) => ({ sent: false, reason: e.message }));
     }
-    return { lead_id: v2Id, legacy_lead_id: legacyId, created, doctor_id: d.id, notified };
+    let welcomed = null;
+    if (input.welcome_patient && created && outboundOff) welcomed = outboundOff;
+    else if (input.welcome_patient && created) {
+      // The approved patient acknowledgement, in the patient's language, logged on the lead's Inbox timeline.
+      welcomed = await sendTemplateToNumber(ctx.tenantId, { family: 'enquiry_acknowledgement', language: ['en', 'hi', 'te'].includes(input.language) ? input.language : 'en', to: phone, params: [String(name).split(/\s+/)[0]] })
+        .then(async (r) => {
+          await sharedPool.query(
+            `INSERT INTO crm_communication_events (tenant_id, lead_id, channel, direction, message_type, template_id, body_preview, provider, provider_message_id, status, sent_at, owner_user_id, metadata, tenant_uid)
+             VALUES ($1, $2, 'whatsapp', 'outbound', 'template', $3, $4, 'gupshup', $5, 'sent', now(), $6, $7::jsonb, $8)`,
+            [ctx.tenantId, v2Id, r.template.id, r.rendered.slice(0, 2000), r.messageId, ctx.userId, JSON.stringify({ to: r.to, template: r.template.name, audience: 'patient', reason: 'referral_welcome' }), ctx.tenantUid]);
+          return { sent: true, template: r.template.name };
+        }).catch((e) => ({ sent: false, reason: e.message }));
+    }
+    return { lead_id: v2Id, legacy_lead_id: legacyId, created, doctor_id: d.id, notified, welcomed };
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
@@ -672,7 +691,7 @@ export async function teamPerformance(ctx, { month } = {}) {
   const m = /^\d{4}-\d{2}$/.test(month || '') ? month : new Date().toISOString().slice(0, 7);
   const { rows } = await sharedPool.query(
     `SELECT u.id, NULLIF(trim(concat_ws(' ', u."firstName", u."lastName")), '') AS name,
-            t.visits_target, t.doctors_target, t.leads_target, t.camps_target, t.revenue_target,
+            t.visits_target, t.doctors_target, t.leads_target, t.camps_target, t.revenue_target, t.corporates_target, t.empanelment_target,
             (SELECT count(*)::int FROM field_visits v WHERE v.tenant_id = $1 AND v.user_id = u.id AND v.status = 'completed' AND to_char(v.check_in_at, 'YYYY-MM') = $2) AS visits_done,
             (SELECT count(DISTINCT v.doctor_crm_id)::int FROM field_visits v WHERE v.tenant_id = $1 AND v.user_id = u.id AND v.status = 'completed' AND to_char(v.check_in_at, 'YYYY-MM') = $2) AS doctors_done,
             (SELECT count(*)::int FROM crm_leads_v2 lv WHERE lv.tenant_id = $1 AND lv.referred_by_user_id = u.id AND to_char(lv.created_at, 'YYYY-MM') = $2) AS referrals_done,
@@ -825,4 +844,316 @@ export async function setMilestone(ctx, milestoneId, status) {
        FROM field_empanelment_applications a WHERE m.id = $2 AND a.id = m.application_id AND a.tenant_id = $3`, [status, positive(milestoneId), ctx.tenantId]);
   if (!rowCount) throw fail(404, 'Milestone not found');
   return listEmpanelment(ctx);
+}
+
+// ── Team today ───────────────────────────────────────────────────────────────────────────────────
+/** Who clocked in, where and when; late after the day start; visits done against plan; out-of-beat visits. */
+export async function fieldTeamToday(ctx, { date } = {}) {
+  ensureManager(ctx);
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  const { rows: [cfg] } = await sharedPool.query(`SELECT to_char(day_start, 'HH24:MI') AS day_start FROM field_settings WHERE tenant_id = $1`, [ctx.tenantId]);
+  const dayStart = cfg?.day_start || '09:30';
+  const { rows } = await sharedPool.query(
+    `WITH team AS (
+       SELECT id, NULLIF(trim(concat_ws(' ', "firstName", "lastName")), '') AS name, email FROM users
+        WHERE tenant_id = $1 AND status = 'active' AND COALESCE(metadata->>'crmRole', 'sales_rep') = 'sales_rep'
+       UNION
+       SELECT u.id, NULLIF(trim(concat_ws(' ', u."firstName", u."lastName")), ''), u.email FROM field_attendance a JOIN users u ON u.id = a.user_id
+        WHERE a.tenant_id = $1 AND a.date = $2::date)
+     SELECT t.id, t.name, t.email, a.clock_in_at, a.clock_out_at, a.clock_in_lat, a.clock_in_lng, a.clock_in_accuracy_m, a.clock_in_address, a.status AS attendance_status,
+            a.exception_type, a.exception_reason,
+            (a.clock_in_at AT TIME ZONE 'Asia/Kolkata')::time > $3::time AS late,
+            (SELECT count(*)::int FROM field_visits v WHERE v.tenant_id = $1 AND v.user_id = t.id AND (COALESCE(v.planned_at, v.check_in_at) AT TIME ZONE 'Asia/Kolkata')::date = $2::date) AS visits_planned,
+            (SELECT count(*)::int FROM field_visits v WHERE v.tenant_id = $1 AND v.user_id = t.id AND v.status = 'completed' AND (COALESCE(v.check_in_at, v.planned_at) AT TIME ZONE 'Asia/Kolkata')::date = $2::date) AS visits_done,
+            (SELECT count(*)::int FROM field_visit_exceptions x WHERE x.tenant_id = $1 AND x.user_id = t.id AND (x.created_at AT TIME ZONE 'Asia/Kolkata')::date = $2::date) AS out_of_beat,
+            (SELECT jsonb_build_object('at', v.check_in_at, 'lat', v.check_in_lat, 'lng', v.check_in_lng, 'place', COALESCE(d.doctor_name, v.entity_name))
+               FROM field_visits v LEFT JOIN field_doctor_crm d ON d.id = v.doctor_crm_id
+              WHERE v.tenant_id = $1 AND v.user_id = t.id AND v.check_in_at IS NOT NULL AND (v.check_in_at AT TIME ZONE 'Asia/Kolkata')::date = $2::date
+              ORDER BY v.check_in_at DESC LIMIT 1) AS last_stop,
+            (SELECT string_agg(territory, ', ') FROM field_territories ft WHERE ft.tenant_id = $1 AND ft.user_id = t.id AND ft.active IS NOT FALSE) AS beat
+       FROM team t LEFT JOIN field_attendance a ON a.user_id = t.id AND a.tenant_id = $1 AND a.date = $2::date
+      ORDER BY a.clock_in_at IS NULL, t.name NULLS LAST`, [ctx.tenantId, day, dayStart]);
+  const people = rows.map((r) => ({ ...r, state: !r.clock_in_at ? 'not_in' : r.clock_out_at ? 'done' : 'in_field' }));
+  return { date: day, day_start: dayStart, people,
+    summary: { team: people.length, clocked_in: people.filter((p) => p.clock_in_at).length, late: people.filter((p) => p.late).length,
+      not_in: people.filter((p) => !p.clock_in_at).length, out_of_beat: people.reduce((n, p) => n + p.out_of_beat, 0),
+      visits_done: people.reduce((n, p) => n + p.visits_done, 0), visits_planned: people.reduce((n, p) => n + p.visits_planned, 0) } };
+}
+export async function saveFieldSettings(ctx, { day_start } = {}) {
+  ensureManager(ctx);
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(day_start || ''))) throw fail(400, 'Give the day start as HH:MM, for example 09:30');
+  await sharedPool.query(`INSERT INTO field_settings (tenant_id, day_start, updated_by, updated_at) VALUES ($1, $2::time, $3, now())
+                          ON CONFLICT (tenant_id) DO UPDATE SET day_start = EXCLUDED.day_start, updated_by = EXCLUDED.updated_by, updated_at = now()`, [ctx.tenantId, day_start, ctx.userId]);
+  return { day_start };
+}
+
+// ── Targets and quota moves ──────────────────────────────────────────────────────────────────────
+const TARGET_COLUMNS = { visits: 'visits_target', doctors: 'doctors_target', corporates: 'corporates_target', camps: 'camps_target', leads: 'leads_target', empanelment: 'empanelment_target', revenue: 'revenue_target' };
+const isMonth = (m) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(m || ''));
+async function assertFieldExec(ctx, userId, db = sharedPool) {
+  const { rows } = await db.query(`SELECT id FROM users WHERE id = $1 AND tenant_id = $2 AND status = 'active'`, [positive(userId), ctx.tenantId]);
+  if (!rows.length) throw fail(400, 'Choose an active field executive');
+  return rows[0].id;
+}
+export async function setTargets(ctx, input = {}) {
+  ensureManager(ctx);
+  const month = isMonth(input.month) ? input.month : new Date().toISOString().slice(0, 7);
+  const userId = await assertFieldExec(ctx, input.user_id);
+  const vals = Object.fromEntries(Object.entries(TARGET_COLUMNS).map(([k, col]) => {
+    const n = Number(input[k] ?? input[col] ?? 0);
+    if (!Number.isFinite(n) || n < 0) throw fail(400, `${k} target must be zero or more`);
+    return [col, k === 'revenue' ? n : Math.round(n)];
+  }));
+  const cols = Object.keys(vals);
+  await sharedPool.query(
+    `INSERT INTO field_targets (user_id, month, ${cols.join(', ')}, notes, set_by, tenant_id) VALUES ($1, $2, ${cols.map((_, i) => `$${i + 3}`).join(', ')}, $${cols.length + 3}, $${cols.length + 4}, $${cols.length + 5})
+     ON CONFLICT (user_id, month) DO UPDATE SET ${cols.map((c) => `${c} = EXCLUDED.${c}`).join(', ')}, notes = EXCLUDED.notes, set_by = EXCLUDED.set_by, updated_at = now()`,
+    [userId, month, ...cols.map((c) => vals[c]), clean(input.notes, 500), ctx.userId, ctx.tenantId]);
+  return teamPerformance(ctx, { month });
+}
+export async function moveQuota(ctx, input = {}) {
+  ensureManager(ctx);
+  const month = isMonth(input.month) ? input.month : new Date().toISOString().slice(0, 7);
+  const type = input.target_type || 'visits';
+  const column = TARGET_COLUMNS[type];
+  const qty = Number(input.quantity);
+  if (!column) throw fail(400, `Target must be one of: ${Object.keys(TARGET_COLUMNS).join(', ')}`);
+  if (!Number.isFinite(qty) || qty <= 0 || (type !== 'revenue' && !Number.isInteger(qty))) throw fail(400, 'Move a whole number greater than zero');
+  if (String(input.from_user_id) === String(input.to_user_id)) throw fail(400, 'Choose two different executives');
+  const reason = clean(input.reason, 300);
+  if (!reason) throw fail(400, 'Give a reason; both executives see it');
+  const client = await sharedPool.connect();
+  try {
+    await client.query('BEGIN');
+    const from = await assertFieldExec(ctx, input.from_user_id, client);
+    const to = await assertFieldExec(ctx, input.to_user_id, client);
+    const { rows: debit } = await client.query(
+      `UPDATE field_targets SET ${column} = COALESCE(${column}, 0) - $3, updated_at = now() WHERE user_id = $1 AND tenant_id = $2 AND month = $4 AND COALESCE(${column}, 0) >= $3 RETURNING id`,
+      [from, ctx.tenantId, qty, month]);
+    if (!debit.length) throw fail(409, 'The first executive does not have that much of this target to give');
+    await client.query(
+      `INSERT INTO field_targets (user_id, tenant_id, month, ${column}, set_by) VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id, month) DO UPDATE SET ${column} = COALESCE(field_targets.${column}, 0) + EXCLUDED.${column}, updated_at = now()`,
+      [to, ctx.tenantId, month, qty, ctx.userId]);
+    await client.query(`INSERT INTO field_target_moves (tenant_id, month, from_user_id, to_user_id, target_type, quantity, reason, moved_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [ctx.tenantId, month, from, to, type, qty, reason, ctx.userId]);
+    const label = type === 'revenue' ? `₹${qty.toLocaleString('en-IN')} revenue` : `${qty} ${type}`;
+    await client.query(`INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data) VALUES ($1, $3, 'target', $4, $5, $6::jsonb), ($2, $3, 'target', $7, $5, $6::jsonb)`,
+      [from, to, ctx.tenantId, `Target moved: ${label} less this month`, reason, JSON.stringify({ month, target_type: type, quantity: qty }), `Target moved: ${label} more this month`]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  return { performance: await teamPerformance(ctx, { month }), moves: await listQuotaMoves(ctx, { month }) };
+}
+export async function listQuotaMoves(ctx, { month } = {}) {
+  const m = isMonth(month) ? month : new Date().toISOString().slice(0, 7);
+  const { rows } = await sharedPool.query(
+    `SELECT mv.id, mv.target_type, mv.quantity, mv.reason, mv.created_at,
+            NULLIF(trim(concat_ws(' ', f."firstName", f."lastName")), '') AS from_name, NULLIF(trim(concat_ws(' ', t."firstName", t."lastName")), '') AS to_name,
+            NULLIF(trim(concat_ws(' ', b."firstName", b."lastName")), '') AS by_name
+       FROM field_target_moves mv LEFT JOIN users f ON f.id = mv.from_user_id LEFT JOIN users t ON t.id = mv.to_user_id LEFT JOIN users b ON b.id = mv.moved_by
+      WHERE mv.tenant_id = $1 AND mv.month = $2 ${ctx.own ? 'AND (mv.from_user_id = $3 OR mv.to_user_id = $3)' : 'AND $3::int > 0'} ORDER BY mv.created_at DESC LIMIT 100`, [ctx.tenantId, m, ctx.userId || 0]);
+  return rows;
+}
+
+// ── Outreach permissions (RWAs, municipal, government) ───────────────────────────────────────────
+export async function listOutreachPermissions(ctx, { status = '' } = {}) {
+  const params = [ctx.tenantId];
+  let where = 'p.tenant_id = $1';
+  if (['pending', 'active', 'expired', 'revoked'].includes(status)) { params.push(status); where += ` AND p.status = $${params.length}`; }
+  if (ctx.own) { params.push(ctx.userId); where += ` AND p.user_id = $${params.length}`; }
+  const { rows } = await sharedPool.query(
+    `SELECT p.*, NULLIF(trim(concat_ws(' ', u."firstName", u."lastName")), '') AS exec_name, NULLIF(trim(concat_ws(' ', r."firstName", r."lastName")), '') AS reviewed_by_name,
+            (p.valid_until IS NOT NULL AND p.valid_until < current_date) AS lapsed
+       FROM field_outreach_permissions p LEFT JOIN users u ON u.id = p.user_id LEFT JOIN users r ON r.id = p.reviewed_by
+      WHERE ${where} ORDER BY (p.status = 'pending') DESC, p.created_at DESC LIMIT 300`, params);
+  return { items: rows, manager: ctx.manager };
+}
+export async function saveOutreachPermission(ctx, input = {}) {
+  if (!ctx.canEdit) throw fail(403, 'Your role cannot file outreach permissions.');
+  const type = ['rwa', 'municipal', 'government', 'other'].includes(input.permission_type) ? input.permission_type : null;
+  const authority = clean(input.authority_name, 200);
+  if (!type || !authority) throw fail(400, 'Choose the type and give the authority or association name');
+  const date = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : null);
+  const owner = ctx.manager && input.user_id ? await assertFieldExec(ctx, input.user_id) : ctx.userId;
+  const { rows: [p] } = await sharedPool.query(
+    `INSERT INTO field_outreach_permissions (tenant_id, user_id, permission_type, authority_name, reference_no, valid_from, valid_until, notes, status, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',now(),now()) RETURNING id`,
+    [ctx.tenantId, owner, type, authority, clean(input.reference_no, 100), date(input.valid_from), date(input.valid_until), clean(input.notes, 1000)]);
+  return { id: p.id, ...(await listOutreachPermissions(ctx)) };
+}
+export async function decideOutreachPermission(ctx, id, { status, note } = {}) {
+  ensureManager(ctx);
+  if (!['active', 'revoked', 'expired'].includes(status)) throw fail(400, 'Status must be active, revoked or expired');
+  if (status === 'revoked' && !clean(note)) throw fail(400, 'Give a reason; the executive sees it');
+  const { rows: [p] } = await sharedPool.query(
+    `UPDATE field_outreach_permissions SET status = $1, review_note = $2, reviewed_by = $3, reviewed_at = now(), updated_at = now()
+      WHERE id = $4 AND tenant_id = $5 RETURNING id, user_id, authority_name, status`,
+    [status, clean(note, 500), ctx.userId, positive(id), ctx.tenantId]);
+  if (!p) throw fail(404, 'Permission not found');
+  const word = { active: 'approved', revoked: 'not approved', expired: 'marked expired' }[status];
+  await sharedPool.query(`INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data) VALUES ($1, $2, 'approval', $3, $4, $5::jsonb)`,
+    [p.user_id, ctx.tenantId, `Outreach permission ${word}: ${p.authority_name}`, clean(note, 500) || '', JSON.stringify({ id: p.id, resource: 'field_outreach_permissions', status })]).catch(() => {});
+  return listOutreachPermissions(ctx);
+}
+
+// ── Institutional pipeline (corporates, empanelment, insurance: field_leads) ─────────────────────
+export const INSTITUTION_STAGES = ['new', 'contacted', 'qualified', 'proposal', 'empanelment', 'closed_won', 'closed_lost'];
+export async function listInstitutions(ctx, { exec = '', type = '' } = {}) {
+  const params = [ctx.tenantId];
+  let where = 'l.tenant_id = $1';
+  if (ctx.own) { params.push(ctx.userId); where += ` AND l.user_id = $${params.length}`; }
+  else if (positive(exec)) { params.push(positive(exec)); where += ` AND l.user_id = $${params.length}`; }
+  if (clean(type)) { params.push(clean(type, 40)); where += ` AND l.lead_type = $${params.length}`; }
+  const { rows } = await sharedPool.query(
+    `SELECT l.id, l.entity_name, l.entity_type, l.lead_type, l.contact_name, l.contact_phone, l.contact_email, l.designation, l.estimated_value, l.contract_value,
+            COALESCE(l.pipeline_stage, 'new') AS stage, l.follow_up_date, l.notes, l.crm_lead_id, l.created_at, l.updated_at, l.closed_at, l.stage_history,
+            NULLIF(trim(concat_ws(' ', u."firstName", u."lastName")), '') AS exec_name, l.user_id
+       FROM field_leads l LEFT JOIN users u ON u.id = l.user_id WHERE ${where}
+      ORDER BY l.updated_at DESC LIMIT 500`, params);
+  const byStage = Object.fromEntries(INSTITUTION_STAGES.map((s) => [s, { count: 0, value: 0 }]));
+  for (const r of rows) { const b = byStage[r.stage] || byStage.new; b.count += 1; b.value += Number(r.contract_value || r.estimated_value || 0); }
+  return { items: rows, stages: INSTITUTION_STAGES, byStage, manager: ctx.manager };
+}
+export async function moveInstitution(ctx, id, { stage, note, contract_value } = {}) {
+  if (!ctx.canEdit) throw fail(403, 'Your role cannot change the pipeline.');
+  if (!INSTITUTION_STAGES.includes(stage)) throw fail(400, `Stage must be one of: ${INSTITUTION_STAGES.join(', ')}`);
+  if (stage === 'closed_won' && !ctx.manager) throw fail(403, 'Only a Business Head can mark a deal won.');
+  const value = contract_value == null || contract_value === '' ? null : Number(contract_value);
+  if (stage === 'closed_won' && !(value > 0)) throw fail(400, 'Give the contract value to mark the deal won');
+  const params = [positive(id), ctx.tenantId, stage, String(ctx.userId), clean(note, 500), value];
+  const { rows: [l] } = await sharedPool.query(
+    `UPDATE field_leads SET pipeline_stage = $3::text,
+            stage_history = COALESCE(stage_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('stage', $3::text, 'at', now(), 'by', $4::text, 'note', $5::text)),
+            contract_value = COALESCE($6::numeric, contract_value), closed_at = CASE WHEN $3::text IN ('closed_won', 'closed_lost') THEN now() ELSE NULL END, updated_at = now()
+      WHERE id = $1 AND tenant_id = $2 ${ctx.own ? `AND user_id = ${Number(ctx.userId)}` : ''} RETURNING id, user_id, entity_name`, params);
+  if (!l) throw fail(404, 'Deal not found');
+  if (Number(l.user_id) !== ctx.userId) {
+    await sharedPool.query(`INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data) VALUES ($1, $2, 'pipeline', $3, $4, $5::jsonb)`,
+      [l.user_id, ctx.tenantId, `${l.entity_name}: moved to ${stage.replace(/_/g, ' ')}`, clean(note, 500) || '', JSON.stringify({ id: l.id, resource: 'field_leads', stage })]).catch(() => {});
+  }
+  return listInstitutions(ctx);
+}
+
+// ── One doctor, one record: field doctor ↔ CRM contact ───────────────────────────────────────────
+/** Find the doctor's CRM contact (by mobile, else by name) or create one, and link it. Returns contact id. */
+export async function ensureDoctorContact(tenantId, tenantUid, doctorId, userId = null, db = sharedPool) {
+  const { rows: [d] } = await db.query(`SELECT * FROM field_doctor_crm WHERE id = $1 AND tenant_id = $2`, [doctorId, tenantId]);
+  if (!d) return null;
+  const name = /^dr\.?\s/i.test(d.doctor_name) ? d.doctor_name : `Dr ${d.doctor_name}`;
+  const fields = [name, d.email || null, d.phone || null, d.hospital_affiliation || null, d.specialty || 'Referring doctor', d.address || null, d.city || null];
+  if (d.contact_id) {
+    const { rowCount } = await db.query(
+      `UPDATE crm_contacts SET name = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), company = COALESCE($4, company), designation = COALESCE($5, designation),
+              address = COALESCE($6, address), city = COALESCE($7, city), updated_at = now() WHERE id = $8 AND tenant_uid = $9`, [...fields, d.contact_id, tenantUid]);
+    if (rowCount) return d.contact_id;
+  }
+  const p10 = digits(d.phone).slice(-10);
+  const { rows: [match] } = await db.query(
+    `SELECT id FROM crm_contacts WHERE tenant_uid = $1 AND (($2::text <> '' AND right(regexp_replace(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $2::text)
+        OR ($2::text = '' AND lower(name) = lower($3))) ORDER BY id LIMIT 1`, [tenantUid, p10, name]);
+  let contactId = match?.id;
+  if (contactId) {
+    await db.query(`UPDATE crm_contacts SET tags = (SELECT jsonb_agg(DISTINCT x) FROM jsonb_array_elements(COALESCE(tags, '[]'::jsonb) || '["referring_doctor"]'::jsonb) x), updated_at = now() WHERE id = $1`, [contactId]);
+  } else {
+    const { rows: [c] } = await db.query(
+      `INSERT INTO crm_contacts (name, email, phone, company, designation, address, city, tags, notes, created_by, tenant_uid, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'["referring_doctor"]'::jsonb,$8,$9,$10,now(),now()) RETURNING id`,
+      [...fields, 'Referring doctor (from the referral network)', userId || d.assigned_exec_id || 0, tenantUid]);
+    contactId = c.id;
+  }
+  await db.query(`UPDATE field_doctor_crm SET contact_id = $1 WHERE id = $2`, [contactId, d.id]);
+  return contactId;
+}
+export async function linkAllDoctorContacts(ctx) {
+  ensureManager(ctx);
+  const { rows } = await sharedPool.query(`SELECT id FROM field_doctor_crm WHERE tenant_id = $1 AND contact_id IS NULL ORDER BY id LIMIT 5000`, [ctx.tenantId]);
+  for (const r of rows) await ensureDoctorContact(ctx.tenantId, ctx.tenantUid, r.id, ctx.userId);
+  return { linked: rows.length };
+}
+
+// ── Shared follow-ups: a visit's next step becomes an Inbox task ─────────────────────────────────
+let tenantUidCache = new Map();
+async function tenantUidOf(tenantId) {
+  if (!tenantUidCache.has(tenantId)) {
+    const { rows: [t] } = await sharedPool.query(`SELECT unique_id FROM tenants WHERE id = $1`, [tenantId]);
+    tenantUidCache.set(tenantId, t?.unique_id || null);
+  }
+  return tenantUidCache.get(tenantId);
+}
+/** After a visit is saved: its follow-up (date and/or next action) is one task owned by the executive, on the
+ * doctor's contact record or the patient lead, so it shows in the callback queue and the app's task list. */
+export async function syncVisitFollowUp(tenantId, visitId) {
+  const { rows: [v] } = await sharedPool.query(
+    `SELECT v.*, fl.crm_lead_id FROM field_visits v LEFT JOIN field_leads fl ON fl.id = v.lead_id AND fl.tenant_id = v.tenant_id WHERE v.id = $1 AND v.tenant_id = $2`, [visitId, tenantId]);
+  if (!v) return null;
+  const tenantUid = await tenantUidOf(tenantId);
+  if (!tenantUid) return null;
+  const { rows: [existing] } = await sharedPool.query(`SELECT id, completed_at FROM crm_activities WHERE field_visit_id = $1`, [v.id]);
+  if (!v.follow_up_date && !clean(v.next_action)) {
+    if (existing && !existing.completed_at) await sharedPool.query(`DELETE FROM crm_activities WHERE id = $1`, [existing.id]);
+    return null;
+  }
+  const due = v.follow_up_date
+    ? new Date(`${new Date(v.follow_up_date).toISOString().slice(0, 10)}T10:00:00+05:30`)
+    : new Date(`${new Date(Date.now() + 330 * 60000 + 864e5).toISOString().slice(0, 10)}T10:00:00+05:30`);
+  let contactId = null, doctorName = null;
+  if (v.doctor_crm_id) {
+    contactId = await ensureDoctorContact(tenantId, tenantUid, v.doctor_crm_id, v.user_id).catch(() => null);
+    doctorName = (await sharedPool.query(`SELECT doctor_name FROM field_doctor_crm WHERE id = $1`, [v.doctor_crm_id])).rows[0]?.doctor_name;
+  }
+  const who = doctorName || v.entity_name || 'the visit';
+  const title = (clean(v.next_action, 180) || `Follow up with ${who}`).slice(0, 200);
+  const note = [`From the field visit to ${who}`, clean(v.outcome, 600)].filter(Boolean).join(' · ');
+  if (existing) {
+    await sharedPool.query(`UPDATE crm_activities SET title = $1, description = $2, scheduled_at = $3, contact_id = COALESCE($4, contact_id), lead_id = COALESCE($5, lead_id) WHERE id = $6`,
+      [title, note, due, contactId, v.crm_lead_id || null, existing.id]);
+    return existing.id;
+  }
+  const { rows: [t] } = await sharedPool.query(
+    `INSERT INTO crm_activities (type, title, description, lead_id, contact_id, scheduled_at, created_by, assigned_to, field_visit_id, tenant_uid, created_at)
+     VALUES ('task', $1, $2, $3, $4, $5, $6, $6, $7, $8, now()) ON CONFLICT (field_visit_id) WHERE field_visit_id IS NOT NULL DO NOTHING RETURNING id`,
+    [title, note, v.crm_lead_id || null, contactId, due, v.user_id, v.id, tenantUid]);
+  return t?.id || null;
+}
+
+// ── Approvals from the app (same rules as the web endpoints) ─────────────────────────────────────
+const APPROVAL_TABLE = {
+  expense: { table: 'field_expense_claims', pending: `status = 'submitted'`, label: 'Expense' },
+  tour_plan: { table: 'field_tour_plans', pending: `status = 'submitted'`, label: 'Tour plan' },
+  exception: { table: 'field_visit_exceptions', pending: `status = 'pending'`, label: 'Visit exception' },
+};
+export async function decideApproval(ctx, kind, id, { approve, note, amount } = {}) {
+  ensureManager(ctx);
+  if (kind === 'event_budget') return decideBudget(ctx, id, { approve, note });
+  const k = APPROVAL_TABLE[kind];
+  if (!k) throw fail(400, 'Unknown approval');
+  const reason = clean(note, 500);
+  if (!approve && !reason) throw fail(400, 'Give a reason; the executive sees it');
+  let sql, params;
+  if (kind === 'expense') {
+    const amt = amount == null || amount === '' ? null : Number(amount);
+    if (approve && amt != null && (!Number.isFinite(amt) || amt < 0)) throw fail(400, 'Approved amount must be zero or more');
+    sql = approve
+      ? `UPDATE field_expense_claims SET status = 'approved', approved_amount = COALESCE($3::numeric, total_amount), approval_notes = $4, reviewed_by = $5, reviewed_at = now(), updated_at = now()
+           WHERE id = $1 AND tenant_id = $2 AND ${k.pending} AND COALESCE($3::numeric, total_amount) <= total_amount RETURNING id, user_id, status`
+      : `UPDATE field_expense_claims SET status = 'rejected', rejection_reason = $4, reviewed_by = $5, reviewed_at = now(), updated_at = now()
+           WHERE id = $1 AND tenant_id = $2 AND ${k.pending} AND $3::numeric IS NULL RETURNING id, user_id, status`;
+    params = [positive(id), ctx.tenantId, approve ? amt : null, reason, ctx.userId];
+  } else {
+    sql = `UPDATE ${k.table} SET status = $3, review_note = $4, reviewed_by = $5, reviewed_at = now(), updated_at = now()
+             WHERE id = $1 AND tenant_id = $2 AND ${k.pending} RETURNING id, user_id, status`;
+    params = [positive(id), ctx.tenantId, approve ? 'approved' : 'rejected', reason, ctx.userId];
+  }
+  const { rows: [r] } = await sharedPool.query(sql, params);
+  if (!r) throw fail(404, 'Not found, already decided, or the amount is more than claimed');
+  await sharedPool.query(`INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data) VALUES ($1, $2, 'approval', $3, $4, $5::jsonb)`,
+    [r.user_id, ctx.tenantId, `${k.label} ${r.status}`, reason || '', JSON.stringify({ id: r.id, resource: k.table, status: r.status })]);
+  return { id: r.id, status: r.status };
+}
+
+/** Click-to-call a referring doctor through TeleCMI; the call is filed on the doctor's profile. */
+export async function callDoctor(ctx, doctorId) {
+  const d = await loadDoctor(ctx, doctorId);
+  if (!d.phone) throw fail(400, `${d.doctor_name} has no mobile number on file`);
+  return placeCall(ctx.tenantId, ctx.userId, d.phone, { doctor_crm_id: d.id }, `${d.doctor_name} has no valid mobile number.`);
 }

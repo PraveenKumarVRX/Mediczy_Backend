@@ -89,6 +89,51 @@ or reject it and restore this repo's version.
 `server/.dockerignore`, `server/tmp/create_assistant_and_token.mjs`, `server/tmp/price-sync/jan_aushadhi.xlsx`.
 The last is pharmacy price data and does not belong on a hospital CRM server.
 
+## 6. Port record (2026-11-16)
+
+**Method.** A local reference commit `phase1/medstar-snapshot` lays `medstar-crm` 900e93a plus the 6
+uncommitted host files on top of `58f96af3`. Bringing it onto `phase1/crm-merge` made git three-way merge
+every file at once. Later Medstar commits arrive as patches (`git apply -3`) of their own diff only.
+
+**Conflicts (5).** `crm-automations` and `crm-segments`: both sides kept (Mediqzy's `guardedSharedPool` plus
+Medstar's `legacy_lead_id` / `deleted_at` filters). `password-reset`, `signup-verification`, `twilio-otp`:
+Mediqzy kept. The communication hub merged without conflict.
+
+**Section 3, uncommitted host edits: all 6 rejected.** Five are Medstar's version of the WhatsApp OTP
+template fix (one parameter); Mediqzy fixed the same bug later and correctly (the copy-code template needs the
+code twice). `app.js` removed three workspace routes, likely because their files were missing on the host; the
+CRM-only server does not load `app.js`. Section 4: discarded.
+
+**Changed while porting.**
+
+- Vendor calls go through `server/integrations/`: Gupshup, TeleCMI, Tata Smartflo, Twilio, tenant SMTP and
+  (from 1c37423) Firebase push. TeleCMI and Tata Smartflo joined the catalogue; `oauth2.googleapis.com` joined
+  `firebase-fcm`. Guard test: `__tests__/crm-vendor-calls-managed.test.js`.
+- Medstar's hand-run SQL became migrations `20261116000100-crm-medstar-modules` and
+  `20261116000200-crm-call-centre-and-field` (both in `scripts/migrate-crm-all.mjs`, idempotent, safe on
+  Medstar's database where the SQL already ran). Every new integer reference to a user gets its uid twin.
+- `GET /api/branding` also returns `name`, `supportEmail`, `templatePrefix` for `crm-web`.
+- Team named permissions match exactly (`middleware/team.middleware.js`). Live impact 16 Nov: user 7404
+  loses Field Force Manager access held only through the substring bug.
+- Field Force installed-check moved from the shared route into `crm-app.mjs`, with error handling (it hung
+  the request when the check query failed).
+- `crm-team.route.js` (1c37423, Business Heads invite the front line): an account flagged admin is treated
+  as admin even without a `crmRole`, so a Business Head cannot deactivate an older admin login.
+
+**medstar-crm 1c37423** (call centre, manager tools, app modes, shared follow-ups): ported on top. Its
+`nginx-common.conf` change (`/login` redirect) is deployment-only and stays in `medstar-crm`. The web
+changes since 6f503f1 (including 900e93a's role/menu edits, which postdated the `crm-web` copy) are in
+`crm-web/`. Smart-Force 29125a6 (the phone app) is outside this repo until decision 49.
+
+**Tests.** `crm-medstar-modules-access`, `crm-medstar-merge-shared`, `crm-medstar-call-centre-team`,
+`crm-vendor-calls-managed`. End-to-end behaviour is proven by Medstar's own suites
+(`installations/crm/post-deploy-smoke.mjs`, `smart-force-smoke.mjs`) in Phase 1, item 6.
+
+All new routes are mounted only in `crm-app.mjs`; Mediqzy's `app.js` loads none of them.
+
+**Open.** The tool pages under `crm-web/tools/` still hard-code "Medstar CRM", `/brand/medstar.svg` and the
+`medstar_` template prefix; they must read `/api/branding` like the app before a second hospital uses them.
+
 ## 5. Web app
 
 The CRM web app was rebuilt from source in `medstar-crm/client/` on 2026-11-15 and has since gained the

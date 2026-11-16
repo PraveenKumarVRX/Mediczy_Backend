@@ -599,6 +599,234 @@ check('features', 'template lint catches Meta rule', r.status === 200 && (r.data
   }
 }
 
+// 5i. Call centre (status, callback queue, my day, quick answers), field manager tools (team today, targets and
+// quota moves, outreach permissions, institutional pipeline), one doctor one contact, field follow-ups as shared
+// tasks, the app's modes (/api/app), and Business Heads inviting the team. Temporary accounts and test rows only;
+// nothing is dialled or sent (calls are refused before TeleCMI, no welcome is requested).
+{
+  const users = [];
+  const mkUser = async (role) => {
+    const id = (await pool.query(
+      `INSERT INTO users ("firstName","lastName",email,password,"phoneNumber",role,status,"isAdmin","isTeam",tenant_id,organization_id,organization_type,metadata,"createdAt","updatedAt")
+       VALUES ('Smoke', $1, $2, '!', '0000000000', 'team', 'active', false, true, $3, $3, 'hospital', $4, now(), now()) RETURNING id`,
+      [role, `smoke-cc-${role}-${users.length}-${stamp}@example.invalid`, T, JSON.stringify({ isCRM: true, crmRole: role, tenantId: T })])).rows[0].id;
+    users.push(id); return id;
+  };
+  const tok = (id, role) => jwt.sign({ id, role: 'team', isCRM: true, userType: 'crm', tenantId: T, crmRole: role, tokenType: 'access', jti: randomUUID() }, process.env.JWT_SECRET, { expiresIn: 300 });
+  const appJtis = [];
+  const appTok = async (id) => {
+    const jti = randomUUID(); appJtis.push(jti);
+    await pool.query(`INSERT INTO api_v2_refresh_tokens (jti, user_id, role, token_hash, expires_at, ip_address) VALUES ($1, $2, 'smart-force', 'smoke', now() + interval '10 minutes', 'smoke')`, [jti, id]);
+    return jwt.sign({ id, role: 'team', userType: 'team', isTeam: true, scope: 'smart-force', tenantId: T, tokenType: 'access', jti }, process.env.JWT_SECRET, { expiresIn: 300 });
+  };
+  const asUser = (t) => (path, opts = {}) => call(path, { token: t, ...opts });
+  const cc = (path, opts) => as('/api/crm/call-centre' + path, opts);
+  const rn = (path, opts) => as('/api/crm/referral-network' + path, opts);
+  const leadIds = []; const fieldLeadIds = []; let doctorId = null, visitId = null, invitedId = null, hadSettings = true;
+  const qaIds = [];
+  try {
+    const repId = await mkUser('sales_rep'), rep2Id = await mkUser('sales_rep'), agentId = await mkUser('telecaller'), bhId = await mkUser('business_head');
+    const rep = asUser(tok(repId, 'sales_rep')), agent = asUser(tok(agentId, 'telecaller')), bh = asUser(tok(bhId, 'business_head'));
+
+    // Quick answers
+    r = await cc('/quick-answers');
+    check('call-centre', 'starter scripts present', r.status === 200 && (r.data?.data?.items || []).filter((x) => x.kind === 'script').length >= 5, `${r.status} n=${(r.data?.data?.items || []).length}`);
+    r = await cc('/quick-answers', { method: 'POST', body: { kind: 'answer', category: 'Smoke', title: 'Smoke answer ' + stamp, body: 'OPD runs 9 to 5' } });
+    qaIds.push(r.data?.data?.id);
+    check('call-centre', 'manager adds a quick answer', r.status === 200 && r.data?.data?.id, r.status);
+    r = await agent('/api/crm/call-centre/quick-answers?q=' + encodeURIComponent('Smoke answer ' + stamp));
+    check('call-centre', 'agent finds it', r.status === 200 && (r.data?.data?.items || []).length === 1, r.status);
+    r = await agent('/api/crm/call-centre/quick-answers', { method: 'POST', body: { title: 'x', body: 'y' } });
+    check('call-centre', 'agent cannot edit answers', r.status === 403, r.status);
+    r = await cc(`/quick-answers/${qaIds[0]}`, { method: 'DELETE' });
+    check('call-centre', 'manager deletes it', r.status === 200, r.status);
+
+    // Status
+    r = await agent('/api/crm/call-centre/status', { method: 'PUT', body: { status: 'available' } });
+    check('call-centre', 'agent goes available', r.status === 200 && r.data?.data?.status === 'available', `${r.status} ${msg(r)}`);
+    check('call-centre', 'unlinked agent told calls are not routed', r.data?.data?.telecmi?.linked === false && /not linked/i.test(r.data?.data?.telecmi?.error || ''), JSON.stringify(r.data?.data?.telecmi || {}));
+    r = await agent('/api/crm/call-centre/status', { method: 'PUT', body: { status: 'break', reason: 'Lunch' } });
+    check('call-centre', 'agent goes on break', r.status === 200 && r.data?.data?.status === 'break', r.status);
+    r = await agent('/api/crm/call-centre/status', { method: 'PUT', body: { status: 'asleep' } });
+    check('call-centre', 'invalid status refused', r.status === 400, r.status);
+    r = await agent('/api/crm/call-centre/day');
+    check('call-centre', 'my day loads with break time', r.status === 200 && typeof r.data?.data?.calls_answered === 'number' && r.data?.data?.break_minutes >= 0, r.status);
+    r = await cc('/team');
+    check('call-centre', 'manager sees agents with status', r.status === 200 && (r.data?.data || []).some((p) => p.id === agentId && p.status.status === 'break'), r.status);
+    r = await agent('/api/crm/call-centre/team');
+    check('call-centre', 'agent cannot see the team panel', r.status === 403, r.status);
+
+    // Callback queue: a missed call on an unassigned lead, and a task due an hour ago.
+    const mkLead = async (label, owner) => {
+      const r2 = await as('/api/crm/leads', { method: 'POST', body: { name: `Smoke CC ${label} ${stamp}`, phone: '+9155541' + String(Date.now()).slice(-5) + leadIds.length, source: 'manual' } });
+      const id = r2.data?.data?.id; leadIds.push(id);
+      await pool.query(`UPDATE crm_leads SET assigned_to = $2 WHERE id = $1`, [id, owner]);
+      return { id, v2: (await pool.query(`SELECT id FROM crm_leads_v2 WHERE legacy_lead_id = $1 AND tenant_id = $2`, [id, T])).rows[0]?.id };
+    };
+    const missedLead = await mkLead('Missed', null), otherLead = await mkLead('Other', rep2Id);
+    await pool.query(`INSERT INTO crm_communication_events (tenant_id, lead_id, channel, direction, message_type, provider, status, metadata, created_at)
+      VALUES ($1, $2, 'call', 'inbound', 'call', 'telecmi', 'missed', '{"smoke":true}'::jsonb, now() - interval '20 minutes'), ($1, $3, 'call', 'inbound', 'call', 'telecmi', 'missed', '{"smoke":true}'::jsonb, now() - interval '10 minutes')`, [T, missedLead.v2, otherLead.v2]);
+    r = await agent('/api/crm/inbox/' + missedLead.v2 + '/tasks', { method: 'POST', body: { title: 'Smoke callback ' + stamp, dueAt: new Date(Date.now() - 3600e3).toISOString() } });
+    const taskId = r.data?.data?.id;
+    r = await agent('/api/crm/call-centre/queue');
+    const q = r.data?.data?.items || [];
+    check('call-centre', 'queue has the missed call and the overdue task', r.status === 200 && q.some((i) => i.kind === 'missed_call' && i.lead_id === missedLead.v2) && q.some((i) => i.kind === 'task' && i.task_id === taskId && i.overdue), `${r.status} n=${q.length}`);
+    const pos = (k) => q.findIndex(k);
+    check('call-centre', 'queue is in due-time order', pos((i) => i.task_id === taskId) < pos((i) => i.kind === 'missed_call' && i.lead_id === missedLead.v2), 'task due 1h ago before call 20 min ago');
+    r = await rep('/api/crm/call-centre/queue?scope=all');
+    check('call-centre', "field executive's queue never shows others' missed calls", r.status === 200 && r.data?.data?.canSeeAll === false && !(r.data?.data?.items || []).some((i) => i.lead_id === otherLead.v2 || i.lead_id === missedLead.v2), r.status);
+    await pool.query(`INSERT INTO crm_communication_events (tenant_id, lead_id, channel, direction, message_type, provider, status, owner_user_id, metadata, created_at) VALUES ($1, $2, 'whatsapp', 'outbound', 'text', 'gupshup', 'sent', $3, '{"smoke":true}'::jsonb, now())`, [T, missedLead.v2, agentId]);
+    r = await agent('/api/crm/call-centre/queue');
+    check('call-centre', 'a reply clears the missed call', !(r.data?.data?.items || []).some((i) => i.kind === 'missed_call' && i.lead_id === missedLead.v2), r.status);
+    r = await agent(`/api/crm/call-centre/tasks/${taskId}`, { method: 'PATCH', body: { done: true } });
+    const r3 = await agent('/api/crm/call-centre/queue');
+    check('call-centre', 'done task leaves the queue', r.status === 200 && !(r3.data?.data?.items || []).some((i) => i.task_id === taskId), r.status);
+    r = await cc('/queue?scope=all');
+    check('call-centre', 'manager sees everyone\'s missed calls', (r.data?.data?.items || []).some((i) => i.lead_id === otherLead.v2), r.status);
+    r = await cc(`/queue/missed/${otherLead.v2}/clear`, { method: 'POST', body: {} });
+    const r4 = await cc('/queue?scope=all');
+    check('call-centre', 'missed call can be cleared without calling', r.status === 200 && !(r4.data?.data?.items || []).some((i) => i.lead_id === otherLead.v2), r.status);
+
+    // Field manager tools
+    r = await rn('/team-today');
+    check('field', 'team today loads', r.status === 200 && Array.isArray(r.data?.data?.people) && r.data?.data?.people.some((p) => p.id === repId && p.state === 'not_in'), r.status);
+    hadSettings = (await pool.query(`SELECT 1 FROM field_settings WHERE tenant_id = $1`, [T])).rowCount > 0;
+    r = await rn('/field-settings', { method: 'PUT', body: { day_start: '25:00' } });
+    check('field', 'bad day start refused', r.status === 400, r.status);
+    const month = new Date().toISOString().slice(0, 7);
+    r = await rn('/targets', { method: 'POST', body: { user_id: repId, month, visits: 40, doctors: 20 } });
+    check('field', 'targets set on the web', r.status === 200 && (r.data?.data?.team || []).some((x) => x.id === repId && Number(x.visits_target) === 40), `${r.status} ${msg(r)}`);
+    r = await rn('/targets/move', { method: 'POST', body: { from_user_id: repId, to_user_id: rep2Id, target_type: 'visits', quantity: 10, month } });
+    check('field', 'quota move needs a reason', r.status === 400, r.status);
+    r = await rn('/targets/move', { method: 'POST', body: { from_user_id: repId, to_user_id: rep2Id, target_type: 'visits', quantity: 100, month, reason: 'Smoke' } });
+    check('field', 'cannot move more than they have', r.status === 409, r.status);
+    r = await rn('/targets/move', { method: 'POST', body: { from_user_id: repId, to_user_id: rep2Id, target_type: 'visits', quantity: 10, month, reason: 'Smoke leave cover' } });
+    const perf = r.data?.data?.performance?.team || [];
+    check('field', 'quota moved and logged', r.status === 200 && Number(perf.find((x) => x.id === repId)?.visits_target) === 30 && Number(perf.find((x) => x.id === rep2Id)?.visits_target) === 10 && (r.data?.data?.moves || []).length >= 1, `${r.status} ${msg(r)}`);
+    r = await rep('/api/crm/referral-network/targets/move', { method: 'POST', body: { from_user_id: repId, to_user_id: rep2Id, quantity: 1, reason: 'x' } });
+    check('field', 'field executive cannot move quota', r.status === 403, r.status);
+    r = await rep('/api/crm/referral-network/outreach', { method: 'POST', body: { permission_type: 'rwa', authority_name: 'Smoke RWA ' + stamp, valid_until: '2027-03-31' } });
+    const permId = r.data?.data?.id;
+    check('field', 'field executive files an outreach permission', r.status === 200 && permId, `${r.status} ${msg(r)}`);
+    r = await rn(`/outreach/${permId}`, { method: 'PATCH', body: { status: 'revoked' } });
+    check('field', 'refusing a permission needs a reason', r.status === 400, r.status);
+    r = await rn(`/outreach/${permId}`, { method: 'PATCH', body: { status: 'active' } });
+    check('field', 'manager approves it', r.status === 200 && (r.data?.data?.items || []).some((p) => p.id === permId && p.status === 'active'), r.status);
+    const { rows: [fl] } = await pool.query(`INSERT INTO field_leads (user_id, entity_name, entity_type, lead_type, status, tenant_id, created_at, updated_at) VALUES ($1, $2, 'corporate', 'corporate', 'new', $3, now(), now()) RETURNING id`, [repId, 'Smoke Corp ' + stamp, T]);
+    fieldLeadIds.push(fl.id);
+    r = await rep(`/api/crm/referral-network/institutions/${fl.id}/stage`, { method: 'PATCH', body: { stage: 'proposal', note: 'Smoke proposal sent' } });
+    check('field', 'executive moves own deal to proposal', r.status === 200 && (r.data?.data?.items || []).some((x) => x.id === fl.id && x.stage === 'proposal'), `${r.status} ${msg(r)}`);
+    r = await rep(`/api/crm/referral-network/institutions/${fl.id}/stage`, { method: 'PATCH', body: { stage: 'closed_won', contract_value: 100000 } });
+    check('field', 'only a Business Head marks a deal won', r.status === 403, r.status);
+    r = await rn(`/institutions/${fl.id}/stage`, { method: 'PATCH', body: { stage: 'closed_won' } });
+    check('field', 'won needs the contract value', r.status === 400, r.status);
+    r = await rn(`/institutions/${fl.id}/stage`, { method: 'PATCH', body: { stage: 'closed_won', contract_value: 250000 } });
+    check('field', 'manager marks it won with value', r.status === 200 && r.data?.data?.byStage?.closed_won?.value >= 250000, r.status);
+
+    // One doctor, one record
+    r = await rn('/doctors', { method: 'POST', body: { doctor_name: 'Dr Smoke Link ' + stamp, specialty: 'Neurology', phone: '97' + String(Date.now()).slice(-8), assigned_exec_id: repId } });
+    doctorId = r.data?.data?.id;
+    const { rows: [dc] } = await pool.query(`SELECT d.contact_id, c.tags, c.designation FROM field_doctor_crm d LEFT JOIN crm_contacts c ON c.id = d.contact_id WHERE d.id = $1`, [doctorId]);
+    check('journey', 'new doctor gets a CRM contact record', dc?.contact_id && JSON.stringify(dc.tags).includes('referring_doctor') && dc.designation === 'Neurology', JSON.stringify(dc));
+    check('journey', 'patient welcome template is approved', (await pool.query(`SELECT 1 FROM crm_communication_templates WHERE tenant_id = $1 AND metadata->>'family' = 'medstar_enquiry_acknowledgement' AND status = 'approved'`, [T])).rowCount >= 1, '');
+
+    // Field follow-up becomes a shared task, through the app's own check-out
+    const repApp = asUser(await appTok(repId)), agentApp = asUser(await appTok(agentId)), adminApp = asUser(await appTok(admin.id));
+    const { rows: [v] } = await pool.query(`INSERT INTO field_visits (user_id, tenant_id, entity_type, entity_name, purpose, status, check_in_at, doctor_crm_id, created_at, updated_at)
+      VALUES ($1, $2, 'doctor', 'Dr Smoke Link', 'relationship', 'checked_in', now() - interval '30 minutes', $3, now(), now()) RETURNING id`, [repId, T, doctorId]);
+    visitId = v.id;
+    const todayIst = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+    r = await repApp(`/api/field/visits/${visitId}/check-out`, { method: 'PATCH', body: { outcome: 'Smoke outcome', next_action: 'Smoke send CME brochure ' + stamp, follow_up_date: todayIst } });
+    const { rows: [ft] } = await pool.query(`SELECT id, assigned_to, contact_id, scheduled_at FROM crm_activities WHERE field_visit_id = $1`, [visitId]);
+    check('journey', 'visit follow-up becomes a task on the doctor contact', r.status === 200 && ft && Number(ft.assigned_to) === repId && String(ft.contact_id) === String(dc?.contact_id), `${r.status} ${JSON.stringify(ft || {})}`);
+    r = await repApp('/api/app/callbacks');
+    check('app', "follow-up is in the executive's app task list", r.status === 200 && (r.data?.data?.items || []).some((i) => i.task_id === ft?.id && i.doctor_id === doctorId), `${r.status} ${msg(r)}`);
+    r = await repApp(`/api/app/tasks/${ft?.id}`, { method: 'PATCH', body: { done: true } });
+    check('app', 'executive completes it from the app', r.status === 200 && (await pool.query(`SELECT completed_at FROM crm_activities WHERE id = $1`, [ft?.id])).rows[0]?.completed_at, r.status);
+
+    // App modes
+    r = await repApp('/api/app/me');
+    check('app', 'field executive opens in field mode', r.status === 200 && JSON.stringify(r.data?.data?.user?.modes) === '["field"]', JSON.stringify(r.data?.data?.user?.modes || msg(r)));
+    r = await agentApp('/api/app/me');
+    check('app', 'agent can sign in to the app, agent mode', r.status === 200 && JSON.stringify(r.data?.data?.user?.modes) === '["agent"]', `${r.status} ${JSON.stringify(r.data?.data?.user?.modes || msg(r))}`);
+    r = await agentApp('/api/field/visits');
+    check('app', 'agent has no field screens', r.status === 403, r.status);
+    r = await repApp('/api/app/day');
+    check('app', 'field executive has no agent screens', r.status === 403, r.status);
+    r = await adminApp('/api/app/me');
+    check('app', 'manager gets manager and agent modes', (r.data?.data?.user?.modes || []).includes('manager') && (r.data?.data?.user?.modes || []).includes('agent'), JSON.stringify(r.data?.data?.user?.modes || msg(r)));
+    r = await adminApp('/api/app/approvals');
+    const r5 = await adminApp('/api/app/team-today');
+    check('app', 'manager approvals and team today in the app', r.status === 200 && r5.status === 200, `${r.status}/${r5.status}`);
+    r = await repApp('/api/app/approvals');
+    check('app', 'field executive cannot open approvals', r.status === 403, r.status);
+    r = await agentApp('/api/app/status', { method: 'PUT', body: { status: 'available' } });
+    check('app', 'agent sets status from the app', r.status === 200 && r.data?.data?.status === 'available', r.status);
+    r = await repApp('/api/app/call', { method: 'POST', body: { lead_id: otherLead.v2 } });
+    check('app', "executive cannot call another's patient", r.status === 404, `${r.status} ${msg(r)}`);
+    r = await agentApp('/api/app/call', { method: 'POST', body: {} });
+    check('app', 'call needs a person (nothing dialled)', r.status === 400 || r.status === 503, r.status);
+    r = await repApp('/api/app/devices', { method: 'POST', body: { token: 'smoke-device-token-' + stamp + '-xxxxxxxxxx', platform: 'android', app_version: 'smoke' } });
+    check('app', 'phone registers for push', r.status === 200 && r.data?.data?.registered, `${r.status} ${msg(r)}`);
+    r = await agentApp(`/api/app/leads/${missedLead.v2}`);
+    check('app', 'agent opens a conversation in the app', r.status === 200 && r.data?.data?.lead, r.status);
+    r = await repApp('/api/app/doctors');
+    const r6 = await asUser(await appTok(rep2Id))('/api/app/doctors');
+    check('app', "doctor list: the executive's own doctor, not another's", r.status === 200 && (r.data?.data?.doctors || []).some((x) => x.id === doctorId) && !(r6.data?.data?.doctors || []).some((x) => x.id === doctorId), `${r.status}/${r6.status}`);
+    r = await repApp(`/api/app/doctors/${doctorId}`);
+    check('app', 'doctor profile with referred patients in the app', r.status === 200 && r.data?.data?.doctor?.id === doctorId && Array.isArray(r.data?.data?.referrals), r.status);
+
+    // Business Head invites the team
+    r = await bh('/api/crm/team/users');
+    check('team', 'Business Head opens the team list', r.status === 200 && JSON.stringify(r.data?.meta?.invitableRoles || []).includes('sales_rep') && !JSON.stringify(r.data?.meta?.invitableRoles || []).includes('admin'), r.status);
+    r = await bh('/api/crm/team/users', { method: 'POST', body: { firstName: 'Smoke', lastName: 'Admin', email: `smoke-inv-admin-${stamp}@example.invalid`, phone: '+910000000000', crmRole: 'admin' } });
+    check('team', 'Business Head cannot create an admin', r.status === 403, r.status);
+    r = await bh('/api/crm/team/users', { method: 'POST', body: { firstName: 'Smoke', lastName: 'Invitee', email: `smoke-inv-rep-${stamp}@example.invalid`, phone: '+910000000000', crmRole: 'sales_rep' } });
+    invitedId = r.data?.data?.id;
+    check('team', 'Business Head invites a field executive', r.status === 201 && invitedId, `${r.status} ${msg(r)}`);
+    r = await bh(`/api/crm/team/users/${admin.id}`, { method: 'PATCH', body: { status: 'inactive' } });
+    check('team', "Business Head cannot change an admin's login", r.status === 403 || r.status === 404, r.status);
+    r = await rep('/api/crm/team/users');
+    check('team', 'field executive cannot manage the team', r.status === 403, r.status);
+  } finally {
+    for (const id of qaIds.filter(Boolean)) await pool.query(`DELETE FROM crm_quick_answers WHERE id = $1`, [id]);
+    if (visitId) { await pool.query(`DELETE FROM crm_activities WHERE field_visit_id = $1`, [visitId]); await pool.query(`DELETE FROM field_visits WHERE id = $1`, [visitId]); }
+    const { rows: ccLeads } = await pool.query(`SELECT lv.id FROM crm_leads_v2 lv WHERE lv.legacy_lead_id = ANY($1::bigint[])`, [leadIds.filter(Boolean)]);
+    await pool.query(`DELETE FROM crm_communication_events WHERE lead_id = ANY($1::bigint[])`, [ccLeads.map((l) => l.id)]);
+    for (const id of leadIds.filter(Boolean)) {
+      await pool.query(`DELETE FROM crm_activities WHERE lead_id = $1`, [id]);
+      await pool.query(`DELETE FROM crm_leads_v2 WHERE legacy_lead_id = $1`, [id]);
+      await pool.query(`DELETE FROM crm_leads WHERE id = $1`, [id]);
+    }
+    for (const id of fieldLeadIds) await pool.query(`DELETE FROM field_leads WHERE id = $1`, [id]);
+    if (doctorId) {
+      const { rows: [d] } = await pool.query(`SELECT contact_id FROM field_doctor_crm WHERE id = $1`, [doctorId]);
+      await pool.query(`DELETE FROM field_doctor_crm WHERE id = $1`, [doctorId]);
+      if (d?.contact_id) await pool.query(`DELETE FROM crm_contacts WHERE id = $1`, [d.contact_id]);
+    }
+    await pool.query(`UPDATE crm_contacts_v2 SET deleted_at = now() WHERE tenant_id = $1 AND COALESCE(full_name, name) LIKE '%Smoke%' || $2 AND deleted_at IS NULL`, [T, stamp]).catch(() => {});
+    await pool.query(`DELETE FROM crm_contacts WHERE name LIKE '%Smoke%' || $1`, [stamp]).catch(() => {});
+    if (!hadSettings) await pool.query(`DELETE FROM field_settings WHERE tenant_id = $1`, [T]);
+    const ids = [...users, invitedId].filter(Boolean);
+    if (ids.length) {
+      await pool.query(`DELETE FROM field_target_moves WHERE tenant_id = $1 AND (from_user_id = ANY($2) OR to_user_id = ANY($2))`, [T, ids]);
+      await pool.query(`DELETE FROM field_targets WHERE tenant_id = $1 AND user_id = ANY($2)`, [T, ids]);
+      await pool.query(`DELETE FROM field_outreach_permissions WHERE tenant_id = $1 AND user_id = ANY($2)`, [T, ids]);
+      await pool.query(`DELETE FROM field_notifications WHERE tenant_id = $1 AND user_id = ANY($2)`, [T, ids]);
+      await pool.query(`DELETE FROM crm_agent_status_log WHERE tenant_id = $1 AND user_id = ANY($2)`, [T, ids]);
+      await pool.query(`DELETE FROM crm_push_devices WHERE user_id = ANY($1)`, [ids]);
+      await pool.query(`DELETE FROM crm_activities WHERE created_by = ANY($1) OR assigned_to = ANY($1)`, [ids]);
+      await pool.query(`DELETE FROM crm_audit_log WHERE actor_user_id = ANY($1) OR entity_id = ANY($1)`, [ids]).catch(() => {});
+      await pool.query(`DELETE FROM crm_login_attempts WHERE email LIKE 'smoke-%' || $1 || '%'`, [stamp]).catch(() => {});
+      await pool.query(`DELETE FROM password_reset_otps WHERE email LIKE 'smoke-%' || $1 || '%'`, [stamp]).catch(() => {});
+      await pool.query(`DELETE FROM users WHERE id = ANY($1)`, [ids]).catch((e) => check('cleanup', 'temporary accounts removed (5i)', false, e.message));
+    }
+    if (appJtis.length) await pool.query(`DELETE FROM api_v2_refresh_tokens WHERE jti = ANY($1)`, [appJtis]);
+    const { rows: [leftUsers] } = await pool.query(`SELECT count(*)::int AS n FROM users WHERE email LIKE 'smoke-%' || $1 || '%'`, [stamp]);
+    check('cleanup', 'call-centre and app test accounts removed', leftUsers.n === 0, `${leftUsers.n} left`);
+  }
+}
+
 // 6. Sending gates: outbound open, bulk still refused. Invalid payloads only, so nothing can be sent.
 r = await as('/api/crm/whatsapp/templates/send', { method: 'POST', body: {} });
 check('gates', 'outbound fence open (send reaches validation)', r.status !== 503 && r.status >= 400 && r.status < 500, `${r.status} ${msg(r)}`);

@@ -78,6 +78,12 @@ export const CRM_CAPABILITY_ROLES = Object.freeze({
 
   // CRM team/user management — admin only.
   'team:manage': [],
+  // Inviting the team: a Business Head may create and manage Field Marketing Executives, Call Centre Agents and
+  // marketing logins (never admins or other Business Heads). See crm-team.route.js.
+  'team:invite': [CRM_ROLES.BUSINESS_HEAD],
+
+  // The Smart-Force app's agent mode (callbacks, click-to-call, status) for call-centre roles.
+  'app:agent': [CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION],
 
   // Field force management — Business Head sees all, Sales Rep sees own data.
   'field_force:read':   [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.SALES_REP],

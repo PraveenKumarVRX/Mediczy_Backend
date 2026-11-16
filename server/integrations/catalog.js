@@ -81,7 +81,7 @@ const vendors = [
   { id: 'livekit', name: 'LiveKit video consultations', category: 'video', dataClass: 'phi',
     requiredEnv: ['LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'], requiredAnyEnv: [['LIVEKIT_URL', 'LIVEKIT_API_URL']], allowedHosts: livekitHosts },
   { id: 'firebase-fcm', name: 'Firebase Cloud Messaging push', category: 'push', dataClass: 'pii',
-    requiredEnv: [], notes: 'Uses the initialized Firebase Admin app and its service-account or instance credentials.', allowedHosts: ['fcm.googleapis.com'] },
+    requiredEnv: [], notes: 'Firebase Admin app, or a service-account token from oauth2.googleapis.com (CRM app push, crm-push.service).', allowedHosts: ['fcm.googleapis.com', 'oauth2.googleapis.com'] },
   { id: 'apple-signin', name: 'Sign in with Apple', category: 'identity', dataClass: 'pii',
     requiredEnv: [], notes: 'Public JWKS verification needs no client secret; token exchange validates its credentials in apple-signin.service.js.', allowedHosts: ['appleid.apple.com'] },
   { id: 'llm-groq', name: 'Groq LLM (via llm-provider cascade)', category: 'ai', dataClass: 'phi', timeoutMs: 120000,

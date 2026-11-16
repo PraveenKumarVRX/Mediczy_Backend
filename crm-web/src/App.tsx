@@ -30,6 +30,7 @@ const CRMSocialGrowthPage = lazy(() => import('@/pages/crm/CRMSocialGrowthPage')
 const CRMSocialContentPage = lazy(() => import('@/pages/crm/CRMSocialContentPage'));
 
 const HospitalCRMSpecialtyPage = named(growth, 'HospitalCRMSpecialtyPage');
+const CallCentrePage = lazy(() => import('@/pages/crm/CallCentrePage'));
 const DoctorsPage = named(referral, 'DoctorsPage');
 const DoctorProfilePage = named(referral, 'DoctorProfilePage');
 const ReferralNetworkPage = named(referral, 'ReferralNetworkPage');
@@ -101,6 +102,7 @@ export default function App() {
             <Route path="/crm/ai-insights" element={<CRMAIInsightsPage />} />
             <Route path="/crm/marketing-copilot" element={<CRMMarketingCopilotPage />} />
             <Route path="/crm/field-force" element={<CRMFieldForcePage />} />
+            <Route path="/crm/call-centre" element={<CallCentrePage />} />
             <Route path="/crm/doctors" element={<DoctorsPage />} />
             <Route path="/crm/doctors/:id" element={<DoctorProfilePage />} />
             <Route path="/crm/referral-network" element={<ReferralNetworkPage />} />

@@ -46,6 +46,7 @@ export function normalizeTelecmi(body) {
     cmiuuid: b.cmiuuid ? String(b.cmiuuid) : null,
     leadHint: Number(extra.lead_id) || null,
     crmUserHint: Number(extra.crm_user_id) || null,
+    doctorHint: Number(extra.doctor_crm_id) || null,
   };
 }
 
@@ -111,7 +112,18 @@ export async function recordTelecmiCdr(tenantId, body) {
       await client.query('COMMIT');
       return { merged: true, eventId: existing.id };
     }
-    const lead = await findOrCreateLead(client, tenantId, c);
+    const lead = c.doctorHint ? null : await findOrCreateLead(client, tenantId, c);
+    if (!lead && c.doctorHint) {
+      // A click-to-call to a referring doctor: filed on the doctor's profile (no patient lead), like doctor WhatsApp messages.
+      const { rows: [ev] } = await client.query(
+        `INSERT INTO crm_communication_events (tenant_id, channel, direction, message_type, body_preview, provider, provider_message_id, status, sent_at, delivered_at, owner_user_id, metadata, created_at)
+         SELECT $1, 'call', $2, 'call', $3, 'telecmi', $4, $5, $6, $7, $8, $9::jsonb, $6 WHERE EXISTS (SELECT 1 FROM field_doctor_crm WHERE id = $10 AND tenant_id = $1) RETURNING id`,
+        [tenantId, c.direction, summary(c), c.callKey, c.answered ? 'answered' : 'missed', c.at, c.answered ? c.at : null, c.crmUserHint,
+          JSON.stringify({ doctor_crm_id: String(c.doctorHint), audience: 'doctor', answered: c.answered, answered_sec: c.answeredSec, recording: c.recording, agent_user: c.agentUser,
+            hangup_reason: c.hangupReason, request_id: c.requestId, legs: c.leg ? [c.leg] : [], cmiuuid: c.cmiuuid, source: body.source || 'webhook' }), c.doctorHint]);
+      await client.query('COMMIT');
+      return ev ? { eventId: ev.id, doctorId: c.doctorHint } : { ignored: true, reason: 'unknown doctor' };
+    }
     if (!lead) { await client.query('COMMIT'); return { ignored: true, reason: 'no matching lead for this number' }; }
     let ownerUserId = c.crmUserHint || null;
     if (!ownerUserId && c.agentUser) {

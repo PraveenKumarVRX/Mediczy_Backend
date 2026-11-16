@@ -51,8 +51,16 @@ export const CRM_CAPABILITY_ROLES: Record<string, string[]> = {
   'field_force:manage': [CRM_ROLES.BUSINESS_HEAD],
   'referral:read': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.SALES_REP, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION],
 
+  'campaigns:manage': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING],
+
   'team:manage': [],
+  // A Business Head invites and manages the front line (admins manage everyone); see crm-team.route.js.
+  'team:invite': [CRM_ROLES.BUSINESS_HEAD],
+  'app:agent': [CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION],
 };
+
+/** Roles a Business Head may give when inviting the team (admins may give any). */
+export const INVITABLE_ROLES: CRMRole[] = [CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION, CRM_ROLES.SALES_REP];
 
 /** Does this CRM user (isAdmin flag + crmRole) have the given capability? */
 export function hasCRMCapability(

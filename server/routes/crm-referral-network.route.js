@@ -30,6 +30,7 @@ export function buildReferralNetworkRouter() {
   r.post('/doctors/:id/referrals', action((req, ctx) => net.recordReferral(ctx, req.params.id, req.body || {}, { channel: 'web' })));
   r.get('/doctor-templates', action((req, ctx) => net.doctorTemplates(ctx)));
   r.post('/doctors/:id/send', action((req, ctx) => net.sendDoctorMessage(ctx, req.params.id, req.body || {})));
+  r.post('/doctors/:id/call', action((req, ctx) => net.callDoctor(ctx, req.params.id)));
   r.post('/events/cme/:id/invites/send', action((req, ctx) => net.sendCmeInvites(ctx, req.params.id, req.body || {})));
   r.get('/territories', action((req, ctx) => net.listTerritories(ctx)));
   r.post('/territories', action((req, ctx) => net.saveTerritory(ctx, req.body || {})));
@@ -56,5 +57,17 @@ export function buildReferralNetworkRouter() {
   r.post('/events/cme/:id/invite', action((req, ctx) => net.inviteDoctorsToCme(ctx, req.params.id, req.body?.doctor_ids)));
   r.post('/events/camps/:id/convert', action((req, ctx) => net.convertCampRegistrations(ctx, req.params.id)));
   r.get('/events/:kind/:id', action((req, ctx) => net.eventDetail(ctx, req.params.kind === 'cme' ? 'cme' : 'camp', req.params.id)));
+  r.get('/team-today', action((req, ctx) => net.fieldTeamToday(ctx, req.query)));
+  r.put('/field-settings', action((req, ctx) => net.saveFieldSettings(ctx, req.body || {})));
+  r.post('/targets', action((req, ctx) => net.setTargets(ctx, req.body || {})));
+  r.post('/targets/move', action((req, ctx) => net.moveQuota(ctx, req.body || {})));
+  r.get('/targets/moves', action((req, ctx) => net.listQuotaMoves(ctx, req.query)));
+  r.get('/outreach', action((req, ctx) => net.listOutreachPermissions(ctx, req.query)));
+  r.post('/outreach', action((req, ctx) => net.saveOutreachPermission(ctx, req.body || {})));
+  r.patch('/outreach/:id', action((req, ctx) => net.decideOutreachPermission(ctx, req.params.id, req.body || {})));
+  r.get('/institutions', action((req, ctx) => net.listInstitutions(ctx, req.query)));
+  r.patch('/institutions/:id/stage', action((req, ctx) => net.moveInstitution(ctx, req.params.id, req.body || {})));
+  r.post('/doctors/link-contacts', action((req, ctx) => net.linkAllDoctorContacts(ctx)));
+  r.patch('/approvals/:kind/:id', action((req, ctx) => net.decideApproval(ctx, req.params.kind, req.params.id, req.body || {})));
   return r;
 }

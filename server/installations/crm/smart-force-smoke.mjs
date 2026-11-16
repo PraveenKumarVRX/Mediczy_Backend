@@ -17,7 +17,7 @@ async function call(path, { method = 'GET', token, body } = {}) {
 const stamp = randomUUID().slice(0, 8);
 const email = `sf-e2e-${stamp}@example.invalid`;
 const password = randomBytes(18).toString('base64url');
-let userId, viewerId;
+let userId, viewerId, agentId;
 try {
   const hash = await bcrypt.hash(password, 10);
   const mk = async (mail, role) => (await pool.query(
@@ -25,13 +25,16 @@ try {
      VALUES ('SmartForce','E2E',$1,$2,'0000000000','team','active',false,false,$3,$3,'hospital',$4,now(),now()) RETURNING id`,
     [mail, hash, T, JSON.stringify({ isCRM: true, crmRole: role, tenantId: T })])).rows[0].id;
   userId = await mk(email, 'sales_rep');
-  viewerId = await mk(`sf-e2e-tele-${stamp}@example.invalid`, 'telecaller');
+  viewerId = await mk(`sf-e2e-mkt-${stamp}@example.invalid`, 'marketing');
+  agentId = await mk(`sf-e2e-agent-${stamp}@example.invalid`, 'telecaller');
 
   // Sign-in
   let r = await call('/api/team/login', { method: 'POST', body: { email, password: 'wrong-password' } });
   check('wrong password rejected', r.status === 401 && r.data?.error, `${r.status} ${r.data?.error}`);
-  r = await call('/api/team/login', { method: 'POST', body: { email: `sf-e2e-tele-${stamp}@example.invalid`, password } });
-  check('role without field access refused', r.status === 403, `${r.status} ${r.data?.error}`);
+  r = await call('/api/team/login', { method: 'POST', body: { email: `sf-e2e-mkt-${stamp}@example.invalid`, password } });
+  check('role without app access refused', r.status === 403, `${r.status} ${r.data?.error}`);
+  r = await call('/api/team/login', { method: 'POST', body: { email: `sf-e2e-agent-${stamp}@example.invalid`, password } });
+  check('call centre agent signs in to agent mode', r.status === 200 && JSON.stringify(r.data?.user?.modes) === '["agent"]' && !r.data?.user?.permissions?.includes('Field Force'), `${r.status} ${JSON.stringify(r.data?.user?.modes || r.data?.error)}`);
   r = await call('/api/team/login', { method: 'POST', body: { email, password } });
   const { accessToken, refreshToken, user } = r.data || {};
   check('sales rep signs in', r.status === 200 && accessToken && refreshToken, r.status);
@@ -74,7 +77,7 @@ try {
   r = await call('/api/crm/ui-config', { token: crmToken });
   check('Field Force menu no longer hidden', r.status === 200 && !r.data.data.disabledPaths.includes('/crm/field-force'), r.data?.data?.disabledPaths?.join(' '));
 } finally {
-  const ids = [userId, viewerId].filter(Boolean);
+  const ids = [userId, viewerId, agentId].filter(Boolean);
   if (ids.length) {
     const tables = (await pool.query(`SELECT c.table_name, c.column_name FROM information_schema.columns c JOIN pg_tables t ON t.tablename=c.table_name AND t.schemaname='public'
       WHERE c.table_schema='public' AND (c.table_name LIKE 'field\\_%' OR c.table_name='daily_field_reports') AND c.column_name IN ('user_id','created_by','assigned_to','field_exec_id','exec_id')`)).rows;

@@ -346,6 +346,9 @@ function setupComposer(events) {
   $('#textMode').hidden = templateMode;
   $('#templateMode').hidden = !templateMode;
   $('#toggleTemplate').hidden = !wa || mustTemplate;
+  // Quick answers insert into a free-text reply; an approved template cannot be edited.
+  $('#quickBtn').hidden = templateMode;
+  if (templateMode) { $('#quickPop').hidden = true; $('#quickBtn').setAttribute('aria-expanded', 'false'); }
   $('#toggleTemplate').textContent = templateMode ? 'Write a message instead' : 'Use a template';
   $('#sendBtn').textContent = state.reply === 'note' ? 'Add note' : (templateMode ? 'Send template' : 'Send');
   $('#composer').classList.toggle('note-mode', state.reply === 'note');
@@ -414,6 +417,45 @@ async function send(e) {
 }
 
 // ── wiring ──
+let quickAnswers = null;
+async function toggleQuick() {
+  const pop = $('#quickPop');
+  const open = pop.hidden;
+  pop.hidden = !open;
+  $('#quickBtn').setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  if (!quickAnswers) {
+    try { quickAnswers = (await api('GET', '/call-centre/quick-answers')).items.filter((x) => x.active !== false); }
+    catch (error) { quickAnswers = []; banner(error.message, 'bad'); }
+  }
+  $('#quickSearch').value = '';
+  renderQuick();
+  $('#quickSearch').focus();
+}
+function renderQuick() {
+  const q = $('#quickSearch').value.trim().toLowerCase();
+  const items = (quickAnswers || []).filter((x) => !q || `${x.title} ${x.body} ${x.category}`.toLowerCase().includes(q))
+    .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'answer' ? -1 : 1));
+  const list = $('#quickList');
+  list.replaceChildren(...(items.length ? items.map((x) => el('li', {}, el('button', { type: 'button', onclick: () => useQuick(x) },
+    el('span', { class: 'q-cat' }, `${x.kind === 'script' ? 'Script' : 'Answer'} · ${x.category}`), el('span', { class: 'q-title' }, x.title), el('span', { class: 'q-body' }, x.body))))
+    : [el('li', { class: 'muted small-text' }, quickAnswers?.length ? 'Nothing matches.' : 'No quick answers yet. A Business Head adds them in Call centre → Scripts and answers.')]));
+}
+function useQuick(x) {
+  if (!$('#textMode').hidden) {
+    const t = $('#replyText');
+    const at = t.selectionStart ?? t.value.length;
+    t.value = t.value.slice(0, at) + x.body + t.value.slice(t.selectionEnd ?? at);
+    t.focus();
+    t.selectionStart = t.selectionEnd = at + x.body.length;
+  } else {
+    navigator.clipboard?.writeText(x.body).catch(() => {});
+    banner('Templates cannot be edited, so the answer was copied instead.', 'ok');
+  }
+  api('POST', `/call-centre/quick-answers/${x.id}/used`, {}).catch(() => {});
+  toggleQuick();
+}
+
 function wire() {
   document.querySelectorAll('[data-status]').forEach((tab) => tab.addEventListener('click', () => {
     document.querySelectorAll('[data-status]').forEach((t) => { t.classList.toggle('active', t === tab); t.setAttribute('aria-selected', String(t === tab)); });
@@ -436,6 +478,10 @@ function wire() {
   $('#replyText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#composer').requestSubmit(); } });
   $('#templatePick').addEventListener('change', renderTemplate);
   $('#toggleTemplate').addEventListener('click', () => { state.templateMode = !state.templateMode; loadThread(); });
+  // Quick answers: the call centre's scripts and answers, inserted into the reply at the cursor.
+  $('#quickBtn').addEventListener('click', toggleQuick);
+  $('#quickSearch').addEventListener('input', renderQuick);
+  $('#quickSearch').addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleQuick(); });
   document.querySelectorAll('[data-set-status]').forEach((b) => b.addEventListener('click', async () => {
     const status = b.dataset.setStatus;
     try { await api('PATCH', `/inbox/${state.activeId}/status`, { status }); result({ open: 'Reopened.', pending: 'Marked waiting on the patient.', closed: 'Marked done.' }[status], true); loadThread(); loadList(); }

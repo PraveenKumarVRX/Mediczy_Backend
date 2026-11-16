@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { BRAND } from '@/config/brand';
 import { Link } from 'react-router-dom';
 import { Eye, EyeOff, RefreshCw } from 'lucide-react';
 import api from '@/utils/api';
@@ -151,7 +152,7 @@ export default function CRMChannelSettings({ crmUser, profileLoading = false, pr
   }, []);
   const update = (next: Integration) => setIntegrations(current => current?.map(row => row.channel === next.channel ? next : row) || null);
   return <section className="mt-6" aria-labelledby="channel-inventory-heading">
-    <header className="flex flex-wrap justify-between items-start gap-4"><div><h3 id="channel-inventory-heading" className="text-lg font-semibold">Channel connections</h3><p className="settings-muted mt-2 max-w-3xl text-sm">Connect each channel to Medstar’s own provider account. Email, SMS and WhatsApp send through the account saved here; calling is set up on the Calls page. Saved credentials are encrypted and never shown again.</p></div>
+    <header className="flex flex-wrap justify-between items-start gap-4"><div><h3 id="channel-inventory-heading" className="text-lg font-semibold">Channel connections</h3><p className="settings-muted mt-2 max-w-3xl text-sm">Connect each channel to {BRAND.name}’s own provider account. Email, SMS and WhatsApp send through the account saved here; calling is set up on the Calls page. Saved credentials are encrypted and never shown again.</p></div>
       <button className="settings-button" onClick={load} disabled={loading || anyBusy || anyDirty || !!profileError || profileLoading}><RefreshCw size={16} aria-hidden="true" />{loading ? 'Refreshing…' : 'Refresh'}</button>
     </header>
     {!editable && !profileLoading && !profileError && <p className="mt-4 settings-muted">Read-only access. A Business Head, Marketing Head or administrator can manage these connections.</p>}

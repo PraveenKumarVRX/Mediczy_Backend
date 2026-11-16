@@ -44,8 +44,8 @@ const me = () => { try { return JSON.parse(localStorage.getItem('crmUserData') |
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
 const inr = (n: any) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-const date = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
-const dateTime = (d?: string | null) => (d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+const date = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—');
+const dateTime = (d?: string | null) => (d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '—');
 const ago = (d?: string | null) => {
   if (!d) return 'never';
   const days = Math.floor((Date.now() - new Date(d).getTime()) / 864e5);
@@ -379,10 +379,10 @@ export function DoctorsPage() {
 
 // ─── Refer a patient ──────────────────────────────────────────────────────────
 function ReferDialog({ open, onClose, doctor, onDone }: { open: boolean; onClose: () => void; doctor: any; onDone: (r: any) => void }) {
-  const [form, setForm] = useState({ patient_name: '', phone: '', need: '', urgent: false, notify_doctor: true });
+  const [form, setForm] = useState({ patient_name: '', phone: '', need: '', urgent: false, notify_doctor: true, welcome_patient: true, language: 'en' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setForm({ patient_name: '', phone: '', need: '', urgent: false, notify_doctor: Boolean(doctor?.phone) }); setErr(''); } }, [open, doctor]);
+  useEffect(() => { if (open) { setForm({ patient_name: '', phone: '', need: '', urgent: false, notify_doctor: Boolean(doctor?.phone), welcome_patient: true, language: 'en' }); setErr(''); } }, [open, doctor]);
   const save = async () => {
     setBusy(true); setErr('');
     try { onDone(await rn(`/doctors/${doctor.id}/referrals`, 'post', form)); onClose(); }
@@ -398,6 +398,10 @@ function ReferDialog({ open, onClose, doctor, onDone }: { open: boolean; onClose
           <Field label="Mobile *"><input className={inputCls} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} inputMode="tel" placeholder="10-digit mobile" /></Field>
           <Field label="What they need"><input className={inputCls} value={form.need} onChange={(e) => setForm({ ...form, need: e.target.value })} placeholder="e.g. Angiography, knee replacement consult" /></Field>
           <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={form.urgent} onChange={(e) => setForm({ ...form, urgent: e.target.checked })} /> Urgent: call today</label>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={form.welcome_patient} onChange={(e) => setForm({ ...form, welcome_patient: e.target.checked })} /> Welcome the patient on WhatsApp in</label>
+            <select aria-label="Welcome language" className={`${selectCls} h-8`} disabled={!form.welcome_patient} value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}><Opt value="en">English</Opt><Opt value="te">Telugu</Opt><Opt value="hi">Hindi</Opt></select>
+          </div>
           <label className={`flex items-center gap-2 text-sm ${doctor?.phone ? 'text-slate-300' : 'text-slate-600'}`}><input type="checkbox" disabled={!doctor?.phone} checked={form.notify_doctor} onChange={(e) => setForm({ ...form, notify_doctor: e.target.checked })} /> Thank the doctor on WhatsApp{doctor?.phone ? '' : ' (no mobile on file)'}</label>
         </div>
         {err && <p className="text-sm text-red-300">{err}</p>}
@@ -458,11 +462,15 @@ export function DoctorProfilePage() {
             <div className="flex flex-col gap-3 lg:items-end">
               <div className="flex flex-wrap gap-2">
                 <Button className={primaryCls} onClick={() => setReferring(true)}><UserPlus className="h-4 w-4 mr-1.5" /> Record referral</Button>
-                {d.phone && <a className={ghostCls} href={`tel:${digits(d.phone)}`}><Phone className="h-4 w-4" /> Call</a>}
+                {d.phone && <button className={ghostCls} title="TeleCMI rings your phone, then the doctor; the call is recorded on this profile" onClick={async () => {
+                  try { const r = await rn(`/doctors/${d.id}/call`, 'post', {}); setFlash({ text: r?.message || 'Calling…', ok: true }); }
+                  catch (e: any) { setFlash({ text: e.message, ok: false }); }
+                }}><Phone className="h-4 w-4" /> Call</button>}
                 {d.phone && p.canEdit && <button className={ghostCls} onClick={() => setMessaging(true)}><Send className="h-4 w-4" /> Message</button>}
                 {wa && <a className={ghostCls} href={wa} target="_blank" rel="noreferrer" title="Open WhatsApp on this device"><MessageCircle className="h-4 w-4" /> WhatsApp</a>}
                 {p.canEdit && <button className={ghostCls} onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit</button>}
               </div>
+              {d.contact_id && <Link className="text-xs text-violet-300 hover:text-violet-200" to={`/crm/contacts?search=${encodeURIComponent(digits(d.phone).slice(-10) || d.doctor_name)}`}>Open the CRM contact record →</Link>}
               <div className="text-sm text-slate-400">
                 Executive:{' '}
                 {p.manager ? (
@@ -583,7 +591,7 @@ export function DoctorProfilePage() {
         </Card>
       </div>
       <DoctorDialog open={editing} onClose={() => setEditing(false)} initial={d} team={team} manager={p.manager} onSaved={() => { setFlash({ text: 'Doctor updated.', ok: true }); load(); }} />
-      <ReferDialog open={referring} onClose={() => setReferring(false)} doctor={d} onDone={(r) => { const base = r.created ? 'Referral recorded. The patient is in Leads and the Inbox.' : 'Credit added to the existing patient record.'; const thanks = r.notified ? (r.notified.sent ? ' The doctor was thanked on WhatsApp.' : ` The WhatsApp thank-you was not sent: ${r.notified.reason}`) : ''; setFlash({ text: base + thanks, ok: true }); setTab('referrals'); load(); }} />
+      <ReferDialog open={referring} onClose={() => setReferring(false)} doctor={d} onDone={(r) => { const base = r.created ? 'Referral recorded. The patient is in Leads and the Inbox.' : 'Credit added to the existing patient record.'; const welcome = r.welcomed ? (r.welcomed.sent ? ' The patient got a WhatsApp welcome.' : ` The patient welcome was not sent: ${r.welcomed.reason}`) : ''; const thanks = r.notified ? (r.notified.sent ? ' The doctor was thanked on WhatsApp.' : ` The WhatsApp thank-you was not sent: ${r.notified.reason}`) : ''; setFlash({ text: base + welcome + thanks, ok: true }); setTab('referrals'); load(); }} />
       <MessageDialog open={messaging} onClose={() => setMessaging(false)} doctor={d} onSent={(m) => { setFlash({ text: m, ok: true }); setTab('messages'); load(); }} />
     </CRMLayout>
   );
@@ -643,7 +651,7 @@ function IntelForm({ doctor, intel, canEdit, onSaved }: { doctor: any; intel: an
         <Field label="Gatekeeper's mobile"><input className={inputCls} value={form.gatekeeper_phone} onChange={set('gatekeeper_phone')} disabled={!canEdit} inputMode="tel" /></Field>
         <Field label="OPD days and times"><input className={inputCls} value={form.opd_days} onChange={set('opd_days')} disabled={!canEdit} /></Field>
         <Field label="Best time to visit"><input className={inputCls} value={form.best_visit_time} onChange={set('best_visit_time')} disabled={!canEdit} placeholder="After OPD, 1–2 pm" /></Field>
-        <Field label="Notes" wide><textarea className={`${inputCls} h-24 py-2`} value={form.notes} onChange={set('notes')} disabled={!canEdit} placeholder="Interests, concerns, what they need from Medstar" /></Field>
+        <Field label="Notes" wide><textarea className={`${inputCls} h-24 py-2`} value={form.notes} onChange={set('notes')} disabled={!canEdit} placeholder={`Interests, concerns, what they need from ${BRAND.name}`} /></Field>
       </div>
       {err && <p className="text-sm text-red-300">{err}</p>}
       {canEdit && <div className="flex justify-end"><Button className={primaryCls} onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save notes'}</Button></div>}
@@ -749,7 +757,7 @@ export function ReferralNetworkPage() {
 }
 
 // ─── Field activity ───────────────────────────────────────────────────────────
-type ActivityTab = 'visits' | 'approvals' | 'reports' | 'samples' | 'team' | 'territories' | 'empanelment';
+type ActivityTab = 'today' | 'visits' | 'approvals' | 'pipeline' | 'reports' | 'samples' | 'team' | 'territories' | 'empanelment' | 'outreach';
 const KIND_LABEL: Record<string, { label: string; tone: string; icon: any }> = {
   expense: { label: 'Expenses', tone: 'blue', icon: IndianRupee }, tour_plan: { label: 'Tour plan', tone: 'violet', icon: CalendarDays },
   exception: { label: 'Out-of-beat visit', tone: 'amber', icon: AlertTriangle }, event_budget: { label: 'Event budget', tone: 'emerald', icon: Mic },
@@ -758,22 +766,26 @@ export function FieldActivityPage() {
   const [params, setParams] = useSearchParams();
   const user = me();
   const manager = hasCRMCapability(user, 'field_force:manage');
-  const [tab, setTabState] = useState<ActivityTab>((params.get('tab') as ActivityTab) || 'visits');
+  const [tab, setTabState] = useState<ActivityTab>((params.get('tab') as ActivityTab) || (manager ? 'today' : 'visits'));
   const setTab = (t: ActivityTab) => { setTabState(t); setParams({ tab: t }, { replace: true }); };
   const [approvalCount, setApprovalCount] = useState<number | undefined>();
   useEffect(() => { if (manager) rn('/approvals').then((a: any) => setApprovalCount(a.items.length)).catch(() => {}); }, [manager]);
-  const tabs = [{ id: 'visits' as const, label: 'Visits' }, ...(manager ? [{ id: 'approvals' as const, label: 'Approvals', count: approvalCount }] : []),
+  const tabs = [...(manager ? [{ id: 'today' as const, label: 'Team today' }] : []), { id: 'visits' as const, label: 'Visits' },
+    ...(manager ? [{ id: 'approvals' as const, label: 'Approvals', count: approvalCount }] : []), { id: 'pipeline' as const, label: 'Pipeline' },
     { id: 'reports' as const, label: 'Daily reports' }, { id: 'samples' as const, label: 'Samples log' }, { id: 'team' as const, label: 'Team scorecard' },
-    { id: 'territories' as const, label: 'Territories' }, { id: 'empanelment' as const, label: 'Empanelment' }];
+    { id: 'territories' as const, label: 'Territories' }, { id: 'empanelment' as const, label: 'Empanelment' }, { id: 'outreach' as const, label: 'Outreach permissions' }];
   return (
     <CRMLayout title="Field activity">
       <div className="space-y-4">
         <Tabs<ActivityTab> tabs={tabs} value={tab} onChange={setTab} />
+        {tab === 'today' && manager && <TeamTodayTab />}
         {tab === 'visits' && <VisitsTab manager={manager} />}
+        {tab === 'pipeline' && <PipelineTab manager={manager} />}
+        {tab === 'outreach' && <OutreachTab manager={manager} />}
         {tab === 'approvals' && manager && <ApprovalsTab onCount={setApprovalCount} />}
         {tab === 'reports' && <ReportsTab />}
         {tab === 'samples' && <SamplesTab />}
-        {tab === 'team' && <TeamTab />}
+        {tab === 'team' && <TeamTab manager={manager} />}
         {tab === 'territories' && <TerritoriesTab />}
         {tab === 'empanelment' && <EmpanelmentTab />}
       </div>
@@ -946,10 +958,17 @@ function SamplesTab() {
   );
 }
 
-function TeamTab() {
+function TeamTab({ manager }: { manager: boolean }) {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [t, setT] = useState<any>(null);
-  useEffect(() => { setT(null); rn('/team-performance', 'get', undefined, { month }).then(setT).catch(() => setT({ team: [] })); }, [month]);
+  const [moves, setMoves] = useState<any[]>([]);
+  const [dialog, setDialog] = useState<'targets' | 'move' | null>(null);
+  const [flash, setFlash] = useState<FlashMsg>(null);
+  const load = useCallback(() => {
+    rn('/team-performance', 'get', undefined, { month }).then(setT).catch(() => setT({ team: [] }));
+    rn('/targets/moves', 'get', undefined, { month }).then(setMoves).catch(() => setMoves([]));
+  }, [month]);
+  useEffect(() => { setT(null); load(); }, [load]);
   const cell = (done: number, target: number | null) => (
     <div className="min-w-[110px]">
       <div className="flex justify-between text-xs"><span className="text-white tabular-nums">{done}</span><span className="text-slate-500 tabular-nums">{target ? `of ${target}` : 'no target'}</span></div>
@@ -958,7 +977,9 @@ function TeamTab() {
   );
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3"><input type="month" aria-label="Month" className={selectCls} value={month} onChange={(e) => setMonth(e.target.value)} /><Link to="/crm/field-force" className="text-xs text-violet-300">Set targets in Smart-Force →</Link></div>
+      <Flash msg={flash} onClose={() => setFlash(null)} />
+      <div className="flex flex-wrap items-center gap-2"><input type="month" aria-label="Month" className={selectCls} value={month} onChange={(e) => setMonth(e.target.value)} />
+        {manager && <div className="ml-auto flex gap-2"><button className={ghostCls} onClick={() => setDialog('move')} disabled={!t?.team?.length}><RouteIcon className="h-4 w-4" />Move quota</button><Button className={primaryCls} onClick={() => setDialog('targets')} disabled={!t?.team?.length}><TrendingUp className="h-4 w-4 mr-1.5" />Set targets</Button></div>}</div>
       <Card>
         {!t ? <Loading /> : t.team.length === 0 ? <Empty icon={Users} title="No field executives" body="Team members with the Field Marketing Executive role appear here with their targets." /> : (
           <Table head={['Executive', 'Visits', 'Doctors seen', 'Referrals', 'Treated', 'Days present', 'Expenses approved', 'Score']}>
@@ -977,6 +998,265 @@ function TeamTab() {
           </Table>
         )}
       </Card>
+      {moves.length > 0 && (
+        <Card>
+          <CardHead title="Quota moves this month" sub="Both executives were notified in the app" />
+          <ul className="divide-y divide-white/[0.04]">
+            {moves.map((m) => (
+              <li key={m.id} className="px-5 py-2.5 text-sm text-slate-300 flex flex-wrap gap-x-2">
+                <span className="text-white">{m.target_type === 'revenue' ? inr(m.quantity) : `${Number(m.quantity)} ${words(m.target_type)}`}</span>
+                <span>from {m.from_name || '—'} to {m.to_name || '—'}</span>
+                <span className="text-slate-500">· {m.reason} · {m.by_name || ''} · {dateTime(m.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+      {dialog && <TargetDialog kind={dialog} month={month} team={t?.team || []} onClose={() => setDialog(null)} onDone={(text) => { setDialog(null); setFlash({ text, ok: true }); load(); }} />}
+    </div>
+  );
+}
+
+const monthLabel = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+const TARGET_KINDS: [string, string][] = [['visits', 'Visits'], ['doctors', 'Doctors seen'], ['leads', 'Referrals'], ['corporates', 'Corporate visits'], ['camps', 'Camps'], ['empanelment', 'Empanelments'], ['revenue', 'Revenue (₹)']];
+function TargetDialog({ kind, month, team, onClose, onDone }: { kind: 'targets' | 'move'; month: string; team: any[]; onClose: () => void; onDone: (msg: string) => void }) {
+  const [f, setF] = useState<any>({ user_id: team[0]?.id ? String(team[0].id) : '', from_user_id: '', to_user_id: '', target_type: 'visits', quantity: '', reason: '' });
+  const [err, setErr] = useState('');
+  const current = team.find((x) => String(x.id) === String(f.user_id));
+  useEffect(() => {
+    if (kind === 'targets' && current) setF((o: any) => ({ ...o, visits: current.visits_target ?? '', doctors: current.doctors_target ?? '', leads: current.leads_target ?? '', corporates: current.corporates_target ?? '', camps: current.camps_target ?? '', empanelment: current.empanelment_target ?? '', revenue: current.revenue_target ?? '' }));
+  }, [kind, f.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const from = team.find((x) => String(x.id) === String(f.from_user_id));
+  const available = from ? Number(from[`${f.target_type === 'leads' ? 'leads' : f.target_type}_target`] ?? 0) : null;
+  const save = async () => {
+    setErr('');
+    try {
+      if (kind === 'targets') { await rn('/targets', 'post', { ...f, month }); onDone(`Targets saved for ${current?.name || 'the executive'}.`); }
+      else { await rn('/targets/move', 'post', { ...f, quantity: Number(f.quantity), month }); onDone('Quota moved. Both executives see it in the app.'); }
+    } catch (e: any) { setErr(e.message); }
+  };
+  const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg bg-[#0d1120] border-white/[0.08] text-white">
+        <DialogHeader><DialogTitle>{kind === 'targets' ? `Targets for ${monthLabel(month)}` : `Move quota, ${monthLabel(month)}`}</DialogTitle></DialogHeader>
+        {kind === 'targets' ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Executive" wide><select className={`${selectCls} w-full`} value={f.user_id} onChange={set('user_id')}>{team.map((x) => <Opt key={x.id} value={String(x.id)}>{x.name || x.email}</Opt>)}</select></Field>
+            {TARGET_KINDS.map(([k, label]) => <Field key={k} label={label}><input className={inputCls} inputMode="numeric" value={f[k] ?? ''} onChange={set(k)} /></Field>)}
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="From"><select className={`${selectCls} w-full`} value={f.from_user_id} onChange={set('from_user_id')}><Opt value="">Choose</Opt>{team.map((x) => <Opt key={x.id} value={String(x.id)}>{x.name || x.email}</Opt>)}</select></Field>
+            <Field label="To"><select className={`${selectCls} w-full`} value={f.to_user_id} onChange={set('to_user_id')}><Opt value="">Choose</Opt>{team.filter((x) => String(x.id) !== String(f.from_user_id)).map((x) => <Opt key={x.id} value={String(x.id)}>{x.name || x.email}</Opt>)}</select></Field>
+            <Field label="Target"><select className={`${selectCls} w-full`} value={f.target_type} onChange={set('target_type')}>{TARGET_KINDS.map(([k, label]) => <Opt key={k} value={k}>{label}</Opt>)}</select></Field>
+            <Field label={available != null ? `How much (has ${available})` : 'How much'}><input className={inputCls} inputMode="numeric" value={f.quantity} onChange={set('quantity')} /></Field>
+            <Field label="Reason (both executives see it) *" wide><input className={inputCls} value={f.reason} onChange={set('reason')} placeholder="e.g. Covering Ravi's beat during leave" /></Field>
+          </div>
+        )}
+        {err && <p className="text-sm text-red-300">{err}</p>}
+        <div className="flex justify-end gap-2"><button className={ghostCls} onClick={onClose}>Cancel</button>
+          <Button className={primaryCls} disabled={kind === 'move' && (!f.from_user_id || !f.to_user_id || !(Number(f.quantity) > 0) || !f.reason.trim())} onClick={save}>{kind === 'targets' ? 'Save targets' : 'Move'}</Button></div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Team today (Business Head): who is out, where, late, outside their beat ───
+function TeamTodayTab() {
+  const [date, setDate] = useState(new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10));
+  const [t, setT] = useState<any>(null);
+  const [editStart, setEditStart] = useState<string | null>(null);
+  const [flash, setFlash] = useState<FlashMsg>(null);
+  const load = useCallback(() => rn('/team-today', 'get', undefined, { date }).then(setT).catch((e) => { setFlash({ text: e.message, ok: false }); setT({ people: [], summary: {} }); }), [date]);
+  useEffect(() => { setT(null); load(); const id = window.setInterval(() => { if (!document.hidden) load(); }, 120000); return () => window.clearInterval(id); }, [load]);
+  const saveStart = async () => {
+    try { await rn('/field-settings', 'put', { day_start: editStart }); setEditStart(null); setFlash({ text: 'Day start saved. Clock-ins after it count as late.', ok: true }); load(); }
+    catch (e: any) { setFlash({ text: e.message, ok: false }); }
+  };
+  const time = (d?: string | null) => (d ? new Date(d).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '—');
+  const map = (lat: any, lng: any) => (lat && lng ? `https://www.google.com/maps?q=${lat},${lng}` : null);
+  const sm = t?.summary || {};
+  return (
+    <div className="space-y-4">
+      <Flash msg={flash} onClose={() => setFlash(null)} />
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="date" aria-label="Day" className={selectCls} value={date} onChange={(e) => setDate(e.target.value)} />
+        <span className="text-sm text-slate-400">Day starts at</span>
+        {editStart == null ? <button className={ghostCls} onClick={() => setEditStart(t?.day_start || '09:30')}>{t?.day_start || '09:30'} <Pencil className="h-3.5 w-3.5" /></button>
+          : <><input type="time" aria-label="Day start" className={selectCls} value={editStart} onChange={(e) => setEditStart(e.target.value)} /><Button className={primaryCls} onClick={saveStart}>Save</Button><button className="text-xs text-slate-500" onClick={() => setEditStart(null)}>Cancel</button></>}
+      </div>
+      {t && <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Kpi label="Clocked in" value={`${sm.clocked_in ?? 0} of ${sm.team ?? 0}`} />
+        <Kpi label="Late" value={sm.late ?? 0} tone={sm.late ? 'warn' : undefined} sub={sm.late ? `after ${t.day_start}` : 'nobody late'} />
+        <Kpi label="Not clocked in" value={sm.not_in ?? 0} tone={sm.not_in ? 'warn' : undefined} />
+        <Kpi label="Visits done" value={`${sm.visits_done ?? 0} of ${sm.visits_planned ?? 0}`} sub="against plan" />
+        <Kpi label="Out of beat" value={sm.out_of_beat ?? 0} tone={sm.out_of_beat ? 'warn' : undefined} sub={sm.out_of_beat ? 'see Approvals' : undefined} />
+      </div>}
+      <Card>
+        {!t ? <Loading /> : t.people.length === 0 ? <Empty icon={Users} title="No field executives yet" body="Add team members with the Field Marketing Executive role. They clock in with GPS from the Smart-Force app." /> : (
+          <Table head={['Executive', 'Status', 'Clocked in', 'Where', 'Visits', 'Out of beat', 'Last stop', 'Beat']}>
+            {t.people.map((p: any) => (
+              <tr key={p.id} className={rowCls}>
+                <td className={`${cellCls} text-white`}>{p.name || p.email}</td>
+                <td className={cellCls}>{p.state === 'in_field' ? <Pill tone="emerald">in the field</Pill> : p.state === 'done' ? <Pill tone="slate">done for the day</Pill> : <Pill tone="amber">not clocked in</Pill>}
+                  {p.attendance_status === 'exception' && <div className="mt-1"><Pill tone="amber" title={p.exception_reason || ''}>{words(p.exception_type || 'exception')}</Pill></div>}</td>
+                <td className={`${cellCls} whitespace-nowrap text-slate-200`}>{time(p.clock_in_at)}{p.late && <span className="ml-1.5"><Pill tone="red">late</Pill></span>}{p.clock_out_at && <div className="text-xs text-slate-500">out {time(p.clock_out_at)}</div>}</td>
+                <td className={`${cellCls} max-w-[220px] text-slate-300`}>{p.clock_in_address || (p.clock_in_lat ? 'GPS location' : '—')}{map(p.clock_in_lat, p.clock_in_lng) && <div><a className="inline-flex items-center gap-1 text-xs text-violet-300" href={map(p.clock_in_lat, p.clock_in_lng)!} target="_blank" rel="noreferrer"><MapPin className="h-3 w-3" />map{p.clock_in_accuracy_m ? ` (±${Math.round(p.clock_in_accuracy_m)} m)` : ''}</a></div>}</td>
+                <td className={cellCls}>
+                  <div className="min-w-[90px] text-xs"><span className="text-white tabular-nums">{p.visits_done}</span><span className="text-slate-500"> of {p.visits_planned}</span></div>
+                  {p.visits_planned > 0 && <div className="mt-1 h-1.5 w-24 rounded-full bg-white/[0.05] overflow-hidden"><div className={`h-full rounded-full ${p.visits_done / p.visits_planned >= 0.8 ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, (p.visits_done / p.visits_planned) * 100)}%` }} /></div>}
+                </td>
+                <td className={cellCls}>{p.out_of_beat ? <Pill tone="amber">{p.out_of_beat}</Pill> : <span className="text-slate-600">—</span>}</td>
+                <td className={`${cellCls} text-slate-300`}>{p.last_stop ? <>{p.last_stop.place || 'visit'}<div className="text-xs text-slate-500">{time(p.last_stop.at)}{map(p.last_stop.lat, p.last_stop.lng) && <> · <a className="text-violet-300" href={map(p.last_stop.lat, p.last_stop.lng)!} target="_blank" rel="noreferrer">map</a></>}</div></> : <span className="text-slate-600">—</span>}</td>
+                <td className={`${cellCls} text-xs text-slate-400 max-w-[180px]`}>{p.beat || <span className="text-slate-600">no territory</span>}</td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Card>
+      <p className="text-xs text-slate-500">Location is taken only at clock-in and at each visit check-in, not tracked in between.</p>
+    </div>
+  );
+}
+
+// ─── Institutional pipeline: corporates, empanelment, insurance deals by stage ───
+const INST_STAGE: Record<string, { label: string; tone: string }> = {
+  new: { label: 'New', tone: 'slate' }, contacted: { label: 'Contacted', tone: 'sky' }, qualified: { label: 'Qualified', tone: 'sky' },
+  proposal: { label: 'Proposal', tone: 'violet' }, empanelment: { label: 'Empanelment', tone: 'amber' }, closed_won: { label: 'Won', tone: 'emerald' }, closed_lost: { label: 'Lost', tone: 'red' },
+};
+function PipelineTab({ manager }: { manager: boolean }) {
+  const [d, setD] = useState<any>(null);
+  const [team, setTeam] = useState<any[]>([]);
+  const [exec, setExec] = useState('');
+  const [moving, setMoving] = useState<any>(null);
+  const [flash, setFlash] = useState<FlashMsg>(null);
+  const load = useCallback(() => rn('/institutions', 'get', undefined, exec ? { exec } : {}).then(setD).catch((e) => { setFlash({ text: e.message, ok: false }); setD({ items: [], stages: Object.keys(INST_STAGE), byStage: {} }); }), [exec]);
+  useEffect(() => { setD(null); load(); }, [load]);
+  useEffect(() => { if (manager) rn('/team').then(setTeam).catch(() => {}); }, [manager]);
+  const move = async () => {
+    try { setD(await rn(`/institutions/${moving.id}/stage`, 'patch', { stage: moving.to, note: moving.note || undefined, contract_value: moving.value || undefined })); setFlash({ text: `${moving.entity_name} moved to ${INST_STAGE[moving.to].label}.`, ok: true }); setMoving(null); }
+    catch (e: any) { setFlash({ text: e.message, ok: false }); }
+  };
+  const push = async (x: any) => {
+    try { await ff(`/leads/${x.id}/push-to-crm`, {}); setFlash({ text: `${x.entity_name} is now in Leads and the Inbox.`, ok: true }); load(); }
+    catch (e: any) { setFlash({ text: e.message, ok: false }); }
+  };
+  return (
+    <div className="space-y-3">
+      <Flash msg={flash} onClose={() => setFlash(null)} />
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm text-slate-400 flex-1 min-w-[240px]">Corporate tie-ups, empanelments and insurance deals the field team is working. Patient referrals are in Leads.</p>
+        {manager && <select aria-label="Executive" className={selectCls} value={exec} onChange={(e) => setExec(e.target.value)}><Opt value="">Every executive</Opt>{team.map((t) => <Opt key={t.id} value={String(t.id)}>{t.name || t.email}</Opt>)}</select>}
+      </div>
+      {!d ? <Loading /> : d.items.length === 0 ? <Card><Empty icon={Building2} title="No institutional deals yet" body="Field executives add corporates, empanelments and insurers from the Smart-Force app; they appear here by stage." /></Card> : (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {d.stages.map((st: string) => {
+            const items = d.items.filter((x: any) => x.stage === st);
+            const b = d.byStage[st] || { count: 0, value: 0 };
+            return (
+              <div key={st} className="w-[260px] shrink-0 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+                <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between"><Pill tone={INST_STAGE[st].tone}>{INST_STAGE[st].label}</Pill><span className="text-xs text-slate-500 tabular-nums">{b.count}{b.value ? ` · ${inr(b.value)}` : ''}</span></div>
+                <ul className="p-2 space-y-2 min-h-[80px]">
+                  {items.map((x: any) => (
+                    <li key={x.id} className="rounded-xl bg-white/[0.03] border border-white/[0.05] p-3">
+                      <div className="text-sm font-medium text-white">{x.entity_name}</div>
+                      <div className="text-xs text-slate-500">{[words(x.lead_type || x.entity_type), x.contact_name, x.exec_name].filter(Boolean).join(' · ')}</div>
+                      {(x.contract_value || x.estimated_value) && <div className="mt-1 text-xs text-slate-300 tabular-nums">{inr(x.contract_value || x.estimated_value)}{x.contract_value ? ' contract' : ' estimated'}</div>}
+                      {x.follow_up_date && <div className="text-xs text-slate-500">Follow up {date(x.follow_up_date)}</div>}
+                      <div className="mt-2 flex items-center gap-2">
+                        <select aria-label={`Move ${x.entity_name}`} className={`${selectCls} h-8 flex-1 text-xs`} value="" onChange={(e) => e.target.value && setMoving({ ...x, to: e.target.value, note: '', value: '' })}>
+                          <Opt value="">Move to…</Opt>{d.stages.filter((s2: string) => s2 !== st && (manager || s2 !== 'closed_won')).map((s2: string) => <Opt key={s2} value={s2}>{INST_STAGE[s2].label}</Opt>)}
+                        </select>
+                        {manager && !x.crm_lead_id && <button className="text-xs text-violet-300 whitespace-nowrap" onClick={() => push(x)} title="Create a CRM lead for this contact">To Leads</button>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <Dialog open={Boolean(moving)} onOpenChange={(o) => !o && setMoving(null)}>
+        <DialogContent className="max-w-md bg-[#0d1120] border-white/[0.08] text-white">
+          <DialogHeader><DialogTitle>{moving?.entity_name}: {moving ? INST_STAGE[moving.to]?.label : ''}</DialogTitle></DialogHeader>
+          {moving?.to === 'closed_won' && <Field label="Contract value (₹) *"><input className={inputCls} inputMode="numeric" value={moving.value} onChange={(e) => setMoving({ ...moving, value: e.target.value })} autoFocus /></Field>}
+          <Field label="Note (the executive sees it)"><input className={inputCls} value={moving?.note || ''} onChange={(e) => setMoving({ ...moving, note: e.target.value })} /></Field>
+          <div className="flex justify-end gap-2"><button className={ghostCls} onClick={() => setMoving(null)}>Cancel</button><Button className={primaryCls} disabled={moving?.to === 'closed_won' && !(Number(moving?.value) > 0)} onClick={move}>Move</Button></div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Outreach permissions: RWAs, municipal and government permissions for camps and drives ───
+const PERMIT_TONE: Record<string, string> = { pending: 'amber', active: 'emerald', expired: 'slate', revoked: 'red' };
+const PERMIT_LABEL: Record<string, string> = { pending: 'waiting', active: 'approved', expired: 'expired', revoked: 'not approved' };
+function OutreachTab({ manager }: { manager: boolean }) {
+  const [status, setStatus] = useState('');
+  const [d, setD] = useState<any>(null);
+  const [form, setForm] = useState<any>(null);
+  const [refusing, setRefusing] = useState<any>(null);
+  const [note, setNote] = useState('');
+  const [flash, setFlash] = useState<FlashMsg>(null);
+  const load = useCallback(() => rn('/outreach', 'get', undefined, status ? { status } : {}).then(setD).catch((e) => { setFlash({ text: e.message, ok: false }); setD({ items: [] }); }), [status]);
+  useEffect(() => { setD(null); load(); }, [load]);
+  const decide = async (p: any, next: string, why?: string) => {
+    try { setD(await rn(`/outreach/${p.id}`, 'patch', { status: next, note: why || undefined })); setRefusing(null); setNote(''); setFlash({ text: `${p.authority_name}: ${PERMIT_LABEL[next]}. ${p.exec_name || 'The executive'} is notified in the app.`, ok: true }); }
+    catch (e: any) { setFlash({ text: e.message, ok: false }); }
+  };
+  const file = async () => {
+    try { await rn('/outreach', 'post', form); setForm(null); setFlash({ text: 'Permission filed. A Business Head approves it here.', ok: true }); load(); }
+    catch (e: any) { setFlash({ text: e.message, ok: false }); }
+  };
+  return (
+    <div className="space-y-3">
+      <Flash msg={flash} onClose={() => setFlash(null)} />
+      <div className="flex flex-wrap items-center gap-2">
+        <select aria-label="Status" className={selectCls} value={status} onChange={(e) => setStatus(e.target.value)}><Opt value="">Every status</Opt>{Object.entries(PERMIT_LABEL).map(([k, v]) => <Opt key={k} value={k}>{v}</Opt>)}</select>
+        <p className="text-sm text-slate-400 flex-1 min-w-[240px]">Written permission from resident associations, the municipality or government offices, needed before a camp or awareness drive.</p>
+        <Button className={primaryCls} onClick={() => setForm({ permission_type: 'rwa', authority_name: '', reference_no: '', valid_from: '', valid_until: '', notes: '' })}><Plus className="h-4 w-4 mr-1.5" />File permission</Button>
+      </div>
+      <Card>
+        {!d ? <Loading /> : d.items.length === 0 ? <Empty icon={Landmark} title="No outreach permissions" body="Permissions filed from the app or here appear with their validity, waiting for approval." /> : (
+          <Table head={['Authority', 'Type', 'Reference', 'Valid', 'Filed by', 'Status', '']}>
+            {d.items.map((p: any) => (
+              <tr key={p.id} className={rowCls}>
+                <td className={`${cellCls} text-white`}>{p.authority_name}{p.notes && <div className="text-xs text-slate-500 max-w-[260px]">{p.notes}</div>}</td>
+                <td className={`${cellCls} text-slate-300 uppercase text-xs`}>{p.permission_type}</td>
+                <td className={`${cellCls} text-slate-300`}>{p.reference_no || '—'}</td>
+                <td className={`${cellCls} text-slate-300 whitespace-nowrap`}>{p.valid_from || p.valid_until ? `${date(p.valid_from)} to ${date(p.valid_until)}` : '—'}{p.lapsed && p.status === 'active' && <div><Pill tone="amber">lapsed</Pill></div>}</td>
+                <td className={`${cellCls} text-slate-400`}>{p.exec_name || '—'}<div className="text-xs text-slate-600">{ago(p.created_at)}</div></td>
+                <td className={cellCls}><Pill tone={PERMIT_TONE[p.status]}>{PERMIT_LABEL[p.status] || p.status}</Pill>{p.review_note && <div className="text-xs text-slate-500 max-w-[200px]">{p.review_note}</div>}</td>
+                <td className={`${cellCls} text-right whitespace-nowrap`}>{manager && p.status === 'pending' && <><button className="text-xs text-red-300 mr-3" onClick={() => { setRefusing(p); setNote(''); }}>Refuse</button><button className="text-xs text-emerald-300" onClick={() => decide(p, 'active')}>Approve</button></>}
+                  {manager && p.status === 'active' && <button className="text-xs text-slate-400" onClick={() => decide(p, 'expired')}>Mark expired</button>}</td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Card>
+      <Dialog open={Boolean(form)} onOpenChange={(o) => !o && setForm(null)}>
+        <DialogContent className="max-w-lg bg-[#0d1120] border-white/[0.08] text-white">
+          <DialogHeader><DialogTitle>File an outreach permission</DialogTitle></DialogHeader>
+          {form && <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Type"><select className={`${selectCls} w-full`} value={form.permission_type} onChange={(e) => setForm({ ...form, permission_type: e.target.value })}><Opt value="rwa">Resident association (RWA)</Opt><Opt value="municipal">Municipal</Opt><Opt value="government">Government office</Opt><Opt value="other">Other</Opt></select></Field>
+            <Field label="Reference number"><input className={inputCls} value={form.reference_no} onChange={(e) => setForm({ ...form, reference_no: e.target.value })} /></Field>
+            <Field label="Authority or association *" wide><input className={inputCls} value={form.authority_name} onChange={(e) => setForm({ ...form, authority_name: e.target.value })} placeholder="e.g. Jubilee Hills Residents Welfare Association" autoFocus /></Field>
+            <Field label="Valid from"><input type="date" className={inputCls} value={form.valid_from} onChange={(e) => setForm({ ...form, valid_from: e.target.value })} /></Field>
+            <Field label="Valid until"><input type="date" className={inputCls} value={form.valid_until} onChange={(e) => setForm({ ...form, valid_until: e.target.value })} /></Field>
+            <Field label="Notes" wide><input className={inputCls} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="What it covers: camp on 24 Nov at the clubhouse" /></Field>
+          </div>}
+          <div className="flex justify-end gap-2"><button className={ghostCls} onClick={() => setForm(null)}>Cancel</button><Button className={primaryCls} disabled={!form?.authority_name?.trim()} onClick={file}>File</Button></div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(refusing)} onOpenChange={(o) => !o && setRefusing(null)}>
+        <DialogContent className="max-w-md bg-[#0d1120] border-white/[0.08] text-white">
+          <DialogHeader><DialogTitle>Refuse: {refusing?.authority_name}</DialogTitle></DialogHeader>
+          <Field label="Reason (sent to the executive) *"><textarea className={`${inputCls} h-24 py-2`} value={note} onChange={(e) => setNote(e.target.value)} autoFocus /></Field>
+          <div className="flex justify-end gap-2"><button className={ghostCls} onClick={() => setRefusing(null)}>Cancel</button><Button className="h-10 rounded-xl bg-red-600 hover:bg-red-500 text-white" disabled={!note.trim()} onClick={() => decide(refusing, 'revoked', note)}>Refuse</Button></div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1307,3 +1587,7 @@ function EventDrawer({ target, manager, onClose, onChanged }: { target: { kind: 
 }
 
 export default DoctorsPage;
+
+// Shared with the Call centre page (same look, one set of primitives).
+export { Pill, Card, CardHead, Kpi, Field, Opt, Tabs, Empty, Flash, Loading, Table, STAGE, inputCls, selectCls, primaryCls, ghostCls, rowCls, cellCls };
+export type { FlashMsg };

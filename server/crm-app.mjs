@@ -69,13 +69,20 @@ app.use('/api/branding',(await import('./routes/crm-branding.route.js')).buildCr
 app.use('/api/onboarding',(await import('./routes/crm-onboarding.route.js')).buildCrmOnboardingRouter({pool,tenantId:tenant.id}));
 // Smart-Force field app (github.com/MySmartHealth/smart-force): sign-in at /api/team, field API at /api/field.
 // Auth is CRM-user/role based and tenant-pinned; see routes/crm-smart-force-auth.route.js.
+// /api/app serves the app's three modes (field, manager, agent) with the CRM's own services and access rules.
 {const sf=await import('./routes/crm-smart-force-auth.route.js');
- app.use('/api/team',sf.buildSmartForceAuthRouter({tenantId:tenant.id}));
- app.use('/api/field',sf.smartForceAuth({tenantId:tenant.id}),(await import('./routes/field-force.route.js')).default);}
+ const appAuth={tenantId:tenant.id,tenantUid:tenant.unique_id};
+ app.use('/api/team',sf.buildSmartForceAuthRouter(appAuth));
+ app.use('/api/field',sf.smartForceAuth(appAuth),(await import('./routes/field-force.route.js')).default);
+ app.use('/api/app',sf.smartForceAuth(appAuth),(await import('./routes/crm-app-mobile.route.js')).buildAppMobileRouter());}
 app.use('/api/crm/whatsapp',(await import('./routes/crm-whatsapp-control.route.js')).buildWhatsAppControlRouter());
 app.use('/api/crm/referral-network',(await import('./routes/crm-referral-network.route.js')).buildReferralNetworkRouter());
 app.use('/api/crm/inbox',(await import('./routes/crm-unified-inbox.route.js')).buildUnifiedInboxRouter());
 app.use('/api/crm/telephony',(await import('./routes/crm-telephony.route.js')).buildTelephonyRouter());
+app.use('/api/crm/call-centre',(await import('./routes/crm-call-centre.route.js')).buildCallCentreRouter());
+// Push to the app: a sweep every minute (approvals, decisions, follow-ups due). No-op until Firebase is configured.
+{const push=await import('./services/crm-push.service.js');let pushing=false;
+ setInterval(async()=>{if(pushing||!push.pushConfigured())return;pushing=true;try{await push.sweep(tenant.id);}catch(e){console.error('[push] sweep failed:',e.message);}finally{pushing=false;}},60000).unref();}
 // Safety net for TeleCMI webhooks: every 10 minutes, pull the last 6 hours of call logs and file any call
 // a webhook didn't deliver (deduplicated). No-op until TeleCMI credentials are configured.
 {const tc=await import('./services/telecmi-control.service.js');let syncing=false;

@@ -38,7 +38,8 @@ describe('CRM vendor calls go through the integration layer', () => {
   it.each(files.filter((file) => !INTERNAL_ONLY.has(file)))('%s uses the managed fetch when it calls fetch', (file) => {
     const source = fs.readFileSync(path.join(root, file), 'utf8');
     if (!/(^|[^.\w])fetch\(/m.test(source)) return;
-    expect(source).toMatch(/import \{[^}]*\bmanagedFetch as fetch\b[^}]*\} from '\.\.\/(\.\.\/)?integrations\/transport\.js'/);
+    // Either the managed fetch, or a fetch bound to one catalogued vendor.
+    expect(source).toMatch(/import \{[^}]*\bmanagedFetch as fetch\b[^}]*\} from '\.\.\/(\.\.\/)?integrations\/transport\.js'|const fetch = vendorFetch\('[a-z-]+'\)/);
   });
 
   it('knows the CRM calling vendors', async () => {
@@ -46,5 +47,7 @@ describe('CRM vendor calls go through the integration layer', () => {
     expect(integrationForUrl('https://rest.telecmi.com/v2/user/all')?.id).toBe('telecmi');
     expect(integrationForUrl('https://api-smartflo.tatateleservices.com/v1/click_to_call')?.id).toBe('tata-smartflo');
     expect(integrationForUrl('https://partner.gupshup.io/partner/app/x/templates')?.id).toBe('gupshup');
+    expect(integrationForUrl('https://oauth2.googleapis.com/token')?.id).toBe('firebase-fcm');
+    expect(integrationForUrl('https://fcm.googleapis.com/v1/projects/p/messages:send')?.id).toBe('firebase-fcm');
   });
 });

@@ -5,8 +5,9 @@
  * those from team.route.js (2.7k lines of platform team features) and a global middleware that sets
  * req.user. This module provides just what the app needs, against the CRM's own users and roles:
  *
- *  - Who may sign in: active users of THIS tenant whose CRM role has field_force:read
- *    (Business Head, Marketing Head, Sales Rep; admins). field_force:manage adds manager rights.
+ *  - Who may sign in: active users of THIS tenant whose CRM role has field_force:read (Business Head,
+ *    Marketing Head, Field Marketing Executive; admins) or app:agent (Call Centre Agents). field_force:manage
+ *    adds manager rights. The user carries modes: field, manager, agent; the app opens on the first.
  *  - Tokens: 4h access + 30d refresh, stored hashed in api_v2_refresh_tokens (scope 'smart-force'),
  *    revocable. The refresh token is not rotated because the app keeps its first refresh token.
  *  - smartForceAuth() authenticates /api/field/* and pins every request to this tenant, setting
@@ -43,7 +44,13 @@ function fieldAccess(user) {
     metadata, isAdmin,
     canRead: isAdmin || hasCRMCapability(crmUser, 'field_force:read'),
     canManage: isAdmin || hasCRMCapability(crmUser, 'field_force:manage'),
+    canAgent: isAdmin || hasCRMCapability(crmUser, 'app:agent'),
   };
+}
+const canUseApp = (access) => access.canRead || access.canAgent;
+const permissionsOf = (access) => [...(access.canRead ? ['Field Force'] : []), ...(access.canManage ? ['Field Force Manager'] : []), ...(access.canAgent ? ['Agent'] : [])];
+function modesOf(access) {
+  return [...(access.canManage ? ['manager'] : access.canRead ? ['field'] : []), ...(access.canAgent ? ['agent'] : [])];
 }
 
 async function loadUser(id, tenantId) {
@@ -73,11 +80,14 @@ function appUser(user, access, tenantId) {
     email: user.email,
     tenantId,
     role: CRM_ROLE_LABELS[access.metadata.crmRole] || 'Field team',
-    permissions: ['Field Force', ...(access.canManage ? ['Field Force Manager'] : [])],
+    crmRole: access.isAdmin ? 'admin' : (access.metadata.crmRole || 'sales_rep'),
+    permissions: permissionsOf(access),
+    modes: modesOf(access),
+    mode: modesOf(access)[0] || 'field',
   };
 }
 
-export function buildSmartForceAuthRouter({ tenantId }) {
+export function buildSmartForceAuthRouter({ tenantId, tenantUid }) {
   const router = express.Router();
   const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false,
     handler: (req, res) => fail(res, 429, 'Too many attempts. Try again in a few minutes.') });
@@ -97,10 +107,10 @@ export function buildSmartForceAuthRouter({ tenantId }) {
       }
       if (user.status && user.status !== 'active') return fail(res, 403, 'Account is inactive. Contact your administrator.');
       const access = fieldAccess(user);
-      if (!access.canRead) {
+      if (!canUseApp(access)) {
         await recordAttempt(email, ip, false);
-        await audit(tenantId, user.id, 'login_denied', { reason: 'no field_force role' });
-        return fail(res, 403, 'Your CRM role does not include Smart-Force. Ask your administrator for field access.');
+        await audit(tenantId, user.id, 'login_denied', { reason: 'no app role' });
+        return fail(res, 403, 'Your role does not include the app. Ask your Business Head.');
       }
       const jti = randomUUID();
       const accessToken = jwt.sign({ id: user.id, email: user.email, role: 'team', userType: 'team', isTeam: true, scope: SCOPE,
@@ -128,7 +138,7 @@ export function buildSmartForceAuthRouter({ tenantId }) {
         `SELECT revoked, token_hash, expires_at FROM api_v2_refresh_tokens WHERE jti = $1 AND role = $2`, [decoded.jti, SCOPE]);
       if (!stored || stored.revoked || stored.token_hash !== sha(token) || new Date(stored.expires_at) < new Date()) return fail(res, 401, 'Session expired. Please sign in again.');
       const user = await loadUser(decoded.id, tenantId);
-      if (!user || (user.status && user.status !== 'active') || !fieldAccess(user).canRead) return fail(res, 401, 'Session expired. Please sign in again.');
+      if (!user || (user.status && user.status !== 'active') || !canUseApp(fieldAccess(user))) return fail(res, 401, 'Session expired. Please sign in again.');
       const accessToken = jwt.sign({ id: user.id, email: user.email, role: 'team', userType: 'team', isTeam: true, scope: SCOPE,
         tenantId, tokenType: 'access', jti: decoded.jti }, JWT_CONFIG.SECRET, { expiresIn: ACCESS_TTL });
       return res.json({ success: true, accessToken });
@@ -144,17 +154,17 @@ export function buildSmartForceAuthRouter({ tenantId }) {
     return res.json({ success: true, message: 'If this email has an account, a reset code has been sent.' });
   });
 
-  router.post('/logout', smartForceAuth({ tenantId }), async (req, res) => {
+  router.post('/logout', smartForceAuth({ tenantId, tenantUid }), async (req, res) => {
     await sharedPool.query(`UPDATE api_v2_refresh_tokens SET revoked = TRUE WHERE jti = $1 AND role = $2`, [req.smartForceJti, SCOPE]).catch(() => {});
     return res.json({ success: true });
   });
 
-  router.get('/auth/verify', smartForceAuth({ tenantId }), (req, res) => res.json({ success: true, user: req.smartForceUser }));
+  router.get('/auth/verify', smartForceAuth({ tenantId, tenantUid }), (req, res) => res.json({ success: true, user: req.smartForceUser }));
   return router;
 }
 
 /** Authenticates Smart-Force access tokens and pins the request to this installation's tenant. */
-export function smartForceAuth({ tenantId }) {
+export function smartForceAuth({ tenantId, tenantUid = null }) {
   return async (req, res, next) => {
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     if (!token) return fail(res, 401, 'Please sign in.');
@@ -167,15 +177,17 @@ export function smartForceAuth({ tenantId }) {
       const user = await loadUser(decoded.id, tenantId);
       if (!user || (user.status && user.status !== 'active')) return fail(res, 403, 'Account is inactive. Contact your administrator.');
       const access = fieldAccess(user);
-      if (!access.canRead) return fail(res, 403, 'Your CRM role no longer includes Smart-Force.');
+      if (!canUseApp(access)) return fail(res, 403, 'Your role no longer includes the app.');
       const base = { id: user.id, email: user.email, tenantId, tenant_id: tenantId, organizationId: tenantId, organization_id: tenantId };
       req.teamUser = { ...base, role: access.isAdmin ? 'admin' : 'team', isTeam: true, isAdmin: access.isAdmin,
-        permissions: ['Field Force', ...(access.canManage ? ['Field Force Manager'] : [])], grantedModules: [], editableModules: [], deletableModules: [] };
+        permissions: permissionsOf(access), grantedModules: [], editableModules: [], deletableModules: [] };
       req.user = { ...base, role: req.teamUser.role, isTeam: true, isAdmin: access.isAdmin };
       req.tenantId = tenantId;
       req.smartForceJti = decoded.jti;
       req.smartForceUser = appUser(user, access, tenantId);
       req.dedicatedTeamAuth = true;
+      // The same shape authCRM gives web requests, so the app's /api/app routes reuse the CRM services and rules.
+      req.crmUser = { id: user.id, email: user.email, tenantId, tenantUid, crmRole: access.isAdmin ? 'admin' : (access.metadata.crmRole || 'sales_rep'), isAdmin: access.isAdmin };
       return next();
     } catch (error) {
       console.error('[SmartForce auth]', error.message);

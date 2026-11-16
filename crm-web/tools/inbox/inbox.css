@@ -205,3 +205,13 @@ button { font: inherit; }
 
 /* An element with the hidden attribute stays hidden even when a rule above gives it a display value. */
 [hidden] { display: none !important; }
+
+/* Quick answers (call centre scripts and answers) inserted into the reply */
+.quick-pop { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 8px; display: grid; gap: 6px; max-height: 260px; }
+.quick-pop[hidden] { display: none !important; }
+.quick-pop ul { list-style: none; margin: 0; padding: 0; overflow: auto; }
+.quick-pop li button { width: 100%; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 7px 9px; color: inherit; cursor: pointer; display: grid; gap: 2px; }
+.quick-pop li button:hover, .quick-pop li button:focus-visible { background: var(--panel-2); outline: none; }
+.quick-pop .q-title { font-size: 13px; font-weight: 600; }
+.quick-pop .q-body { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-pop .q-cat { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }

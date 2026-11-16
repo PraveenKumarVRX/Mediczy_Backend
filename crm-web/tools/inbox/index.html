@@ -7,7 +7,7 @@
   <script src="/crm-tools/embed.js"></script>
   <link rel="icon" href="/brand/medstar.svg">
   <link rel="stylesheet" href="../whatsapp/styles.css?v=20261116">
-  <link rel="stylesheet" href="inbox.css?v=20261116b">
+  <link rel="stylesheet" href="inbox.css?v=20261116d">
 </head>
 <body class="inbox-page">
   <!-- Shown only when the page is opened on its own; inside the CRM the app's header says "Inbox". -->
@@ -98,6 +98,10 @@
             <span class="muted small-text" id="channelHint"></span>
           </div>
           <input id="replySubject" placeholder="Subject" maxlength="200" aria-label="Email subject" hidden>
+          <div class="quick-pop" id="quickPop" hidden>
+            <input id="quickSearch" type="search" placeholder="Search quick answers and scripts…" aria-label="Search quick answers">
+            <ul id="quickList" role="listbox" aria-label="Quick answers"></ul>
+          </div>
           <div id="textMode">
             <textarea id="replyText" rows="2" maxlength="4096" placeholder="Type a reply… (Enter to send, Shift+Enter for a new line)" aria-label="Reply"></textarea>
           </div>
@@ -109,6 +113,7 @@
           </div>
           <div class="composer-actions">
             <button class="btn ghost small" id="toggleTemplate" type="button">Use a template</button>
+            <button class="btn ghost small" id="quickBtn" type="button" aria-expanded="false" aria-controls="quickPop">Quick answers</button>
             <span class="result" id="sendResult" role="status"></span>
             <button class="btn" id="sendBtn" type="submit">Send</button>
           </div>
@@ -224,6 +229,6 @@
     </aside>
   </div>
 
-  <script src="inbox.js?v=20261116c" defer></script>
+  <script src="inbox.js?v=20261116e" defer></script>
 </body>
 </html>

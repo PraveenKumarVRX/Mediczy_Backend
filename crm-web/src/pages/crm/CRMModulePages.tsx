@@ -12,11 +12,11 @@ import {
   Brain, Sparkles, MessageSquare, Star, ShieldCheck,
   Route, Gauge, Stethoscope, FlaskConical, Globe, Milestone, Radio, Magnet,
   UserCog, Contact, List, Bot, UserPlus, Filter, Inbox, GitBranch, MessageCircle, MapPin, Smartphone, Megaphone, Menu as MenuIcon,
-  Network, CalendarDays,
+  Network, CalendarDays, Headphones,
 } from 'lucide-react';
 import api from '@/utils/api';
 import LeadPicker, { type ResolvedLead } from './shared/LeadPicker';
-import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
+import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS, INVITABLE_ROLES } from './shared/crmRoles';
 import LeadDetailDrawer from './shared/LeadDetailDrawer';
 import CommandPalette from './shared/CommandPalette';
 import CRMChannelSettings from './CRMChannelSettings';
@@ -38,6 +38,7 @@ const sidebarNav: { section: string; items: NavItem[] }[] = [
   { section: 'OVERVIEW', items: [
     { icon: LayoutGrid, label: 'Dashboard', path: '/crm/dashboard' },
     { icon: Inbox, label: 'Inbox', path: '/crm/inbox', badge: 'unread' },
+    { icon: Headphones, label: 'Call centre', path: '/crm/call-centre', cap: 'communication:read' },
     { icon: Phone, label: 'Calls', path: '/crm/calls' },
     { icon: Mail, label: 'Email inbox', path: '/crm/emails' },
     { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub', cap: 'communication:read' },
@@ -59,7 +60,7 @@ const sidebarNav: { section: string; items: NavItem[] }[] = [
   ]},
   { section: 'MARKETING', items: [
     // Engage is the one place for campaigns, audiences (segments and lists), templates and automations.
-    { icon: Megaphone, label: 'Engage', path: '/crm/engage' },
+    { icon: Megaphone, label: 'Engage', path: '/crm/engage', cap: 'campaigns:manage' },
     { icon: MessageCircle, label: 'WhatsApp templates', path: '/crm/whatsapp' },
     { icon: Sparkles, label: 'AI Copilot', path: '/crm/marketing-copilot' },
     { icon: Bot, label: 'Agent Operator', path: '/crm/agent', cap: 'foundation:read' },
@@ -86,7 +87,7 @@ const sidebarNav: { section: string; items: NavItem[] }[] = [
   ]},
   { section: 'ADMIN', items: [
     { icon: Settings, label: 'Settings & Channels', path: '/crm/settings' },
-    { icon: UserPlus, label: 'Team', path: '/crm/team', cap: 'team:manage' },
+    { icon: UserPlus, label: 'Team', path: '/crm/team', cap: 'team:invite' },
   ]},
 ];
 
@@ -878,7 +879,8 @@ export function CRMContactsPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState('');
+  // ?search= lets other screens (a doctor's profile) open the matching contact record.
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
   const [showForm, setShowForm] = useState(false);
   const [editContact, setEditContact] = useState<any>(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', designation: '', city: '', state: '', notes: '' });
@@ -1509,7 +1511,7 @@ export function CRMTeamPage() {
     let user: any = null;
     try { const d = localStorage.getItem('crmUserData'); if (d) user = JSON.parse(d); } catch {}
     setCrmUser(user);
-    if (!hasCRMCapability(user, 'team:manage')) { navigate('/crm/dashboard', { replace: true }); return; }
+    if (!hasCRMCapability(user, 'team:invite')) { navigate('/crm/dashboard', { replace: true }); return; }
     loadMembers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
@@ -1577,17 +1579,22 @@ export function CRMTeamPage() {
   };
 
   if (!crmUser) return null;
+  // Admins give any role; a Business Head invites and manages the front line only (the server enforces this too).
+  const manageAll = hasCRMCapability(crmUser, 'team:manage');
+  const roleOptions = manageAll ? CRM_ROLE_LIST : INVITABLE_ROLES;
+  const canEdit = (m: CRMTeamMember) => manageAll || ((INVITABLE_ROLES as string[]).includes(m.crmRole) && m.id !== crmUser?.id);
 
   return (
     <CRMLayout title="Team">
       <div className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">CRM administration</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">{manageAll ? 'CRM administration' : 'Your team'}</p>
             <h2 className="mt-1 text-2xl font-bold text-white">Team &amp; Roles</h2>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Create CRM logins and assign each one a role — Business Head, Marketing Head, Marketing, Telecaller,
-              Conversion, or Sales Representative. Roles control which dashboards and sidebar links each login can see.
+              {manageAll
+                ? 'Create logins and give each person a role. The role decides what they see on the web and in the Smart-Force app: Field Marketing Executives work their own patients and doctors, Call Centre Agents work the Inbox and callbacks.'
+                : 'Invite Field Marketing Executives, Call Centre Agents and marketing staff. Each person gets an email to set their password, and signs in to both the web CRM and the Smart-Force app.'}
             </p>
           </div>
           <Button onClick={() => setShowForm((v) => !v)} className="gap-2 bg-violet-600 hover:bg-violet-500">
@@ -1624,7 +1631,7 @@ export function CRMTeamPage() {
               <Label className="text-xs text-slate-400">Role</Label>
               <select value={form.crmRole} onChange={(e) => setForm({ ...form, crmRole: e.target.value })}
                 className="mt-1 h-10 w-full rounded-md border border-white/10 bg-[#111827] px-3 text-sm text-white">
-                {CRM_ROLE_LIST.map((role) => (
+                {roleOptions.map((role) => (
                   <option key={role} value={role}>{CRM_ROLE_LABELS[role]}</option>
                 ))}
               </select>
@@ -1681,16 +1688,18 @@ export function CRMTeamPage() {
                   <td className="px-4 py-3 text-white">{m.firstName} {m.lastName}</td>
                   <td className="px-4 py-3">{m.email}</td>
                   <td className="px-4 py-3">
-                    <select value={m.crmRole} onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                      className="h-8 rounded-md border border-white/10 bg-[#111827] px-2 text-xs text-white">
-                      {CRM_ROLE_LIST.map((role) => (
-                        <option key={role} value={role}>{CRM_ROLE_LABELS[role]}</option>
-                      ))}
-                    </select>
+                    {canEdit(m) ? (
+                      <select value={m.crmRole} onChange={(e) => handleRoleChange(m.id, e.target.value)} aria-label={`Role for ${m.firstName} ${m.lastName}`}
+                        className="h-8 rounded-md border border-white/10 bg-[#111827] px-2 text-xs text-white">
+                        {roleOptions.map((role) => (
+                          <option key={role} value={role}>{CRM_ROLE_LABELS[role]}</option>
+                        ))}
+                      </select>
+                    ) : <span className="text-xs text-slate-300">{CRM_ROLE_LABELS[m.crmRole] || m.crmRole}</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <select value={m.managerUserId ?? ''} onChange={(e) => handleManagerChange(m.id, e.target.value)}
-                      className="h-8 rounded-md border border-white/10 bg-[#111827] px-2 text-xs text-white">
+                    <select value={m.managerUserId ?? ''} onChange={(e) => handleManagerChange(m.id, e.target.value)} disabled={!canEdit(m)}
+                      className="disabled:opacity-60 h-8 rounded-md border border-white/10 bg-[#111827] px-2 text-xs text-white">
                       <option value="">No manager</option>
                       {managers.filter((mgr) => mgr.id !== m.id).map((mgr) => (
                         <option key={mgr.id} value={mgr.id}>{mgr.firstName} {mgr.lastName}</option>
@@ -1703,9 +1712,11 @@ export function CRMTeamPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-500">{m.lastLoginAt ? new Date(m.lastLoginAt).toLocaleString() : 'Never'}</td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => handleStatusToggle(m)} className="text-xs text-violet-300 hover:text-violet-200">
-                      {m.status === 'active' ? 'Deactivate' : 'Activate'}
-                    </button>
+                    {canEdit(m) && (
+                      <button onClick={() => handleStatusToggle(m)} className="text-xs text-violet-300 hover:text-violet-200">
+                        {m.status === 'active' ? 'Deactivate' : 'Activate'}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

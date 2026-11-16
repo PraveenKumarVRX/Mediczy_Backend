@@ -3,11 +3,17 @@ import { body, validationResult } from 'express-validator';
 import { randomBytes } from 'crypto';
 import userModel from '../models/user.model.intelligent.js';
 import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
-import { CRM_ROLE_LIST, crmPermissionsForRole } from '../config/crm-roles.config.js';
+import { CRM_ROLE_LIST, crmPermissionsForRole, hasCRMCapability } from '../config/crm-roles.config.js';
 import passwordResetService from '../services/password-reset.service.js';
 
 const router = express.Router();
-router.use(authCRM, requireCRMCapability('team:manage'));
+// Admins manage everyone (team:manage). A Business Head invites and manages the front line (team:invite):
+// only the roles below, and never an admin's or another Business Head's login.
+const INVITABLE_ROLES = ['marketing_head', 'marketing', 'telecaller', 'conversion', 'sales_rep'];
+const fullManager = (u) => hasCRMCapability(u, 'team:manage');
+router.use(authCRM, (req, res, next) => (fullManager(req.crmUser) || hasCRMCapability(req.crmUser, 'team:invite')
+  ? next() : res.status(403).json({ success: false, message: 'Only an administrator or a Business Head can manage the team.' })));
+const inviteDenied = (req, role) => !fullManager(req.crmUser) && role != null && !INVITABLE_ROLES.includes(role);
 
 function parseMetadata(user) {
   try { return typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {}); } catch (_) { return {}; }
@@ -58,7 +64,7 @@ router.get('/users', async (req, res) => {
       const metadata = parseMetadata(u);
       return metadata.isCRM === true && String(metadata.tenantId || '') === String(tenantId || '');
     });
-    return res.json({ success: true, data: scoped.map(serializeTeamUser) });
+    return res.json({ success: true, data: scoped.map(serializeTeamUser), meta: { canManageAll: fullManager(req.crmUser), invitableRoles: fullManager(req.crmUser) ? CRM_ROLE_LIST : INVITABLE_ROLES } });
   } catch (error) {
     console.error('[CRM Team] List error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to list CRM team members' });
@@ -87,6 +93,7 @@ router.post('/users', [
   try {
     const { firstName, lastName, phone, department, designation, crmRole } = req.body;
     const email = String(req.body.email).trim().toLowerCase();
+    if (inviteDenied(req, crmRole)) return res.status(403).json({ success: false, message: 'A Business Head can add Field Marketing Executives, Call Centre Agents and marketing roles. Ask an administrator for other roles.' });
     const tenantId = req.crmUser.tenantId;
 
     const existing = await userModel.findOne({ where: { email } });
@@ -168,6 +175,11 @@ router.patch('/users/:id', [
     }
 
     const { crmRole, department, designation, status } = req.body;
+    // An account flagged admin is an admin whatever its crmRole says (older admin logins have no crmRole).
+    const targetRole = target.isAdmin || metadata.isAdmin ? 'admin' : (metadata.crmRole || 'sales_rep');
+    if (inviteDenied(req, targetRole) || inviteDenied(req, crmRole) || (!fullManager(req.crmUser) && Number(target.id) === Number(req.crmUser.id))) {
+      return res.status(403).json({ success: false, message: 'A Business Head can change Field Marketing Executives, Call Centre Agents and marketing roles only. Ask an administrator.' });
+    }
     const manager = await resolveManager(req.body.managerUserId, tenantId, target.id);
     const nextMetadata = {
       ...metadata,

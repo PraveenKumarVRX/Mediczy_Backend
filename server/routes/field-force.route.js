@@ -16,7 +16,7 @@
 
 import { Router } from 'express';
 import sharedPool from '../db/pgPool.js';
-import { recordReferral, campRegistrationToLead } from '../services/crm-referral-network.service.js';
+import { recordReferral, campRegistrationToLead, syncVisitFollowUp } from '../services/crm-referral-network.service.js';
 import { authTeam as platformAuthTeam, requirePermission } from '../middleware/team.middleware.js';
 
 // Dedicated installations authenticate /api/field upstream (routes/crm-smart-force-auth.route.js),
@@ -307,6 +307,8 @@ router.patch('/visits/:id/check-out', authTeam, FF, async (req, res) => {
       ]
     );
     if (!rows.length) return res.status(404).json({ error: 'Visit not found or not in checked_in state' });
+    // The follow-up becomes a shared task (callback queue, Inbox, the app's task list). Never fails the check-out.
+    await syncVisitFollowUp(rows[0].tenant_id, rows[0].id).catch((e) => console.error('[field] follow-up task', e.message));
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1767,13 +1769,16 @@ router.post('/sync', authTeam, FF, async (req, res) => {
         case 'complete_visit': {
           // field_visits has no notes_actual column — outcome is the real free-text
           // narrative field; fall back to it when the doc-documented notes_actual is sent.
-          const { visit_id, notes_actual, outcome, checklist } = payload;
+          const { visit_id, notes_actual, outcome, checklist, next_action, follow_up_date } = payload;
           const { rows } = await sharedPool.query(
             `UPDATE field_visits SET status='completed', outcome=$3,
-               visit_checklist=COALESCE($4::jsonb, visit_checklist), check_out_at=NOW(), updated_at=NOW()
+               visit_checklist=COALESCE($4::jsonb, visit_checklist), check_out_at=NOW(), updated_at=NOW(),
+               next_action=COALESCE($5, next_action), follow_up_date=COALESCE($6::date, follow_up_date)
              WHERE id=$2 AND user_id=$1 RETURNING id`,
-            [uid, visit_id, outcome || notes_actual || null, checklist ? JSON.stringify(checklist) : null]
+            [uid, visit_id, outcome || notes_actual || null, checklist ? JSON.stringify(checklist) : null,
+             next_action || null, /^\d{4}-\d{2}-\d{2}$/.test(String(follow_up_date || '')) ? follow_up_date : null]
           );
+          if (rows[0]?.id) await syncVisitFollowUp(tid, rows[0].id).catch((e) => console.error('[field] follow-up task', e.message));
           result = { id: rows[0]?.id };
           break;
         }

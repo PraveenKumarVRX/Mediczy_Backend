@@ -418,19 +418,27 @@ export async function clickToCall(tenantId, userId, leadId) {
   const lead = await loadLead(tenantId, v2Id);
   const status = await telephonyStatus(tenantId, userId);
   if (!status.canCall) throw fail(409, status.reason);
-  const phone = digits10(lead.phone);
-  if (phone.length < 10) throw fail(409, 'This lead has no valid mobile number.');
+  return placeCall(tenantId, userId, lead.phone, { lead_id: lead.legacy_lead_id }, 'This lead has no valid mobile number.', status);
+}
+
+/** Click-to-call any number (a patient lead, a referring doctor): TeleCMI rings the user's phone first, then the
+ * number; the call is recorded and logged. extraParams come back on the call record (CDR) to file it. */
+export async function placeCall(tenantId, userId, number, extraParams = {}, noNumberMessage = 'No valid mobile number on file.', known = null) {
+  const status = known || await telephonyStatus(tenantId, userId);
+  if (!status.canCall) throw fail(409, status.reason);
+  const phone = digits10(number);
+  if (phone.length < 10) throw fail(409, noNumberMessage);
   const res = await fetch('https://rest.telecmi.com/v2/webrtc/click2call', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000),
     body: JSON.stringify({ user_id: status.agent, secret: process.env.VOICE_TELECMI_PROVIDER_SECRET, to: Number(`91${phone}`),
-      webrtc: false, followme: true, extra_params: { lead_id: lead.legacy_lead_id, crm_user_id: userId } }),
+      webrtc: false, followme: true, extra_params: { ...extraParams, crm_user_id: userId } }),
   });
   const data = await res.json().catch(() => ({}));
   if (res.status !== 200 || data.code !== 200) {
     const why = { 400: 'TeleCMI rejected the request.', 404: 'Your TeleCMI agent ID is not valid.', 407: 'The TeleCMI app secret is not valid.' }[res.status] || data.msg;
     throw fail(502, `Call not placed: ${why || `TeleCMI error ${res.status}`}`);
   }
-  return { placed: true, requestId: data.request_id, message: 'TeleCMI is ringing your phone. The patient is connected when you answer.' };
+  return { placed: true, requestId: data.request_id, message: `TeleCMI is ringing your phone. ${extraParams.doctor_crm_id ? 'The doctor' : 'The patient'} is connected when you answer.` };
 }
 
 /** Streams a call recording, only for a call event on this tenant's lead. */
