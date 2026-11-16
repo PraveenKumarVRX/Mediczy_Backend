@@ -1,0 +1,15 @@
+/* Calls. Colour tokens come from ../whatsapp/styles.css. */
+.editor { border: 1px solid var(--accent); border-radius: 10px; padding: 14px; margin-bottom: 14px; background: #7c3aed0d; }
+table.agents { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.agents th, table.agents td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.agents th { color: var(--muted); font-weight: 500; }
+table.agents select { width: auto; }
+.setup { margin: 0; padding-left: 20px; display: grid; gap: 10px; font-size: 13.5px; }
+.url { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.url code { flex: 1; overflow-x: auto; white-space: nowrap; padding: 6px 8px; }
+.live { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.live li { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.live .who { font-weight: 600; }
+.live .ringing { color: var(--warn); } .live .answered { color: var(--good); }
+.empty { color: var(--muted); font-size: 13px; }
+.card.warn { border-color: #f59e0b66; }

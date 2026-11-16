@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Engage · Medstar CRM</title>
+  <script src="/crm-tools/embed.js"></script>
+  <link rel="icon" href="/brand/medstar.svg">
+  <link rel="stylesheet" href="../whatsapp/styles.css">
+  <link rel="stylesheet" href="engage.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="back" href="/crm-tools/home/">← Home</a>
+    <div class="title">
+      <h1>Engage</h1>
+      <p>Campaigns, audiences, templates and automations, all in one place</p>
+    </div>
+    <a class="btn ghost" href="/crm-tools/inbox/">Inbox</a>
+  </header>
+
+  <nav class="engage-tabs" role="tablist" aria-label="Engage sections">
+    <button role="tab" class="etab active" data-tab="campaigns" aria-selected="true">Campaigns</button>
+    <button role="tab" class="etab" data-tab="audiences" aria-selected="false">Audiences</button>
+    <button role="tab" class="etab" data-tab="templates" aria-selected="false">Templates</button>
+    <button role="tab" class="etab" data-tab="automations" aria-selected="false">Automations</button>
+  </nav>
+
+  <main>
+    <div id="banner" class="banner" hidden></div>
+    <p class="result" id="result" role="status"></p>
+
+    <!-- Campaigns -->
+    <section class="panel" data-panel="campaigns">
+      <div class="panel-head">
+        <div><h2>Campaigns</h2><p class="muted">Send an approved template to an audience. WhatsApp campaigns can use a template family, so each patient gets their own language.</p></div>
+        <button class="btn" data-new="campaign">New campaign</button>
+      </div>
+      <div id="campaignForm" class="form editor" hidden></div>
+      <div id="campaignList" class="list"></div>
+    </section>
+
+    <!-- Audiences -->
+    <section class="panel" data-panel="audiences" hidden>
+      <div class="panel-head">
+        <div><h2>Audiences</h2><p class="muted">Rule-based audiences update themselves as leads change. Static lists hold the leads you pick.</p></div>
+        <button class="btn" data-new="audience">New audience</button>
+      </div>
+      <div id="audienceForm" class="form editor" hidden></div>
+      <div id="audienceList" class="list"></div>
+    </section>
+
+    <!-- Templates -->
+    <section class="panel" data-panel="templates" hidden>
+      <div class="panel-head">
+        <div><h2>Templates</h2><p class="muted">One library for every channel. WhatsApp templates are reviewed by Meta and managed on the <a href="/crm-tools/whatsapp/">WhatsApp page</a>; email and SMS templates are ready as soon as they're saved.</p></div>
+        <div class="actions">
+          <select id="templateFilter" aria-label="Channel"><option value="">All channels</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="sms">SMS</option></select>
+          <button class="btn" data-new="template">New email or SMS template</button>
+        </div>
+      </div>
+      <div id="templateForm" class="form editor" hidden></div>
+      <div id="templateList" class="list"></div>
+    </section>
+
+    <!-- Automations -->
+    <section class="panel" data-panel="automations" hidden>
+      <div class="panel-head">
+        <div><h2>Automations</h2><p class="muted">When something happens to a lead, do something: send a message, tag them or assign an owner. Checked every 5 minutes.</p></div>
+        <button class="btn" data-new="automation">New automation</button>
+      </div>
+      <div id="automationForm" class="form editor" hidden></div>
+      <div id="automationList" class="list"></div>
+    </section>
+  </main>
+
+  <script src="engage.js" defer></script>
+</body>
+</html>

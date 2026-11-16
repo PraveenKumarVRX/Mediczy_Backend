@@ -1,0 +1,50 @@
+/* CRM is a dark workspace. Scope its tokens so a saved site-wide light theme
+   cannot mix light panels with inherited dark-theme text (or vice versa). */
+.contact-center-theme {
+  color-scheme: dark;
+  --background: 225 44% 7%;
+  --foreground: 210 40% 98%;
+  --card: 224 35% 11%;
+  --card-foreground: 210 40% 98%;
+  --popover: 224 35% 11%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 262 83% 58%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 224 30% 18%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 224 30% 18%;
+  --muted-foreground: 215 20% 72%;
+  --accent: 244 35% 24%;
+  --accent-foreground: 210 40% 98%;
+  --border: 222 25% 25%;
+  --input: 222 25% 30%;
+  --ring: 255 92% 76%;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+}
+
+.contact-center-theme :where(select, textarea) {
+  min-width: 0;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+  border-color: hsl(var(--input));
+}
+
+.contact-center-theme :where(select, textarea):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.contact-center-theme option {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--card));
+}
+
+.contact-center-theme :where(input, textarea)::placeholder {
+  color: hsl(var(--muted-foreground));
+  opacity: 1;
+}
+
+.contact-center-theme input[type='checkbox'] {
+  accent-color: hsl(var(--primary));
+}

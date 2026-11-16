@@ -1,0 +1,141 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Activity, BarChart3, Building2, CalendarDays, CheckCircle2, Database, IndianRupee, Link2, MapPin, Plug, RefreshCw, Search, Sparkles, Target, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { CRMLayout } from './CRMModulePages';
+import { hasCRMCapability } from './shared/crmRoles';
+import api from '@/utils/api';
+
+const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('crmToken') || ''}` });
+const money = (value: unknown) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+const title = (value: unknown) => String(value || '—').replace(/_/g, ' ');
+
+function Metric({ icon: Icon, label, value, hint }: { icon: any; label: string; value: string; hint?: string }) {
+  return <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4"><Icon className="h-5 w-5 text-violet-300" /><p className="mt-4 text-xl font-bold text-white">{value}</p><p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">{label}</p>{hint && <p className="mt-2 text-xs text-slate-500">{hint}</p>}</div>;
+}
+
+function Empty({ children }: { children: string }) {
+  return <p className="py-8 text-center text-sm text-slate-500">{children}</p>;
+}
+
+export function HospitalCRMSpecialtyPage() {
+  const [specialties, setSpecialties] = useState<any[]>([]);
+  const [selected, setSelected] = useState('ivf');
+  const [dashboard, setDashboard] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async (code = selected) => {
+    setLoading(true);
+    try {
+      const [catalog, view] = await Promise.all([
+        api.get('/crm/growth/specialties', { headers: headers() }),
+        api.get(`/crm/growth/specialties/${code}/dashboard`, { headers: headers() }),
+      ]);
+      setSpecialties(catalog.data?.data || []);
+      setDashboard(view.data?.data || null);
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'Specialty growth data is unavailable.');
+    } finally { setLoading(false); }
+  }, [selected]);
+
+  useEffect(() => { load(); }, [load]);
+  const changeSpecialty = (code: string) => { setSelected(code); load(code); };
+  const summary = dashboard?.summary || {};
+  const profile = dashboard?.specialty || {};
+
+  return <CRMLayout title="Specialty Growth">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">Every specialty is a measurable business</p><h2 className="mt-1 text-2xl font-bold text-white">{profile.display_name || 'Specialty Growth Command Center'}</h2><p className="mt-1 max-w-3xl text-sm text-slate-400">Switch from hospital-wide acquisition to a specialty-specific funnel, campaign, doctor, referral, revenue, and ROI view.</p></div><div className="flex items-center gap-2"><select value={selected} onChange={(event) => changeSpecialty(event.target.value)} aria-label="Select specialty" className="min-w-52 rounded-md border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white">{specialties.map((specialty) => <option key={specialty.code} value={specialty.code}>{specialty.display_name}</option>)}</select><Button variant="outline" size="sm" onClick={() => load()} disabled={loading} className="gap-2 border-white/10 text-slate-200"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</Button></div></div>
+      {error && <div className="rounded-lg border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</div>}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6"><Metric icon={Users} label="Leads" value={Number(summary.leads || 0).toLocaleString('en-IN')} hint={`${Number(summary.qualified || 0)} qualified`} /><Metric icon={CalendarDays} label="Appointments" value={Number(summary.appointments || 0).toLocaleString('en-IN')} hint={`${Number(summary.visits || 0)} visits`} /><Metric icon={Target} label="Treatment opportunities" value={Number(summary.treatment_opportunities || 0).toLocaleString('en-IN')} /><Metric icon={IndianRupee} label="Revenue" value={money(summary.revenue)} /><Metric icon={Activity} label="Average score" value={summary.average_score == null ? '—' : Number(summary.average_score).toFixed(0)} /><Metric icon={Sparkles} label="Segments" value={String((profile.segments || []).length)} hint="Specialty-specific" /></div>
+      <div className="grid gap-6 xl:grid-cols-[0.75fr_1.25fr]"><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><div className="mb-4 flex items-center gap-3"><Activity className="h-5 w-5 text-violet-300" /><div><h3 className="font-semibold text-white">Specialty funnel</h3><p className="text-xs text-slate-500">{(profile.funnel_stages || []).join(' → ')}</p></div></div><div className="space-y-2">{(dashboard?.funnel || []).map((stage: any) => <div key={stage.stage} className="flex items-center justify-between rounded-lg border border-white/[0.06] px-3 py-3"><span className="capitalize text-slate-300">{title(stage.stage)}</span><span className="font-semibold text-white">{stage.count}</span></div>)}{!loading && !(dashboard?.funnel || []).length && <Empty>No specialty funnel records yet.</Empty>}</div></section><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><div className="mb-4 flex items-center gap-3"><BarChart3 className="h-5 w-5 text-violet-300" /><div><h3 className="font-semibold text-white">Campaign profitability</h3><p className="text-xs text-slate-500">Specialty-filtered spend, demand, revenue, and ROAS</p></div></div><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-[11px] uppercase tracking-[0.12em] text-slate-500"><tr><th className="pb-3">Campaign</th><th className="pb-3">Leads</th><th className="pb-3">Spend</th><th className="pb-3">Revenue</th><th className="pb-3">ROAS</th></tr></thead><tbody className="divide-y divide-white/[0.05] text-slate-300">{(dashboard?.campaigns || []).map((campaign: any) => <tr key={campaign.id}><td className="py-3 text-white">{campaign.name}</td><td className="py-3">{campaign.leads}</td><td className="py-3">{money(campaign.spend)}</td><td className="py-3">{money(campaign.revenue)}</td><td className="py-3 text-emerald-300">{campaign.roas == null ? '—' : `${Number(campaign.roas).toFixed(1)}x`}</td></tr>)}{!loading && !(dashboard?.campaigns || []).length && <tr><td colSpan={5}><Empty>No specialty campaign data yet.</Empty></td></tr>}</tbody></table></div></section></div>
+      <div className="grid gap-6 xl:grid-cols-3"><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><h3 className="font-semibold text-white">Segments</h3><div className="mt-4 flex flex-wrap gap-2">{(profile.segments || []).map((segment: string) => <span key={segment} className="rounded-md border border-violet-300/20 bg-violet-300/5 px-3 py-2 text-xs text-violet-100">{segment}</span>)}</div></section><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><h3 className="font-semibold text-white">Specialty KPIs</h3><div className="mt-4 grid gap-2 sm:grid-cols-2">{(profile.kpis || []).map((item: string) => <div key={item} className="rounded-lg border border-white/[0.06] px-3 py-2 text-sm capitalize text-slate-300">{item}<span className="block mt-1 text-lg text-white">{item.toLowerCase().includes('leads') ? dashboard?.summary?.leads || 0 : item.toLowerCase().includes('revenue') ? money(dashboard?.summary?.revenue) : item.toLowerCase().includes('appointment') ? dashboard?.summary?.appointments || 0 : '—'}</span></div>)}</div></section><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><h3 className="font-semibold text-white">Referral and doctor signals</h3><div className="mt-4 space-y-2">{(dashboard?.doctors || []).slice(0, 4).map((doctor: any) => <div key={doctor.doctor_id} className="flex justify-between rounded-lg border border-white/[0.06] px-3 py-2 text-sm"><span className="text-slate-300">Doctor {doctor.doctor_id}</span><span className="text-emerald-300">{money(doctor.revenue)}</span></div>)}{!(dashboard?.doctors || []).length && <Empty>Doctor performance appears after leads are linked.</Empty>}</div></section></div>
+    </div>
+  </CRMLayout>;
+}
+
+export function HospitalCRMDiagnosticPage() {
+  const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  const load = useCallback(async () => { setLoading(true); try { const response = await api.get('/crm/growth/diagnostic/dashboard', { headers: headers() }); setData(response.data?.data || null); } catch (requestError: any) { setError(requestError.response?.data?.message || 'Diagnostic growth data is unavailable.'); } finally { setLoading(false); } }, []);
+  useEffect(() => { load(); }, [load]); const summary = data?.summary || {};
+  return <CRMLayout title="Diagnostic Chain Growth"><div className="space-y-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">DxGrowth 360</p><h2 className="mt-1 text-2xl font-bold text-white">Centre, test, package, and home collection growth</h2><p className="mt-1 max-w-3xl text-sm text-slate-400">Measure marketing spend through booking, sample collection, test completion, revenue, margin, and repeat testing.</p></div><Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 border-white/10 text-slate-200"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</Button></div>{error && <div className="rounded-lg border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</div>}<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6"><Metric icon={Users} label="Bookings" value={Number(summary.bookings || 0).toLocaleString('en-IN')} /><Metric icon={CheckCircle2} label="Collections" value={Number(summary.collections || 0).toLocaleString('en-IN')} /><Metric icon={Activity} label="Tests completed" value={Number(summary.completed_tests || 0).toLocaleString('en-IN')} /><Metric icon={MapPin} label="Home collection" value={Number(summary.home_collection_bookings || 0).toLocaleString('en-IN')} /><Metric icon={IndianRupee} label="Revenue" value={money(summary.revenue)} /><Metric icon={BarChart3} label="Average order" value={money(summary.average_order_value)} /></div><section className="rounded-xl border border-white/10 p-5"><h3 className="font-semibold text-white">Diagnostic conversion</h3><p className="mt-3 text-sm text-slate-400">Collection rate: {Number(summary.bookings) ? `${Math.round(Number(summary.collections || 0) / Number(summary.bookings) * 100)}%` : '—'} · Completion rate: {Number(summary.bookings) ? `${Math.round(Number(summary.completed_tests || 0) / Number(summary.bookings) * 100)}%` : '—'}</p><p className="mt-2 text-xs text-slate-500">Includes this organization’s connected lab bookings. Centre and product breakdowns require CRM attribution.</p></section><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><div className="mb-4 flex items-center gap-3"><Building2 className="h-5 w-5 text-violet-300" /><h3 className="font-semibold text-white">Centre performance</h3></div><div className="space-y-2">{(data?.centres || []).map((centre: any) => <div key={centre.id} className="flex items-center justify-between rounded-lg border border-white/[0.06] px-3 py-3"><div><p className="text-sm text-white">{centre.centre_name}</p><p className="text-xs text-slate-500">{centre.city || 'Location not configured'} · {centre.bookings} bookings</p></div><span className="text-emerald-300">{money(centre.revenue)}</span></div>)}{!loading && !(data?.centres || []).length && <Empty>Add diagnostic centres to see network performance.</Empty>}</div></section><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><div className="mb-4 flex items-center gap-3"><Search className="h-5 w-5 text-violet-300" /><h3 className="font-semibold text-white">Tests and packages</h3></div><div className="space-y-2">{(data?.products || []).slice(0, 8).map((product: any) => <div key={product.id} className="flex items-center justify-between rounded-lg border border-white/[0.06] px-3 py-3"><div><p className="text-sm text-white">{product.product_name}</p><p className="text-xs capitalize text-slate-500">{product.product_type} · {product.bookings} bookings · {product.completed_tests} completed</p></div><span className="text-emerald-300">{money(product.revenue)}</span></div>)}{!loading && !(data?.products || []).length && <Empty>Add tests and packages to activate product profitability.</Empty>}</div></section></div><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><h3 className="font-semibold text-white">Referral network</h3><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{(data?.referrals || []).map((referral: any) => <div key={`${referral.referral_type}-${referral.provider_name}`} className="rounded-lg border border-white/[0.06] p-3"><p className="text-sm text-white">{referral.provider_name}</p><p className="mt-1 text-xs capitalize text-slate-500">{title(referral.referral_type)} · {referral.referrals} referrals</p><p className="mt-2 text-xs text-emerald-300">{money(referral.revenue)}</p></div>)}{!loading && !(data?.referrals || []).length && <Empty>Doctor and corporate referrals appear after referral sources are linked.</Empty>}</div></section></div></CRMLayout>;
+}
+
+const CONNECTABLE_PROVIDERS = ['google_ads', 'meta_ads', 'instagram', 'linkedin', 'youtube'] as const;
+
+function getCrmUser() {
+  try { return JSON.parse(localStorage.getItem('crmUserData') || 'null'); } catch { return null; }
+}
+
+export function HospitalCRMDigitalHubPage() {
+  const crmUser = getCrmUser();
+  const canConnect = hasCRMCapability(crmUser, 'specialty:write');
+
+  const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+  const [connectForm, setConnectForm] = useState({ accountRef: '', credentialsRef: '' });
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  const load = useCallback(async () => { setLoading(true); try { const response = await api.get('/crm/growth/digital/overview', { headers: headers() }); setData(response.data?.data || null); } catch (requestError: any) { setError(requestError.response?.data?.message || 'Digital growth data is unavailable.'); } finally { setLoading(false); } }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const submitConnection = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!connectingProvider) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.post('/crm/growth/digital/integrations', {
+        provider: connectingProvider,
+        integrationType: 'ads',
+        status: 'connected',
+        accountRef: connectForm.accountRef,
+        credentialsRef: connectForm.credentialsRef,
+      }, { headers: headers() });
+      setNotice(`${title(connectingProvider)} registered. It will show under Integration health below.`);
+      setConnectingProvider(null);
+      setConnectForm({ accountRef: '', credentialsRef: '' });
+      await load();
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'Unable to register this integration.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <CRMLayout title="Digital Growth Hub"><div className="space-y-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">Unified acquisition intelligence</p><h2 className="mt-1 text-2xl font-bold text-white">Digital Marketing Command Center</h2><p className="mt-1 max-w-3xl text-sm text-slate-400">Connect Google, Meta, Instagram, YouTube, LinkedIn, SEO, local search, WhatsApp, website, and referral data without mixing imported facts with assumptions.</p></div><Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 border-white/10 text-slate-200"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</Button></div>{error && <div className="rounded-lg border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</div>}{notice && <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">{notice}</div>}
+
+    {canConnect && (
+      <section className="rounded-xl border border-violet-400/15 bg-violet-400/[0.04] p-5">
+        <div className="mb-4 flex items-center gap-3"><Plug className="h-5 w-5 text-violet-300" /><div><h3 className="font-semibold text-white">Connect a channel</h3><p className="text-xs text-slate-500">Register where each channel's account lives — credentials themselves stay in your secrets manager, never here</p></div></div>
+        <div className="flex flex-wrap gap-2">
+          {CONNECTABLE_PROVIDERS.map((provider) => (
+            <Button key={provider} type="button" size="sm" variant={connectingProvider === provider ? 'default' : 'outline'}
+              onClick={() => setConnectingProvider(connectingProvider === provider ? null : provider)}
+              className={connectingProvider === provider ? 'gap-2 bg-violet-600 hover:bg-violet-500' : 'gap-2 border-white/10 text-slate-200'}>
+              <Link2 className="h-3.5 w-3.5" /> {title(provider)}
+            </Button>
+          ))}
+        </div>
+        {connectingProvider && (
+          <form onSubmit={submitConnection} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Input value={connectForm.accountRef} onChange={(e) => setConnectForm({ ...connectForm, accountRef: e.target.value })}
+              placeholder="Account reference (e.g. ads account ID, page handle)" required
+              className="border-white/10 bg-black/20 text-white placeholder:text-slate-600" />
+            <Input value={connectForm.credentialsRef} onChange={(e) => setConnectForm({ ...connectForm, credentialsRef: e.target.value })}
+              placeholder="Credential reference (e.g. 1Password vault / service account)" required
+              className="border-white/10 bg-black/20 text-white placeholder:text-slate-600" />
+            <div className="sm:col-span-2 flex justify-end">
+              <Button type="submit" disabled={saving} className="gap-2 bg-violet-600 hover:bg-violet-500">
+                {saving ? 'Saving…' : `Save ${title(connectingProvider)} connection`}
+              </Button>
+            </div>
+          </form>
+        )}
+      </section>
+    )}
+
+    <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]"><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><div className="mb-4 flex items-center gap-3"><BarChart3 className="h-5 w-5 text-violet-300" /><div><h3 className="font-semibold text-white">Channel economics</h3><p className="text-xs text-slate-500">Clicks and impressions are useful only when connected to bookings and revenue</p></div></div><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-[11px] uppercase tracking-[0.12em] text-slate-500"><tr><th className="pb-3">Channel</th><th className="pb-3">Leads</th><th className="pb-3">Bookings</th><th className="pb-3">Spend</th><th className="pb-3">Revenue</th><th className="pb-3">ROAS</th></tr></thead><tbody className="divide-y divide-white/[0.05] text-slate-300">{(data?.channels || []).map((channel: any) => <tr key={channel.provider}><td className="py-3 capitalize text-white">{channel.provider}</td><td className="py-3">{channel.leads}</td><td className="py-3">{channel.bookings}</td><td className="py-3">{money(channel.spend)}</td><td className="py-3">{money(channel.revenue)}</td><td className="py-3 text-emerald-300">{channel.roas == null ? '—' : `${Number(channel.roas).toFixed(1)}x`}</td></tr>)}{!loading && !(data?.channels || []).length && <tr><td colSpan={6}><Empty>Connect a provider or import channel metrics to activate this view.</Empty></td></tr>}</tbody></table></div></section><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><div className="mb-4 flex items-center gap-3"><Database className="h-5 w-5 text-violet-300" /><div><h3 className="font-semibold text-white">Integration health</h3><p className="text-xs text-slate-500">Credentials are referenced, never displayed in this workspace</p></div></div><div className="space-y-2">{(data?.integrations || []).map((integration: any) => <div key={`${integration.provider}-${integration.integration_type}`} className="flex items-center justify-between rounded-lg border border-white/[0.06] px-3 py-3"><div><p className="text-sm capitalize text-white">{integration.provider}</p><p className="text-xs capitalize text-slate-500">{title(integration.integration_type)} · {integration.last_sync_at ? new Date(integration.last_sync_at).toLocaleString() : 'Never synced'}</p></div><span className={integration.status === 'connected' ? 'text-emerald-300' : 'text-amber-200'}>{title(integration.status)}</span></div>)}{!loading && !(data?.integrations || []).length && <Empty>{canConnect ? 'No marketing integrations configured — use "Connect a channel" above.' : 'No marketing integrations configured.'}</Empty>}</div></section></div><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><div className="mb-4 flex items-center gap-3"><CalendarDays className="h-5 w-5 text-violet-300" /><h3 className="font-semibold text-white">Content workflow</h3><a href="/crm/social-content" className="text-sm text-violet-300">Create content item</a></div><div className="grid gap-2 sm:grid-cols-2">{(data?.contentWorkflow || []).map((item: any) => <div key={item.workflow_status} className="flex justify-between rounded-lg border border-white/[0.06] px-3 py-3 text-sm"><span className="capitalize text-slate-300">{title(item.workflow_status)}</span><span className="text-white">{item.count}</span></div>)}{!loading && !(data?.contentWorkflow || []).length && <Empty>Create content calendar items for medical review, approval, scheduling, and publishing.</Empty>}</div></section><section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5"><div className="mb-4 flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-emerald-300" /><h3 className="font-semibold text-white">Data contract</h3></div><p className="text-sm leading-6 text-slate-400">Every provider feeds dated dimensions and metrics into the same attribution model. That makes search, social, content, WhatsApp, referral, and offline campaigns comparable without inventing missing spend or revenue.</p></section></div></div></CRMLayout>;
+}

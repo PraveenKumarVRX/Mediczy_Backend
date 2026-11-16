@@ -1,0 +1,65 @@
+/* Dashboard (Home). Colour tokens come from ../whatsapp/styles.css. */
+.topbar { flex-wrap: wrap; }
+.topbar .filters { display: flex; gap: 8px; }
+.topbar .filters select { width: auto; }
+.topbar .links { display: flex; gap: 8px; flex-wrap: wrap; }
+.card a { color: inherit; text-decoration: none; display: block; }
+.card .value.big { font-size: 26px; }
+.card.alert { border-color: #f59e0b66; }
+.card.zero .value { color: var(--muted); }
+.card .trend { font-size: 12px; margin-left: 6px; }
+.trend.up { color: var(--good); } .trend.down { color: var(--bad); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.bar-row { display: grid; grid-template-columns: 140px 1fr 40px; gap: 10px; align-items: center; font-size: 13px; margin: 6px 0; }
+.bar-row .track, .journey-row .track { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.bar-row .track span { display: block; height: 100%; background: var(--accent-2); }
+.journey-row { display: grid; grid-template-columns: 170px 1fr 48px 130px 100px; gap: 12px; align-items: center; font-size: 13px; margin: 8px 0; }
+.journey-row .track { height: 10px; }
+.journey-row .track span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.journey-row .num { font-weight: 600; text-align: right; }
+.journey-row .rate, .journey-row .now { font-size: 12px; }
+.foot { margin: 12px 0 0; font-size: 13px; }
+.empty { margin: 0; color: var(--muted); font-size: 13.5px; }
+.empty a { color: var(--accent-2); }
+.reports { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px; }
+.reports a { display: block; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); text-decoration: none; font-size: 13px; }
+.reports a:hover { border-color: var(--accent-2); }
+details.panel > summary { display: flex; align-items: baseline; gap: 12px; cursor: pointer; list-style: none; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::before { content: '▸'; color: var(--muted); }
+details.panel[open] > summary::before { content: '▾'; }
+details.panel > summary h2 { margin: 0; font-size: 16px; }
+details.panel[open] > summary { margin-bottom: 14px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.steps li { display: flex; gap: 8px; font-size: 13px; }
+.steps .done { color: var(--muted); }
+.steps .done a { text-decoration: none; }
+.steps .mark { width: 16px; flex: none; color: var(--muted); }
+.steps li.is-done .mark { color: var(--good); }
+.steps a { color: inherit; }
+.steps li:not(.is-done) a { color: var(--accent-2); }
+table.team { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.team th, table.team td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+table.team th { color: var(--muted); font-weight: 500; }
+
+/* Inside the CRM dashboard: the CRM supplies the page frame, menu and title. */
+.embed body { background: transparent; }
+.embed .topbar { position: static; background: transparent; border: 0; padding: 20px 24px 4px; }
+.embed .topbar .links { display: none; }
+.embed .topbar h1 { display: block; } /* the greeting, not a page title */
+.embed main { max-width: none; padding: 12px 24px 32px; }
+@media (max-width: 720px) { .embed .topbar { padding: 16px 16px 4px; } .embed main { padding: 12px 16px 24px; } }
+
+@media (max-width: 800px) {
+  .two { grid-template-columns: 1fr; }
+  .bar-row { grid-template-columns: 100px 1fr 32px; }
+  .journey-row { grid-template-columns: 110px 1fr 36px; row-gap: 2px; }
+  .journey-row .rate { grid-column: 2 / 4; } .journey-row .now { grid-column: 2 / 4; }
+  .topbar .filters { width: 100%; } .topbar .filters select { flex: 1; }
+  table.team { display: block; overflow-x: auto; }
+}
+
+/* Grid items default to their content's width, which pushed panels past the edge on phones. */
+main { grid-template-columns: minmax(0, 1fr); }
+main > * { min-width: 0; }
+[hidden] { display: none !important; }
