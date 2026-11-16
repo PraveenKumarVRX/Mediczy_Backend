@@ -12,7 +12,7 @@ afterEach(() => { process.env = { ...savedEnv }; jest.useRealTimers(); });
 
 describe('HTTP and SDK migration', () => {
   it('marks all surveyed vendors as controlled, retaining SmartCRM’s own client', () => {
-    expect(statusAll().summary).toMatchObject({ total: 19, managedByCore: 18, ownClient: 1, unmanaged: 0 });
+    expect(statusAll().summary).toMatchObject({ total: 21, managedByCore: 20, ownClient: 1, unmanaged: 0 });
   });
   it('does not call fetch when a vendor is disabled', async () => {
     process.env.INTEGRATION_TWILIO_ENABLED = 'false';
