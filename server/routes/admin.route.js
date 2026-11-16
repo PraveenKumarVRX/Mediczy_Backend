@@ -25,6 +25,7 @@ import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
 import { dispatchCorporateEmployeeWelcomeEmail, provisionAccountForRosterEmployee } from '../services/corporate-employee-welcome.service.js';
+import { findExistingEmployeeAccount } from '../services/corporate-employee-identity.service.js';
 import { normalizeFlexibleDate } from '../utils/flexibleDate.js';
 import { auditAction } from '../utils/action-audit.js';
 import {
@@ -3461,17 +3462,24 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         }
         
         const normalizedEmail = String(email).toLowerCase().trim();
-        tx = await postgresSequelize.transaction();
-        
-        // Check if user exists
-        const [existingUser] = await postgresSequelize.query(`
-          SELECT id FROM users WHERE email = :email
-        `, {
-          replacements: { email: normalizedEmail },
-          type: postgresSequelize.QueryTypes.SELECT,
-          transaction: tx
+
+        // Find the account this person already has before creating another — by
+        // email, then staff code, then phone among this corporate's own people.
+        // Email alone gave Dairy Day (22 Mar upload here, 25 Sep HR upload) two
+        // accounts for 14 people. Two candidates is refused, never guessed.
+        const identity = await findExistingEmployeeAccount({
+          corporateId, email: normalizedEmail, employeeCode: employeeId, phone: phoneNumber,
         });
-        
+        if (identity.ambiguous) {
+          results.failed.push({
+            email: normalizedEmail, name: `${firstName} ${lastName || ''}`.trim(), employeeId,
+            reason: `Matches ${identity.candidates.length} existing accounts (${identity.candidates.join(', ')}); resolve the duplicate before uploading this row`,
+          });
+          continue;
+        }
+        const existingUser = identity.userId ? { id: identity.userId } : null;
+        tx = await postgresSequelize.transaction();
+
         let userId;
         let isNewUser = false;
         let temporaryPassword = null;

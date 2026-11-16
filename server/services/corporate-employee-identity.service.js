@@ -38,7 +38,7 @@ export async function findExistingEmployeeAccount({ corporateId, email, employee
   if (normalizedEmail) {
     const [hit] = await select(
       `SELECT id FROM users WHERE lower(email) = :email
-       ORDER BY ("lastLoginAt" IS NOT NULL) DESC, id ASC LIMIT 1`, { email: normalizedEmail });
+       ORDER BY (email = :email) DESC, ("lastLoginAt" IS NOT NULL) DESC, id ASC LIMIT 1`, { email: normalizedEmail });
     if (hit) return { userId: hit.id, matchedBy: MATCHED_BY.EMAIL };
   }
 
@@ -83,7 +83,19 @@ export async function findExistingEmployeeAccount({ corporateId, email, employee
   return { userId: null, matchedBy: MATCHED_BY.NONE };
 }
 
-export default { findExistingEmployeeAccount, MATCHED_BY };
+/**
+ * The database refuses a second active employee account with the same phone in
+ * one corporate (trigger trg_one_employee_account_per_phone, migration
+ * 20261116000500). Lets a route answer 409 with the trigger's message instead
+ * of a generic failure.
+ */
+export const ONE_ACCOUNT_PER_PHONE = 'one_employee_account_per_phone';
+export function isOneAccountPerPhoneViolation(error) {
+  const e = error?.original || error?.parent || error;
+  return e?.code === '23505' && e?.constraint === ONE_ACCOUNT_PER_PHONE;
+}
+
+export default { findExistingEmployeeAccount, isOneAccountPerPhoneViolation, MATCHED_BY };
 
 /**
  * Is the per-financial-year roster stamp available yet?

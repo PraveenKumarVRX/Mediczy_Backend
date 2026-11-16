@@ -4,7 +4,7 @@ import { encrypt as encryptSsoSecret, decrypt as decryptSsoSecret } from '../uti
 const JWT_SSO_SECRET = JWT_SSO_CONFIG.SECRET;
 import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
 import { invitationStatus as ahcInvitationStatus } from '../services/ahc-invitation-dispatch.service.js';
-import { findExistingEmployeeAccount, rosterFinancialYearAvailable } from '../services/corporate-employee-identity.service.js';
+import { findExistingEmployeeAccount, isOneAccountPerPhoneViolation, rosterFinancialYearAvailable } from '../services/corporate-employee-identity.service.js';
 import { fiscalYearOf } from '../utils/ist-date.js';
 import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
@@ -1317,26 +1317,24 @@ router.post('/employees', authCorporate, async (req, res) => {
       activatedAt: null,
     });
 
-    // Link to an existing user account by email, so the employee isn't left
-    // permanently unlinked (blank email/department/health-status in Team portal).
-    // Two users can share an email differing only by case (no case-insensitive
-    // uniqueness constraint on users.email) — order deterministically so an
-    // exact-case match always wins over a same-email-different-case account,
-    // and a real, logged-in account wins over a never-used placeholder/seed
-    // one. Without this, a plain `LIMIT 1` with no ORDER BY can nondeterministically
-    // link to the wrong account (this is exactly how TEST-SK01 got linked to a
-    // years-old placeholder "User1234" seed account instead of the real one).
+    // Find the account this person already has before creating another — by
+    // email, then staff code, then phone among this corporate's own people
+    // (services/corporate-employee-identity.service.js). Matching on email
+    // alone gave Dairy Day a second account for people already on it from an
+    // earlier upload under a different address. Two candidates is refused:
+    // a human picks which account survives.
     const normalizedPhone = phone ? String(phone).trim() : null;
-    let linkedUserId = null;
-    if (normalizedEmail) {
-      const [existingUser] = await postgresSequelize.query(
-        `SELECT id FROM users WHERE lower(email) = :email
-         ORDER BY (email = :exactEmail) DESC, ("lastLoginAt" IS NOT NULL) DESC, id ASC
-         LIMIT 1`,
-        { replacements: { email: normalizedEmail, exactEmail: email || normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
-      );
-      if (existingUser) linkedUserId = existingUser.id;
+    const identity = await findExistingEmployeeAccount({
+      corporateId, email: normalizedEmail, employeeCode: normalizedEmployeeId, phone: normalizedPhone,
+    });
+    if (identity.ambiguous) {
+      return res.status(409).json({
+        success: false,
+        code: 'duplicate_account',
+        message: `This employee matches ${identity.candidates.length} existing accounts (${identity.candidates.join(', ')}). Resolve the duplicate before adding them.`,
+      });
     }
+    let linkedUserId = identity.userId || null;
 
     // No existing account to link — admin-provision one immediately rather than
     // waiting on self-registration, so the welcome notification below can hand
@@ -1448,6 +1446,9 @@ router.post('/employees', authCorporate, async (req, res) => {
     }
     console.error('[corporate] POST /employees error:', err.message);
     const databaseCode = err?.original?.code || err?.parent?.code || err?.code;
+    if (isOneAccountPerPhoneViolation(err)) {
+      return res.status(409).json({ success: false, code: 'duplicate_account', message: err?.original?.message || err.message });
+    }
     if (databaseCode === '23505') {
       return res.status(409).json({
         success: false,
