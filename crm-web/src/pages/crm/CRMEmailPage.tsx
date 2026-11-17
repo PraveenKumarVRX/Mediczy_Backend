@@ -200,17 +200,20 @@ const CRMEmailPage: React.FC = () => {
     } catch { /* ignore */ }
   }, []);
 
+  // The hospital mailbox (Settings and Channels → Email), shared with managers and the call centre.
+  const [sharedBox, setSharedBox] = useState<{ email: string; display_name?: string } | null>(null);
   const fetchSettings = useCallback(async () => {
     setSettingsLoading(true);
     try {
       const { data } = await api.get('/crm/emails/settings', { headers: authHeaders() });
-      if (data.success) setSettingsList(data.data);
+      if (data.success) { setSettingsList(data.data); setSharedBox(data.meta?.sharedMailbox || null); }
     } catch { /* ignore */ }
     finally { setSettingsLoading(false); }
   }, []);
 
   useEffect(() => { fetchInbox(); }, [fetchInbox]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
+  useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
   // ── Sync ─────────────────────────────────────────────────────────
   const syncEmails = async () => {
@@ -219,7 +222,7 @@ const CRMEmailPage: React.FC = () => {
       const { data } = await api.post('/crm/emails/sync', { days_back: 30 }, { headers: authHeaders() });
       if (data.success) {
         await Promise.all([fetchInbox(), fetchStats()]);
-        toast({ title: 'Sync complete', description: `${data.data?.newEmails ?? 0} new emails.` });
+        toast({ title: 'Sync complete', description: data.message || `${data.data?.newEmails ?? 0} new emails.` });
       }
     } catch (e: any) {
       const msg = e?.response?.data?.message || 'Sync failed';
@@ -598,6 +601,11 @@ const CRMEmailPage: React.FC = () => {
           <p className="text-sm text-slate-400 mt-0.5">
             {stats.unread > 0 ? `${stats.unread} unread · ` : ''}{stats.total} total
           </p>
+          {sharedBox && (
+            <p className="text-xs text-slate-500 mt-1">
+              Hospital mailbox <span className="text-slate-300">{sharedBox.email}</span>, shared with managers and the call centre. New mail arrives every 5 minutes.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={syncEmails} disabled={syncing}

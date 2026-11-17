@@ -4,7 +4,7 @@
  *   - crm_communication_events  WhatsApp / SMS / email, inbound and outbound (lead_id = crm_leads_v2.id)
  *   - cc_calls                  contact-center calls; no lead link, matched on the last 10 phone digits
  *   - crm_activities            calls and notes logged on the lead (lead_id = legacy crm_leads.id)
- *   - crm_email_inbox           the signed-in user's own mailbox, messages from a lead's email address
+ *   - crm_email_inbox           the signed-in user's own mailbox and the hospital mailbox, from a lead's email address
  * Ownership is the lead's owner (crm_leads.assigned_to, mirrored to crm_leads_v2.owner_user_id), so
  * "Assign" here and the owner on the Leads page are the same thing. Read and status markers live on
  * crm_leads_v2.metadata (inbox_read_at, inbox_status, inbox_status_at); a new inbound message after a
@@ -56,7 +56,7 @@ const EVENTS_SQL = `
          left(COALESCE(m.body_text, ''), 2000), CASE WHEN m.is_read THEN 'read' ELSE 'received' END, NULL, m.received_at, m.crm_user_id,
          NULL, NULL, NULL, NULL, NULL::jsonb
     FROM crm_email_inbox m JOIN leads ld ON ld.email IS NOT NULL AND lower(ld.email) = lower(m.from_addr)
-   WHERE m.crm_user_id = $3`;
+   WHERE m.crm_user_id IN ($3, -$1::int)`; // the user's own mailbox and this hospital's mailbox (crm_user_id = -tenant id)
 
 function windowInfo(lastWhatsappInbound) {
   const last = lastWhatsappInbound ? new Date(lastWhatsappInbound).getTime() : 0;

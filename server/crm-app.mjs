@@ -80,6 +80,10 @@ app.use('/api/crm/referral-network',(await import('./routes/crm-referral-network
 app.use('/api/crm/inbox',(await import('./routes/crm-unified-inbox.route.js')).buildUnifiedInboxRouter());
 app.use('/api/crm/telephony',(await import('./routes/crm-telephony.route.js')).buildTelephonyRouter());
 app.use('/api/crm/call-centre',(await import('./routes/crm-call-centre.route.js')).buildCallCentreRouter());
+// The hospital mailbox (Settings and Channels → Email): new mail every 5 minutes into the Email inbox and the
+// patient's Inbox conversation. No-op until the hospital email is connected.
+{const mail=await import('./routes/crmEmail.route.js');let mailBusy=false;
+ setInterval(async()=>{if(mailBusy)return;mailBusy=true;try{await mail.syncSharedMailbox(tenant.id,2);}catch(e){console.error('[email] mailbox sync failed:',e.message);}finally{mailBusy=false;}},300000).unref();}
 // Push to the app: a sweep every minute (approvals, decisions, follow-ups due). No-op until Firebase is configured.
 {const push=await import('./services/crm-push.service.js');let pushing=false;
  setInterval(async()=>{if(pushing||!push.pushConfigured())return;pushing=true;try{await push.sweep(tenant.id);}catch(e){console.error('[push] sweep failed:',e.message);}finally{pushing=false;}},60000).unref();}
