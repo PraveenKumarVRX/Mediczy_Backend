@@ -1357,13 +1357,16 @@ const teamCheckupView = (r) => {
     completedAt: r.completed_at || null,
     reportsAvailableAt: r.reports_available_at || null,
     createdAt: r.created_at,
+    // A booking made from the shared sales demo login: shown to the Team so a prospect can see the whole
+    // journey, badged so nobody books a real lab slot for it. Its messages never leave the app.
+    isDemo: r.is_demo === true,
   };
 };
 
 async function loadCheckup(id) {
   const [row] = await postgresSequelize.query(
     `SELECT b.*, u."firstName", u."lastName", u.email AS employee_email, u."phoneNumber" AS employee_phone,
-            TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name
+            TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name, is_demo_account(b.user_id) AS is_demo
        FROM health_checkup_bookings b LEFT JOIN users u ON u.id = b.user_id
       WHERE b.id = :id LIMIT 1`,
     { replacements: { id }, type: postgresSequelize.QueryTypes.SELECT }
@@ -1377,9 +1380,9 @@ router.get('/checkups', authUser, requireTeamOrAdmin, requireCorporateAccess, as
     const { status } = req.query;
     const rows = await postgresSequelize.query(
       `SELECT b.*, u."firstName", u."lastName", u.email AS employee_email, u."phoneNumber" AS employee_phone,
-              TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name
+              TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name, is_demo_account(b.user_id) AS is_demo
          FROM health_checkup_bookings b LEFT JOIN users u ON u.id = b.user_id
-        WHERE b.corporate_id = :corporateId AND (:status = '' OR b.status = :status) AND NOT is_demo_account(b.user_id)
+        WHERE b.corporate_id = :corporateId AND (:status = '' OR b.status = :status)
         ORDER BY (b.status = 'booked') DESC, b.appointment_date ASC, b.created_at DESC
         LIMIT 200`,
       { replacements: { corporateId: req.resolvedCorporate.id, status: String(status || '').trim() }, type: postgresSequelize.QueryTypes.SELECT }
@@ -1396,9 +1399,9 @@ router.get('/pending-approvals', authUser, requireTeamOrAdmin, requireCorporateA
   try {
     const rows = await postgresSequelize.query(
       `SELECT b.*, u."firstName", u."lastName", u.email AS employee_email, u."phoneNumber" AS employee_phone,
-              TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name
+              TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name, is_demo_account(b.user_id) AS is_demo
          FROM health_checkup_bookings b LEFT JOIN users u ON u.id = b.user_id
-        WHERE b.corporate_id = :corporateId AND b.status = 'booked' AND NOT is_demo_account(b.user_id)
+        WHERE b.corporate_id = :corporateId AND b.status = 'booked'
         ORDER BY b.appointment_date ASC, b.created_at ASC LIMIT 200`,
       { replacements: { corporateId: req.resolvedCorporate.id }, type: postgresSequelize.QueryTypes.SELECT }
     );
@@ -1426,7 +1429,7 @@ router.post('/checkups/:id/approve', authUser, requireTeamOrAdmin, async (req, r
     );
     if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
     void notifyBooking(row, 'approved').catch((e) => console.error('[corporate-bookings] approve notify failed', e.message));
-    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
+    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email, is_demo: booking.is_demo }) });
   } catch (err) {
     console.error('[corporate-bookings] approve error:', err);
     return res.status(500).json({ success: false, message: 'Unable to approve booking' });
@@ -1446,7 +1449,7 @@ router.post('/checkups/:id/reject', authUser, requireTeamOrAdmin, async (req, re
     );
     if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
     void notifyBooking(row, 'cancelled').catch((e) => console.error('[corporate-bookings] reject notify failed', e.message));
-    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
+    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email, is_demo: booking.is_demo }) });
   } catch (err) {
     console.error('[corporate-bookings] reject error:', err);
     return res.status(500).json({ success: false, message: 'Unable to reject booking' });
@@ -1492,12 +1495,13 @@ router.post('/checkups/:id/complete', authUser, requireTeamOrAdmin, async (req, 
     if (row.corporate_id && row.user_id && row.package_id) {
       await postgresSequelize.query(
         `UPDATE user_health_packages SET "usedAt"=COALESCE("usedAt",NOW()),"updatedAt"=NOW()
-          WHERE "userId"=:userId AND corporate_id=:corporateId AND "packageId"=:packageId`,
+          WHERE "userId"=:userId AND corporate_id=:corporateId AND "packageId"=:packageId
+            AND NOT is_demo_account("userId")`, // the shared demo login keeps its check-up for the next prospect
         { replacements:{userId:row.user_id,corporateId:row.corporate_id,packageId:String(row.package_id)}, type:postgresSequelize.QueryTypes.UPDATE }
       );
     }
     void notifyBooking(row, 'completed').catch((e) => console.error('[corporate-bookings] complete notify failed', e.message));
-    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
+    return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email, is_demo: booking.is_demo }) });
   } catch (err) {
     console.error('[corporate-bookings] complete error:', err);
     return res.status(500).json({ success: false, message: 'Unable to mark booking completed' });
@@ -1550,7 +1554,7 @@ router.post(
         { replacements: { id: booking.id, refs: JSON.stringify(newRefs) }, type: postgresSequelize.QueryTypes.SELECT }
       );
       void notifyBooking(row, 'reports_available').catch((e) => console.error('[corporate-bookings] reports notify failed', e.message));
-      return res.status(201).json({ success: true, attached: newRefs.length, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email }) });
+      return res.status(201).json({ success: true, attached: newRefs.length, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email, is_demo: booking.is_demo }) });
     } catch (err) {
       console.error('[corporate-bookings] attach reports error:', err);
       return res.status(err.status || err.statusCode || 500).json({ success: false, code: err.code || 'REPORT_ATTACH_FAILED', message: err.status || err.statusCode ? err.message : 'Unable to attach reports. Please retry.' });

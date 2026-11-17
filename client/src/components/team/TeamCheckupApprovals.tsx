@@ -11,6 +11,7 @@ interface Checkup {
   beneficiary?: { name?: string; relation?: string };
   packageName: string; lab: { name?: string; address?: any }; appointment: { date: string; timeSlot: string };
   reportCount: number;
+  isDemo?: boolean;
 }
 
 const STATUS_CLS: Record<string, string> = {
@@ -83,7 +84,11 @@ const TeamCheckupApprovals = ({ corporateId, corporateName }: { corporateId?: nu
                     <FlaskConical className="h-4 w-4 text-primary" />
                     <span className="font-medium text-foreground">{c.employee?.name || `Employee #${c.employee?.id}`}</span>
                     <Badge variant="outline" className={`capitalize ${STATUS_CLS[c.status] || ''}`}>{c.status.replace('_', ' ')}</Badge>
+                    {c.isDemo && <Badge variant="outline" className="border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-600">Demo</Badge>}
                   </div>
+                  {c.isDemo && (
+                    <div className="mt-1 text-xs text-fuchsia-600">Sales demo login, not a real employee. Do not book a lab slot. Approving or uploading a sample report only updates the demo app.</div>
+                  )}
                   <div className="mt-0.5 text-xs text-muted-foreground">
                     {c.packageName} · {c.lab?.name || '—'} · {String(c.appointment?.date).slice(0, 10)} {c.appointment?.timeSlot}
                     {c.beneficiary?.relation && c.beneficiary.relation !== 'self' ? ` · for ${c.beneficiary?.name} (${c.beneficiary.relation})` : ''}

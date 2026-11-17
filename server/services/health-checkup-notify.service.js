@@ -19,6 +19,7 @@ import whatsappProductionService from './whatsapp-production.service.js';
 import { SMSService } from './sms.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { recordAutomatedSend } from './team-sent-folder.service.js';
+import { runAsDemoAccount, currentDemoAccountId } from '../utils/demo-context.js';
 
 // SMSService requires a config; `new SMSService()` would throw on first use ("reading 'provider'").
 // Build the same config queue-notify uses, and leave it null (fallback skips) when SMS is unconfigured.
@@ -150,6 +151,19 @@ async function sendToRecipient({ name, email, phone }, booking, kind) {
  */
 export async function notifyBooking(row, kind = 'confirmed') {
   if (!row) return { attempted: 0, failed: 0 };
+  // A booking made from the shared sales demo login is notified inside the demo context even when a Team
+  // member approves it or uploads its report, so the demo guard refuses every email, WhatsApp and SMS:
+  // the phone a prospect typed into the booking form may belong to anyone. See utils/demo-context.js.
+  const userId = Number(row.user_id ?? row.userId);
+  if (currentDemoAccountId() === null && Number.isInteger(userId) && userId > 0) {
+    const [flag] = await postgresSequelize.query('SELECT is_demo_account(:userId) AS demo',
+      { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT });
+    if (flag?.demo === true) return runAsDemoAccount(userId, () => dispatchBooking(row, kind));
+  }
+  return dispatchBooking(row, kind);
+}
+
+async function dispatchBooking(row, kind) {
   const booking = mapRow(row);
   const patient = booking.patient || {};
 

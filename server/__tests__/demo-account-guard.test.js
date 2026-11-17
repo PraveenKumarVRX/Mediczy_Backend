@@ -141,8 +141,26 @@ describe('partner work queues and reminder jobs leave demo bookings out', () => 
     ['services/health-checkup-reminder-cron.service.js', 'NOT is_demo_account(user_id)'],      // third-party phones
   ])('%s', (file, fragment) => expect(read(file)).toContain(fragment));
 
-  it('the Team check-up queues (all and pending approval)', () => {
-    expect(read('routes/corporate-bookings.route.js').match(/AND NOT is_demo_account\(b\.user_id\)/g)).toHaveLength(2);
+  // Owner decision 2026-11-17: the Team sees demo check-ups, badged, so a prospect can be shown the whole
+  // journey (approved, instructions, report). What keeps that safe is below.
+  it('the Team check-up queues show demo bookings, flagged', () => {
+    const route = read('routes/corporate-bookings.route.js');
+    expect(route).not.toMatch(/AND NOT is_demo_account\(b\.user_id\)/);
+    expect(route.match(/is_demo_account\(b\.user_id\) AS is_demo/g)).toHaveLength(3); // both lists + loadCheckup
+    expect(route).toContain('isDemo: r.is_demo === true');
+    expect(route.match(/is_demo: booking\.is_demo/g)).toHaveLength(4); // approve, reject, complete, reports
+  });
+
+  it('completing a demo check-up never uses up the demo login\'s entitlement', () => {
+    expect(read('routes/corporate-bookings.route.js')).toMatch(/"packageId"=:packageId\s+AND NOT is_demo_account\("userId"\)/);
+  });
+
+  it('check-up messages for a demo booking run in the demo context, even when the Team triggers them', () => {
+    const notify = read('services/health-checkup-notify.service.js');
+    const body = notify.slice(notify.indexOf('export async function notifyBooking'));
+    expect(body).toMatch(/SELECT is_demo_account\(:userId\) AS demo/);
+    expect(body).toMatch(/runAsDemoAccount\(userId, \(\) => dispatchBooking\(row, kind\)\)/);
+    expect(body.indexOf('runAsDemoAccount')).toBeLessThan(body.indexOf('async function dispatchBooking'));
   });
 
   it('an in-person demo booking never joins a hospital OPD queue', () => {
