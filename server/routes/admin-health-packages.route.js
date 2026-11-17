@@ -1,7 +1,7 @@
 import express from 'express';
 import { updatePackageEmployeeAssignments } from '../services/health-package-employee-assignments.service.js';
 import { HEALTH_CHECKUP_VENUES_SQL } from '../services/health-checkup-venues.js';
-import { eligibleRelations, validRelations, BENEFICIARY_RELATIONS, isValidValidityPeriod, validityPeriodToInterval } from '../services/health-package-policy.js';
+import { eligibleRelations, validRelations, BENEFICIARY_RELATIONS, isValidValidityPeriod, validityPeriodToInterval, WORKFLOW_CLASSES, packageWorkflowClass } from '../services/health-package-policy.js';
 import crypto from 'node:crypto';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { postgresSequelize as db } from '../db/postgres-sequelize.js';
@@ -174,13 +174,15 @@ async function save(req, res) {
     }
     if ((b.eligibleRelations !== undefined && !validRelations(b.eligibleRelations)) || (b.venueMode !== undefined && !['inherit','restricted'].includes(b.venueMode)) || (b.venues !== undefined && (!Array.isArray(b.venues) || b.venues.some(v => !/^\d+$/.test(String(v.partnerId)) || !['lab','hospital'].includes(v.partnerType) || !['all',...BENEFICIARY_RELATIONS].includes(v.relation))))) return res.status(400).json({success:false,message:'Provide valid eligible relations and network venues'});
     if (b.venueMode === 'restricted' && !b.venues?.length) return res.status(400).json({success:false,message:'Select at least one venue for restricted packages'});
+    if (b.workflowClass !== undefined && !WORKFLOW_CLASSES.includes(b.workflowClass))
+        return res.status(400).json({ success: false, message: `workflowClass must be one of ${WORKFLOW_CLASSES.join(', ')}` });
     if (req.params.id && !/^[A-Za-z0-9_-]{1,150}$/.test(req.params.id))
         return res.status(404).json({ success: false, message: 'Package not found' });
     try {
         const [corporate] = await query('SELECT id FROM corporates WHERE id=:id', { id: b.corporateId });
         if (!corporate)
             return res.status(404).json({ success: false, message: 'Corporate not found' });
-        const metadata = JSON.stringify({ kind: 'health_checkup', corporateId: String(corporate.id), frequency: b.frequency, validityPeriod: b.validityPeriod, individualValidityPeriod: b.individualValidityPeriod || b.validityPeriod, corporateValidFrom: b.corporateValidFrom || null, corporateValidTo: b.corporateValidTo || null, maxExtensionDays: hasCorporateWindow ? 15 : 0, status: b.status, eligibleRelations: b.eligibleRelations || ['self'], venueMode: b.venueMode || 'inherit' });
+        const metadata = JSON.stringify({ kind: 'health_checkup', corporateId: String(corporate.id), frequency: b.frequency, validityPeriod: b.validityPeriod, individualValidityPeriod: b.individualValidityPeriod || b.validityPeriod, corporateValidFrom: b.corporateValidFrom || null, corporateValidTo: b.corporateValidTo || null, maxExtensionDays: hasCorporateWindow ? 15 : 0, status: b.status, eligibleRelations: b.eligibleRelations || ['self'], venueMode: b.venueMode || 'inherit', workflowClass: b.workflowClass || 'annual_benefit' });
         const replacements = { id: req.params.id, corporateId: corporate.id, name: b.packageName.trim(), description: String(b.description || ''), price, capacity, active: b.status === 'Active', features: JSON.stringify({ tests: b.tests, price, description: String(b.description || '') }), metadata, slug: `hc-${crypto.randomUUID()}` };
         const result = await db.transaction(async (transaction) => {
             async function saveVenues(id) {
@@ -201,7 +203,9 @@ async function save(req, res) {
                     throw Object.assign(new Error('A package cannot be moved to another corporate'), { validation: true });
                 if (old.enrolled > capacity)
                     throw Object.assign(new Error('Capacity cannot be less than current enrollment'), { validation: true });
-                replacements.metadata = JSON.stringify({...old.metadata,...JSON.parse(metadata),eligibleRelations:b.eligibleRelations ?? eligibleRelations(old.metadata),venueMode:b.venueMode ?? old.metadata.venueMode ?? 'inherit'});
+                const keptClass = b.workflowClass ?? packageWorkflowClass(old); // an edit must not change which workflow lists the package
+                const { workflowClass: _defaultClass, ...edited } = JSON.parse(metadata);
+                replacements.metadata = JSON.stringify({...old.metadata,...edited,eligibleRelations:b.eligibleRelations ?? eligibleRelations(old.metadata),venueMode:b.venueMode ?? old.metadata.venueMode ?? 'inherit',...(keptClass ? { workflowClass: keptClass } : {})});
                 const [p] = await query(`UPDATE corporate_health_package_catalog SET name=:name,description=:description,price=:price,max_users=:capacity,is_active=:active,features=:features,metadata=:metadata,updated_at=NOW() WHERE id=:id RETURNING *`, replacements, transaction);
                 await query(`UPDATE user_health_packages SET "packageName"=:name,"packageDetails"=:features,"updatedAt"=NOW() WHERE "packageId"=:id AND corporate_id=:corporateId RETURNING id`, { ...replacements, id: String(p.id), corporateId: corporate.id }, transaction);
                 await saveVenues(p.id);

@@ -54,3 +54,33 @@ test('rejects Team without Corporate Management permission',async()=>{role='team
 test.each([{eligibleRelations:[]},{eligibleRelations:['uncle']},{eligibleRelations:'self'}])('rejects invalid eligibility %j',async({eligibleRelations})=>{expect((await request(app).post('/').send({...body,eligibleRelations})).status).toBe(400);expect(query).not.toHaveBeenCalled();});
 test('restricted venues cannot be empty',async()=>{expect((await request(app).post('/').send({...body,venueMode:'restricted',venues:[]})).status).toBe(400);});
 test('rejects venue outside corporate network atomically',async()=>{query.mockResolvedValueOnce([{id:3}]).mockResolvedValueOnce([plan]).mockResolvedValueOnce([]);expect((await request(app).post('/').send({...body,venueMode:'restricted',venues:[{partnerId:9,partnerType:'hospital',relation:'all'}]})).status).toBe(400);expect(query.mock.calls.some(([sql])=>sql.includes('INSERT INTO health_package_venues'))).toBe(false);});
+
+// The employee app lists only 'annual_benefit' packages as bookable check-ups. Packages made through this
+// route carried no class at all, so employees never saw them (found 2026-11-17 setting up the demo login).
+describe('workflow class: which employee workflow lists the package', () => {
+  const metadataOf = (callIndex) => JSON.parse(query.mock.calls[callIndex][1].replacements.metadata);
+  test('a new package is an annual check-up benefit by default', async () => {
+    query.mockResolvedValueOnce([{ id: 3 }]).mockResolvedValueOnce([plan]);
+    expect((await request(app).post('/').send(body)).status).toBe(201);
+    expect(metadataOf(1).workflowClass).toBe('annual_benefit');
+  });
+  test('an explicit class is kept, an unknown one refused', async () => {
+    query.mockResolvedValueOnce([{ id: 3 }]).mockResolvedValueOnce([plan]);
+    expect((await request(app).post('/').send({ ...body, workflowClass: 'pre_employment_service' })).status).toBe(201);
+    expect(metadataOf(1).workflowClass).toBe('pre_employment_service');
+    query.mockReset();
+    expect((await request(app).post('/').send({ ...body, workflowClass: 'whatever' })).status).toBe(400);
+    expect(query).not.toHaveBeenCalled();
+  });
+  test('editing a legacy pre-employment package does not turn it into a benefit (or hide it)', async () => {
+    const legacy = { ...plan, enrolled: 0, features: { tests: ['CBC'], type: 'pre_employment' } };
+    query.mockResolvedValueOnce([{ id: 3 }]).mockResolvedValueOnce([legacy]).mockResolvedValueOnce([plan]).mockResolvedValueOnce([]);
+    expect((await request(app).put('/20').send(body)).status).toBe(200);
+    expect(metadataOf(2).workflowClass).toBe('pre_employment_service');
+  });
+  test('editing a package with no class leaves it unclassified rather than guessing', async () => {
+    query.mockResolvedValueOnce([{ id: 3 }]).mockResolvedValueOnce([{ ...plan, enrolled: 0 }]).mockResolvedValueOnce([plan]).mockResolvedValueOnce([]);
+    expect((await request(app).put('/20').send(body)).status).toBe(200);
+    expect(metadataOf(2)).not.toHaveProperty('workflowClass');
+  });
+});

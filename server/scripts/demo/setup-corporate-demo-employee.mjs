@@ -134,7 +134,7 @@ try {
     if (APPLY) {
       const r = await call('POST', '/api/admin/health-packages', adminToken, {
         corporateId: CORPORATE_ID, packageName: PACKAGE_NAME, status: 'Active', frequency: 'Annual', validityPeriod: '1 Year',
-        costPerEmployee: 0, maxEmployees: 10, eligibleRelations: ['self', 'spouse'],
+        costPerEmployee: 0, maxEmployees: 10, eligibleRelations: ['self', 'spouse'], workflowClass: 'annual_benefit',
         description: 'Demonstration package for the sales demo login.',
         tests: ['Complete Blood Count', 'Fasting Blood Sugar', 'HbA1c', 'Lipid Profile', 'Liver Function Test',
           'Kidney Function Test', 'Thyroid Profile (T3, T4, TSH)', 'Urine Routine', 'Vitamin D', 'Vitamin B12', 'ECG',

@@ -26,3 +26,18 @@ export function validityPeriodToInterval(validityPeriod) {
   const amount = parseInt(match[1], 10);
   return match[2].toLowerCase().startsWith('year') ? { years: amount, days: 0 } : { years: 0, days: amount };
 }
+
+/**
+ * Which employee workflow a corporate health package belongs to. The employee app lists only
+ * 'annual_benefit' packages as bookable check-ups (routes/health-checkup.route.js). The class is read
+ * from metadata.workflowClass, or from the legacy features.type ('annual', 'pre_employment', 'periodic').
+ */
+export const WORKFLOW_CLASSES = Object.freeze(['annual_benefit', 'pre_employment_service', 'periodic_service']);
+const LEGACY_WORKFLOW = { annual: 'annual_benefit', pre_employment: 'pre_employment_service', periodic: 'periodic_service' };
+const asObject = (v) => { if (v && typeof v === 'object' && !Array.isArray(v)) return v; try { const x = JSON.parse(v); return x && typeof x === 'object' ? x : {}; } catch { return {}; } };
+export function packageWorkflowClass(row = {}) {
+  const metadata = asObject(row.metadata);
+  const features = asObject(row.features);
+  const raw = String(metadata.workflowClass || metadata.workflow_class || features.workflowClass || features.workflow_class || features.type || '').trim().toLowerCase();
+  return WORKFLOW_CLASSES.includes(raw) ? raw : (LEGACY_WORKFLOW[raw] || null);
+}
