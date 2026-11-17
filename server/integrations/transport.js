@@ -1,6 +1,7 @@
 /** Explicit transport adapters; no global fetch/axios monkey patching. */
 import './catalog.js';
 import { get, list } from './core/registry.js';
+import { assertDemoOutboundAllowed } from '../utils/demo-context.js';
 
 export function integrationForUrl(value) {
   const url = new URL(typeof value === 'string' || value instanceof URL ? value : value.url);
@@ -16,7 +17,10 @@ export function createManagedFetch(fetchImpl = globalThis.fetch, vendor) {
   return async (input, options = {}) => {
     const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url;
     const integration = vendor ? get(vendor) : integrationForUrl(url);
-    if (!integration) return fetchImpl(input, options);
+    if (!integration) {
+      assertDemoOutboundAllowed({ url }); // uncatalogued host: a demo account may reach only internal services
+      return fetchImpl(input, options);
+    }
     integration.assertUrl(url);
     const method = String(options.method || input.method || 'GET').toUpperCase();
     const originalSignal = options.signal || input.signal;
@@ -38,7 +42,10 @@ export function manageAxios(instance, axiosModule, vendor) {
   instance.interceptors.request.use(config => {
     const url = new URL(config.url, config.baseURL || undefined).toString();
     const integration = vendor ? get(vendor) : integrationForUrl(url);
-    if (!integration) return config;
+    if (!integration) {
+      assertDemoOutboundAllowed({ url });
+      return config;
+    }
     integration.assertUrl(url);
     const adapter = axiosModule.getAdapter(config.adapter || instance.defaults.adapter);
     config.adapter = request => integration.call(signal => adapter({

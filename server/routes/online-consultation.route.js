@@ -24,6 +24,7 @@ import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 import { notifyPatientDoctorIsCalling } from '../services/doctor-calling-notification.service.js';
+import { notDemoAccount } from '../utils/demo-account-sql.js';
 
 const router = express.Router();
 
@@ -740,7 +741,8 @@ router.get('/doctor/requests', authUser, async (req, res) => {
     const requests = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where: {
         doctorId,
-        status: 'pending'
+        status: 'pending',
+        [Op.and]: [notDemoAccount('Appointment.userId')], // never a shared demo login's booking
       },
       order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']],
       transaction,

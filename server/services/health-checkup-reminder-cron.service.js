@@ -27,7 +27,8 @@ export async function runHealthCheckupReminders() {
   const rows = await postgresSequelize.query(
     `SELECT * FROM health_checkup_bookings
       WHERE appointment_date = :date
-        AND status IN (:statuses)`,
+        AND status IN (:statuses)
+        AND NOT is_demo_account(user_id)`, // a demo booking's beneficiary phone may be anyone's
     { replacements: { date, statuses: ACTIVE_STATUSES }, type: postgresSequelize.QueryTypes.SELECT }
   );
   let sent = 0;

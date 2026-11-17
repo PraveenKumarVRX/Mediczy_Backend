@@ -42,7 +42,7 @@ router.get('/', async (req, res) => {
        FROM lab_orders lo
        LEFT JOIN users u ON u.id = lo.patient_id
        LEFT JOIN hospital_billing_charges hbc ON hbc.id = lo.billing_charge_id
-       WHERE lo.lab_id = $1 ${statusClause}
+       WHERE lo.lab_id = $1 AND NOT is_demo_account(lo.patient_id) ${statusClause}
        ORDER BY lo.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params

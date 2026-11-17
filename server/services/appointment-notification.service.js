@@ -10,6 +10,7 @@ import { Doctor } from '../models/index.js';
 import { Op } from 'sequelize';
 import { tick, tickError } from '../utils/cronRegistry.js';
 import { doctorDisplayName } from '../utils/doctor-name.js';
+import { notDemoAccount } from '../utils/demo-account-sql.js';
 
 class AppointmentNotificationService {
   constructor(io) {
@@ -53,7 +54,8 @@ class AppointmentNotificationService {
           appointmentDate: {
             [Op.gte]: now.toISOString().split('T')[0],
             [Op.lte]: fifteenMinutesLater.toISOString().split('T')[0]
-          }
+          },
+          [Op.and]: [notDemoAccount('Appointment.userId')], // never ping a doctor about a demo booking
         },
         include: [
           {

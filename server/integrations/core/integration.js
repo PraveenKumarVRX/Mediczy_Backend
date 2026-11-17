@@ -20,6 +20,7 @@
  * can pass straight on (503 for unavailable, 502 for a bad vendor answer).
  */
 import { CircuitBreaker } from '../../utils/circuit-breaker.js';
+import { assertDemoOutboundAllowed } from '../../utils/demo-context.js';
 
 export class IntegrationError extends Error {
   constructor(code, message, { status = 503, integration, upstreamStatus } = {}) {
@@ -119,6 +120,8 @@ export function defineIntegration(spec) {
    * @param {{ idempotent?: boolean, key?: string, timeoutMs?: number, isRetryable?: (err) => boolean, preserveError?: boolean, statusOf?: Function, configuration?: boolean }} [opts]
    */
   async function call(fn, { idempotent = false, key = '', timeoutMs = cfg.timeoutMs, isRetryable, preserveError = false, statusOf, configuration = configured() } = {}) {
+    // A shared sales demo login never reaches a vendor that contacts people or moves money.
+    assertDemoOutboundAllowed({ integrationId: cfg.id });
     if (!enabled()) throw refuse(fail('INTEGRATION_DISABLED', `${cfg.name} is switched off.`));
     if (!configuration) throw refuse(fail('INTEGRATION_NOT_CONFIGURED', `${cfg.name} is not configured.`));
     const breaker = breakerFor(key);

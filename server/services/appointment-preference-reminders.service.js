@@ -26,6 +26,7 @@ export async function sendPreferenceReminders({ database = db, preferencesFor = 
     const query = (sql, replacements) => database.query(sql, { transaction, replacements, type: database.QueryTypes.SELECT });
     const appointments = await query(`SELECT id,"userId","doctorName","appointmentDate","appointmentTime",metadata FROM appointments
       WHERE status IN ('scheduled','confirmed','pending','accepted','rescheduled')
+        AND NOT is_demo_account("userId")
         AND "appointmentDate" BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date+1
         AND ("appointmentDate"::text || 'T' || LEFT("appointmentTime"::text,5) || ':00+05:30')::timestamptz > NOW()
       ORDER BY "appointmentDate","appointmentTime",id FOR UPDATE SKIP LOCKED LIMIT 500`, {});

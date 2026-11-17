@@ -15,6 +15,7 @@ import whatsappService from './whatsapp.service.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 import { doctorDisplayName, renderNotificationTemplate } from '../utils/doctor-name.js';
+import { currentDemoAccountId } from '../utils/demo-context.js';
 
 /**
  * A notification that names an appointment which no longer exists is a phantom:
@@ -357,6 +358,12 @@ class NotificationService {
    * Send notification through multiple channels
    */
   async send({ userId, userType, type, variables, channels, data = {}, actionUrl, appointmentData = null }) {
+    // A shared sales demo login may only ever notify itself: its bookings must not ping a doctor,
+    // a partner or the Team. (Ids are per table, so the recipient must also be a patient-side user.)
+    const demoAccountId = currentDemoAccountId();
+    if (demoAccountId !== null && !(Number(userId) === demoAccountId && ['patient', 'user', undefined, null].includes(userType))) {
+      return { success: true, skipped: 'demo_account' };
+    }
     try {
       const template = this.templates[type];
       if (!template) {

@@ -298,6 +298,7 @@ import adminWebinarModulesRouter from './routes/admin/webinar-modules.routes.js'
 import adminPendingRegistrationsRouter from './routes/admin/pending-registrations.route.js';
 import featureFlagsAdminRouter, { publicFeatureFlagsRouter } from './routes/feature-flags.route.js';
 import doctorWebinarRouter from './routes/doctor/webinar.routes.js';
+import demoAccountGuard from './middleware/demo-account-guard.middleware.js';
 import publicWebinarRouter from './routes/webinar.routes.js';
 
 // AI Brain intelligence layer
@@ -869,6 +870,11 @@ app.use('/api/doctor/forgot-password',     resetLimiter);
 
 // Wallet earn — 10/hour limit (prevents rapid coin-farming via race conditions)
 app.use('/api/wallet/earn', walletEarnLimiter);
+
+// Shared sales demo logins: refuse real-world actions and run the rest in the demo context, before
+// any router (middleware/demo-account-guard.middleware.js).
+app.use('/api', demoAccountGuard);
+app.use('/v1', demoAccountGuard);
 
 app.use('/api/ai', aiLimiter);
 app.use('/api/medical-ai', aiLimiter);

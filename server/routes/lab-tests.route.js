@@ -15,6 +15,7 @@ import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import { updateLinkedLabHistory } from '../services/lab-appointment-history.service.js';
 import { prepareLabCheckout, completeLabCheckout } from '../services/patient-lab-checkout.service.js';
 import { uploadEncryptedReport } from '../services/minio-upload.service.js';
+import { notDemoAccount } from '../utils/demo-account-sql.js';
 import {
   testTypeToDiagnosticScope,
   validateOrderCoupon,
@@ -788,7 +789,7 @@ router.delete('/:id', authUser, async (req, res) => {
 router.get('/assigned', authLab, async (req, res) => {
   try {
     const labTests = await LabTest.findAll({
-      where: { hospitalId: req.lab.id, status: 'booked' },
+      where: { hospitalId: req.lab.id, status: 'booked', [Op.and]: [notDemoAccount('LabTest.userId')] },
       order: [['appointmentDate', 'ASC']],
     });
     return res.json({ success: true, data: labTests });

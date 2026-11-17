@@ -1379,7 +1379,7 @@ router.get('/checkups', authUser, requireTeamOrAdmin, requireCorporateAccess, as
       `SELECT b.*, u."firstName", u."lastName", u.email AS employee_email, u."phoneNumber" AS employee_phone,
               TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name
          FROM health_checkup_bookings b LEFT JOIN users u ON u.id = b.user_id
-        WHERE b.corporate_id = :corporateId AND (:status = '' OR b.status = :status)
+        WHERE b.corporate_id = :corporateId AND (:status = '' OR b.status = :status) AND NOT is_demo_account(b.user_id)
         ORDER BY (b.status = 'booked') DESC, b.appointment_date ASC, b.created_at DESC
         LIMIT 200`,
       { replacements: { corporateId: req.resolvedCorporate.id, status: String(status || '').trim() }, type: postgresSequelize.QueryTypes.SELECT }
@@ -1398,7 +1398,7 @@ router.get('/pending-approvals', authUser, requireTeamOrAdmin, requireCorporateA
       `SELECT b.*, u."firstName", u."lastName", u.email AS employee_email, u."phoneNumber" AS employee_phone,
               TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS employee_name
          FROM health_checkup_bookings b LEFT JOIN users u ON u.id = b.user_id
-        WHERE b.corporate_id = :corporateId AND b.status = 'booked'
+        WHERE b.corporate_id = :corporateId AND b.status = 'booked' AND NOT is_demo_account(b.user_id)
         ORDER BY b.appointment_date ASC, b.created_at ASC LIMIT 200`,
       { replacements: { corporateId: req.resolvedCorporate.id }, type: postgresSequelize.QueryTypes.SELECT }
     );

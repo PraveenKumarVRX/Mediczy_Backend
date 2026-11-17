@@ -36,6 +36,7 @@ import { createDoctorMessagesRouter } from './doctor/messages.routes.js';
 import { createDoctorBillingRouter } from './doctor/billing.routes.js';
 import { toArray, normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
 import { isSlotBooked, normalizeSlotKey, isFutureAppointmentSlot } from '../utils/appointmentSlotTime.js';
+import { notDemoAccount } from '../utils/demo-account-sql.js';
 
 const router = express.Router();
 const { Notification, FCMToken } = notificationServiceModule;
@@ -392,6 +393,7 @@ router.get("/appointments", authDoctor, async (req, res) => {
       where.status = { [Op.in]: ['pending', 'scheduled', 'confirmed', 'in-progress'] };
     }
 
+    where[Op.and] = [notDemoAccount('Appointment.userId')]; // never a shared demo login's booking
     const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where,
       include: [

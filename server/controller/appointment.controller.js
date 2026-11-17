@@ -38,6 +38,7 @@ import * as appointmentRepository from '../repositories/appointment.repository.j
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 import { completeAppointment as completeAppointmentOrchestrated } from '../services/appointment-completion.service.js';
 import { doctorDisplayName } from '../utils/doctor-name.js';
+import { currentDemoAccountId } from '../utils/demo-context.js';
 
 const getAppointmentDateTime = (appointment) => {
   if (!appointment?.appointmentDate || !appointment?.appointmentTime) return null;
@@ -793,7 +794,8 @@ export const createAppointment = async (req, res) => {
     try {
       const { isInPersonConsultation, issueTokenForAppointment } = await import('../services/qms-opd.service.js');
       const bookedType = requestedConsultationType || appointment.consultationType;
-      if (isInPersonConsultation(bookedType)) {
+      // A shared demo login's booking never joins a real hospital's OPD queue or display.
+      if (isInPersonConsultation(bookedType) && currentDemoAccountId() === null) {
         const notifyOptIn = req.body?.notifyOptIn === true || req.body?.notifyOptIn === 'true';
         qmsToken = await issueTokenForAppointment(appointment, {
           notifyOptIn,
