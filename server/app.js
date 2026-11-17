@@ -2003,6 +2003,10 @@ corporateEmployeeQcService.start();
 import healthCheckupReminderCronService from './services/health-checkup-reminder-cron.service.js';
 healthCheckupReminderCronService.start();
 
+// ============== Sales demo login nightly reset (Daily 04:00 IST) ==============
+import demoAccountResetCronService from './services/demo-account-reset-cron.service.js';
+demoAccountResetCronService.start();
+
 // ============== Imaging daily S3 → MinIO transfer (02:30) ==============
 import { startImagingDailyMinioCron } from './services/imaging/imaging-daily-minio-cron.service.js';
 startImagingDailyMinioCron();

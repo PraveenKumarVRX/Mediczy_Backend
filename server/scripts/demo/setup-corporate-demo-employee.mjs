@@ -158,6 +158,7 @@ try {
         (SELECT count(*) FROM policy_members WHERE "primaryMemberUserId"=u.id)::int policy_members
       FROM users u WHERE u.id=$1`, [user.id]);
     console.log('result', s);
+    console.log('Next, once the account is as prospects should find it: scripts/demo/reset-demo-account.mjs --capture-baseline --apply (the 04:00 IST reset returns to that baseline).');
   }
 } catch (error) {
   console.error('STOPPED:', error.message);
