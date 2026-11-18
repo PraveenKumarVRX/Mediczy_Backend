@@ -73,6 +73,7 @@ function buildEmployeeEmailData(emp, corporate) {
   const assocMeta = parseJsonSafe(emp.assoc_metadata, {});
   const merged = { ...userMeta, ...assocMeta };
   return {
+    userId: emp.id,
     email: (emp.email || '').trim() || null,
     firstName: emp.firstName || merged.firstName || 'Employee',
     lastName: emp.lastName || merged.lastName || '',
@@ -426,6 +427,7 @@ async function runQcSweep() {
                 const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
                 const message = await buildCorporateEmployeeReminderEmail(emailData, tempPassword, { teamUserId, corporateId: corpId });
+                if (message.missingAhcEntitlement) continue;
 
                 // Reset password so the reminder email credentials are valid
                 await guardedPool(`

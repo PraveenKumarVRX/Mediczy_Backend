@@ -4,9 +4,12 @@ import nodemailer from '../integrations/nodemailer.js';
 import dotenv from 'dotenv';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import {
+  AHC_DATE_NOT_AVAILABLE,
+  MISSING_AHC_ENTITLEMENT_MESSAGE,
   buildCorporateEmployeeTemplateVars,
   formatCorporateEmployeePlan,
   renderTemplate,
+  templateNeedsAhcEntitlement,
 } from './welcome-email-template.util.js';
 
 export { buildCorporateEmployeeTemplateVars, renderTemplate } from './welcome-email-template.util.js';
@@ -327,6 +330,47 @@ async function getCustomTemplate(eventType, options = {}) {
   } catch {
     return null; // Fall through to hardcoded default
   }
+}
+
+/** The employee's own open check-up at this corporate, dated in India time as DD/MM/YYYY. */
+async function getOpenAhcEntitlement({ userId, corporateId }) {
+  const numericUserId = Number(userId);
+  if (!Number.isInteger(numericUserId) || numericUserId <= 0 || !corporateId) return null;
+  try {
+    const [row] = await postgresSequelize.query(
+      `SELECT "packageName",
+              to_char("validTo" AT TIME ZONE 'Asia/Kolkata', 'DD/MM/YYYY') AS "validUntil"
+         FROM user_health_packages
+        WHERE "userId" = :userId AND corporate_id = :corporateId
+          AND LOWER(status) = 'active' AND "usedAt" IS NULL AND "validTo" >= NOW()
+        ORDER BY "validTo" DESC
+        LIMIT 1`,
+      { replacements: { userId: numericUserId, corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return row || null;
+  } catch (error) {
+    console.error('Could not read the health checkup for a welcome email:', error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * Renders a custom template onto msg. A template that quotes the check-up expiry is marked
+ * missingAhcEntitlement when the employee has none, so no caller sends it with a blank date.
+ */
+async function applyCustomTemplate(msg, template, employeeData, temporaryPassword, options) {
+  const needsAhc = templateNeedsAhcEntitlement(template);
+  const entitlement = needsAhc
+    ? await getOpenAhcEntitlement({ userId: employeeData.userId, corporateId: options.corporateId })
+    : null;
+  const vars = buildCorporateEmployeeTemplateVars({
+    ...employeeData,
+    ahcValidUntil: entitlement?.validUntil || (needsAhc ? AHC_DATE_NOT_AVAILABLE : ''),
+    ahcPackageName: entitlement?.packageName || '',
+  }, temporaryPassword);
+  msg.subject = renderTemplate(template.subject, vars);
+  msg.html = renderTemplate(template.html_content, vars);
+  if (needsAhc && !entitlement) msg.missingAhcEntitlement = true;
 }
 
 /**
@@ -776,9 +820,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
   // Apply custom template override if configured
   const customTplEmp = await getCustomTemplate('corporate_employee_welcome', options);
   if (customTplEmp) {
-    const vars = buildCorporateEmployeeTemplateVars(employeeData, temporaryPassword);
-    msg.subject = renderTemplate(customTplEmp.subject, vars);
-    msg.html = renderTemplate(customTplEmp.html_content, vars);
+    await applyCustomTemplate(msg, customTplEmp, employeeData, temporaryPassword, options);
   }
 
   return msg;
@@ -786,6 +828,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
 
 export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword, options = {}) {
   const msg = await buildCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword, options);
+  if (msg.missingAhcEntitlement) throw new Error(MISSING_AHC_ENTITLEMENT_MESSAGE);
   try {
     await sendMail(msg);
     console.log("Welcome email sent to corporate employee: " + msg.to);
@@ -888,9 +931,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
   // Apply custom template override if configured (same placeholder set as the welcome email)
   const customTplReminder = await getCustomTemplate('corporate_employee_reminder', options);
   if (customTplReminder) {
-    const vars = buildCorporateEmployeeTemplateVars(employeeData, temporaryPassword);
-    msg.subject = renderTemplate(customTplReminder.subject, vars);
-    msg.html = renderTemplate(customTplReminder.html_content, vars);
+    await applyCustomTemplate(msg, customTplReminder, employeeData, temporaryPassword, options);
   }
 
   return msg;
@@ -898,6 +939,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
 
 export async function sendCorporateEmployeeReminderEmail(employeeData, temporaryPassword, options = {}) {
   const msg = await buildCorporateEmployeeReminderEmail(employeeData, temporaryPassword, options);
+  if (msg.missingAhcEntitlement) throw new Error(MISSING_AHC_ENTITLEMENT_MESSAGE);
   try {
     await sendMail(msg);
     console.log("Reminder email sent to corporate employee: " + msg.to);

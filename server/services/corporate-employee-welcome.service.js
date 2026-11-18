@@ -54,6 +54,7 @@ export async function dispatchCorporateEmployeeWelcomeEmail({
   }
 
   const emailOptions = { teamUserId, corporateId };
+  const emailData = { ...welcomeEmailData, userId: welcomeEmailData.userId ?? userId };
   const loginIdentifier = welcomeEmailData.loginUid || welcomeEmailData.email || welcomeEmailData.employeeId || '';
 
   let smsStatus = 'not_applicable';
@@ -86,7 +87,7 @@ export async function dispatchCorporateEmployeeWelcomeEmail({
   if (normalizedMode === 'send') {
     try {
       await welcomeEmailService.sendCorporateEmployeeWelcomeEmail(
-        welcomeEmailData,
+        emailData,
         temporaryPassword,
         emailOptions
       );
@@ -115,7 +116,7 @@ export async function dispatchCorporateEmployeeWelcomeEmail({
 
   if (normalizedMode === 'draft') {
     const draft = await welcomeEmailService.buildCorporateEmployeeWelcomeEmail(
-      welcomeEmailData,
+      emailData,
       WELCOME_DRAFT_PASSWORD_PLACEHOLDER,
       emailOptions
     );

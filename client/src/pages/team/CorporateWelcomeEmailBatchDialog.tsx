@@ -218,6 +218,7 @@ export default function CorporateWelcomeEmailBatchDialog({
       temporaryPassword: 'E7K2PX', password: 'E7K2PX',
       username: 'priya.sharma@company.com', userId: 'priya.sharma@company.com',
       loginIdentifier: 'priya.sharma@company.com', loginUrl: 'https://app.mediqzy.com/login',
+      ahcValidUntil: '31/12/2026', ahcPackageName: 'Annual Health Checkup',
     };
     let out = String(raw || '');
     out = out.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key) => (key in sample ? sample[key] : `{{${key}}}`));

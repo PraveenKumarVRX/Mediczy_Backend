@@ -24,6 +24,7 @@ import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
+import { MISSING_AHC_ENTITLEMENT_MESSAGE } from '../services/welcome-email-template.util.js';
 import { dispatchCorporateEmployeeWelcomeEmail, provisionAccountForRosterEmployee } from '../services/corporate-employee-welcome.service.js';
 import { findExistingEmployeeAccount } from '../services/corporate-employee-identity.service.js';
 import { normalizeFlexibleDate } from '../utils/flexibleDate.js';
@@ -2503,6 +2504,7 @@ function buildCorporateEmployeeWelcomeEmailData({ employee, corporate, fallbackE
   const resolvedEmployeeId = employee?.corporate_employee_id || employee?.employee_id || mergedMeta.employeeId || fallbackEmployeeId || '';
 
   return {
+    userId: employee?.id,
     email: normalizeEmailAddress(employee?.email),
     firstName: employee?.firstName || mergedMeta.firstName || 'Employee',
     lastName: employee?.lastName || mergedMeta.lastName || '',
@@ -2843,6 +2845,7 @@ async function createPreparedWelcomeDraft({
     WELCOME_DRAFT_PASSWORD_PLACEHOLDER,
     { teamUserId, corporateId }
   );
+  assertAhcEntitlementForTemplate(draftPreview);
   const draftToken = createWelcomeDraftToken();
   const draftTokenHash = hashWelcomeDraftToken(draftToken);
   const expiresAt = new Date(Date.now() + WELCOME_DRAFT_TTL_HOURS * 60 * 60 * 1000).toISOString();
@@ -3012,6 +3015,7 @@ const SYSTEM_WELCOME_EMAIL_ALLOWLIST = new Set([
   'noreply@mediqzy.com',
   'hello@mysmarthealth.in',
   'support@mysmarthealth.in',
+  'care@mysmarthealth.in',
   'corporate@mediqzy.com',
 ]);
 
@@ -3024,6 +3028,13 @@ function findMismatchedCredentialEmails({ recipientEmail, subject, html }) {
   const recipient = String(recipientEmail || '').trim().toLowerCase();
   const found = extractEmailAddresses(`${subject || ''}\n${html || ''}`);
   return found.filter((email) => email !== recipient && !SYSTEM_WELCOME_EMAIL_ALLOWLIST.has(email));
+}
+
+function assertAhcEntitlementForTemplate(message) {
+  if (!message?.missingAhcEntitlement) return;
+  const error = new Error(MISSING_AHC_ENTITLEMENT_MESSAGE);
+  error.statusCode = 422;
+  throw error;
 }
 
 function parseJsonSafe(value, fallback = {}) {
@@ -3932,8 +3943,9 @@ router.post('/corporate-employee-welcome-emails/resend', authUser, requireRole([
       const previewMessage = await welcomeEmailService.buildCorporateEmployeeWelcomeEmail(
         welcomeEmailData,
         temporaryPassword,
-        { teamUserId }
+        { teamUserId, corporateId }
       );
+      assertAhcEntitlementForTemplate(previewMessage);
       await assertNoPriorWelcomeDelivery({
         corporateId,
         userId: employee.id,
@@ -4109,6 +4121,10 @@ export async function runCorporateEmployeeReminderBulkSend({ corporateId, corpor
         temporaryPassword,
         { teamUserId, corporateId }
       );
+      if (message.missingAhcEntitlement) {
+        console.warn(`[reminder-bulk] Skipping employee ${employee.id} — no active health checkup for this template`);
+        continue;
+      }
 
       const mismatchedEmails = findMismatchedCredentialEmails({
         recipientEmail: welcomeEmailData.email,
@@ -4490,8 +4506,9 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
         const message = await welcomeEmailService.buildCorporateEmployeeWelcomeEmail(
           welcomeEmailData,
           temporaryPassword,
-          { teamUserId }
+          { teamUserId, corporateId }
         );
+        assertAhcEntitlementForTemplate(message);
 
         const mismatchedEmails = findMismatchedCredentialEmails({
           recipientEmail: canonicalEmail,

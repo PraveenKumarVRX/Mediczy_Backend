@@ -1,7 +1,7 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
-import nodemailer from '../integrations/nodemailer.js';
+import { sendPreparedCorporateEmployeeWelcomeEmail } from '../services/welcome-email.service.js';
 
 const router = express.Router();
 
@@ -15,10 +15,6 @@ export const EVENT_TYPES = [
 ];
 
 const VALID_EVENT_TYPES = new Set(EVENT_TYPES.map(e => e.eventType));
-
-function getTransporter() {
-  return nodemailer.createTransporter({ host: process.env.SMTP_HOST || 'smtppro.zoho.in', port: parseInt(process.env.SMTP_PORT || '465'), secure: true, auth: { user: process.env.SMTP_USER || 'support@mediqzy.com', pass: process.env.SMTP_PASSWORD || process.env.SMTP_PASS } });
-}
 
 function hasDangerousContent(html) { return /<script[\s>]/i.test(html); }
 
@@ -191,12 +187,12 @@ router.post('/:id/test', authUser, async (req, res) => {
   }
   if (hasDangerousContent(htmlContent)) return res.status(400).json({ success: false, message: 'Script tags are not allowed' });
 
-  const sampleValues = { '{{employeeName}}': 'John Doe', '{{firstName}}': 'John', '{{lastName}}': 'Doe', '{{email}}': testEmail, '{{role}}': 'Team Member', '{{department}}': 'General', '{{temporaryPassword}}': 'TempPass@123!', '{{password}}': 'TempPass@123!', '{{username}}': testEmail, '{{loginIdentifier}}': testEmail, '{{specialization}}': 'General Physician', '{{hospitalName}}': 'Sample Hospital', '{{companyName}}': 'Sample Corp Ltd', '{{contactPerson}}': 'John Doe', '{{employeeId}}': 'EMP-001' };
+  const sampleValues = { '{{employeeName}}': 'John Doe', '{{firstName}}': 'John', '{{lastName}}': 'Doe', '{{email}}': testEmail, '{{role}}': 'Team Member', '{{department}}': 'General', '{{temporaryPassword}}': 'TempPass@123!', '{{password}}': 'TempPass@123!', '{{username}}': testEmail, '{{loginIdentifier}}': testEmail, '{{userId}}': testEmail, '{{loginUrl}}': 'https://app.mediqzy.com/login', '{{ahcValidUntil}}': '27/12/2026', '{{ahcPackageName}}': 'Annual Health Checkup', '{{specialization}}': 'General Physician', '{{hospitalName}}': 'Sample Hospital', '{{companyName}}': 'Sample Corp Ltd', '{{contactPerson}}': 'John Doe', '{{employeeId}}': 'EMP-001' };
   let rendered = htmlContent; let renderedSubject = subject;
   for (const [k, v] of Object.entries(sampleValues)) { const re = new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'); rendered = rendered.replace(re, v); renderedSubject = renderedSubject.replace(re, v); }
 
   try {
-    await getTransporter().sendMail({ from: `"Mediqzy Team" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`, to: testEmail, subject: `[TEST] ${renderedSubject}`, html: rendered });
+    await sendPreparedCorporateEmployeeWelcomeEmail({ to: testEmail, subject: `[TEST] ${renderedSubject}`, html: rendered });
     res.json({ success: true, message: `Test email sent to ${testEmail}` });
   } catch (error) {
     console.error('Error sending test email:', error);

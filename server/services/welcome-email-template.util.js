@@ -45,6 +45,19 @@ export function renderTemplate(template, values) {
   return result;
 }
 
+/** Shown only in a draft preview when the employee has no open check-up to date the email with. */
+export const AHC_DATE_NOT_AVAILABLE = '[no active health checkup assigned]';
+
+export const MISSING_AHC_ENTITLEMENT_MESSAGE =
+  'This template states a health checkup expiry date, but the employee has no active, unused health checkup assigned';
+
+/** True when a template quotes the employee's own check-up, so it cannot go out without one. */
+export function templateNeedsAhcEntitlement(template = {}) {
+  return /\{\{\s*(ahcValidUntil|ahcPackageName)\s*\}\}/.test(
+    `${template.subject || ''}\n${template.html_content || ''}`
+  );
+}
+
 /** Placeholder map for corporate employee welcome/reminder custom templates. */
 export function buildCorporateEmployeeTemplateVars(employeeData, temporaryPassword) {
   const {
@@ -84,6 +97,8 @@ export function buildCorporateEmployeeTemplateVars(employeeData, temporaryPasswo
     '{{planSponsor}}': plan.sponsor,
     '{{planCopay}}': plan.copay,
     '{{planBenefits}}': planBenefitsText,
+    '{{ahcValidUntil}}': employeeData.ahcValidUntil || '',
+    '{{ahcPackageName}}': employeeData.ahcPackageName || '',
 
     '[First Name]': firstName,
     '[Last Name]': lastName,

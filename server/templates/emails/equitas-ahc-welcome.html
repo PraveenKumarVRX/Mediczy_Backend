@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<title>Your Complimentary Health Checkup</title>
+<style>
+  @media only screen and (max-width: 620px) {
+    .shell { width: 100% !important; }
+    .pad { padding-left: 20px !important; padding-right: 20px !important; }
+    .stack { display: block !important; width: 100% !important; box-sizing: border-box !important; padding-left: 0 !important; padding-right: 0 !important; }
+    .stack-gap { padding: 0 0 10px 0 !important; }
+    .hero-title { font-size: 25px !important; line-height: 32px !important; }
+  }
+  a { color: #0A6EBD; }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#EAF3F8;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#EAF3F8;font-size:1px;line-height:1px;">Your complimentary health checkup from {{companyName}} is valid until {{ahcValidUntil}}. Here is how to book it.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EAF3F8;">
+<tr><td align="center" style="padding:28px 12px;">
+
+<table role="presentation" class="shell" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#FFFFFF;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#1E3448;">
+
+  <!-- Brand bar -->
+  <tr><td class="pad" style="padding:20px 36px;background-color:#FFFFFF;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="vertical-align:middle;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td width="34" height="34" align="center" style="width:34px;height:34px;background-color:#0A6EBD;border-radius:9px;color:#FFFFFF;font-size:23px;line-height:34px;font-weight:bold;">+</td>
+          <td style="padding-left:10px;font-size:19px;font-weight:bold;color:#0B3C6F;white-space:nowrap;">My <span style="color:#0A9396;">SmartHealth</span></td>
+        </tr></table>
+      </td>
+      <td align="right" style="vertical-align:middle;font-size:12px;line-height:16px;color:#5B7083;">Corporate health benefit for<br><strong style="color:#0B3C6F;">{{companyName}}</strong></td>
+    </tr></table>
+  </td></tr>
+
+  <!-- Hero -->
+  <tr><td class="pad" bgcolor="#0B4F8A" style="padding:38px 36px 34px;background-color:#0B4F8A;background-image:linear-gradient(135deg,#0B3C6F 0%,#0A6EBD 62%,#0A9396 100%);">
+    <div style="font-size:12px;font-weight:bold;letter-spacing:1.4px;color:#BFE9EA;">YOUR EMPLOYEE HEALTHCARE BENEFIT</div>
+    <div class="hero-title" style="padding-top:10px;font-size:30px;line-height:38px;font-weight:bold;color:#FFFFFF;">Your Complimentary Health Checkup is ready to book</div>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;"><tr>
+      <td style="padding:10px 16px;background-color:#FFFFFF;border-radius:10px;">
+        <span style="font-size:13px;color:#5B7083;">Valid until</span>
+        <strong style="padding-left:6px;font-size:17px;color:#B4540A;">{{ahcValidUntil}}</strong>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- Greeting -->
+  <tr><td class="pad" style="padding:32px 36px 8px;font-size:15px;line-height:24px;">
+    <p style="margin:0 0 14px;font-size:17px;color:#0B3C6F;"><strong>Dear {{employeeName}},</strong></p>
+    <p style="margin:0 0 14px;">We are pleased to inform you that, as part of your organisation's employee healthcare benefits, you are eligible for a <strong>Complimentary Health Checkup</strong>.</p>
+    <p style="margin:0;">You are requested to avail of this benefit on or before <strong style="color:#B4540A;">{{ahcValidUntil}}</strong>. Please note that the complimentary health checkup will remain valid only until the specified date.</p>
+  </td></tr>
+
+  <!-- 1. Credentials -->
+  <tr><td class="pad" style="padding:26px 36px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="32" style="width:32px;vertical-align:top;"><div style="width:26px;height:26px;background-color:#0A6EBD;border-radius:13px;color:#FFFFFF;font-size:13px;line-height:26px;font-weight:bold;text-align:center;">1</div></td>
+      <td style="font-size:18px;line-height:26px;font-weight:bold;color:#0B3C6F;">Your Login Credentials</td>
+    </tr></table>
+    <p style="margin:8px 0 12px;font-size:15px;line-height:23px;">You can access your corporate healthcare benefits using the following login details:</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F1F8FC;border:1px solid #CFE4F1;border-radius:12px;">
+      <tr><td style="padding:14px 18px 6px;font-size:12px;color:#5B7083;">Login ID</td></tr>
+      <tr><td style="padding:0 18px 12px;font-size:16px;font-weight:bold;color:#0B3C6F;word-break:break-all;border-bottom:1px solid #DCEBF4;">{{loginIdentifier}}</td></tr>
+      <tr><td style="padding:12px 18px 6px;font-size:12px;color:#5B7083;">Temporary Password</td></tr>
+      <tr><td style="padding:0 18px 12px;font-size:16px;font-weight:bold;color:#0B3C6F;font-family:'Courier New',Courier,monospace;word-break:break-all;border-bottom:1px solid #DCEBF4;">{{temporaryPassword}}</td></tr>
+      <tr><td style="padding:12px 18px 6px;font-size:12px;color:#5B7083;">Login URL</td></tr>
+      <tr><td style="padding:0 18px 14px;font-size:15px;word-break:break-all;"><a href="{{loginUrl}}" style="color:#0A6EBD;font-weight:bold;">{{loginUrl}}</a></td></tr>
+    </table>
+    <p style="margin:10px 0 0;font-size:13px;line-height:20px;color:#5B7083;">You will be asked to set a new password when you first log in.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;"><tr>
+      <td bgcolor="#0A6EBD" style="background-color:#0A6EBD;border-radius:10px;"><a href="{{loginUrl}}" style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Log in and book</a></td>
+    </tr></table>
+  </td></tr>
+
+  <!-- 2. App -->
+  <tr><td class="pad" style="padding:30px 36px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="32" style="width:32px;vertical-align:top;"><div style="width:26px;height:26px;background-color:#0A6EBD;border-radius:13px;color:#FFFFFF;font-size:13px;line-height:26px;font-weight:bold;text-align:center;">2</div></td>
+      <td style="font-size:18px;line-height:26px;font-weight:bold;color:#0B3C6F;">Download the Mobile Application</td>
+    </tr></table>
+    <p style="margin:8px 0 12px;font-size:15px;line-height:23px;">You can also access healthcare services through our mobile application.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td class="stack stack-gap" width="50%" style="width:50%;padding-right:6px;">
+        <a href="https://play.google.com/store/apps/details?id=com.mysmarthealth" style="display:block;padding:12px 14px;background-color:#0B3C6F;border-radius:10px;color:#FFFFFF;text-decoration:none;text-align:center;font-size:14px;line-height:19px;"><span style="font-size:11px;color:#BFE9EA;">Android users</span><br><strong>Google Play Store</strong></a>
+      </td>
+      <td class="stack" width="50%" style="width:50%;padding-left:6px;">
+        <a href="https://apps.apple.com/in/app/smart-health/id6757312276" style="display:block;padding:12px 14px;background-color:#0B3C6F;border-radius:10px;color:#FFFFFF;text-decoration:none;text-align:center;font-size:14px;line-height:19px;"><span style="font-size:11px;color:#BFE9EA;">iOS users</span><br><strong>Apple App Store</strong></a>
+      </td>
+    </tr></table>
+    <p style="margin:12px 0 0;font-size:14px;line-height:22px;">Log in using the same credentials provided above to access your account.</p>
+  </td></tr>
+
+  <!-- 3. Booking steps -->
+  <tr><td class="pad" style="padding:30px 36px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="32" style="width:32px;vertical-align:top;"><div style="width:26px;height:26px;background-color:#0A6EBD;border-radius:13px;color:#FFFFFF;font-size:13px;line-height:26px;font-weight:bold;text-align:center;">3</div></td>
+      <td style="font-size:18px;line-height:26px;font-weight:bold;color:#0B3C6F;">Steps to Book Your Complimentary Health Checkup</td>
+    </tr></table>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;font-size:15px;line-height:22px;">
+      <tr><td width="30" style="width:30px;padding:6px 0;vertical-align:top;color:#0A9396;font-weight:bold;">01</td><td style="padding:6px 0;">Log in to the web portal or mobile application using your credentials.</td></tr>
+      <tr><td style="padding:6px 0;vertical-align:top;color:#0A9396;font-weight:bold;">02</td><td style="padding:6px 0;">Navigate to the <strong>Health Checkup / Lab Tests</strong> section.</td></tr>
+      <tr><td style="padding:6px 0;vertical-align:top;color:#0A9396;font-weight:bold;">03</td><td style="padding:6px 0;">Select your eligible complimentary health checkup package.</td></tr>
+      <tr><td style="padding:6px 0;vertical-align:top;color:#0A9396;font-weight:bold;">04</td><td style="padding:6px 0;">Choose your preferred laboratory from the available options.</td></tr>
+      <tr><td style="padding:6px 0;vertical-align:top;color:#0A9396;font-weight:bold;">05</td><td style="padding:6px 0;">Submit your appointment booking request.</td></tr>
+    </table>
+    <p style="margin:10px 0 12px;font-size:15px;line-height:23px;">Once the selected laboratory confirms your appointment, you will receive a confirmation notification through WhatsApp and Email.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding:13px 16px;background-color:#FFF6EC;border-left:4px solid #E8862E;border-radius:6px;font-size:14px;line-height:21px;color:#6B3E12;"><strong>Please Note:</strong> Your appointment will be confirmed only after confirmation from the selected laboratory. We recommend completing your booking well in advance of the benefit expiry date.</td>
+    </tr></table>
+  </td></tr>
+
+  <!-- 4. Reports -->
+  <tr><td class="pad" style="padding:30px 36px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="32" style="width:32px;vertical-align:top;"><div style="width:26px;height:26px;background-color:#0A6EBD;border-radius:13px;color:#FFFFFF;font-size:13px;line-height:26px;font-weight:bold;text-align:center;">4</div></td>
+      <td style="font-size:18px;line-height:26px;font-weight:bold;color:#0B3C6F;">View and Download Your Health Reports</td>
+    </tr></table>
+    <p style="margin:8px 0 8px;font-size:15px;line-height:23px;">You can conveniently access your health checkup reports through the same login.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:15px;line-height:22px;">
+      <tr><td width="22" style="width:22px;padding:4px 0;vertical-align:top;color:#0A9396;font-weight:bold;">&#10003;</td><td style="padding:4px 0;">View your health checkup reports and test results.</td></tr>
+      <tr><td style="padding:4px 0;vertical-align:top;color:#0A9396;font-weight:bold;">&#10003;</td><td style="padding:4px 0;">Download your reports directly from the web portal or mobile application.</td></tr>
+      <tr><td style="padding:4px 0;vertical-align:top;color:#0A9396;font-weight:bold;">&#10003;</td><td style="padding:4px 0;">Access your reports anytime for future reference.</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 5. Important -->
+  <tr><td class="pad" style="padding:30px 36px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="32" style="width:32px;vertical-align:top;"><div style="width:26px;height:26px;background-color:#0A6EBD;border-radius:13px;color:#FFFFFF;font-size:13px;line-height:26px;font-weight:bold;text-align:center;">5</div></td>
+      <td style="font-size:18px;line-height:26px;font-weight:bold;color:#0B3C6F;">Important Information</td>
+    </tr></table>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;background-color:#F0FAF9;border:1px solid #CBE9E6;border-radius:12px;font-size:14px;line-height:21px;">
+      <tr><td style="padding:14px 18px 5px;">The complimentary health checkup is valid until <strong>{{ahcValidUntil}}</strong>.</td></tr>
+      <tr><td style="padding:5px 18px;">Please ensure that you avail of this benefit before the expiry date.</td></tr>
+      <tr><td style="padding:5px 18px;">Booking confirmation is subject to laboratory availability and confirmation.</td></tr>
+      <tr><td style="padding:5px 18px 14px;">Use your assigned login credentials to access your corporate healthcare benefits.</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 6. Support -->
+  <tr><td class="pad" style="padding:30px 36px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="32" style="width:32px;vertical-align:top;"><div style="width:26px;height:26px;background-color:#0A6EBD;border-radius:13px;color:#FFFFFF;font-size:13px;line-height:26px;font-weight:bold;text-align:center;">6</div></td>
+      <td style="font-size:18px;line-height:26px;font-weight:bold;color:#0B3C6F;">Support &amp; Assistance</td>
+    </tr></table>
+    <p style="margin:8px 0 12px;font-size:15px;line-height:23px;">For any assistance regarding login credentials, appointment bookings, laboratory confirmation or downloading health reports, please contact:</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td class="stack stack-gap" width="50%" style="width:50%;padding-right:6px;">
+        <div style="padding:12px 14px;border:1px solid #CFE4F1;border-radius:10px;font-size:14px;line-height:20px;"><span style="font-size:12px;color:#5B7083;">Contact Number</span><br><a href="tel:+918098998998" style="color:#0B3C6F;font-weight:bold;text-decoration:none;">8098998998</a></div>
+      </td>
+      <td class="stack" width="50%" style="width:50%;padding-left:6px;">
+        <div style="padding:12px 14px;border:1px solid #CFE4F1;border-radius:10px;font-size:14px;line-height:20px;"><span style="font-size:12px;color:#5B7083;">Email ID</span><br><a href="mailto:care@mysmarthealth.in" style="color:#0B3C6F;font-weight:bold;text-decoration:none;">care@mysmarthealth.in</a></div>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- Sign-off -->
+  <tr><td class="pad" style="padding:28px 36px 32px;font-size:15px;line-height:24px;">
+    <p style="margin:0 0 16px;">We encourage you to make the most of this healthcare benefit and prioritise your health and well-being.</p>
+    <p style="margin:0;">Best Regards,<br><strong style="color:#0B3C6F;">Team SmartHealth</strong></p>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td class="pad" style="padding:16px 36px;background-color:#0B3C6F;font-size:12px;line-height:18px;color:#BFD6E8;text-align:center;">
+    This email contains your personal login details. Please do not share or forward it.
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

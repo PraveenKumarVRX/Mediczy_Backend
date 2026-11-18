@@ -4469,6 +4469,9 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       designation: employee.designation || 'your role',
       companyName: selectedCorporate?.companyName || 'Your company',
       corporateId: selectedCorporate?.uniqueId || String(selectedCorporate?.id || '-'),
+      loginUrl: 'https://app.mediqzy.com/login',
+      ahcValidUntil: 'the date on your health checkup',
+      ahcPackageName: 'your health checkup',
     };
 
     let rendered = template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => escapeHtml(replacements[key] || ''));
