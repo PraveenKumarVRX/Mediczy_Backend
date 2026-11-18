@@ -4175,7 +4175,7 @@ export async function runCorporateEmployeeReminderBulkSend({ corporateId, corpor
 
       try {
         await welcomeEmailService.sendPreparedCorporateEmployeeWelcomeEmail(
-          { to: message.to, subject: message.subject, html: message.html },
+          { to: message.to, subject: message.subject, html: message.html, from: message.from },
           { teamUserId }
         );
         await recordSent('bulk', 1);
@@ -4635,7 +4635,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
 
         try {
           await welcomeEmailService.sendPreparedCorporateEmployeeWelcomeEmail(
-            { to: canonicalEmail, subject: message.subject, html: message.html },
+            { to: canonicalEmail, subject: message.subject, html: message.html, from: message.from },
             { provider: resolvedProvider }
           );
           await updateWelcomeDeliveryRecordStatus({

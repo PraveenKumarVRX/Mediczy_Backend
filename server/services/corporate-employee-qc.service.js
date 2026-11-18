@@ -468,7 +468,7 @@ async function runQcSweep() {
 
                 // Send email
                 await sendPreparedCorporateEmployeeWelcomeEmail(
-                  { to: message.to, subject: message.subject, html: message.html },
+                  { to: message.to, subject: message.subject, html: message.html, from: message.from },
                   { teamUserId }
                 );
 

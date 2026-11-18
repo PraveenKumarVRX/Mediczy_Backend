@@ -23,12 +23,13 @@ const EMPLOYEE = {
   companyName: 'Example Bank', employeeId: 'E1',
 };
 
-const arm = (entitlement) => {
+const arm = (entitlement, corporateUid = 'C9TV9Y') => {
   dbQuery.mockReset();
   sendMail.mockReset();
   dbQuery.mockImplementation(async (sql) => {
     if (sql.includes('email_event_assignments')) return [{ subject: SUBJECT, html_content: templateHtml }];
     if (sql.includes('user_health_packages')) return entitlement ? [entitlement] : [];
+    if (sql.includes('FROM corporates')) return [{ unique_id: corporateUid }];
     return [];
   });
 };
@@ -47,6 +48,18 @@ describe('corporate welcome email with a health checkup expiry date', () => {
 
     const lookup = dbQuery.mock.calls.find(([sql]) => sql.includes('user_health_packages'));
     expect(lookup[1].replacements).toEqual({ userId: 41, corporateId: 5 });
+  });
+
+  test('Equitas employee mail comes from the care desk, other corporates are unchanged', async () => {
+    arm({ packageName: 'Example AHC', validUntil: '27/12/2026' });
+    const equitas = await service.buildCorporateEmployeeWelcomeEmail(EMPLOYEE, 'x', { corporateId: 5 });
+    expect(equitas.from).toEqual({ email: 'care@mysmarthealth.in', name: 'My SmartHealth' });
+    const reminder = await service.buildCorporateEmployeeReminderEmail(EMPLOYEE, 'x', { corporateId: 5 });
+    expect(reminder.from.email).toBe('care@mysmarthealth.in');
+
+    arm({ packageName: 'Example AHC', validUntil: '27/12/2026' }, 'C0THER');
+    const other = await service.buildCorporateEmployeeWelcomeEmail(EMPLOYEE, 'x', { corporateId: 49 });
+    expect(other.from.email).not.toBe('care@mysmarthealth.in');
   });
 
   test('never sends a blank date when the employee has no open checkup', async () => {
@@ -73,6 +86,7 @@ describe('corporate welcome email with a health checkup expiry date', () => {
     const build = sendRoute.slice(sendRoute.indexOf('buildCorporateEmployeeWelcomeEmail('), sendRoute.indexOf('findMismatchedCredentialEmails('));
     expect(build).toContain('{ teamUserId, corporateId }');
     expect(build).toContain('assertAhcEntitlementForTemplate(message)');
+    expect(sendRoute).toContain('html: message.html, from: message.from }');
     expect(adminRoute).toContain("'care@mysmarthealth.in'");
     expect(templateHtml).toContain('care@mysmarthealth.in');
   });

@@ -38,6 +38,11 @@ const SES_FROM_ADDRESS = process.env.SES_FROM_ADDRESS || 'hello@mysmarthealth.in
 const SES_VERIFIED_DOMAINS = String(process.env.SES_VERIFIED_DOMAINS || 'mysmarthealth.in')
   .split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
 
+// Employee welcome and reminder mail for these corporates comes from their care desk, keyed by entity uid.
+const CORPORATE_EMPLOYEE_MAIL_SENDERS = Object.freeze({
+  C9TV9Y: { email: 'care@mysmarthealth.in', name: 'My SmartHealth' }, // Equitas Bank Ltd
+});
+
 function coerceSesFrom(from) {
   const raw = String(from || '').trim();
   const match = raw.match(/^"?([^"<]*)"?\s*<([^>]+)>$/);
@@ -329,6 +334,20 @@ async function getCustomTemplate(eventType, options = {}) {
     return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
   } catch {
     return null; // Fall through to hardcoded default
+  }
+}
+
+async function applyCorporateSender(msg, corporateId) {
+  if (!corporateId) return;
+  try {
+    const [corporate] = await postgresSequelize.query(
+      'SELECT unique_id FROM corporates WHERE id = :corporateId',
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    const sender = CORPORATE_EMPLOYEE_MAIL_SENDERS[corporate?.unique_id];
+    if (sender) msg.from = { ...sender };
+  } catch (error) {
+    console.error('Could not read the corporate email sender:', error?.message || error);
   }
 }
 
@@ -822,6 +841,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
   if (customTplEmp) {
     await applyCustomTemplate(msg, customTplEmp, employeeData, temporaryPassword, options);
   }
+  await applyCorporateSender(msg, options.corporateId);
 
   return msg;
 }
@@ -933,6 +953,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
   if (customTplReminder) {
     await applyCustomTemplate(msg, customTplReminder, employeeData, temporaryPassword, options);
   }
+  await applyCorporateSender(msg, options.corporateId);
 
   return msg;
 }
@@ -950,13 +971,13 @@ export async function sendCorporateEmployeeReminderEmail(employeeData, temporary
   }
 }
 
-export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html }, options = {}) {
+export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html, from }, options = {}) {
   if (!to || !subject || !html) {
     throw new Error("to, subject and html are required");
   }
   await sendMail({
     to,
-    from: {
+    from: from || {
       email: process.env.SENDGRID_FROM_EMAIL || "noreply@mediqzy.com",
       name: "My SmartHealth"
     },
