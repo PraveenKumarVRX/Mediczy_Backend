@@ -53,6 +53,7 @@ describe('corporate welcome email with a health checkup expiry date', () => {
 
     expect(msg.subject).toBe('Your Complimentary Health Checkup | Book by 27/12/2026');
     expect(msg.html).toContain('Dear Asha Rao,');
+    expect(msg.html).toContain('>E1</td>');
     expect(msg.html).toContain('27/12/2026');
     expect(msg.html).toContain('Temp-Pass$&1');
     expect(msg.html).not.toMatch(/\{\{\s*\w+\s*\}\}/);
