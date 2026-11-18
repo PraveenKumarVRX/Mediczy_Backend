@@ -43,6 +43,11 @@ const CORPORATE_EMPLOYEE_MAIL_SENDERS = Object.freeze({
   C9TV9Y: { email: 'care@mysmarthealth.in', name: 'My SmartHealth' }, // Equitas Bank Ltd
 });
 
+// The Team email template whose uploaded files go out with a corporate's welcome email.
+const CORPORATE_WELCOME_ATTACHMENT_TEMPLATES = Object.freeze({
+  C9TV9Y: 'db2f28d6-fd01-41dc-bcf9-c7bd31ba3e06', // Equitas AHC walkthrough guide
+});
+
 function coerceSesFrom(from) {
   const raw = String(from || '').trim();
   const match = raw.match(/^"?([^"<]*)"?\s*<([^>]+)>$/);
@@ -79,6 +84,13 @@ async function sendViaSes(msg) {
   // never produce an empty recipient entry (SES rejects the whole send for that).
   const bccList = (Array.isArray(msg.bcc) ? msg.bcc : [msg.bcc])
     .map((a) => String(a || '').trim()).filter(Boolean);
+  const attachments = (msg.attachments || []).map((file) => ({
+    RawContent: file.content,
+    FileName: file.filename,
+    ContentType: file.contentType,
+    ContentDisposition: 'ATTACHMENT',
+    ContentTransferEncoding: 'BASE64',
+  }));
   await client.send(new SendEmailCommand({
     FromEmailAddress: fromAddress,
     Destination: {
@@ -89,6 +101,7 @@ async function sendViaSes(msg) {
       Simple: {
         Subject: { Data: msg.subject, Charset: 'UTF-8' },
         Body: { Html: { Data: msg.html, Charset: 'UTF-8' } },
+        ...(attachments.length ? { Attachments: attachments } : {}),
       },
     },
   }));
@@ -225,7 +238,17 @@ async function sendViaSmtp(msg) {
     ...(bccList.length ? { bcc: bccList.join(', ') } : {}),
     subject: msg.subject,
     html: msg.html,
+    ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
   });
+}
+
+/** Loads the files a message must carry. A required file that is missing stops the send. */
+async function withTemplateAttachments(msg) {
+  if (!msg.attachmentTemplateId) return msg;
+  const { mailAttachmentsForTemplate } = await import('./team-email-template-attachments.service.js');
+  const attachments = await mailAttachmentsForTemplate(msg.attachmentTemplateId);
+  if (!attachments.length) throw new Error('The attachment for this welcome email could not be found');
+  return { ...msg, attachments };
 }
 
 // Normalize SendGrid-style msg object → nodemailer format and send.
@@ -234,7 +257,8 @@ async function sendViaSmtp(msg) {
 // transient SES error surfaces as a failure instead of silently re-routing mail to another
 // provider with a different From domain and different deliverability reputation.
 // options.provider: 'ses' | 'brevo' | 'auto'; default comes from EMAIL_PROVIDER, itself 'ses'.
-async function sendMail(msg, options = {}) {
+async function sendMail(message, options = {}) {
+  const msg = await withTemplateAttachments(message);
   const configuredProvider = String(process.env.EMAIL_PROVIDER || 'ses').toLowerCase();
   const provider = options.provider || configuredProvider;
   const normalizedProvider = ['ses', 'brevo', 'auto'].includes(String(provider || '').toLowerCase())
@@ -337,7 +361,7 @@ async function getCustomTemplate(eventType, options = {}) {
   }
 }
 
-async function applyCorporateSender(msg, corporateId) {
+async function applyCorporateSender(msg, corporateId, { welcome = false } = {}) {
   if (!corporateId) return;
   try {
     const [corporate] = await postgresSequelize.query(
@@ -346,6 +370,7 @@ async function applyCorporateSender(msg, corporateId) {
     );
     const sender = CORPORATE_EMPLOYEE_MAIL_SENDERS[corporate?.unique_id];
     if (sender) msg.from = { ...sender };
+    if (welcome) msg.attachmentTemplateId = CORPORATE_WELCOME_ATTACHMENT_TEMPLATES[corporate?.unique_id];
   } catch (error) {
     console.error('Could not read the corporate email sender:', error?.message || error);
   }
@@ -841,7 +866,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
   if (customTplEmp) {
     await applyCustomTemplate(msg, customTplEmp, employeeData, temporaryPassword, options);
   }
-  await applyCorporateSender(msg, options.corporateId);
+  await applyCorporateSender(msg, options.corporateId, { welcome: true });
 
   return msg;
 }
@@ -971,7 +996,7 @@ export async function sendCorporateEmployeeReminderEmail(employeeData, temporary
   }
 }
 
-export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html, from }, options = {}) {
+export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html, from, attachmentTemplateId }, options = {}) {
   if (!to || !subject || !html) {
     throw new Error("to, subject and html are required");
   }
@@ -982,7 +1007,8 @@ export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, h
       name: "My SmartHealth"
     },
     subject,
-    html
+    html,
+    attachmentTemplateId
   }, options);
   return { success: true, message: "Welcome email sent successfully" };
 }

@@ -4635,7 +4635,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
 
         try {
           await welcomeEmailService.sendPreparedCorporateEmployeeWelcomeEmail(
-            { to: canonicalEmail, subject: message.subject, html: message.html, from: message.from },
+            { to: canonicalEmail, subject: message.subject, html: message.html, from: message.from, attachmentTemplateId: message.attachmentTemplateId },
             { provider: resolvedProvider }
           );
           await updateWelcomeDeliveryRecordStatus({
