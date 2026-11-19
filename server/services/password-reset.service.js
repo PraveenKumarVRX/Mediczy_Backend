@@ -25,6 +25,23 @@ const findAccountByIdentifier = (Model, { email, phone, phoneField }) =>
       : { [phoneField]: phone }
   });
 
+// Read when used, because the production secrets are loaded after modules are imported.
+const FALLBACK_RESET_SECRET = crypto.randomBytes(32).toString('hex');
+const resetTokenSecret = () => process.env.PASSWORD_RESET_TOKEN_SECRET || process.env.JWT_SECRET || FALLBACK_RESET_SECRET;
+
+/**
+ * The reset token for an account and the code it verified. Keyed with a server secret, so
+ * it cannot be worked out without both; the app resends the code instead of the token.
+ */
+const resetTokenFor = (userType, accountId, code) => crypto
+  .createHmac('sha256', resetTokenSecret())
+  .update(`${userType}:${accountId}:${String(code).trim()}`)
+  .digest('hex');
+
+const modelForUserType = (userType) => ({
+  doctor: doctorModel, team: userModel, hospital: Hospital, nurse: Nurse, pharmacy: Pharmacy, corporate: Corporate,
+}[userType] || userModel);
+
 /**
  * Password Reset Service
  * Handles forgot password flow with OTP delivery via Email, SMS, and WhatsApp
@@ -423,7 +440,7 @@ class PasswordResetService {
       }
 
       // Generate password reset token
-      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetToken = resetTokenFor(userType, account.id, code);
       const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
       const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
 
@@ -553,6 +570,14 @@ class PasswordResetService {
 
       console.log(`✓ Token is valid and not expired`);
 
+      // A temporary password asked for a change at first login; choosing a new one here is that change.
+      if (Model.rawAttributes?.metadata) {
+        const meta = typeof account.metadata === 'string'
+          ? (() => { try { return JSON.parse(account.metadata); } catch { return {}; } })()
+          : (account.metadata || {});
+        if (meta.requirePasswordChange) account.metadata = { ...meta, requirePasswordChange: false };
+      }
+
       // Update password directly on the instance (will trigger beforeUpdate hook)
       account.password = newPassword;
       account.passwordResetToken = null;
@@ -569,6 +594,23 @@ class PasswordResetService {
       console.error('Password reset error:', error);
       throw error;
     }
+  }
+
+  /**
+   * Reset with the email or phone and the code already verified by /verify-otp, which is
+   * what the My SmartHealth app sends in place of the reset token.
+   */
+  async resetPasswordWithOtp({ email, phone, code, newPassword, userType = 'user' }) {
+    const Model = modelForUserType(userType);
+    const account = await findAccountByIdentifier(Model, {
+      email: normalizeEmail(email),
+      phone,
+      phoneField: userType === 'doctor' ? 'phone' : 'phoneNumber',
+    });
+    const invalid = { success: false, message: 'This code is invalid or has expired. Please request a new code.' };
+    if (!account) return invalid;
+    const result = await this.resetPassword({ resetToken: resetTokenFor(userType, account.id, code), newPassword, userType });
+    return result.success || result.code ? result : (/token/i.test(result.message || '') ? invalid : result);
   }
 
   /**

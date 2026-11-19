@@ -4,6 +4,9 @@ import passwordResetService from '../services/password-reset.service.js';
 
 const router = express.Router();
 
+// The web sends the code as `code`; the My SmartHealth app sends it as `otp`.
+const otpFrom = (body = {}) => String(body.code ?? body.otp ?? '').trim();
+
 /**
  * @route   POST /api/password-reset/request
  * @desc    Request password reset OTP via Email, SMS, and WhatsApp
@@ -55,7 +58,7 @@ router.post('/request', [
 router.post('/verify-otp', [
   body('email').optional().isEmail().withMessage('Must be a valid email'),
   body('phone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('Invalid phone format'),
-  body('code').notEmpty().isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits'),
+  body().custom((value) => /^\d{6}$/.test(otpFrom(value))).withMessage('OTP must be 6 digits'),
   body('userType').optional().isIn(['user', 'doctor', 'team', 'hospital', 'nurse', 'pharmacy', 'corporate']).withMessage("User type must be one of: user, doctor, team, hospital, nurse, pharmacy, corporate")
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -63,7 +66,8 @@ router.post('/verify-otp', [
     return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   }
   try {
-    const { email, phone, code, userType = 'user' } = req.body;
+    const { email, phone, userType = 'user' } = req.body;
+    const code = otpFrom(req.body);
 
     if (!email && !phone) {
       return res.status(400).json({
@@ -96,7 +100,7 @@ router.post('/verify-otp', [
  * @access  Public
  */
 router.post('/reset', [
-  body('resetToken').notEmpty().withMessage('Reset token is required'),
+  body('resetToken').optional().isString(),
   body('newPassword').notEmpty().isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
   body('userType').optional().isIn(['user', 'doctor', 'team', 'hospital', 'nurse', 'pharmacy', 'corporate']).withMessage("User type must be one of: user, doctor, team, hospital, nurse, pharmacy, corporate")
 ], async (req, res) => {
@@ -105,13 +109,17 @@ router.post('/reset', [
     return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   }
   try {
-    const { resetToken, newPassword, userType = 'user' } = req.body;
+    const { resetToken, newPassword, email, phone, userType = 'user' } = req.body;
+    const code = otpFrom(req.body);
 
-    const result = await passwordResetService.resetPassword({
-      resetToken,
-      newPassword,
-      userType
-    });
+    let result;
+    if (resetToken) {
+      result = await passwordResetService.resetPassword({ resetToken, newPassword, userType });
+    } else if ((email || phone) && /^\d{6}$/.test(code)) {
+      result = await passwordResetService.resetPasswordWithOtp({ email, phone, code, newPassword, userType });
+    } else {
+      return res.status(400).json({ success: false, message: 'Reset token, or email or phone with the 6-digit code, is required' });
+    }
 
     res.json(result);
 
