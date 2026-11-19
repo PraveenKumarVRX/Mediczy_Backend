@@ -1982,6 +1982,18 @@ router.put('/services', authUser, [
         doctor[key] = updateData[key];
       });
 
+      // Booking and search read consultationTypes, so the home-visit setting must reach it too.
+      if (typeof offersHomeVisits === 'boolean' || homeVisitFee !== undefined) {
+        const rawTypes = doctor.consultationTypes;
+        const types = typeof rawTypes === 'string' ? JSON.parse(rawTypes || '{}') : { ...(rawTypes || {}) };
+        types.homeVisit = {
+          ...(types.homeVisit || {}),
+          available: doctor.offersHomeVisits === true,
+          fee: Number(doctor.homeVisitFee ?? types.homeVisit?.fee ?? 0),
+        };
+        doctor.consultationTypes = types;
+      }
+
       await doctor.save();
       fs.appendFileSync(logFile, `Save completed\n`);
 

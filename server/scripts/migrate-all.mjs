@@ -145,6 +145,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261115000100-patient-consent-ai-assistant.migration.js',
   '20261115000200-lab-test-prices.migration.js',
   '20261115000300-family-relationship-in-laws.migration.js',
+  '20261118000100-mobile-orders-and-home-visits.migration.js',
 ];
 
 function runStep(step) {

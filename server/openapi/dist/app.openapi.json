@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/cart/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -9321,6 +9321,17 @@
                     "type": "string",
                     "description": "JSON address; required for home_delivery."
                   },
+                  "family_member_id": {
+                    "description": "Family member the order is for. Omit for the account holder.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
                   "prescription": {
                     "type": "string",
                     "format": "binary"
@@ -9421,6 +9432,138 @@
             "$ref": "#/components/responses/AppError"
           }
         }
+      }
+    },
+    "/api/pharmacy-orders/quote": {
+      "post": {
+        "tags": [
+          "Pharmacy orders"
+        ],
+        "summary": "Price a medicine basket without placing an order or using a coupon",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "coupon_code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        "subtotal": {
+                          "type": "number"
+                        },
+                        "delivery_charge": {
+                          "type": "number"
+                        },
+                        "discount": {
+                          "type": "number"
+                        },
+                        "discount_type": {
+                          "type": "string",
+                          "enum": [
+                            "automatic",
+                            "coupon"
+                          ],
+                          "nullable": true
+                        },
+                        "coupon_code": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "total_amount": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "requires_prescription": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
       }
     },
     "/api/pharmacy-orders/{orderId}": {
@@ -17387,6 +17530,39 @@
             "items": {
               "type": "object",
               "additionalProperties": true
+            }
+          },
+          "patient": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "self",
+                  "family_member"
+                ]
+              },
+              "family_member_id": {
+                "description": "Database identifier of the specified resource.",
+                "oneOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ],
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "relationship": {
+                "type": "string",
+                "nullable": true
+              }
             }
           },
           "total_amount": {

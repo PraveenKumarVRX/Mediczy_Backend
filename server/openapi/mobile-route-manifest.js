@@ -72,6 +72,7 @@ export const mobileRouters = [
   { file: "routes/patient-pharmacy-orders.route.js", mount: "/api/pharmacy-orders", operations: [
     {"method":"get","path":"/api/pharmacy-orders","public":false,"statuses":[200],"tag":"Pharmacy orders"},
     {"method":"post","path":"/api/pharmacy-orders/validate-coupon","public":false,"statuses":[200,201],"tag":"Pharmacy orders"},
+    {"method":"post","path":"/api/pharmacy-orders/quote","public":false,"statuses":[200],"tag":"Pharmacy orders"},
     {"method":"post","path":"/api/pharmacy-orders","public":false,"statuses":[200,201],"tag":"Pharmacy orders"},
     {"method":"get","path":"/api/pharmacy-orders/{orderId}","public":false,"statuses":[200],"tag":"Pharmacy orders"},
     {"method":"get","path":"/api/pharmacy-orders/{orderId}/tracking","public":false,"statuses":[200],"tag":"Pharmacy orders"},

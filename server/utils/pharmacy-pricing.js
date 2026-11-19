@@ -85,6 +85,17 @@ export const parsePackSize = (packSize) => {
   return fallback;
 };
 
+/** Pack wording for customers: a bare catalogue "10" becomes "Pack of 10 tablets". */
+export const describePack = (packSize, form) => {
+  const raw = String(packSize || '').trim();
+  if (!raw) return null;
+  if (!/^\d+$/.test(raw)) return raw.charAt(0).toUpperCase() + raw.slice(1);
+  const count = Number(raw);
+  const unit = singular(String(form || '').trim().split(/\s+/)[0] || '');
+  if (count <= 0) return null;
+  return COUNTABLE_UNITS.has(unit) ? `Pack of ${count} ${unit}${count === 1 ? '' : 's'}` : `Pack of ${count}`;
+};
+
 /** The catalogue price of one whole pack. */
 export const packPriceOf = (medicine) => {
   const candidates = [medicine?.selling_price, medicine?.mrp, medicine?.unit_price];

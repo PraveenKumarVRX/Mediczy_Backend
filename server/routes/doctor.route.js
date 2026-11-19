@@ -956,6 +956,8 @@ router.get("/:doctorId/user-slots", async (req, res) => {
     const weeklySchedule = normalizeWeeklySchedule(doctor.weeklySchedule);
     const practiceLocations = doctor.practiceLocations || [];
     const offDays = (doctor.offDays || ['sunday']).map((d) => String(d).toLowerCase());
+    // False when the doctor has published no hospital or clinic hours on any day.
+    const inPersonConfigured = Object.values(weeklySchedule).some((day) => !day.isOff && day.inPerson?.enabled);
 
     // If date is provided, get slots for that specific day
     if (date) {
@@ -970,6 +972,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           date,
           dayName,
           isOff: true,
+          inPersonConfigured,
           slots: { online: [], inPerson: [] }
         });
       }
@@ -1059,6 +1062,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
         dayName,
         slotDuration,
         isOff: false,
+        inPersonConfigured,
         slots: {
           online: onlineSlots,
           inPerson: inPersonSlots

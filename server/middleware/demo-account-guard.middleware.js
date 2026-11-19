@@ -57,6 +57,8 @@ export const DEMO_BLOCKED_REQUESTS = [
   [WRITE, /^\/api\/billing\/orders\/[^/]+\/refund$/, PAYMENT],
   [WRITE, /^\/api\/wallet\/(create-order|verify-payment)$/, PAYMENT],
   [WRITE, /^\/api\/membership\/(payment-order|upgrade(\/.*)?)$/, PAYMENT],
+  [WRITE, /^\/api\/membership\/addons\/[^/]+\/(payment-order|enroll)$/, PAYMENT],
+  [WRITE, /^\/api\/membership-plans\/enroll$/, PAYMENT],
   [WRITE, /^\/api\/membership-plans\/plans\/[^/]+\/create-order$/, PAYMENT],
   [WRITE, /^\/api\/health-checkups\/bookings\/[^/]+\/payment(\/verify)?$/, PAYMENT],
   [WRITE, /^\/api\/consultation\/payment\//, PAYMENT],

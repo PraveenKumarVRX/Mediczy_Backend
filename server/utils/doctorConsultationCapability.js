@@ -47,8 +47,19 @@ export const ONLINE_PRESENCE_SQL = `("isOnline" = true)`;
 /** In-person/walk-in capability. Pair with an address check; see below. */
 export const WALKIN_CAPABILITY_SQL = `("consultationTypes"->'walkIn'->'available' = 'true'::jsonb)`;
 
-/** Home-visit capability. Truthfully 0 doctors record this today. */
+/** Home-visit capability, kept in step with the doctor's home-visit service setting. */
 export const HOMEVISIT_CAPABILITY_SQL = `("consultationTypes"->'homeVisit'->'available' = 'true'::jsonb)`;
+
+/**
+ * Whether a weekly-availability slot can take this consultation type. A home visit
+ * uses the doctor's in-person hours, so walk-in slots serve it too.
+ */
+export function slotServesConsultation(slot, consultationType) {
+  const slotType = slot?.consultationType;
+  return slotType === consultationType
+    || slotType === 'both'
+    || (consultationType === 'homeVisit' && slotType === 'walkIn');
+}
 
 /**
  * Normalise the many spellings the routes accept into a canonical key.

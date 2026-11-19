@@ -36,6 +36,7 @@ import governanceRouter from './pharmacy/governance.route.js';
 import supplierReturnsRouter from './pharmacy/supplier-returns.route.js';
 import suppliersRouter from './pharmacy/suppliers.route.js';
 import creditRouter from './pharmacy/credit.route.js';
+import { describePack } from '../utils/pharmacy-pricing.js';
 
 const router = express.Router();
 
@@ -50,6 +51,7 @@ function withPrescriptionRequirement(medicine) {
   const requiresPrescription = PRESCRIPTION_REQUIRED_SCHEDULES.has(schedule);
   return {
     ...medicine,
+    pack_description: describePack(medicine.pack_size, medicine.form),
     requiresPrescription,
     prescriptionLabel: requiresPrescription ? `Prescription required (Schedule ${schedule})` : null,
   };

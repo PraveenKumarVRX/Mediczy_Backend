@@ -21,6 +21,7 @@ import { checkDoctorConflict, checkPatientConflict } from '../services/appointme
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import { slotServesConsultation } from '../utils/doctorConsultationCapability.js';
 
 const router = express.Router();
 
@@ -317,13 +318,21 @@ router.post('/book', authUser, [
     const slotAvailable = dayAvailability.slots.some(slot => 
       slot.startTime <= startTime && 
       slot.endTime >= endTime && 
-      (slot.consultationType === effectiveConsultationType || slot.consultationType === 'both')
+      slotServesConsultation(slot, effectiveConsultationType)
     );
 
     if (!slotAvailable) {
       return res.status(400).json({
         success: false,
         message: 'Requested time slot is not available for this consultation type'
+      });
+    }
+
+    if (effectiveConsultationType === 'homeVisit' && !Object.values(patientAddress || {}).some((value) => String(value ?? '').trim())) {
+      return res.status(400).json({
+        success: false,
+        code: 'HOME_VISIT_ADDRESS_REQUIRED',
+        message: 'Please add the address the doctor should visit'
       });
     }
 
@@ -827,8 +836,8 @@ router.get('/available-slots', [
     }
 
     // Get doctor's slots for the consultation type
-    const doctorSlots = dayAvailability.slots.filter(slot => 
-      slot.consultationType === effectiveConsultationType || slot.consultationType === 'both'
+    const doctorSlots = dayAvailability.slots.filter(slot =>
+      slotServesConsultation(slot, effectiveConsultationType)
     );
 
     // Get booked appointments for this date (DB-backed).

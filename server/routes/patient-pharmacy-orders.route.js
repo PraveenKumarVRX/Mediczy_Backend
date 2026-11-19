@@ -4,6 +4,7 @@
  *
  * Endpoints:
  *   GET    /api/pharmacy-orders                       – list orders (paginated)
+ *   POST   /api/pharmacy-orders/quote                 – price a basket without placing it
  *   POST   /api/pharmacy-orders                       – place a new order (multipart: items + optional prescription file)
  *   GET    /api/pharmacy-orders/:orderId              – get order details
  *   GET    /api/pharmacy-orders/:orderId/tracking     – get status timeline
@@ -15,7 +16,8 @@ import express from 'express';
 import multer from 'multer';
 import { authUser } from '../middleware/auth.middleware.js';
 import sharedPool from '../db/pgPool.js';
-import { resolveMedicine, priceLine, computeOrderTotals, STALE_UNIT_PRICING } from '../utils/pharmacy-pricing.js';
+import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
+import { resolveMedicine, priceLine, computeOrderTotals, requiresPrescription, STALE_UNIT_PRICING } from '../utils/pharmacy-pricing.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import {
   COUPON_SCOPES,
@@ -87,6 +89,148 @@ async function appendStatusEvent(orderId, status, note = '') {
     [status, JSON.stringify(statusEvent(status, note)), orderId]
   );
   return result.rows[0] || null;
+}
+
+/** The patient an order is for: the signed-in user, or one of their own family members. */
+async function resolveOrderPatient(user, rawFamilyMemberId) {
+  const requested = String(rawFamilyMemberId ?? '').trim();
+  if (requested) {
+    if (!/^[1-9]\d{0,9}$/.test(requested)) return null;
+    const member = await withRlsTransaction(sharedPool, { orgId: 0, userId: user.id }, async (client) => {
+      const { rows } = await client.query(
+        `SELECT id, "firstName", "lastName", relationship
+           FROM family_members
+          WHERE id = $1 AND "userId" = $2 AND "isActive" IS NOT FALSE`,
+        [Number(requested), user.id],
+      );
+      return rows[0] || null;
+    });
+    if (!member) return null;
+    return {
+      type: 'family_member',
+      family_member_id: member.id,
+      name: [member.firstName, member.lastName].filter(Boolean).join(' ').trim() || null,
+      relationship: member.relationship || null,
+    };
+  }
+  const { rows } = await sharedPool.query('SELECT "firstName", "lastName" FROM users WHERE id = $1', [user.id]);
+  return {
+    type: 'self',
+    family_member_id: null,
+    name: [rows[0]?.firstName, rows[0]?.lastName].filter(Boolean).join(' ').trim() || null,
+    relationship: 'self',
+  };
+}
+
+const prescriptionItems = (items) => items.filter((item) => requiresPrescription(item.schedule));
+
+/**
+ * Prices every line against the catalogue. Resolution is exact: numeric id, CIMS id, then a
+ * whole name. It used to be `name ILIKE '%<name>%' ... ORDER BY mrp ASC LIMIT 1`, the cheapest
+ * substring match, so "Augmentin 625" resolved to "CipAugmentin 625mg" at 110.83, a different
+ * manufacturer's product, and the prescription gate judged a drug the customer never ordered.
+ * An item that cannot be resolved is refused, not re-priced.
+ */
+async function priceOrderItems(items, userId) {
+  const unresolvedItems = [];
+  const stalePricedItems = [];
+  const enrichedItems = [];
+  for (const item of items) {
+    const name = item.medicine_name || item.name || '';
+    const dbMed = await resolveMedicine(sharedPool, {
+      medicineId: item.medicine_id ?? item.medicineId ?? item.id,
+      name,
+    });
+    if (!dbMed) { unresolvedItems.push(name || String(item.medicine_id ?? '')); continue; }
+    const line = priceLine(dbMed, item.quantity, item);
+    if (line.error === STALE_UNIT_PRICING) { stalePricedItems.push(dbMed.name); continue; }
+    if (line.error) { unresolvedItems.push(dbMed.name); continue; }
+    enrichedItems.push({
+      medicine_name: line.medicineName,
+      brand_name:    line.brandName,
+      generic_name:  line.genericName,
+      strength:      line.strength,
+      form:          line.form,
+      manufacturer:  line.manufacturer,
+      pack_size:     line.packSize,
+      medicine_id:   line.medicineId,
+      // Persisted on the line so a dispensing pharmacist sees the schedule without re-querying,
+      // and so an audit can tell what the system believed at the time of the order.
+      schedule:      line.schedule,
+      quantity:      line.quantity,
+      unit:          line.unit,
+      units_per_pack: line.unitsPerPack,
+      sold_by_pack:  line.soldByPack,
+      pack_price:    line.packPrice,
+      unit_price:    line.unitPrice,
+      line_total:    line.lineTotal,
+    });
+  }
+
+  // Sold by the pack: a per-tablet line would bill ten packs for ten tablets.
+  if (stalePricedItems.length) {
+    console.warn(`[pharmacy-orders] stale per-unit pricing from user ${userId}: ${stalePricedItems.join(', ')}`);
+    return { failure: { status: 409, body: {
+      success: false,
+      code: 'STALE_CLIENT_PRICING',
+      message: 'Medicines are sold by the pack. Please refresh the page and add these to your cart again.',
+      items: stalePricedItems,
+    } } };
+  }
+
+  if (unresolvedItems.length) {
+    return { failure: { status: 400, body: {
+      success: false,
+      code: 'MEDICINE_NOT_IN_CATALOGUE',
+      message: `We could not price these items against the current catalogue: ${unresolvedItems.join(', ')}. Please remove and re-add them.`,
+      unresolved: unresolvedItems,
+    } } };
+  }
+
+  return { enrichedItems };
+}
+
+/**
+ * What the order costs. 15% off above 2,000 and a flat 40 delivery fee come from the shared
+ * policy; the request's delivery_charge and discount are ignored. Offers do not stack: the
+ * automatic discount and a coupon are offers on the same basket, so the larger one applies.
+ */
+async function computeOrderAmounts(enrichedItems, userId, couponCode) {
+  const policy = computeOrderTotals(enrichedItems.map((i) => ({ lineTotal: i.line_total })));
+  const subtotal = policy.subtotal;
+  const deliveryChargeVal = policy.deliveryFee;
+
+  let couponValidation = null;
+  let discountVal = 0;
+  let appliedCouponCode = null;
+
+  if (couponCode) {
+    couponValidation = await validateOrderCoupon({
+      code: couponCode,
+      userId,
+      scope: COUPON_SCOPES.PHARMACY_PURCHASE,
+      orderAmount: subtotal
+    });
+    discountVal = couponValidation.discount;
+    appliedCouponCode = couponValidation.coupon.code;
+  }
+
+  const automaticDiscount = policy.discount;
+  const usedCoupon = discountVal > automaticDiscount;
+  if (!usedCoupon) {
+    discountVal = automaticDiscount;
+    appliedCouponCode = null;
+  }
+
+  return {
+    subtotal,
+    deliveryChargeVal,
+    discountVal,
+    appliedCouponCode,
+    usedCoupon,
+    couponValidation,
+    totalAmount: parseFloat(Math.max(0, subtotal + deliveryChargeVal - discountVal).toFixed(2)),
+  };
 }
 
 /* ── GET /api/pharmacy-orders ─────────────────────────────────────────────── */
@@ -166,6 +310,45 @@ router.post('/validate-coupon', authUser, async (req, res) => {
   }
 });
 
+/* ── POST /api/pharmacy-orders/quote ──────────────────────────────────────── */
+/* The same pricing an order would get, without placing it or using a coupon. */
+
+router.post('/quote', authUser, async (req, res) => {
+  try {
+    const { items, coupon_code: couponCode = null } = req.body || {};
+    const error = validateOrderBody({ items, delivery_type: 'store_pickup' });
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    const priced = await priceOrderItems(items, req.user.id);
+    if (priced.failure) return res.status(priced.failure.status).json(priced.failure.body);
+
+    const amounts = await computeOrderAmounts(priced.enrichedItems, req.user.id, couponCode);
+    return res.json({
+      success: true,
+      data: {
+        items: priced.enrichedItems,
+        subtotal: amounts.subtotal,
+        delivery_charge: amounts.deliveryChargeVal,
+        discount: amounts.discountVal,
+        discount_type: amounts.discountVal > 0 ? (amounts.usedCoupon ? 'coupon' : 'automatic') : null,
+        coupon_code: amounts.appliedCouponCode,
+        total_amount: amounts.totalAmount,
+        currency: 'INR',
+        requires_prescription: prescriptionItems(priced.enrichedItems).map((item) => ({
+          medicine_name: item.brand_name || item.medicine_name,
+          schedule: String(item.schedule).toUpperCase().trim(),
+        })),
+      },
+    });
+  } catch (err) {
+    if (/coupon|minimum order/i.test(err.message || '')) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    console.error('[patient-pharmacy-orders] POST quote error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to price the order' });
+  }
+});
+
 /* ── POST /api/pharmacy-orders ────────────────────────────────────────────── */
 /* Accepts multipart/form-data with optional `prescription` file field.
    The `items` field must be a JSON string when sending multipart. */
@@ -196,7 +379,17 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
       discount           = 0,
       coupon_code        = null,
       customer_notes     = null,
+      family_member_id   = null,
     } = req.body;
+
+    const patient = await resolveOrderPatient(req.user, family_member_id);
+    if (!patient) {
+      return res.status(400).json({
+        success: false,
+        code: 'FAMILY_MEMBER_NOT_FOUND',
+        message: 'Please choose a family member from your account',
+      });
+    }
 
     // ── Upload prescription file to MinIO if provided ─────────────────────
     let prescriptionFileUrl = null;
@@ -215,67 +408,9 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
       }
     }
 
-    // ── Enrich items with MRP from pharmacy_medicines DB ──────────────────
-    // Resolution is exact: numeric id, CIMS id, then a whole name. It used to be
-    // `name ILIKE '%<name>%' ... ORDER BY mrp ASC LIMIT 1` — the cheapest substring
-    // match — so "Augmentin 625" resolved to "CipAugmentin 625mg" at 110.83, a
-    // different manufacturer's product. The `schedule` below came off that same
-    // wrong row, which meant the prescription gate judged a drug the customer had
-    // never ordered. An item that cannot be resolved is refused, not re-priced.
-    const unresolvedItems = [];
-    const stalePricedItems = [];
-    const enrichedItems = [];
-    for (const item of items) {
-      const name = item.medicine_name || item.name || '';
-      const dbMed = await resolveMedicine(sharedPool, {
-        medicineId: item.medicine_id ?? item.medicineId ?? item.id,
-        name,
-      });
-      if (!dbMed) { unresolvedItems.push(name || String(item.medicine_id ?? '')); continue; }
-      const line = priceLine(dbMed, item.quantity, item);
-      if (line.error === STALE_UNIT_PRICING) { stalePricedItems.push(dbMed.name); continue; }
-      if (line.error) { unresolvedItems.push(dbMed.name); continue; }
-      enrichedItems.push({
-        medicine_name: line.medicineName,
-        brand_name:    line.brandName,
-        generic_name:  line.genericName,
-        strength:      line.strength,
-        form:          line.form,
-        manufacturer:  line.manufacturer,
-        pack_size:     line.packSize,
-        medicine_id:   line.medicineId,
-        // Persisted on the line so a dispensing pharmacist sees the schedule without re-querying,
-        // and so an audit can tell what the system believed at the time of the order.
-        schedule:      line.schedule,
-        quantity:      line.quantity,
-        unit:          line.unit,
-        units_per_pack: line.unitsPerPack,
-        sold_by_pack:  line.soldByPack,
-        pack_price:    line.packPrice,
-        unit_price:    line.unitPrice,
-        line_total:    line.lineTotal,
-      });
-    }
-
-    // Sold by the pack: a per-tablet line would bill ten packs for ten tablets.
-    if (stalePricedItems.length) {
-      console.warn(`[pharmacy-orders] stale per-unit pricing from user ${userId}: ${stalePricedItems.join(', ')}`);
-      return res.status(409).json({
-        success: false,
-        code: 'STALE_CLIENT_PRICING',
-        message: 'Medicines are sold by the pack. Please refresh the page and add these to your cart again.',
-        items: stalePricedItems,
-      });
-    }
-
-    if (unresolvedItems.length) {
-      return res.status(400).json({
-        success: false,
-        code: 'MEDICINE_NOT_IN_CATALOGUE',
-        message: `We could not price these items against the current catalogue: ${unresolvedItems.join(', ')}. Please remove and re-add them.`,
-        unresolved: unresolvedItems,
-      });
-    }
+    const priced = await priceOrderItems(items, userId);
+    if (priced.failure) return res.status(priced.failure.status).json(priced.failure.body);
+    const { enrichedItems } = priced;
 
     // ── Prescription gate for scheduled drugs ─────────────────────────────
     // Schedule H / H1 / X cannot lawfully be supplied without a prescription (Drugs and Cosmetics
@@ -287,10 +422,7 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
     //
     // Policy (decided 2026-10-04): require a stored prescription, else reject. The order must not
     // enter the fulfilment queue at all without one.
-    const RX_REQUIRED_SCHEDULES = new Set(['H', 'H1', 'X']);
-    const rxItems = enrichedItems.filter(
-      (i) => i.schedule && RX_REQUIRED_SCHEDULES.has(String(i.schedule).toUpperCase().trim()),
-    );
+    const rxItems = prescriptionItems(enrichedItems);
     if (rxItems.length > 0 && !prescriptionFileUrl) {
       const named = rxItems
         .map((i) => `${i.brand_name || i.medicine_name} (Schedule ${String(i.schedule).toUpperCase()})`)
@@ -313,40 +445,9 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
     }
 
     // ── Calculate totals ───────────────────────────────────────────────────
-    // 15% off above 2,000 and a flat 40 delivery fee, from the shared policy.
-    // delivery_charge used to be whatever the request said it was.
-    const policy = computeOrderTotals(enrichedItems.map((i) => ({ lineTotal: i.line_total })));
-    const subtotal          = policy.subtotal;
-    const deliveryChargeVal = policy.deliveryFee;
-
-    let couponValidation = null;
-    let discountVal = 0;
-    let appliedCouponCode = null;
-
-    if (coupon_code) {
-      couponValidation = await validateOrderCoupon({
-        code: coupon_code,
-        userId,
-        scope: COUPON_SCOPES.PHARMACY_PURCHASE,
-        orderAmount: subtotal
-      });
-      discountVal = couponValidation.discount;
-      appliedCouponCode = couponValidation.coupon.code;
-    }
-
-    // Offers do not stack: the automatic above-2,000 discount and a coupon the
-    // customer entered are both offers on the same basket, so the larger one
-    // applies. Adding them would discount the same money twice. The request's own
-    // `discount` field is ignored — like `price`, it was caller-supplied and
-    // nothing validated it.
-    const automaticDiscount = policy.discount;
-    const usedCoupon = discountVal > automaticDiscount;
-    if (!usedCoupon) {
-      discountVal = automaticDiscount;
-      appliedCouponCode = null;
-    }
-
-    const totalAmount       = parseFloat(Math.max(0, subtotal + deliveryChargeVal - discountVal).toFixed(2));
+    const {
+      subtotal, deliveryChargeVal, discountVal, appliedCouponCode, usedCoupon, couponValidation, totalAmount,
+    } = await computeOrderAmounts(enrichedItems, userId, coupon_code);
 
     const initialHistory = JSON.stringify([statusEvent('pending', 'Order placed')]);
 
@@ -355,8 +456,8 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
          (user_id, items, delivery_type, delivery_address, delivery_date,
           delivery_time_slot, prescription_note, prescription_file_url,
           subtotal, delivery_charge, discount, total_amount,
-          customer_notes, status_history)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          customer_notes, status_history, patient)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
         userId,
@@ -375,6 +476,7 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
           ? [customer_notes, `Coupon: ${appliedCouponCode}`].filter(Boolean).join(' | ')
           : (customer_notes || null),
         initialHistory,
+        JSON.stringify(patient),
       ]
     );
 
