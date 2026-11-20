@@ -52,9 +52,10 @@ export async function readIndb(path) {
   return rows;
 }
 
-const isMain = import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('import-indb-foods.mjs');
-if (isMain) {
-  const path = process.argv.slice(2).find((a) => !a.startsWith('--'));
+// Run directly or through scripts/ssm-env-loader.mjs (which shifts the script to argv[2]).
+const selfIndex = process.argv.findIndex((a) => a.endsWith('import-indb-foods.mjs'));
+if (selfIndex > 0) {
+  const path = process.argv.slice(selfIndex + 1).find((a) => !a.startsWith('--'));
   const APPLY = process.argv.includes('--apply');
   if (!path) { console.error('usage: import-indb-foods.mjs /path/to/INDB.xlsx [--apply]'); process.exit(1); }
   const rows = await readIndb(path);
