@@ -1,6 +1,7 @@
 import express from 'express';
 import { Op, Sequelize } from 'sequelize';
 import Lab from '../models/postgres/lab.model.postgres.js';
+import { entityParam } from '../utils/entity-ref.js';
 import FamilyMember from '../models/postgres/family-member.model.postgres.js';
 import { Appointment, LabTest } from '../models/index.js';
 import { ensureLabAppointmentHistory } from '../services/lab-appointment-history.service.js';
@@ -11,6 +12,8 @@ import { sanitiseContact } from '../utils/placeholder-contact.js';
 import { priceLabBooking, LabPricingError, listBookableLabTests, CORPORATE_BENEFIT_SOURCES } from '../services/lab-booking-pricing.service.js';
 
 const router = express.Router();
+// Entity references may be the lab's UID or its numeric id (utils/entity-ref.js).
+router.param('labId', entityParam('labs'));
 
 /**
  * Enhanced Laboratory Routes

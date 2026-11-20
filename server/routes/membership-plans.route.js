@@ -8,8 +8,11 @@ import puppeteer from 'puppeteer';
 import QRCode from 'qrcode';
 import userModel from '../models/user.model.intelligent.js';
 import { UserPlan } from '../models/membershipPlan.model.intelligent.js';
+import { entityParam } from '../utils/entity-ref.js';
 
 const router = express.Router();
+// Entity references may be the corporate's UID or its numeric id (utils/entity-ref.js).
+router.param('corporateId', entityParam('corporates'));
 
 /**
  * GET /api/membership-plans

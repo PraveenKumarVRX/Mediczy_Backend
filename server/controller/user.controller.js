@@ -127,7 +127,12 @@ export async function registerUser(req, res) {
     }
 
     if (phoneNumber) {
-      const existingByPhone = await userModel.findOne({ where: { phoneNumber } });
+      // Same rule as trg_users_one_member_account_per_phone: last 10 digits, live member accounts.
+      const digits = String(phoneNumber).replace(/\D/g, '').slice(-10);
+      const [existingByPhone] = digits.length === 10 && !/^0+$/.test(digits) ? await postgresSequelize.query(
+        `SELECT id FROM users WHERE right(regexp_replace(COALESCE("phoneNumber", ''), '\\D', '', 'g'), 10) = :digits
+            AND role = 'user' AND status <> 'deleted' AND NOT COALESCE("isTeam", false) AND NOT COALESCE("isAdmin", false) LIMIT 1`,
+        { replacements: { digits }, type: postgresSequelize.QueryTypes.SELECT }) : [];
       if (existingByPhone) {
         return res.status(409).json({ message: "Phone number already exists" });
       }
@@ -403,16 +408,19 @@ export async function signInUser(req, res) {
         }
       }
     } else if (phoneNumber) {
-      user = await User.findOne({
-        where: sequelizeWhere(
-          fn("regexp_replace", col("phoneNumber"), "[^0-9]", "", "g"),
-          phoneNumber
-        ),
+      // A few numbers are still shared (different people, grandfathered by the one-account-per-
+      // phone rule), so sign in to the account the password fits, as for email.
+      let candidates = await User.findAll({
+        where: sequelizeWhere(fn("regexp_replace", col("phoneNumber"), "[^0-9]", "", "g"), phoneNumber),
+        order: [["lastLoginAt", "DESC NULLS LAST"], ["id", "ASC"]],
+        limit: 5,
       });
-      if (!user) {
-        user = await User.findOne({
-          where: { phoneNumber },
-        });
+      if (!candidates.length) candidates = await User.findAll({ where: { phoneNumber }, order: [["id", "ASC"]], limit: 5 });
+      user = candidates[0] || null;
+      if (candidates.length > 1) {
+        for (const candidate of candidates) {
+          if (await candidate.comparePassword(password)) { user = candidate; break; }
+        }
       }
     } else if (corporateEmployeeUid) {
       const [employeeLink] = await postgresSequelize.query(
@@ -603,6 +611,7 @@ export async function signInUser(req, res) {
       membershipRequired: user.status !== 'active',
       user: {
         id: user.id,
+        uid: user.unique_id || user.dataValues?.unique_id || null, // the member's 6-character ID; prefer it over id
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,

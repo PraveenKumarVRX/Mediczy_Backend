@@ -166,6 +166,20 @@ const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 // One account per email whatever the case (users_email_lower_key), so look it up the same way.
 const findUserByEmail = (value) =>
   userModel.findOne({ where: sequelizeWhere(fn("lower", col("email")), normalizeEmail(value)) });
+// One member account per phone (trigger trg_users_one_member_account_per_phone): match on the
+// last 10 digits, the way the trigger does.
+const lastTenDigits = (value) => String(value || '').replace(/\D/g, '').slice(-10);
+const findMemberByPhone = async (value) => {
+  const digits = lastTenDigits(value);
+  if (digits.length < 10 || /^0+$/.test(digits)) return null;
+  const [row] = await postgresSequelize.query(
+    `SELECT id FROM users WHERE right(regexp_replace(COALESCE("phoneNumber", ''), '\\D', '', 'g'), 10) = :digits
+        AND role = 'user' AND status <> 'deleted' AND NOT COALESCE("isTeam", false) AND NOT COALESCE("isAdmin", false) LIMIT 1`,
+    { replacements: { digits }, type: postgresSequelize.QueryTypes.SELECT });
+  return row || null;
+};
+const PHONE_TAKEN = { success: false, code: 'PHONE_ALREADY_REGISTERED', message: 'This phone number is already registered. Please sign in instead, or use Forgot Password.' };
+const isPhoneTakenError = (error) => (error?.original?.constraint || error?.parent?.constraint || error?.constraint) === 'users_one_account_per_phone';
 const normalizePhone = (value) => String(value || "").replace(/[^0-9]/g, "");
 const buildSignupVerificationKey = (email, phoneNumber) => {
   return `signup:verify:${normalizeEmail(email)}:${normalizePhone(phoneNumber)}`;
@@ -905,6 +919,8 @@ router.post(
         }
       }
 
+      if (await findMemberByPhone(phoneNumber)) return res.status(409).json(PHONE_TAKEN);
+
       // Create user
       const newUser = await userModel.create({
         email,
@@ -1101,6 +1117,7 @@ router.post(
         ...(signupCoupon ? { coupon: signupCoupon } : {}),
         user: {
           id: newUser.id,
+          uid: newUser.unique_id || (await userModel.findByPk(newUser.id, { attributes: ['unique_id'] }))?.unique_id || null,
           firstName: newUser.firstName,
           lastName: newUser.lastName,
           email: newUser.email,
@@ -1114,6 +1131,7 @@ router.post(
         }
       });
     } catch (error) {
+      if (isPhoneTakenError(error)) return res.status(409).json(PHONE_TAKEN);
       console.error('Verify registration OTP error:', error);
       return res.status(500).json({
         success: false,
@@ -1769,6 +1787,7 @@ router.post(
         membershipRequired: user.status !== 'active',
         user: {
           id: user.id,
+          uid: user.unique_id || user.dataValues?.unique_id || null,
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,

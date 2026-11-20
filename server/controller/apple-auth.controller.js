@@ -33,6 +33,7 @@ import { recordSignupConsent } from '../services/patient-consent.service.js';
 /** The user object POST /users/login returns, so clients need no second shape. */
 const loginUserPayload = (user) => ({
   id: user.id,
+  uid: user.unique_id || user.dataValues?.unique_id || null, // the member's 6-character ID
   firstName: user.firstName,
   lastName: user.lastName,
   email: user.email,
