@@ -322,6 +322,7 @@ const WhatsAppTemplates      = lazy(() => import("@/pages/team/WhatsAppTemplates
 const ChatwootOmnichannel   = lazy(() => import("@/pages/team/ChatwootOmnichannel"));
 const TeamCorporateManagement  = lazy(() => import("@/pages/team/TeamCorporateManagement"));
 const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealthBooking"));
+const TeamCompletedCheckups    = lazy(() => import("@/pages/team/TeamCompletedCheckups"));
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
 const TeamStaffManagement      = lazy(() => import("@/pages/team/TeamStaffManagement"));
 const TeamSocialInbox          = lazy(() => import("@/pages/team/TeamSocialInbox"));
@@ -1528,6 +1529,8 @@ const AppRoutes = () => {
         <Route path="/team/corporate-health-packages" element={<TeamGuard permission="Corporate Management"><CorporateHealthPackages /></TeamGuard>} />
         <Route path="/team/corporate-health-booking"
           element={<TeamGuard permission="Corporate Management"><CorporateHealthBooking /></TeamGuard>} />
+        <Route path="/team/completed-checkups"
+          element={<TeamGuard permission="Corporate Management"><TeamCompletedCheckups /></TeamGuard>} />
         <Route path="/team/hospital-management"
           element={<TeamGuard permission="Hospital Management"><TeamHospitalManagementPage /></TeamGuard>} />
         <Route path="/team/clinic-management"

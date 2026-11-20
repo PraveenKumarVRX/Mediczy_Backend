@@ -11,8 +11,9 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Users, Search, Building2, Eye, Edit2, UserX, UserCheck,
   Loader2, Phone, Mail, Briefcase, Hash, RefreshCw, AlertCircle,
-  ChevronDown, X
+  ChevronDown, X, CalendarCheck
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import api from '@/utils/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -254,11 +255,18 @@ const TeamEmployeeManagement = () => {
               View, edit and manage corporate employees
             </p>
           </div>
-          {selectedCorporate && (
-            <Button variant="outline" size="sm" onClick={() => loadEmployees(selectedCorporate)} className="flex items-center gap-1.5">
-              <RefreshCw className="h-4 w-4" /> Refresh
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" size="sm" className="flex items-center gap-1.5">
+              <Link to={selectedCorporate ? `/team/completed-checkups?corporateId=${selectedCorporate.id}` : '/team/completed-checkups'}>
+                <CalendarCheck className="h-4 w-4" /> Completed check-ups &amp; reports
+              </Link>
             </Button>
-          )}
+            {selectedCorporate && (
+              <Button variant="outline" size="sm" onClick={() => loadEmployees(selectedCorporate)} className="flex items-center gap-1.5">
+                <RefreshCw className="h-4 w-4" /> Refresh
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* ── Corporate Selector ── */}
