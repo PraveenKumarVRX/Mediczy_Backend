@@ -183,7 +183,7 @@ export async function auditReportAccess(req, { action, corporateId, source, repo
        VALUES (gen_random_uuid(), :userId, :userType, :email, :action, 'corporate_health_report', :resourceId, :fields::jsonb, :ip, :ua,
                :method, :endpoint, 'success', 200, true, 'corporate_hr_report_access', now(), now(), now())`,
       { replacements: {
-        userId: String(req.user?.id ?? ''), userType: String(req.user?.role || req.userRole || 'corporate'), email: req.user?.email || null,
+        userId: String(req.user?.userId ?? req.user?.id ?? ''), userType: String(req.user?.role || req.userRole || 'corporate'), email: req.user?.email || null,
         action, resourceId: `${source}-${reportId}`, fields: JSON.stringify({ corporateId, source, reportId, employeeUserId }),
         ip: req.ip || null, ua: String(req.headers?.['user-agent'] || '').slice(0, 300), method: req.method, endpoint: req.originalUrl,
       } });

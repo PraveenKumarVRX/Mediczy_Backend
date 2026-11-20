@@ -123,11 +123,11 @@ describe('sending and auditing', () => {
   });
 
   test('HR access is written to audit_logs as PHI and a failed write does not break the request', async () => {
-    const req = { user: { id: 12, role: 'corporate_hr', email: 'hr@example.com' }, ip: '1.2.3.4', headers: { 'user-agent': 'jest' }, method: 'GET', originalUrl: '/api/corporate/checkup-reports/manual/47/file' };
+    const req = { user: { id: 45, userId: 31, role: 'corporate_hr', email: 'hr@example.com' }, ip: '1.2.3.4', headers: { 'user-agent': 'jest' }, method: 'GET', originalUrl: '/api/corporate/checkup-reports/manual/47/file' };
     await svc.auditReportAccess(req, { action: 'hr_view_checkup_report', corporateId: 45, source: 'manual', reportId: 47, employeeUserId: 4898 });
     expect(queries[0].sql).toContain('INSERT INTO audit_logs');
     expect(queries[0].sql).toContain("true, 'corporate_hr_report_access'");
-    expect(queries[0].opts.replacements).toMatchObject({ userId: '12', action: 'hr_view_checkup_report', resourceId: 'manual-47' });
+    expect(queries[0].opts.replacements).toMatchObject({ userId: '31', action: 'hr_view_checkup_report', resourceId: 'manual-47' });
     respond = () => { throw new Error('db down'); };
     await expect(svc.auditReportAccess(req, { action: 'x', corporateId: 1, source: 'manual', reportId: 1 })).resolves.toBeUndefined();
   });

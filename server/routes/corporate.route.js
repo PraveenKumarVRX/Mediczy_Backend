@@ -4122,7 +4122,7 @@ router.get('/checkup-completions', authCorporate, async (req, res) => {
   if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate on this account' });
   try {
     const { search, from, to, page, limit } = req.query;
-    const data = await listCheckupCompletions({ corporateId, actorUserId: req.user.id, search, from, to, page, limit });
+    const data = await listCheckupCompletions({ corporateId, actorUserId: req.user.userId || req.user.id, search, from, to, page, limit });
     await auditReportAccess(req, { action: 'hr_list_checkup_reports', corporateId, source: 'list', reportId: 0 });
     return res.json({ success: true, data });
   } catch (err) {
@@ -4135,7 +4135,7 @@ router.get('/checkup-reports/:source/:reportId/file', authCorporate, async (req,
   const corporateId = hrCorporateId(req);
   if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate on this account' });
   try {
-    const file = await getCorporateReportFile({ corporateId, actorUserId: req.user.id, source: req.params.source, reportId: req.params.reportId });
+    const file = await getCorporateReportFile({ corporateId, actorUserId: req.user.userId || req.user.id, source: req.params.source, reportId: req.params.reportId });
     if (!file) return res.status(404).json({ success: false, message: 'Report not found' });
     const download = req.query.download === '1';
     await auditReportAccess(req, { action: download ? 'hr_download_checkup_report' : 'hr_view_checkup_report', corporateId, source: req.params.source, reportId: req.params.reportId, employeeUserId: file.employeeUserId });
