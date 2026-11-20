@@ -827,6 +827,97 @@ check('features', 'template lint catches Meta rule', r.status === 200 && (r.data
   }
 }
 
+// 5j. Smart-Force test report (20 Nov): server discovery, the offline sync contract (processed, duplicate, conflict,
+// failed with `error`; failed items can be retried), lead stage receipts (stage, 409 when stale or closed, audit),
+// doctor intel partial updates, write routes for managers only, the app's filter names, no database text in errors.
+{
+  const users = [];
+  const mkUser = async (role) => {
+    const id = (await pool.query(
+      `INSERT INTO users ("firstName","lastName",email,password,"phoneNumber",role,status,"isAdmin","isTeam",tenant_id,organization_id,organization_type,metadata,"createdAt","updatedAt")
+       VALUES ('Smoke', $1, $2, '!', '0000000000', 'team', 'active', false, true, $3, $3, 'hospital', $4, now(), now()) RETURNING id`,
+      [role, `smoke-rpt-${role}-${users.length}-${stamp}@example.invalid`, T, JSON.stringify({ isCRM: true, crmRole: role, tenantId: T })])).rows[0].id;
+    users.push(id); return id;
+  };
+  const jtis = [];
+  const appTok = async (id) => {
+    const jti = randomUUID(); jtis.push(jti);
+    await pool.query(`INSERT INTO api_v2_refresh_tokens (jti, user_id, role, token_hash, expires_at, ip_address) VALUES ($1, $2, 'smart-force', 'smoke', now() + interval '10 minutes', 'smoke')`, [jti, id]);
+    return jwt.sign({ id, role: 'team', userType: 'team', isTeam: true, scope: 'smart-force', tenantId: T, tokenType: 'access', jti }, process.env.JWT_SECRET, { expiresIn: 300 });
+  };
+  const crmTok = (id, role) => jwt.sign({ id, role: 'team', isCRM: true, userType: 'crm', tenantId: T, crmRole: role, tokenType: 'access', jti: randomUUID() }, process.env.JWT_SECRET, { expiresIn: 300 });
+  const visits = [], leads = [], doctors = [], keys = [];
+  try {
+    r = await call('/api/mobile/bootstrap');
+    check('report', 'bootstrap without sign-in is 401 NO_TOKEN', r.status === 401 && r.data?.code === 'NO_TOKEN', `${r.status} ${msg(r)}`);
+    const repId = await mkUser('sales_rep');
+    const rep = await appTok(repId);
+    r = await call('/api/mobile/bootstrap', { token: rep });
+    check('report', 'bootstrap signed in returns the server and modes', r.status === 200 && r.data?.product === 'smart-force' && (r.data?.user?.modes || []).includes('field'), `${r.status} ${msg(r)}`);
+
+    const mkVisit = async (status) => (await pool.query(`INSERT INTO field_visits (user_id, tenant_id, entity_type, entity_name, purpose, status, created_at, updated_at) VALUES ($1, $2, 'doctor', 'Smoke Sync Clinic', 'relationship', $3, now(), now()) RETURNING id`, [repId, T, status])).rows[0].id;
+    const open = await mkVisit('planned'), done = await mkVisit('completed');
+    visits.push(open, done);
+    const key = (k) => { const v = `smoke-${stamp}-${k}`; keys.push(v); return v; };
+    const sync = (queue) => call('/api/field/sync', { token: rep, method: 'POST', body: { device_id: 'smoke', queue } });
+    r = await sync([
+      { idempotency_key: key('ok'), operation: 'complete_visit', payload: { visit_id: open, outcome: 'Smoke done' } },
+      { idempotency_key: key('missing'), operation: 'complete_visit', payload: { visit_id: 999999999, outcome: 'x' } },
+      { idempotency_key: key('done'), operation: 'complete_visit', payload: { visit_id: done, outcome: 'x' } },
+      { idempotency_key: key('bad'), operation: 'teleport', payload: {} },
+    ]);
+    const by = Object.fromEntries((r.data?.results || []).map((x) => [x.idempotency_key, x]));
+    check('report', 'sync: real visit is processed', by[`smoke-${stamp}-ok`]?.status === 'processed', JSON.stringify(by[`smoke-${stamp}-ok`] || r.status));
+    check('report', 'sync: unknown visit fails with error (never silently synced)', by[`smoke-${stamp}-missing`]?.status === 'failed' && by[`smoke-${stamp}-missing`]?.error, JSON.stringify(by[`smoke-${stamp}-missing`] || {}));
+    check('report', 'sync: visit completed on the server is a conflict', by[`smoke-${stamp}-done`]?.status === 'conflict', JSON.stringify(by[`smoke-${stamp}-done`] || {}));
+    check('report', 'sync: unsupported operation fails with error', by[`smoke-${stamp}-bad`]?.status === 'failed' && by[`smoke-${stamp}-bad`]?.error, JSON.stringify(by[`smoke-${stamp}-bad`] || {}));
+    r = await sync([{ idempotency_key: `smoke-${stamp}-ok`, operation: 'complete_visit', payload: { visit_id: open, outcome: 'Smoke done' } }]);
+    check('report', 'sync: resent item is a duplicate', r.data?.results?.[0]?.status === 'duplicate', JSON.stringify(r.data?.results?.[0] || r.status));
+    const late = await mkVisit('planned'); visits.push(late);
+    r = await sync([{ idempotency_key: `smoke-${stamp}-missing`, operation: 'complete_visit', payload: { visit_id: late, outcome: 'Retry' } }]);
+    check('report', 'sync: a failed item can be retried and then applies', r.data?.results?.[0]?.status === 'processed', JSON.stringify(r.data?.results?.[0] || r.status));
+
+    const { rows: [fl] } = await pool.query(`INSERT INTO field_leads (user_id, entity_name, entity_type, lead_type, status, pipeline_stage, tenant_id, created_at, updated_at) VALUES ($1, $2, 'corporate', 'corporate', 'new', 'contacted', $3, now(), now()) RETURNING id`, [repId, 'Smoke Stage Corp ' + stamp, T]);
+    leads.push(fl.id);
+    const mgr = token;
+    r = await call(`/api/crm/field-force/leads/${fl.id}/stage`, { token: crmTok(repId, 'sales_rep'), method: 'PATCH', body: { stage: 'proposal' } });
+    check('report', 'field executive cannot change a deal stage on the manager API', r.status === 403, r.status);
+    r = await call(`/api/crm/field-force/leads/${fl.id}/stage`, { token: mgr, method: 'PATCH', body: { stage: 'proposal', expected_stage: 'contacted' } });
+    check('report', 'stage receipt carries the new stage', r.status === 200 && r.data?.stage === 'proposal' && r.data?.previous_stage === 'contacted', `${r.status} ${r.data?.stage}`);
+    r = await call(`/api/crm/field-force/leads/${fl.id}/stage`, { token: mgr, method: 'PATCH', body: { stage: 'qualified', expected_stage: 'contacted' } });
+    check('report', 'stale stage update is a 409 with the current stage', r.status === 409 && r.data?.stage === 'proposal', `${r.status} ${r.data?.code}`);
+    const { rows: [audit] } = await pool.query(`SELECT count(*)::int AS n FROM crm_audit_log WHERE entity_type = 'field_lead' AND entity_id = $1 AND event_type = 'stage_changed'`, [fl.id]);
+    check('report', 'stage change is audited', audit.n === 1, `rows=${audit.n}`);
+
+    const { rows: [d] } = await pool.query(`INSERT INTO field_doctor_crm (doctor_name, tenant_id, created_at, updated_at) VALUES ($1, $2, now(), now()) RETURNING id`, ['Dr Smoke Intel ' + stamp, T]);
+    doctors.push(d.id);
+    await call(`/api/crm/field-force/doctor-crm/${d.id}/intel`, { token: mgr, method: 'PUT', body: { gatekeeper_name: 'Ravi', opd_days: 'Mon-Sat', notes: 'first' } });
+    r = await call(`/api/crm/field-force/doctor-crm/${d.id}/intel`, { token: mgr, method: 'PUT', body: { notes: 'only notes' } });
+    check('report', 'intel save with only notes keeps the other fields', r.status === 200 && r.data?.gatekeeper_name === 'Ravi' && r.data?.opd_days === 'Mon-Sat' && r.data?.notes === 'only notes', `${r.status} ${JSON.stringify(r.data || {}).slice(0, 80)}`);
+    r = await call(`/api/crm/field-force/doctor-crm/${d.id}/intel`, { token: crmTok(repId, 'sales_rep'), method: 'PUT', body: { notes: 'x' } });
+    const r2 = await call('/api/crm/field-force/doctor-crm', { token: crmTok(repId, 'sales_rep'), method: 'POST', body: { doctor_name: 'x' } });
+    check('report', 'intel and doctor writes on the manager API refused for field executives', r.status === 403 && r2.status === 403, `${r.status}/${r2.status}`);
+    r = await call(`/api/crm/field-force/visits?user_id=${repId}&status=completed`, { token: mgr });
+    const vs = Array.isArray(r.data) ? r.data : (r.data?.visits || r.data?.data || []);
+    check('report', 'manager visit filters (user_id, status) apply', r.status === 200 && vs.length >= 2 && vs.every((v) => v.user_id === repId && v.status === 'completed'), `${r.status} n=${vs.length}`);
+    r = await call('/api/crm/field-force/leads/not-a-number/stage', { token: mgr, method: 'PATCH', body: { stage: 'proposal' } });
+    check('report', 'server errors carry no database text', r.status >= 400 && !/syntax|invalid input|relation|column/i.test(JSON.stringify(r.data)), `${r.status} ${JSON.stringify(r.data).slice(0, 80)}`);
+  } finally {
+    if (visits.length) { await pool.query(`DELETE FROM crm_activities WHERE field_visit_id = ANY($1)`, [visits]); await pool.query(`DELETE FROM field_visits WHERE id = ANY($1)`, [visits]); }
+    if (leads.length) { await pool.query(`DELETE FROM crm_audit_log WHERE entity_type = 'field_lead' AND entity_id = ANY($1)`, [leads]); await pool.query(`DELETE FROM field_leads WHERE id = ANY($1)`, [leads]); }
+    if (doctors.length) { await pool.query(`DELETE FROM field_doctor_intel WHERE doctor_crm_id = ANY($1)`, [doctors]); await pool.query(`DELETE FROM field_doctor_crm WHERE id = ANY($1)`, [doctors]); }
+    if (keys.length) await pool.query(`DELETE FROM field_sync_log WHERE idempotency_key = ANY($1)`, [keys]);
+    if (jtis.length) await pool.query(`DELETE FROM api_v2_refresh_tokens WHERE jti = ANY($1)`, [jtis]);
+    if (users.length) {
+      await pool.query(`DELETE FROM crm_activities WHERE created_by = ANY($1) OR assigned_to = ANY($1)`, [users]);
+      await pool.query(`DELETE FROM crm_audit_log WHERE actor_user_id = ANY($1) OR entity_id = ANY($1)`, [users]).catch(() => {});
+      await pool.query(`DELETE FROM users WHERE id = ANY($1)`, [users]);
+    }
+    const { rows: [left] } = await pool.query(`SELECT count(*)::int AS n FROM users WHERE email LIKE 'smoke-rpt-%' || $1 || '%'`, [stamp]);
+    check('cleanup', 'test report accounts removed', left.n === 0, `${left.n} left`);
+  }
+}
+
 // 6. Sending gates: outbound open, bulk still refused. Invalid payloads only, so nothing can be sent.
 r = await as('/api/crm/whatsapp/templates/send', { method: 'POST', body: {} });
 check('gates', 'outbound fence open (send reaches validation)', r.status !== 503 && r.status >= 400 && r.status < 500, `${r.status} ${msg(r)}`);

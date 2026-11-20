@@ -80,13 +80,54 @@ test('documented CME speaker name is accepted', async () => {
  expect((await request(app).post('/manager/cme-events/7/speakers').send({ name: 'Test Speaker' })).status).toBe(201);
  expect(query.mock.calls[0][1][3]).toBe('Test Speaker');
 });
+// The stage change runs in one transaction: lock the lead, update, audit. Script the client by statement.
+const stageClient = (current) => client.query.mockImplementation(async (sql) => {
+  if (/FOR UPDATE/.test(sql)) return { rows: current ? [{ id: 2, stage: current }] : [] };
+  if (/^\s*UPDATE field_leads/.test(sql)) return { rows: [{ id: 2, status: 'new', pipeline_stage: 'contacted' }] };
+  return { rows: [] };
+});
 test('lead response and executive filter reflect pipeline stage', async () => {
- query.mockResolvedValue({ rows: [{ id: 2, status: 'new', pipeline_stage: 'contacted' }] });
+ stageClient('new');
  const r = await request(app).patch('/manager/leads/2/stage').send({ stage: 'contacted' });
  expect(r.status).toBe(200); expect(r.body.status).toBe('contacted');
+ expect(r.body.stage).toBe('contacted'); expect(r.body.previous_stage).toBe('new');
+ expect(client.query.mock.calls.some(([sql]) => /INSERT INTO crm_audit_log/.test(sql))).toBe(true);
  await request(app).get('/field/leads?status=contacted');
- expect(query.mock.calls[1][0]).toContain('pipeline_stage AS status');
- expect(query.mock.calls[1][0]).toContain('pipeline_stage=$3');
+ expect(query.mock.calls[0][0]).toContain('pipeline_stage AS status');
+ expect(query.mock.calls[0][0]).toContain('pipeline_stage=$3');
+});
+test('a stale stage update is a 409 with the current stage, and closed deals need reopen', async () => {
+ stageClient('proposal');
+ let r = await request(app).patch('/manager/leads/2/stage').send({ stage: 'qualified', expected_stage: 'contacted' });
+ expect(r.status).toBe(409); expect(r.body.stage).toBe('proposal');
+ stageClient('closed_lost');
+ r = await request(app).patch('/manager/leads/2/stage').send({ stage: 'contacted' });
+ expect(r.status).toBe(409); expect(r.body.code).toBe('closed');
+});
+test('sync: an unknown visit fails with error instead of being reported as synced', async () => {
+ client.query.mockImplementation(async (sql) => ({ rows: /FROM field_visits/.test(sql) ? [] : [] }));
+ const r = await request(app).post('/field/sync').send({ queue: [{ idempotency_key: 'k1', operation: 'complete_visit', payload: { visit_id: 99 } }] });
+ expect(r.status).toBe(200);
+ expect(r.body.results[0].status).toBe('failed');
+ expect(r.body.results[0].error).toBeTruthy();
+ expect(r.body.processed).toBe(0);
+});
+test('sync: a visit already completed on the server is a conflict', async () => {
+ client.query.mockImplementation(async (sql) => ({ rows: /FROM field_visits/.test(sql) ? [{ id: 5, status: 'completed' }] : [] }));
+ const r = await request(app).post('/field/sync').send({ queue: [{ idempotency_key: 'k2', operation: 'complete_visit', payload: { visit_id: 5 } }] });
+ expect(r.body.results[0].status).toBe('conflict');
+});
+test('intel save with only notes leaves the other fields alone', async () => {
+ query.mockImplementation(async (sql) => {
+  if (/FROM field_doctor_crm/.test(sql)) return { rows: [{ id: 3 }] };
+  if (/SELECT id FROM field_doctor_intel/.test(sql)) return { rows: [{ id: 9 }] };
+  return { rows: [{ id: 9, notes: 'only notes' }] };
+ });
+ const r = await request(app).put('/manager/doctor-crm/3/intel').send({ notes: 'only notes' });
+ expect(r.status).toBe(200);
+ const update = query.mock.calls.find(([sql]) => /UPDATE field_doctor_intel/.test(sql));
+ expect(update[0]).toContain('notes = $2');
+ expect(update[0]).not.toContain('gatekeeper_name');
 });
 test('planned visit cancellation restricts owner, tenant and state', async () => {
  query.mockResolvedValue({ rows: [{ id: 2, status: 'cancelled' }] });

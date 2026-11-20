@@ -72,6 +72,20 @@ app.use('/api/onboarding',(await import('./routes/crm-onboarding.route.js')).bui
 // /api/app serves the app's three modes (field, manager, agent) with the CRM's own services and access rules.
 {const sf=await import('./routes/crm-smart-force-auth.route.js');
  const appAuth={tenantId:tenant.id,tenantUid:tenant.unique_id};
+ // Server discovery for the app's "Connect to server" step: unauthenticated it answers 401 NO_TOKEN (proof this
+ // is a Smart-Force server); signed in it returns the server and the person's modes. The static
+ // /.well-known/smartforce.json is served by nginx.
+ app.get('/api/mobile/bootstrap',(req,res,next)=>/^Bearer\s+\S+/i.test(req.headers.authorization||'')?next():res.status(401).json({success:false,code:'NO_TOKEN',error:'Please sign in.',message:'Please sign in.',product:'smart-force'}),
+  sf.smartForceAuth(appAuth),(req,res)=>res.set('Cache-Control','no-store').json({success:true,product:'smart-force',server:{name:tenant.name,apiBase:process.env.MOBILE_PUBLIC_ORIGIN||'https://app.medstarhospitals.com',auth:'/api/team',field:'/api/field',app:'/api/app'},user:req.smartForceUser}));
+ // Rate limits on the field routes that write in bulk or can be guessed at (middleware requirement 7), per user and address.
+ {const {default:rateLimit}=await import('express-rate-limit');
+  const lim=(limit,windowMs=60000)=>rateLimit({windowMs,limit,standardHeaders:'draft-7',legacyHeaders:false,validate:false,
+   keyGenerator:(req)=>`${req.ip}|${String(req.headers.authorization||'').slice(-32)}`,
+   handler:(req,res)=>res.status(429).json({success:false,code:'rate_limited',error:'Too many requests. Wait a minute and try again.',message:'Too many requests. Wait a minute and try again.'})});
+  app.use('/api/field/sync',lim(30));
+  app.use('/api/field/coupon',lim(30));
+  app.use(/^\/api\/field\/cme-events\/[^/]+\/checkin\/?$/,lim(60));
+  app.use('/api/crm/field-force/notifications/push',lim(10));}
  app.use('/api/team',sf.buildSmartForceAuthRouter(appAuth));
  app.use('/api/field',sf.smartForceAuth(appAuth),(await import('./routes/field-force.route.js')).default);
  app.use('/api/app',sf.smartForceAuth(appAuth),(await import('./routes/crm-app-mobile.route.js')).buildAppMobileRouter());}

@@ -15,6 +15,13 @@
  */
 
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
+// One error shape for the app: { error, code, requestId }. Database text stays in the server log.
+function serverError(res, err, req) {
+  const requestId = req?.id || req?.headers?.['x-request-id'] || randomUUID();
+  console.error('[field]', requestId, err?.message);
+  return res.status(500).json({ error: 'Something went wrong. Try again.', code: 'internal_error', requestId });
+}
 import sharedPool from '../db/pgPool.js';
 import { recordReferral, campRegistrationToLead, syncVisitFollowUp } from '../services/crm-referral-network.service.js';
 import { authTeam as platformAuthTeam, requirePermission } from '../middleware/team.middleware.js';
@@ -85,7 +92,7 @@ router.post('/attendance/clock-in', authTeam, FF, async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     console.error('field clock-in error', err);
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -111,7 +118,7 @@ router.patch('/attendance/clock-out', authTeam, FF, async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     console.error('field clock-out error', err);
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -131,7 +138,7 @@ router.get('/attendance/today', authTeam, FF, async (req, res) => {
     );
     res.json(rows[0] || null);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -162,7 +169,7 @@ router.get('/attendance/history', authTeam, FF, async (req, res) => {
     ]);
     res.json({ records: data.rows, total: parseInt(count.rows[0].count), page: +page, limit: +limit });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -186,7 +193,7 @@ router.post('/attendance/exception', authTeam, FF, async (req, res) => {
     );
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -231,7 +238,7 @@ router.post('/visits', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -246,7 +253,7 @@ router.patch('/visits/:id/cancel', authTeam, FF, async (req, res) => {
     );
     if (!rows.length) return res.status(409).json({ error: 'Visit not found or no longer planned' });
     res.json(rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { serverError(res, err, req); }
 });
 
 // PATCH /visits/:id/check-in
@@ -265,7 +272,7 @@ router.patch('/visits/:id/check-in', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Visit not found or already checked in' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -311,7 +318,7 @@ router.patch('/visits/:id/check-out', authTeam, FF, async (req, res) => {
     await syncVisitFollowUp(rows[0].tenant_id, rows[0].id).catch((e) => console.error('[field] follow-up task', e.message));
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -345,7 +352,7 @@ router.put('/visits/:id', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Visit not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -376,7 +383,7 @@ router.get('/visits', authTeam, FF, async (req, res) => {
     ]);
     res.json({ visits: data.rows, total: parseInt(count.rows[0].count), page: +page, limit: +limit });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -390,7 +397,7 @@ router.get('/visits/:id', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Visit not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -449,7 +456,7 @@ router.post('/daily-report', authTeam, FF, async (req, res) => {
     );
     res.status(201).json({ ...rows[0], report_id: rows[0].id });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -462,7 +469,7 @@ router.get('/daily-report/today', authTeam, FF, async (req, res) => {
     );
     res.json(rows[0] || null);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -493,7 +500,7 @@ router.post('/travel', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -513,7 +520,7 @@ router.get('/travel', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -540,7 +547,7 @@ router.post('/expenses', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -563,7 +570,7 @@ router.get('/expenses', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -583,7 +590,7 @@ router.get('/expenses/:id', authTeam, FF, async (req, res) => {
     if (!claim.rows.length) return res.status(404).json({ error: 'Claim not found' });
     res.json({ ...claim.rows[0], items: items.rows });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -618,7 +625,7 @@ router.post('/expenses/:id/items', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -637,7 +644,7 @@ router.delete('/expenses/:id/items/:itemId', authTeam, FF, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -652,7 +659,7 @@ router.patch('/expenses/:id/submit', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Claim not found or already submitted' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -669,7 +676,7 @@ router.get('/camps', authTeam, FF, async (req, res) => {
     const camps = await HealthCamp.findAll({ where, order: [['start_date', 'DESC']], limit: 50 });
     res.json(camps);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -680,7 +687,7 @@ router.get('/camps/:id', authTeam, FF, async (req, res) => {
     if (!camp) return res.status(404).json({ error: 'Camp not found' });
     res.json(camp);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -703,7 +710,7 @@ router.post('/camps', authTeam, FF, async (req, res) => {
     });
     res.status(201).json({ success: true, camp });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -730,7 +737,7 @@ router.post('/empanelment', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -751,7 +758,7 @@ router.get('/empanelment', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -789,7 +796,7 @@ router.patch('/empanelment/:id', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Application not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -807,7 +814,7 @@ router.post('/empanelment/:id/milestone', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -825,7 +832,7 @@ router.patch('/empanelment/:id/milestone/:mid', authTeam, FF, async (req, res) =
     if (!rows.length) return res.status(404).json({ error: 'Milestone not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -854,7 +861,7 @@ router.post('/outreach', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -874,7 +881,7 @@ router.get('/outreach', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -908,7 +915,7 @@ router.patch('/outreach/:id', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Account not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -933,7 +940,7 @@ router.get('/team/attendance', authTeam, FFM, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -952,7 +959,7 @@ router.get('/team/visits', authTeam, FFM, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1006,7 +1013,7 @@ router.get('/my/targets', authTeam, FF, async (req, res) => {
     );
     res.json(expanded);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1065,7 +1072,7 @@ router.get('/my/scorecard', authTeam, FF, async (req, res) => {
       target:   targetRow ? { target_type: 'visits', target_value: targetRow.visits_target, ...targetRow } : null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1088,7 +1095,7 @@ router.post('/visits/:id/exception', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0] || { message: 'Exception already submitted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1105,7 +1112,7 @@ router.get('/visits/:id/exception', authTeam, FF, async (req, res) => {
     );
     res.json(rows[0] || null);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1128,7 +1135,7 @@ router.get('/my/exceptions', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1146,7 +1153,7 @@ router.get('/tour-plans', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1170,7 +1177,7 @@ router.post('/tour-plans', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(409).json({ error: 'An approved or submitted tour plan cannot be overwritten' });
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1187,7 +1194,7 @@ router.patch('/tour-plans/:id/submit', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Draft tour plan not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1215,7 +1222,7 @@ router.post('/camps/:id/register', authTeam, FF, async (req, res) => {
     } catch (e) { console.error('[field-force] camp registration to CRM lead failed:', e.message); }
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1232,7 +1239,7 @@ router.get('/camps/:id/registrations', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1255,7 +1262,7 @@ router.post('/handovers', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1275,7 +1282,7 @@ router.get('/handovers', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1298,7 +1305,7 @@ router.get('/outreach-permissions', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1322,7 +1329,7 @@ router.post('/outreach-permissions', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1349,7 +1356,7 @@ router.get('/my/day-plan', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1367,7 +1374,7 @@ router.patch('/visits/:id/sequence', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Visit not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1388,7 +1395,7 @@ router.patch('/visits/:id/checklist', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Visit not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1421,7 +1428,7 @@ router.get('/doctor-crm', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1444,7 +1451,7 @@ router.get('/leads', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1481,7 +1488,7 @@ router.post('/leads', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1530,7 +1537,7 @@ router.get('/institution/:entityType/:entityId', authTeam, FF, async (req, res) 
       empanelment: emp.rows,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1555,7 +1562,7 @@ router.get('/cme-events', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1576,7 +1583,7 @@ router.post('/cme-events', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1597,7 +1604,7 @@ router.post('/cme-events/:id/invite', authTeam, FF, async (req, res) => {
     );
     res.status(201).json(rows[0] || { message: 'Already invited' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1615,7 +1622,7 @@ router.post('/cme-events/:id/checkin', authTeam, FF, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Invalid QR token or already checked in' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1631,7 +1638,7 @@ router.get('/cme-events/:id/attendees', authTeam, FF, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1658,7 +1665,7 @@ router.get('/notifications', authTeam, FF, async (req, res) => {
     );
     res.json({ notifications: rows, unread_count: Number(cnt[0].unread_count) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1673,7 +1680,7 @@ router.patch('/notifications/:id/read', authTeam, FF, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1689,128 +1696,136 @@ router.patch('/notifications/read-all', authTeam, FF, async (req, res) => {
     );
     res.json({ marked_read: rowCount });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
 // ── offline sync ──────────────────────────────────────────────────────────────
 
-// POST /sync  — process a queue of offline operations idempotently
+// POST /sync — process a queue of offline operations idempotently.
+// Contract (SmartForce Mobile Backend API requirements, decision 3): each item comes back as
+//   processed  applied now                       duplicate  applied before (same key, same user)
+//   conflict   the server's copy changed; the app asks which to keep
+//   failed     not applied; `error` says why and the app retries later
+// One transaction per item. Only processed items are remembered, so a failed item can be retried.
+const SYNC_OPS = ['clock_in', 'clock_out', 'create_visit', 'complete_visit', 'add_notification_read', 'refer_patient'];
+class SyncOutcome extends Error { constructor(status, message) { super(message); this.status = status; } }
 router.post('/sync', authTeam, FF, async (req, res) => {
-  const { queue = [], device_id, last_sync_at } = req.body;
+  const { queue = [], device_id } = req.body || {};
   const uid = req.user.id;
   const tid = tenantId(req);
-  if (!Array.isArray(queue)) return res.status(400).json({ error: 'queue must be an array' });
+  if (!Array.isArray(queue)) return res.status(400).json({ error: 'queue must be an array', code: 'invalid_queue' });
+  if (queue.length > 200) return res.status(400).json({ error: 'Send at most 200 items at a time', code: 'queue_too_large' });
 
   const results = [];
-  for (const item of queue.slice(0, 200)) {
-    const { idempotency_key, operation, payload } = item;
-    if (!idempotency_key || !operation) {
-      results.push({ idempotency_key, status: 'skipped', error: 'missing idempotency_key or operation' });
+  for (const item of queue) {
+    const { idempotency_key, operation, payload = {} } = item || {};
+    if (!idempotency_key || !SYNC_OPS.includes(operation)) {
+      results.push({ idempotency_key: idempotency_key ?? null, status: 'failed', error: !idempotency_key ? 'missing idempotency_key' : `unsupported operation: ${operation}` });
       continue;
     }
+    const { rows: [seen] } = await sharedPool.query(
+      `SELECT result FROM field_sync_log WHERE idempotency_key = $1 AND user_id = $2 AND status = 'processed'`, [idempotency_key, uid]);
+    if (seen) { results.push({ idempotency_key, status: 'duplicate', result: seen.result }); continue; }
 
-    // check idempotency — already processed?
-    const { rows: existing } = await sharedPool.query(
-      `SELECT id, status, result FROM field_sync_log WHERE idempotency_key=$1`,
-      [idempotency_key]
-    );
-    if (existing.length) {
-      results.push({ idempotency_key, status: 'duplicate', result: existing[0].result });
-      continue;
-    }
-
-    let status = 'processed';
-    let result = null;
-    let error_message = null;
-
+    const client = await sharedPool.connect();
+    let status = 'processed', result = null, error = null;
     try {
+      await client.query('BEGIN');
       switch (operation) {
         case 'clock_in': {
           const { lat, lng, accuracy_m, address } = payload;
-          const d = new Date().toISOString().slice(0, 10);
-          const { rows } = await sharedPool.query(
-            `INSERT INTO field_attendance
-               (user_id, date, clock_in_at, clock_in_lat, clock_in_lng, clock_in_accuracy_m, clock_in_address, status, tenant_id)
-             VALUES ($1,$2,NOW(),$3,$4,$5,$6,'present',$7)
-             ON CONFLICT (user_id, date) DO UPDATE SET
-               clock_in_lat=$3, clock_in_lng=$4, clock_in_accuracy_m=$5, clock_in_address=$6, updated_at=NOW()
-             RETURNING id`,
-            [uid, d, lat||null, lng||null, accuracy_m||null, address||null, tid]
-          );
-          result = { id: rows[0]?.id };
+          const { rows } = await client.query(
+            `INSERT INTO field_attendance (user_id, date, clock_in_at, clock_in_lat, clock_in_lng, clock_in_accuracy_m, clock_in_address, status, tenant_id)
+             VALUES ($1, (now() AT TIME ZONE 'Asia/Kolkata')::date, NOW(), $2, $3, $4, $5, 'present', $6)
+             ON CONFLICT (user_id, date) DO NOTHING RETURNING id`,
+            [uid, lat || null, lng || null, accuracy_m || null, address || null, tid]);
+          if (!rows[0]) throw new SyncOutcome('conflict', 'Already clocked in today on the server');
+          result = { id: rows[0].id };
           break;
         }
         case 'clock_out': {
           const { lat, lng, accuracy_m } = payload;
-          const d = new Date().toISOString().slice(0, 10);
-          const { rows } = await sharedPool.query(
-            `UPDATE field_attendance SET clock_out_at=NOW(), clock_out_lat=$3,
-               clock_out_lng=$4, clock_out_accuracy_m=$5, updated_at=NOW()
-             WHERE user_id=$1 AND date=$2 RETURNING id`,
-            [uid, d, lat||null, lng||null, accuracy_m||null]
-          );
-          result = { id: rows[0]?.id };
+          const { rows } = await client.query(
+            `UPDATE field_attendance SET clock_out_at = NOW(), clock_out_lat = $2, clock_out_lng = $3, clock_out_accuracy_m = $4, updated_at = NOW()
+              WHERE user_id = $1 AND date = (now() AT TIME ZONE 'Asia/Kolkata')::date AND clock_out_at IS NULL RETURNING id`,
+            [uid, lat || null, lng || null, accuracy_m || null]);
+          if (!rows[0]) throw new SyncOutcome('failed', 'Not clocked in today, or already clocked out');
+          result = { id: rows[0].id };
           break;
         }
         case 'create_visit': {
-          const { entity_type, entity_id, entity_name, visit_type, planned_at, notes } = payload;
-          const { rows } = await sharedPool.query(
-            `INSERT INTO field_visits
-               (user_id, tenant_id, entity_type, entity_id, entity_name, visit_type, planned_at, notes_planned, status, is_unplanned)
-             VALUES ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8,'planned',TRUE)
-             RETURNING id`,
-            [uid, tid, entity_type||'other', entity_id||null, entity_name||null,
-             visit_type||'regular', planned_at||null, notes||null]
-          );
-          result = { id: rows[0]?.id };
+          const { entity_type, entity_id, entity_name, visit_type, planned_at, notes, doctor_crm_id } = payload;
+          const { rows } = await client.query(
+            `INSERT INTO field_visits (user_id, tenant_id, entity_type, entity_id, entity_name, visit_type, planned_at, notes_planned, status, is_unplanned, doctor_crm_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8, 'planned', TRUE, $9) RETURNING id`,
+            [uid, tid, entity_type || 'other', entity_id || null, entity_name || null, visit_type || 'regular', planned_at || null, notes || null, Number(doctor_crm_id) || null]);
+          result = { id: rows[0].id };
           break;
         }
         case 'complete_visit': {
-          // field_visits has no notes_actual column — outcome is the real free-text
-          // narrative field; fall back to it when the doc-documented notes_actual is sent.
+          // field_visits has no notes_actual column; outcome is the narrative field.
           const { visit_id, notes_actual, outcome, checklist, next_action, follow_up_date } = payload;
-          const { rows } = await sharedPool.query(
-            `UPDATE field_visits SET status='completed', outcome=$3,
-               visit_checklist=COALESCE($4::jsonb, visit_checklist), check_out_at=NOW(), updated_at=NOW(),
-               next_action=COALESCE($5, next_action), follow_up_date=COALESCE($6::date, follow_up_date)
-             WHERE id=$2 AND user_id=$1 RETURNING id`,
-            [uid, visit_id, outcome || notes_actual || null, checklist ? JSON.stringify(checklist) : null,
-             next_action || null, /^\d{4}-\d{2}-\d{2}$/.test(String(follow_up_date || '')) ? follow_up_date : null]
-          );
-          if (rows[0]?.id) await syncVisitFollowUp(tid, rows[0].id).catch((e) => console.error('[field] follow-up task', e.message));
-          result = { id: rows[0]?.id };
+          const { rows: [v] } = await client.query(`SELECT id, status FROM field_visits WHERE id = $1 AND user_id = $2 AND tenant_id = $3 FOR UPDATE`, [Number(visit_id) || 0, uid, tid]);
+          if (!v) throw new SyncOutcome('failed', 'Visit not found for this user');
+          if (v.status === 'completed') throw new SyncOutcome('conflict', 'This visit was already completed on the server');
+          if (v.status === 'cancelled') throw new SyncOutcome('conflict', 'This visit was cancelled on the server');
+          await client.query(
+            `UPDATE field_visits SET status = 'completed', outcome = $2, visit_checklist = COALESCE($3::jsonb, visit_checklist),
+               check_out_at = NOW(), updated_at = NOW(), next_action = COALESCE($4, next_action), follow_up_date = COALESCE($5::date, follow_up_date)
+             WHERE id = $1`,
+            [v.id, outcome || notes_actual || null, checklist ? JSON.stringify(checklist) : null,
+             next_action || null, /^\d{4}-\d{2}-\d{2}$/.test(String(follow_up_date || '')) ? follow_up_date : null]);
+          result = { id: v.id };
           break;
         }
         case 'add_notification_read': {
-          await sharedPool.query(
-            `UPDATE field_notifications SET read=TRUE, read_at=NOW()
-             WHERE id=$1 AND user_id=$2`, [payload.notification_id, uid]
-          );
+          const { rowCount } = await client.query(`UPDATE field_notifications SET read = TRUE, read_at = NOW() WHERE id = $1 AND user_id = $2`, [payload.notification_id, uid]);
+          if (!rowCount) throw new SyncOutcome('failed', 'Notification not found');
           result = { ok: true };
           break;
         }
+        case 'refer_patient':
+          break; // applied after this transaction (it runs its own), below
         default:
-          status = 'skipped';
-          error_message = `unknown operation: ${operation}`;
+          throw new SyncOutcome('failed', `unsupported operation: ${operation}`);
       }
+      await client.query(
+        `INSERT INTO field_sync_log (user_id, tenant_id, device_id, idempotency_key, operation, payload, status, result, error_message)
+         VALUES ($1,$2,$3,$4,$5,$6,'processed',$7,NULL)
+         ON CONFLICT (idempotency_key) DO UPDATE SET status = 'processed', result = EXCLUDED.result, error_message = NULL
+           WHERE field_sync_log.user_id = EXCLUDED.user_id`,
+        [uid, tid, device_id || 'unknown', idempotency_key, operation, JSON.stringify(payload), result ? JSON.stringify(result) : null]);
+      if (operation === 'refer_patient') await client.query('ROLLBACK'); else await client.query('COMMIT');
     } catch (opErr) {
-      status = 'failed';
-      error_message = opErr.message;
-    }
+      await client.query('ROLLBACK').catch(() => {});
+      status = opErr instanceof SyncOutcome ? opErr.status : 'failed';
+      error = opErr instanceof SyncOutcome ? opErr.message : 'Could not apply this change';
+      if (!(opErr instanceof SyncOutcome)) console.error('[field sync]', operation, opErr.message);
+    } finally { client.release(); }
 
-    await sharedPool.query(
-      `INSERT INTO field_sync_log
-         (user_id, tenant_id, device_id, idempotency_key, operation, payload, status, result, error_message)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (idempotency_key) DO NOTHING`,
-      [uid, tid, device_id||'unknown', idempotency_key, operation,
-       JSON.stringify(payload||{}), status, result ? JSON.stringify(result) : null, error_message]
-    );
-    results.push({ idempotency_key, status, result, error_message });
+    if (operation === 'refer_patient' && status === 'processed') {
+      try {
+        const { rows: [t] } = await sharedPool.query(`SELECT unique_id FROM tenants WHERE id = $1`, [tid]);
+        const ctx = { tenantId: Number(tid), tenantUid: t?.unique_id, userId: uid, role: 'sales_rep', manager: false, own: false, canEdit: true, canRefer: true };
+        result = await recordReferral(ctx, payload.doctor_crm_id, payload, { channel: 'app' });
+        await sharedPool.query(
+          `INSERT INTO field_sync_log (user_id, tenant_id, device_id, idempotency_key, operation, payload, status, result) VALUES ($1,$2,$3,$4,$5,$6,'processed',$7)
+           ON CONFLICT (idempotency_key) DO UPDATE SET status = 'processed', result = EXCLUDED.result WHERE field_sync_log.user_id = EXCLUDED.user_id`,
+          [uid, tid, device_id || 'unknown', idempotency_key, operation, JSON.stringify(payload), JSON.stringify(result)]);
+      } catch (e) {
+        status = e.statusCode === 409 ? 'conflict' : 'failed';
+        error = e.statusCode && e.statusCode < 500 ? e.message : 'Could not record the referral';
+        result = null;
+      }
+    }
+    if (status === 'processed' && operation === 'complete_visit' && result?.id) {
+      await syncVisitFollowUp(tid, result.id).catch((e) => console.error('[field] follow-up task', e.message));
+    }
+    results.push({ idempotency_key, status, result, ...(error ? { error } : {}) });
   }
 
-  res.json({ processed: results.length, results, server_time: new Date().toISOString() });
+  res.json({ processed: results.filter((r) => r.status === 'processed').length, results, server_time: new Date().toISOString() });
 });
 
 // ── device telemetry ──────────────────────────────────────────────────────────
@@ -1832,7 +1847,7 @@ router.post('/telemetry', authTeam, FF, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1856,7 +1871,7 @@ router.get('/coupon/validate/:code', authTeam, FF, async (req, res) => {
     const valid = !c.usageLimit || c.usageCount < c.usageLimit;
     res.json({ ...c, can_redeem: valid });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1890,7 +1905,7 @@ router.get('/territory', authTeam, FF, async (req, res) => {
     ]);
     res.json({ territories: territory.rows, stops: stops.rows });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1961,7 +1976,7 @@ router.get('/ai/briefing', authTeam, FF, async (req, res) => {
       data: { scorecard: sc, targets: tgt, pending_exceptions: pendingExceptions.rows[0]?.cnt },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1993,7 +2008,7 @@ router.post('/ai/optimize-route', authTeam, FF, async (req, res) => {
 
     res.json({ optimized_stops: optimized, order, efficiency_note: 'Ordered by proximity estimate.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 

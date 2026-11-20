@@ -12,6 +12,7 @@
  */
 
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import pool from '../db/pgPool.js';
 import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
 import { syncLegacyLeadToV2 } from '../services/crm-v2-sync.service.js';
@@ -22,6 +23,12 @@ const FF_READ   = requireCRMCapability('field_force:read');
 const FF_MANAGE = requireCRMCapability('field_force:manage');
 
 function tid(req) { return req.crmUser.tenantId || 1; }
+// One error shape for the app: { error, code, requestId }. Database text stays in the server log.
+function serverError(res, err, req) {
+  const requestId = req?.id || req?.headers?.['x-request-id'] || randomUUID();
+  console.error('[crm field-force]', requestId, err?.message);
+  return res.status(500).json({ error: 'Something went wrong. Try again.', code: 'internal_error', requestId });
+}
 
 function thisMonth() { return new Date().toISOString().slice(0, 7); }
 function today()     { return new Date().toISOString().slice(0, 10); }
@@ -44,7 +51,7 @@ router.get('/daily-reports', authCRM, FF_READ, async (req, res) => {
       [tid(req), date || null, exec_id || null]
     );
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { serverError(res, err, req); }
 });
 
 // ─── SUMMARY KPIs ─────────────────────────────────────────────────────────────
@@ -108,7 +115,7 @@ router.get('/summary', authCRM, FF_READ, async (req, res) => {
       targets: targets.rows[0],
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -127,13 +134,13 @@ router.get('/attendance', authCRM, FF_READ, async (req, res) => {
          (SELECT COUNT(*) FROM field_visits WHERE user_id = a.user_id AND DATE(COALESCE(planned_at,created_at)) = a.date) AS visits_total
        FROM field_attendance a
        JOIN users u ON u.id = a.user_id
-       WHERE a.tenant_id = $1 AND a.date = $2
+       WHERE a.tenant_id = $1 AND a.date = $2 AND ($3::int IS NULL OR a.user_id = $3::int)
        ORDER BY (u."firstName" || ' ' || u."lastName")`,
-      [tenantId, date]
+      [tenantId, date, Number(req.query.user_id || req.query.exec_id) || null]
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -141,12 +148,18 @@ router.get('/attendance', authCRM, FF_READ, async (req, res) => {
 
 // GET /visits?date=&exec_id=&entity_type=&page=1
 router.get('/visits', authCRM, FF_READ, async (req, res) => {
-  const { date, exec_id, entity_type, purpose, page = 1, limit = 50 } = req.query;
+  const { date, from, to, status, entity_type, purpose, page = 1 } = req.query;
+  const exec_id = req.query.exec_id || req.query.user_id; // the app sends user_id
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
   const tenantId = tid(req);
   const params = [tenantId];
   const conds  = ['v.tenant_id = $1'];
+  const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
 
-  if (date)        { params.push(date);        conds.push(`DATE(COALESCE(v.planned_at, v.created_at)) = $${params.length}`); }
+  if (isDate(date))  { params.push(date);  conds.push(`DATE(COALESCE(v.planned_at, v.created_at)) = $${params.length}`); }
+  if (isDate(from))  { params.push(from);  conds.push(`DATE(COALESCE(v.planned_at, v.created_at)) >= $${params.length}`); }
+  if (isDate(to))    { params.push(to);    conds.push(`DATE(COALESCE(v.planned_at, v.created_at)) <= $${params.length}`); }
+  if (status)        { params.push(String(status)); conds.push(`v.status = $${params.length}`); }
   if (exec_id)     { params.push(exec_id);     conds.push(`v.user_id = $${params.length}`); }
   if (entity_type) { params.push(entity_type); conds.push(`v.entity_type = $${params.length}`); }
   if (purpose)     { params.push(purpose);     conds.push(`v.purpose = $${params.length}`); }
@@ -164,7 +177,7 @@ router.get('/visits', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -211,7 +224,7 @@ router.get('/visits/analytics', authCRM, FF_READ, async (req, res) => {
     ]);
     res.json({ month, by_exec: byExec.rows, by_purpose: byPurpose.rows, by_entity_type: byEntityType.rows, daily: daily.rows });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -240,7 +253,7 @@ router.get('/expenses', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -255,7 +268,7 @@ router.get('/expenses/:id', authCRM, FF_READ, async (req, res) => {
     if (!claim.rows.length) return res.status(404).json({ error: 'Claim not found' });
     res.json({ ...claim.rows[0], items: items.rows });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -285,7 +298,7 @@ router.patch('/expenses/:id/approve', authCRM, FF_MANAGE, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Claim not found, not submitted, or approved amount exceeds claimed amount' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -315,7 +328,7 @@ router.patch('/expenses/:id/reject', authCRM, FF_MANAGE, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Claim not found or not in submitted state' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -339,7 +352,7 @@ router.get('/targets', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -378,7 +391,7 @@ router.post('/targets', authCRM, FF_MANAGE, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -446,7 +459,7 @@ router.get('/team/:userId/scorecard', authCRM, FF_READ, async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -465,7 +478,7 @@ router.get('/territories', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -483,7 +496,7 @@ router.post('/territories', authCRM, FF_MANAGE, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -494,7 +507,7 @@ router.delete('/territories/:id', authCRM, FF_MANAGE, async (req, res) => {
     await pool.query(`UPDATE field_territories SET active=FALSE, updated_at=NOW() WHERE id=$1 AND tenant_id=$2`, [req.params.id, tenantId]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -519,7 +532,7 @@ router.get('/leads', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -544,12 +557,12 @@ router.get('/doctor-crm', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
 // POST /doctor-crm
-router.post('/doctor-crm', authCRM, FF_READ, async (req, res) => {
+router.post('/doctor-crm', authCRM, FF_MANAGE, async (req, res) => {
   const {
     doctor_name, qualification, specialty, hospital_affiliation,
     address, area, city, phone, email, opd_days, avg_daily_patients,
@@ -577,12 +590,12 @@ router.post('/doctor-crm', authCRM, FF_READ, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
 // PATCH /doctor-crm/:id
-router.patch('/doctor-crm/:id', authCRM, FF_READ, async (req, res) => {
+router.patch('/doctor-crm/:id', authCRM, FF_MANAGE, async (req, res) => {
   const {
     qualification, specialty, hospital_affiliation, address, area, city,
     phone, email, opd_days, avg_daily_patients, referral_potential,
@@ -627,7 +640,7 @@ router.patch('/doctor-crm/:id', authCRM, FF_READ, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Doctor not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -651,7 +664,7 @@ router.get('/team', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -716,7 +729,7 @@ router.get('/empanelment', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -764,7 +777,7 @@ router.get('/approvals', authCRM, FF_READ, async (req, res) => {
 
     res.json(results);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -790,7 +803,7 @@ router.patch('/approvals/exceptions/:id/approve', authCRM, FF_MANAGE, async (req
     if (!rows.length) return res.status(404).json({ error: 'Exception not found or already reviewed' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -818,7 +831,7 @@ router.patch('/approvals/exceptions/:id/reject', authCRM, FF_MANAGE, async (req,
     if (!rows.length) return res.status(404).json({ error: 'Exception not found or already reviewed' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -844,7 +857,7 @@ router.patch('/approvals/tour-plans/:id/approve', authCRM, FF_MANAGE, async (req
     if (!rows.length) return res.status(404).json({ error: 'Tour plan not found or not submitted' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -872,40 +885,59 @@ router.patch('/approvals/tour-plans/:id/reject', authCRM, FF_MANAGE, async (req,
     if (!rows.length) return res.status(404).json({ error: 'Tour plan not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
 // ── lead pipeline stage progression ──────────────────────────────────────────
 
 // PATCH /leads/:id/stage
-router.patch('/leads/:id/stage', authCRM, FF_READ, async (req, res) => {
-  // `stage`/`notes` are the doc's documented field names; pipeline_stage/note are this
-  // table's own — accept either.
-  const { pipeline_stage, note, stage, notes } = req.body;
+router.patch('/leads/:id/stage', authCRM, FF_MANAGE, async (req, res) => {
+  // `stage`/`notes` are the doc's documented field names; pipeline_stage/note are this table's own.
+  // expected_stage (optional): the stage the client last saw; a different current stage is a 409, not a silent overwrite.
+  const { pipeline_stage, note, stage, notes, expected_stage, reopen } = req.body || {};
   const resolvedStage = pipeline_stage || stage;
   const resolvedNote = note || notes;
   const valid = ['new','contacted','qualified','proposal','empanelment','closed_won','closed_lost'];
   if (!valid.includes(resolvedStage)) {
-    return res.status(400).json({ error: `stage must be one of: ${valid.join(', ')}` });
+    return res.status(400).json({ error: `stage must be one of: ${valid.join(', ')}`, code: 'invalid_stage' });
   }
+  if (resolvedStage === 'closed_won') return res.status(400).json({ error: 'Use the convert action with the contract value to mark a deal won', code: 'use_convert' });
   const tenantId = tid(req);
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+    const { rows: [cur] } = await client.query(`SELECT id, COALESCE(pipeline_stage, 'new') AS stage FROM field_leads WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, tenantId]);
+    if (!cur) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Lead not found', code: 'not_found' }); }
+    if (expected_stage && expected_stage !== cur.stage) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `This deal is now at ${cur.stage.replace(/_/g, ' ')}. Refresh and try again.`, code: 'stale_stage', stage: cur.stage });
+    }
+    if (['closed_won', 'closed_lost'].includes(cur.stage) && !reopen) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This deal is closed. Send reopen: true to reopen it.', code: 'closed', stage: cur.stage });
+    }
+    const { rows } = await client.query(
       `UPDATE field_leads SET
          pipeline_stage = $3::text,
          stage_history  = COALESCE(stage_history,'[]'::jsonb) || jsonb_build_object(
-           'stage', $3::text, 'at', NOW(), 'by', $4::text, 'note', $5::text
+           'stage', $3::text, 'at', NOW(), 'by', $4::text, 'note', $5::text, 'from', $6::text
          )::jsonb,
+         closed_at = CASE WHEN $3::text = 'closed_lost' THEN NOW() ELSE NULL END,
          updated_at = NOW()
        WHERE id=$1 AND tenant_id=$2 RETURNING *`,
-      [req.params.id, tenantId, resolvedStage, req.crmUser?.id, resolvedNote || null]
+      [req.params.id, tenantId, resolvedStage, String(req.crmUser?.id ?? ''), resolvedNote || null, cur.stage]
     );
-    if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
-    res.json({ ...rows[0], status: rows[0].pipeline_stage });
+    await client.query(
+      `INSERT INTO crm_audit_log (tenant_id, entity_type, entity_id, event_type, actor_user_id, actor_role, old_value, new_value, reason)
+       VALUES ($1, 'field_lead', $2, 'stage_changed', $3, $4, $5::jsonb, $6::jsonb, $7)`,
+      [tenantId, rows[0].id, req.crmUser?.id || null, req.crmUser?.crmRole || null, JSON.stringify({ stage: cur.stage }), JSON.stringify({ stage: resolvedStage }), resolvedNote || null]);
+    await client.query('COMMIT');
+    res.json({ ...rows[0], stage: rows[0].pipeline_stage, status: rows[0].pipeline_stage, previous_stage: cur.stage });
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    await client.query('ROLLBACK').catch(() => {});
+    serverError(res, err, req);
+  } finally { client.release(); }
 });
 
 // PATCH /leads/:id/convert — mark as closed_won with contract details
@@ -929,10 +961,10 @@ router.patch('/leads/:id/convert', authCRM, FF_MANAGE, async (req, res) => {
       [req.params.id, tenantId, contract_value||null, mou_document_url||null,
        req.crmUser?.id, resolvedNote||null]
     );
-    if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
-    res.json({ ...rows[0], status: rows[0].pipeline_stage });
+    if (!rows.length) return res.status(404).json({ error: 'Lead not found', code: 'not_found' });
+    res.json({ ...rows[0], stage: rows[0].pipeline_stage, status: rows[0].pipeline_stage });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -950,41 +982,40 @@ router.get('/doctor-crm/:id/intel', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows[0] || null);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
 // PUT /doctor-crm/:id/intel — upsert gatekeeper intel
-router.put('/doctor-crm/:id/intel', authCRM, FF_READ, async (req, res) => {
-  const { gatekeeper_name, gatekeeper_phone, opd_days, best_visit_time, notes } = req.body;
+router.put('/doctor-crm/:id/intel', authCRM, FF_MANAGE, async (req, res) => {
+  // Partial update: a field the client does not send keeps its value (the app sends only notes).
+  // An empty string clears a field on purpose.
+  const body = req.body || {};
+  const FIELDS = ['gatekeeper_name', 'gatekeeper_phone', 'opd_days', 'best_visit_time', 'notes'];
+  const sent = FIELDS.filter((f) => body[f] !== undefined);
+  const val = (f) => (body[f] === '' || body[f] === null ? null : String(body[f]).slice(0, f === 'notes' ? 4000 : 200));
   const tenantId = tid(req);
   try {
-    const existing = await pool.query(
-      `SELECT id FROM field_doctor_intel WHERE doctor_crm_id=$1`, [req.params.id]
-    );
+    const { rows: [doc] } = await pool.query(`SELECT id FROM field_doctor_crm WHERE id = $1 AND tenant_id = $2`, [req.params.id, tenantId]);
+    if (!doc) return res.status(404).json({ error: 'Doctor not found', code: 'not_found' });
+    const { rows: [existing] } = await pool.query(
+      `SELECT id FROM field_doctor_intel WHERE doctor_crm_id = $1 AND tenant_id = $2 ORDER BY updated_at DESC LIMIT 1`, [doc.id, tenantId]);
     let rows;
-    if (existing.rows.length) {
+    if (existing) {
+      if (!sent.length) return res.json((await pool.query(`SELECT * FROM field_doctor_intel WHERE id = $1`, [existing.id])).rows[0]);
       ({ rows } = await pool.query(
-        `UPDATE field_doctor_intel SET
-           gatekeeper_name=$2, gatekeeper_phone=$3, opd_days=$4,
-           best_visit_time=$5, notes=$6, updated_by=$7, updated_at=NOW()
-         WHERE doctor_crm_id=$1 RETURNING *`,
-        [req.params.id, gatekeeper_name||null, gatekeeper_phone||null, opd_days||null,
-         best_visit_time||null, notes||null, req.crmUser?.id]
-      ));
+        `UPDATE field_doctor_intel SET ${sent.map((f, i) => `${f} = $${i + 2}`).join(', ')}, updated_by = $${sent.length + 2}, updated_at = NOW()
+          WHERE id = $1 RETURNING *`,
+        [existing.id, ...sent.map(val), req.crmUser?.id]));
     } else {
       ({ rows } = await pool.query(
-        `INSERT INTO field_doctor_intel
-           (doctor_crm_id, tenant_id, gatekeeper_name, gatekeeper_phone,
-            opd_days, best_visit_time, notes, updated_by)
+        `INSERT INTO field_doctor_intel (doctor_crm_id, tenant_id, gatekeeper_name, gatekeeper_phone, opd_days, best_visit_time, notes, updated_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [req.params.id, tenantId, gatekeeper_name||null, gatekeeper_phone||null,
-         opd_days||null, best_visit_time||null, notes||null, req.crmUser?.id]
-      ));
+        [doc.id, tenantId, ...FIELDS.map((f) => (body[f] === undefined ? null : val(f))), req.crmUser?.id]));
     }
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1017,7 +1048,7 @@ router.get('/doctor-crm/:id/trail', authCRM, FF_READ, async (req, res) => {
       visits:  visits.rows,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1040,7 +1071,7 @@ router.get('/camps', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1057,7 +1088,7 @@ router.get('/camps/:id/registrations', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1084,7 +1115,7 @@ router.get('/exceptions', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1107,7 +1138,7 @@ router.get('/tour-plans', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1138,7 +1169,7 @@ router.get('/cme-events', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1160,7 +1191,7 @@ router.patch('/cme-events/:id', authCRM, FF_MANAGE, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'CME event not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1175,7 +1206,7 @@ router.get('/cme-events/:id/speakers', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1196,7 +1227,7 @@ router.post('/cme-events/:id/speakers', authCRM, FF_MANAGE, async (req, res) => 
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1215,7 +1246,7 @@ router.patch('/cme-events/speakers/:id', authCRM, FF_MANAGE, async (req, res) =>
     if (!rows.length) return res.status(404).json({ error: 'Speaker not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1239,12 +1270,12 @@ router.get('/event-budgets', authCRM, FF_READ, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
 // POST /event-budgets
-router.post('/event-budgets', authCRM, FF_READ, async (req, res) => {
+router.post('/event-budgets', authCRM, FF_MANAGE, async (req, res) => {
   const { camp_id, cme_event_id, approved_amount, roi_projection, sponsorship_details, itemized_spend, notes } = req.body;
   const tenantId = tid(req);
   const createdBy = req.crmUser?.id;
@@ -1261,7 +1292,7 @@ router.post('/event-budgets', authCRM, FF_READ, async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1284,7 +1315,7 @@ router.patch('/event-budgets/:id/approve', authCRM, FF_MANAGE, async (req, res) 
     if (!rows.length) return res.status(404).json({ error: 'Budget not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1312,7 +1343,7 @@ router.get('/coupons/analytics', authCRM, FF_READ, async (req, res) => {
     );
     res.json({ coupons: rows, note: 'camp_usages = registrations where coupon code appears in screening_notes' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1380,7 +1411,7 @@ router.post('/targets/reallocate', authCRM, FF_MANAGE, async (req, res) => {
     res.json({ ok: true, from_user_id, to_user_id, target_type: target_type || 'visits', transfer_qty: qty, reason });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   } finally {
     client.release();
   }
@@ -1412,7 +1443,7 @@ router.get('/doctor-crm/:id', authCRM, FF_READ, async (req, res) => {
     if (!doctor.rows.length) return res.status(404).json({ error: 'Doctor not found' });
     res.json({ ...doctor.rows[0], visit_stats: visitStats.rows[0], intel: intel.rows[0]||null });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1442,7 +1473,7 @@ router.post('/notifications/push', authCRM, FF_MANAGE, async (req, res) => {
     await Promise.all(inserts);
     res.json({ sent: targetUsers.length });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
@@ -1502,7 +1533,7 @@ router.get('/team/:userId/pip', authCRM, FF_READ, async (req, res) => {
       pip_reasons,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, req);
   }
 });
 
