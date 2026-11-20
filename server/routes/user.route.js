@@ -174,7 +174,7 @@ const findMemberByPhone = async (value) => {
   if (digits.length < 10 || /^0+$/.test(digits)) return null;
   const [row] = await postgresSequelize.query(
     `SELECT id FROM users WHERE right(regexp_replace(COALESCE("phoneNumber", ''), '\\D', '', 'g'), 10) = :digits
-        AND role = 'user' AND status <> 'deleted' AND NOT COALESCE("isTeam", false) AND NOT COALESCE("isAdmin", false) LIMIT 1`,
+        AND role IN ('user', 'patient') AND status <> 'deleted' AND NOT COALESCE("isTeam", false) AND NOT COALESCE("isAdmin", false) LIMIT 1`,
     { replacements: { digits }, type: postgresSequelize.QueryTypes.SELECT });
   return row || null;
 };

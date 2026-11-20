@@ -5,9 +5,9 @@
  * (bulk uploads, the old WhatsApp bot) and phone sign-in picked one at random. The 847
  * same-person duplicates were merged on 2026-11-20 (backup_phone_dup_merge_20261120).
  *
- * The rule covers member app accounts (role 'user'): a new one, or a phone change on one, is
- * refused when another live member account already has the same last 10 digits. Staff logins
- * (team, doctors, pharmacy, hospital staff) and hospital patient records (role 'patient') may
+ * The rule covers member accounts (role 'user' or 'patient' — most corporate employees are
+ * 'patient'): a new one, or a phone change on one, is refused when another live member account
+ * already has the same last 10 digits. Staff logins (team, doctors, pharmacy, hospital staff) may
  * share a person's number and are not checked. Blank and all-zero numbers are exempt.
  *
  * It is a trigger, not a unique index, because 25 numbers are legitimately shared today
@@ -25,17 +25,19 @@ export async function up(client) {
       p text := right(regexp_replace(COALESCE(NEW."phoneNumber", ''), '\\D', '', 'g'), 10);
       other_id integer;
     BEGIN
-      IF NEW.role IS DISTINCT FROM 'user' OR COALESCE(NEW."isTeam", false) OR COALESCE(NEW."isAdmin", false)
+      IF NEW.role IS NULL OR NEW.role NOT IN ('user', 'patient') OR COALESCE(NEW."isTeam", false) OR COALESCE(NEW."isAdmin", false)
          OR NEW.status = 'deleted' OR length(p) < 10 OR p ~ '^0+$' THEN
         RETURN NEW;
       END IF;
+      -- Same number, still a member, not revived from deleted: nothing new to check. Status flips
+      -- (the nightly membership sync) on grandfathered shared numbers must keep working.
       IF TG_OP = 'UPDATE' AND p = right(regexp_replace(COALESCE(OLD."phoneNumber", ''), '\\D', '', 'g'), 10)
-         AND OLD.role IS NOT DISTINCT FROM NEW.role AND OLD.status IS NOT DISTINCT FROM NEW.status THEN
-        RETURN NEW;  -- number unchanged: grandfathered pairs keep working
+         AND OLD.role IN ('user', 'patient') AND OLD.status IS DISTINCT FROM 'deleted' THEN
+        RETURN NEW;
       END IF;
       SELECT id INTO other_id FROM users
        WHERE right(regexp_replace(COALESCE("phoneNumber", ''), '\\D', '', 'g'), 10) = p
-         AND id <> NEW.id AND role = 'user' AND status <> 'deleted'
+         AND id <> NEW.id AND role IN ('user', 'patient') AND status <> 'deleted'
          AND NOT COALESCE("isTeam", false) AND NOT COALESCE("isAdmin", false)
        LIMIT 1;
       IF other_id IS NOT NULL THEN

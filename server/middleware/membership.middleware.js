@@ -155,7 +155,7 @@ export const validateMembership = async (req, res, next) => {
   // Paid access: an inactive individual member reaches only the pre-plan paths. An account
   // that has a plan but was not yet marked active (paid on the web, nightly sync not run) is
   // set active here instead of being refused.
-  if (req.userRole === 'user' && req.user?.id && req.user.status !== 'active' && !isPrePlanPath(normalizedFullPath(req))) {
+  if ((req.userRole === 'user' || req.userRole === 'patient') && req.user?.id && req.user.status !== 'active' && !isPrePlanPath(normalizedFullPath(req))) {
     // Deleted (erased) or suspended accounts are never re-activated from here.
     if (req.user.status && req.user.status !== 'inactive') {
       return res.status(403).json({ success: false, code: 'ACCOUNT_INACTIVE', message: 'This account is not active. Please contact support.' });

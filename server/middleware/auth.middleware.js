@@ -562,7 +562,10 @@ export const authUser = async (req, res, next) => {
     // gated yet. No-ops for every other session (the flag is absent/false).
     return checkPasswordChangeRequired(req, res, () => {
       // Validate membership for regular users (not admins)
-      if (req.userRole === 'user' && !user.isAdmin) {
+      // Members are role 'user' or 'patient' (most corporate employees are 'patient'). An
+      // inactive 'patient' account goes through the same paid-access check; active 'patient'
+      // sessions are unchanged.
+      if ((req.userRole === 'user' || (req.userRole === 'patient' && user.status !== 'active')) && !user.isAdmin) {
         return validateMembership(req, res, next);
       }
 

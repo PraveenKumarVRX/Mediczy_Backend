@@ -85,6 +85,17 @@ describe('an individual member without a plan', () => {
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
+  test('an inactive member with role patient (most corporate employees) is gated the same way', async () => {
+    const req = { method: 'GET', baseUrl: '/api/appointments', path: '/my', userRole: 'patient', user: { id: 41, email: 'm@example.invalid', status: 'inactive' } };
+    const res = { statusCode: 200, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
+    const next = jest.fn();
+    await validateMembership(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.body.code).toBe('MEMBERSHIP_REQUIRED');
+    expect(readFileSync(new URL('../middleware/auth.middleware.js', import.meta.url), 'utf8'))
+      .toContain("(req.userRole === 'user' || (req.userRole === 'patient' && user.status !== 'active')) && !user.isAdmin");
+  });
+
   test('an active member goes through without any extra lookup', async () => {
     expect((await call({ path: '/api/appointments/my', status: 'active' })).passed).toBe(true);
     expect(userPlanFindOne).not.toHaveBeenCalled();

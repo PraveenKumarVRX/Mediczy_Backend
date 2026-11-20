@@ -131,7 +131,7 @@ export async function registerUser(req, res) {
       const digits = String(phoneNumber).replace(/\D/g, '').slice(-10);
       const [existingByPhone] = digits.length === 10 && !/^0+$/.test(digits) ? await postgresSequelize.query(
         `SELECT id FROM users WHERE right(regexp_replace(COALESCE("phoneNumber", ''), '\\D', '', 'g'), 10) = :digits
-            AND role = 'user' AND status <> 'deleted' AND NOT COALESCE("isTeam", false) AND NOT COALESCE("isAdmin", false) LIMIT 1`,
+            AND role IN ('user', 'patient') AND status <> 'deleted' AND NOT COALESCE("isTeam", false) AND NOT COALESCE("isAdmin", false) LIMIT 1`,
         { replacements: { digits }, type: postgresSequelize.QueryTypes.SELECT }) : [];
       if (existingByPhone) {
         return res.status(409).json({ message: "Phone number already exists" });
@@ -410,8 +410,9 @@ export async function signInUser(req, res) {
     } else if (phoneNumber) {
       // A few numbers are still shared (different people, grandfathered by the one-account-per-
       // phone rule), so sign in to the account the password fits, as for email.
+      // Compare the last 10 digits: numbers are stored as 9884089921, +919884089921 or 91 98840 89921.
       let candidates = await User.findAll({
-        where: sequelizeWhere(fn("regexp_replace", col("phoneNumber"), "[^0-9]", "", "g"), phoneNumber),
+        where: sequelizeWhere(fn("right", fn("regexp_replace", col("phoneNumber"), "[^0-9]", "", "g"), 10), String(phoneNumber).replace(/\D/g, "").slice(-10)),
         order: [["lastLoginAt", "DESC NULLS LAST"], ["id", "ASC"]],
         limit: 5,
       });
