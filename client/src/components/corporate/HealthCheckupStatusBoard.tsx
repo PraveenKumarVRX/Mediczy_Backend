@@ -23,6 +23,8 @@ import api from '@/utils/api';
 
 type Mode = 'team' | 'hr';
 type Stage = 'not_eligible' | 'not_booked' | 'booked' | 'confirmed' | 'checkup_done' | 'report_ready' | 'delivered';
+/** 'eligible' (the default) = everyone with a benefit or further along; '' = everyone on the roster. */
+type StageFilter = Stage | 'eligible' | '';
 
 interface Report {
   source: 'manual' | 'email'; reportId: number; name: string | null; mimeType: string | null; sizeBytes: number | null;
@@ -89,7 +91,7 @@ export default function HealthCheckupStatusBoard({ mode, corporateId, corporateN
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [fy, setFy] = useState(years[0]);
-  const [stage, setStage] = useState<Stage | ''>('');
+  const [stage, setStage] = useState<StageFilter>('eligible');
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [loading, setLoading] = useState(true);
@@ -186,7 +188,9 @@ export default function HealthCheckupStatusBoard({ mode, corporateId, corporateN
   const completed = summary.byStage.checkup_done + summary.byStage.report_ready + summary.byStage.delivered;
   const completedPct = eligible ? Math.round((completed / eligible) * 100) : 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const filtersActive = !!(debounced || stage);
+  const filtersActive = !!(debounced || stage !== 'eligible');
+  const realStage = stage && stage !== 'eligible' ? stage : null;
+  const resetFilters = () => { setSearch(''); setDebounced(''); setStage('eligible'); };
   const today = todayIst();
 
   return (
@@ -211,7 +215,7 @@ export default function HealthCheckupStatusBoard({ mode, corporateId, corporateN
                 </p>
               )}
             </div>
-            <Select value={fy} onValueChange={(v) => { setFy(v); setStage(''); }}>
+            <Select value={fy} onValueChange={(v) => { setFy(v); setStage('eligible'); }}>
               <SelectTrigger className="h-9 w-[150px]" aria-label="Financial year"><SelectValue /></SelectTrigger>
               <SelectContent>{years.map((y) => <SelectItem key={y} value={y}>FY {y}</SelectItem>)}</SelectContent>
             </Select>
@@ -225,14 +229,14 @@ export default function HealthCheckupStatusBoard({ mode, corporateId, corporateN
           </div>
 
           {/* stage steps */}
-          <ol className="mt-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+          <ol className="mt-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 auto-rows-fr gap-2">
             {JOURNEY.map((s, i) => {
               const n = summary.byStage[s];
               const active = stage === s;
               return (
-                <li key={s}>
-                  <button type="button" onClick={() => setStage(active ? '' : s)} aria-pressed={active}
-                    className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${active ? 'border-primary/60 bg-primary/5' : 'hover:bg-muted/50'}`}>
+                <li key={s} className="h-full">
+                  <button type="button" onClick={() => setStage(active ? 'eligible' : s)} aria-pressed={active}
+                    className={`h-full w-full flex flex-col justify-between text-left rounded-lg border px-3 py-2.5 transition-colors ${active ? 'border-primary/60 bg-primary/5' : 'hover:bg-muted/50'}`}>
                     <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                       <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold text-white ${STAGE[s].dot}`}>{i + 1}</span>
                       {STAGE[s].label}
@@ -247,7 +251,7 @@ export default function HealthCheckupStatusBoard({ mode, corporateId, corporateN
             })}
           </ol>
           {summary.byStage.not_eligible > 0 && (
-            <button type="button" onClick={() => setStage(stage === 'not_eligible' ? '' : 'not_eligible')}
+            <button type="button" onClick={() => setStage(stage === 'not_eligible' ? 'eligible' : 'not_eligible')} aria-pressed={stage === 'not_eligible'}
               className={`mt-3 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${stage === 'not_eligible' ? 'border-primary/60 bg-primary/5 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
               <CalendarX className="h-3.5 w-3.5" /> {summary.byStage.not_eligible.toLocaleString('en-IN')} on the roster with no active check-up benefit this year
             </button>
@@ -262,13 +266,13 @@ export default function HealthCheckupStatusBoard({ mode, corporateId, corporateN
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, employee ID, department, email or phone" className="pl-9 h-9" aria-label="Search employees" />
             </div>
             <div className="flex items-center gap-1.5">
-              {stage && (
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${STAGE[stage].pill}`}>
-                  {STAGE[stage].icon} {STAGE[stage].label}
-                  <button type="button" onClick={() => setStage('')} aria-label="Remove stage filter" className="ml-0.5 opacity-70 hover:opacity-100"><X className="h-3 w-3" /></button>
+              {realStage && (
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${STAGE[realStage].pill}`}>
+                  {STAGE[realStage].icon} {STAGE[realStage].label}
+                  <button type="button" onClick={() => setStage('eligible')} aria-label="Remove stage filter" className="ml-0.5 opacity-70 hover:opacity-100"><X className="h-3 w-3" /></button>
                 </span>
               )}
-              {filtersActive && <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setSearch(''); setDebounced(''); setStage(''); }}>Clear</Button>}
+              {filtersActive && <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={resetFilters}>Clear</Button>}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => load(page)} disabled={loading} aria-label="Refresh"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></Button>
@@ -290,13 +294,15 @@ export default function HealthCheckupStatusBoard({ mode, corporateId, corporateN
             ))}</div>
           ) : !rows.length ? (
             filtersActive
-              ? <Empty icon={<SearchX className="h-5 w-5 text-muted-foreground" />} title="No matches" text="No employees match these filters." action={<Button size="sm" variant="outline" onClick={() => { setSearch(''); setStage(''); }}>Clear filters</Button>} />
-              : <Empty icon={<ClipboardCheck className="h-5 w-5 text-muted-foreground" />} title="No employees yet" text="Employees appear here once they are on the roster or have a check-up benefit." />
+              ? <Empty icon={<SearchX className="h-5 w-5 text-muted-foreground" />} title="No matches" text="No employees match these filters." action={<Button size="sm" variant="outline" onClick={resetFilters}>Clear filters</Button>} />
+              : summary.byStage.not_eligible > 0
+                ? <Empty icon={<CalendarX className="h-5 w-5 text-muted-foreground" />} title="No one has an active check-up benefit this year" text={`${summary.byStage.not_eligible.toLocaleString('en-IN')} employees are on the roster without an active annual check-up package for FY ${fy}.`} action={<Button size="sm" variant="outline" onClick={() => setStage('not_eligible')}>Show them</Button>} />
+                : <Empty icon={<ClipboardCheck className="h-5 w-5 text-muted-foreground" />} title="No employees yet" text="Employees appear here once they are on the roster or have a check-up benefit." />
           ) : (
             <>
               <div className={`hidden md:block overflow-x-auto transition-opacity ${loading ? 'opacity-60' : ''}`}>
                 <table className="w-full table-fixed text-sm min-w-[980px]">
-                  <colgroup><col className="w-[22%]" /><col className="w-[15%]" /><col className="w-[18%]" /><col className="w-[17%]" /><col className="w-[16%]" /><col className="w-[12%]" /></colgroup>
+                  <colgroup><col className="w-[21%]" /><col className="w-[14%]" /><col className="w-[17%]" /><col className="w-[20%]" /><col className="w-[16%]" /><col className="w-[12%]" /></colgroup>
                   <thead>
                     <tr className="text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground border-b bg-muted/30">
                       <th className="px-4 py-2.5 font-medium">Employee</th>
@@ -446,10 +452,10 @@ function AppointmentCell({ row, today }: { row: Row; today: string }) {
     <div className="min-w-0">
       <div className={`font-medium tabular-nums ${cancelled ? 'line-through text-muted-foreground' : ''}`}>{fmtDate(a.date)}{a.slot ? <span className="font-normal text-muted-foreground"> · {a.slot}</span> : null}</div>
       <div className="text-xs text-muted-foreground truncate" title={[a.lab, a.reference].filter(Boolean).join(' · ')}>{a.lab || 'Lab not set'}</div>
-      <div className="text-[11px] mt-0.5 flex flex-wrap gap-x-2">
+      <div className="text-[11px] mt-0.5 flex flex-wrap items-center gap-x-1.5">
         <span className="text-muted-foreground">{a.source === 'team' ? 'Booked by Team' : 'Booked by employee'}</span>
         {cancelled && <span className="text-rose-600 dark:text-rose-400">Cancelled</span>}
-        {overdue && <span className="text-amber-600 dark:text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Date passed, update status</span>}
+        {overdue && <span className="text-amber-600 dark:text-amber-400 inline-flex items-center gap-1 whitespace-nowrap" title="The appointment date has passed. Update the booking once the check-up is done.">· <AlertTriangle className="h-3 w-3" /> Date passed</span>}
       </div>
     </div>
   );

@@ -143,11 +143,12 @@ export async function listCheckupStatus({ corporateId, actorUserId, fy = null, s
   const n = Math.min(Math.max(Number(limit) || 50, 1), MAX_LIMIT);
   const p = Math.max(Number(page) || 1, 1);
   const year = financialYear(fy);
-  const st = STAGES.includes(stage) ? stage : '';
+  // 'eligible' = everyone with a benefit or further along (the default view); a stage name filters to it.
+  const st = STAGES.includes(stage) || stage === 'eligible' ? stage : '';
   const replacements = { corporateId, search: String(search || '').trim().slice(0, 80), reportSearch: '', from: year.start, to: year.end };
   return withCorporateBookingContext({ corporateId, bookedByUserId: actorUserId }, async (transaction) => {
     const rows = await postgresSequelize.query(
-      `${STATUS_SQL} AND (:stage = '' OR stage = :stage)
+      `${STATUS_SQL} AND (:stage = '' OR stage = :stage OR (:stage = 'eligible' AND stage <> 'not_eligible'))
         ORDER BY CASE stage ${STAGE_RANK} END, lower(concat_ws(' ', first_name, last_name)), user_id
         LIMIT :limit OFFSET :offset`,
       { ...sel, replacements: { ...replacements, stage: st, limit: n, offset: (p - 1) * n }, transaction });
@@ -160,7 +161,7 @@ export async function listCheckupStatus({ corporateId, actorUserId, fy = null, s
       financialYear: year,
       rows: rows.map(rowOut),
       page: p, limit: n, stage: st || null,
-      total: st ? byStage[st] : all,
+      total: st === 'eligible' ? all - byStage.not_eligible : st ? byStage[st] : all,
       summary: { all, eligible: all - byStage.not_eligible, byStage },
     };
   });

@@ -49,6 +49,13 @@ describe('listCheckupStatus', () => {
     });
   });
 
+  test("'eligible' leaves out employees without a benefit and totals the rest", async () => {
+    respond = (sql) => (sql.includes('GROUP BY stage') ? [{ stage: 'not_eligible', n: 125 }, { stage: 'delivered', n: 2 }, { stage: 'confirmed', n: 1 }] : []);
+    const out = await svc.listCheckupStatus({ corporateId: 45, actorUserId: 1, stage: 'eligible' });
+    expect(queries[0].sql).toContain("(:stage = 'eligible' AND stage <> 'not_eligible')");
+    expect(out).toMatchObject({ stage: 'eligible', total: 3 });
+  });
+
   test("the employee's own booking is shown over Team's, unless it was cancelled", async () => {
     const row = { ...base, stage: 'booked', bk_id: 3, bk_status: 'booked', bk_date: '2026-12-01', lo_id: 9, lo_status: 'pending', lo_date: '2026-12-02' };
     respond = (sql) => (sql.includes('GROUP BY stage') ? [] : [row, { ...row, user_id: 8, bk_status: 'cancelled' }]);
