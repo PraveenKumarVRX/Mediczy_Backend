@@ -22,6 +22,7 @@ import n8nOTPService from "../services/n8n-otp.service.js";
 import twilioOTPService from "../services/twilio-otp.service.js";
 import n8nService from "../services/n8n.service.js";
 import Consent from "../models/consent.model.intelligent.js";
+import { redeemFreeMembershipCoupon } from "./membership.route.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import { authLimiter, otpLimiter, createRateLimiter } from "../middleware/rateLimiter.middleware.js";
 
@@ -162,6 +163,9 @@ const SIGNUP_OTP_TTL_MINUTES = 10;
 const SIGNUP_VERIFY_TTL_SECONDS = 15 * 60;
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+// One account per email whatever the case (users_email_lower_key), so look it up the same way.
+const findUserByEmail = (value) =>
+  userModel.findOne({ where: sequelizeWhere(fn("lower", col("email")), normalizeEmail(value)) });
 const normalizePhone = (value) => String(value || "").replace(/[^0-9]/g, "");
 const buildSignupVerificationKey = (email, phoneNumber) => {
   return `signup:verify:${normalizeEmail(email)}:${normalizePhone(phoneNumber)}`;
@@ -490,7 +494,7 @@ router.post(
     const phoneNumber = normalizePhone(req.body.phoneNumber);
 
     try {
-      const existingEmail = await userModel.findOne({ where: { email } });
+      const existingEmail = await findUserByEmail(email);
       if (existingEmail) {
         return res.status(409).json({
           success: false,
@@ -541,7 +545,7 @@ router.post(
 
     try {
       // Check if email already exists
-      const existingUser = await userModel.findOne({ where: { email } });
+      const existingUser = await findUserByEmail(email);
       if (existingUser) {
         return res.status(409).json({ 
           success: false,
@@ -847,7 +851,7 @@ router.post(
       }
 
       // Double-check user doesn't exist (race condition protection)
-      const existingUser = await userModel.findOne({ where: { email } });
+      const existingUser = await findUserByEmail(email);
       if (existingUser) {
         return res.status(409).json({
           success: false,
@@ -912,8 +916,9 @@ router.post(
         gender,
         emailVerified: true,
         phoneVerified: true,
-        // Corporate users are activated only after the HR roster entry is claimed.
-        status: isCorporate ? 'inactive' : 'active',
+        // Corporate users are activated after the HR roster entry is claimed; individuals once
+        // they hold a plan (₹99 Basic or a promo coupon), never on sign-up alone.
+        status: 'inactive',
         organization_id: isCorporate ? (corporateRecord?.id ?? 7) : 7,
         organization_type: isCorporate ? 'corporate' : 'individual',
         tenant_id: isCorporate ? (corporateRecord?.tenant_id ?? 7) : 7
@@ -1000,16 +1005,19 @@ router.post(
         );
       }
 
-      // Individual path: assign Free Basic (trial) plan + link to My SmartHealth corporate
+      // Individual path: no free plan (owner decision 2026-11-20). The account stays inactive
+      // until the member buys the ₹99 Basic plan or redeems a promo coupon; until then the
+      // membership gate lets it reach only plans, payment, coupons and account settings.
+      let signupCoupon = null;
       if (!isCorporate) {
-        try {
-          await postgresSequelize.query(
-            `INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, auto_renew, billing_cycle, price, currency, created_at, updated_at)
-             VALUES (:userId, 1, 'ACTIVE', NOW(), false, 'MONTHLY', 0, 'INR', NOW(), NOW())`,
-            { replacements: { userId: newUser.id } }
-          );
-        } catch (planErr) {
-          console.error('⚠️  Trial plan assignment failed (non-blocking):', planErr.message);
+        const couponCode = typeof req.body.couponCode === 'string' ? req.body.couponCode.trim() : '';
+        if (couponCode) {
+          try {
+            const redeemed = await redeemFreeMembershipCoupon({ user: newUser, couponCode });
+            signupCoupon = { applied: true, code: redeemed.coupon.code, freeMonths: redeemed.coupon.freeMonths, planName: redeemed.plan.name };
+          } catch (couponErr) {
+            signupCoupon = { applied: false, code: couponCode, message: couponErr.message };
+          }
         }
         // Link individual user to My SmartHealth corporate (id=4) as 'member'
         try {
@@ -1082,10 +1090,15 @@ router.post(
         }
       })();
 
+      const membershipRequired = !isCorporate && !signupCoupon?.applied;
       return res.status(201).json({
         success: true,
-        message: "User registered successfully",
+        message: membershipRequired
+          ? "Account created. Choose a plan or enter a promo code to start."
+          : "User registered successfully",
         token,
+        membershipRequired,
+        ...(signupCoupon ? { coupon: signupCoupon } : {}),
         user: {
           id: newUser.id,
           firstName: newUser.firstName,
@@ -1386,7 +1399,7 @@ router.post(
 
       if (isEmail) {
         // Find user by email
-        user = await userModel.findOne({ where: { email: identifier } });
+        user = await findUserByEmail(identifier);
         deliveryMethod = 'email';
       } else {
         // Find user by phone number
@@ -1643,7 +1656,7 @@ router.post(
       
       let user;
       if (isEmail) {
-        user = await userModel.findOne({ where: { email: identifier } });
+        user = await findUserByEmail(identifier);
       } else {
         const normalizedDigits = identifier.replace(/[^0-9]/g, '');
         const cleanPhone = normalizedDigits.length > 10
@@ -1718,7 +1731,10 @@ router.post(
 
       await tryAutoActivateCorporateEmployeeForLogin(user);
 
-      if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser) {
+      // An individual without a plan signs in to a plan-only session (see signInUser);
+      // corporate employees still get ACCOUNT_INACTIVE and go to HR.
+      const isPlanPendingIndividual = user.status === 'inactive' && user.isActive !== false && !user.isCorporate;
+      if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser && !isPlanPendingIndividual) {
         await auditLoginAttempt(req, user.id, user.email, false, 'Inactive user attempted OTP login');
         const details = await buildInactiveAccountContext(user.id);
         return res.status(403).json({
@@ -1750,6 +1766,7 @@ router.post(
         success: true,
         message: 'Login successful',
         token,
+        membershipRequired: user.status !== 'active',
         user: {
           id: user.id,
           firstName: user.firstName,

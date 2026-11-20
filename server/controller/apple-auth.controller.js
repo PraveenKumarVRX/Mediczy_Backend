@@ -137,7 +137,8 @@ export async function signInWithApple(req, res) {
         firstName: firstName || 'Apple',
         lastName: lastName || 'User',
         role: 'user',
-        status: 'active',
+        // Opens once the member holds a plan (₹99 Basic or a promo coupon), not on sign-up.
+        status: 'inactive',
         emailVerified: Boolean(email && emailVerified),
         lastLoginAt: new Date(),
         metadata: {
@@ -203,6 +204,9 @@ export async function signInWithApple(req, res) {
       token,
       refreshToken,
       requirePasswordChange: meta.requirePasswordChange === true,
+      // The session works, but until the member holds a plan only plans, payment, promo
+      // coupons and account settings answer (MEMBERSHIP_REQUIRED elsewhere).
+      membershipRequired: user.status !== 'active',
       // So the client can tell a brand-new account from a returning one, and
       // whether it is dealing with a relay address it should not display as
       // "your email".

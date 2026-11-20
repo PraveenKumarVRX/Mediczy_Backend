@@ -208,4 +208,12 @@ export const mobileRouters = [
     {"method":"post","path":"/api/membership-plans/corporate/create-sponsorship","public":false,"statuses":[200],"tag":"Membership"},
     {"method":"get","path":"/api/membership-plans/card-image","public":false,"statuses":[200],"tag":"Membership"},
   ] },
+  { file: "routes/womens-health.route.js", mount: "/api/wellness/womens-health", operations: [
+    {"method":"get","path":"/api/wellness/womens-health","public":false,"statuses":[200],"tag":"Women's health"},
+    {"method":"put","path":"/api/wellness/womens-health/settings","public":false,"statuses":[200],"tag":"Women's health"},
+    {"method":"post","path":"/api/wellness/womens-health/cycles","public":false,"statuses":[200,201],"tag":"Women's health"},
+    {"method":"patch","path":"/api/wellness/womens-health/cycles/{id}","public":false,"statuses":[200],"tag":"Women's health"},
+    {"method":"delete","path":"/api/wellness/womens-health/cycles/{id}","public":false,"statuses":[200],"tag":"Women's health"},
+    {"method":"delete","path":"/api/wellness/womens-health","public":false,"statuses":[200],"tag":"Women's health"},
+  ] },
 ];

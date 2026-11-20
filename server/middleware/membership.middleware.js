@@ -84,6 +84,56 @@ const requiresMembership = (req) =>
   );
 
 /**
+ * Paid access (owner decision 2026-11-20): an individual member uses the app only with a plan,
+ * bought (lowest ₹99 Basic) or granted by a promo coupon. Until then the account is inactive and
+ * reaches only what it takes to choose, pay for or redeem a plan and to manage the account.
+ * users.status is the fast path: the nightly sync keeps it, and subscribe/redeem set it at once.
+ */
+export const PRE_PLAN_PATHS = [
+  '/api/membership/plans',
+  '/api/membership/my',
+  '/api/membership/upgrade-options',
+  '/api/membership/addons',
+  '/api/membership/payment-order',
+  '/api/membership/subscribe',
+  '/api/membership/validate-free-coupon',
+  '/api/membership/redeem-free-coupon',
+  '/api/membership-plans/plans',
+  '/api/membership-plans/subscription',
+  '/api/users/profile',
+  '/api/users/change-password',
+  '/api/users/account',
+  '/api/privacy',
+  '/api/consent',
+  '/api/fcm',
+  '/api/auth',
+  '/api/notifications',
+];
+
+export const isPrePlanPath = (path) =>
+  PRE_PLAN_PATHS.some((allowed) => path === allowed || path.startsWith(`${allowed}/`));
+
+/** True when the member may use the app: exempt test account, funded employee or a current plan. */
+const hasPaidAccess = async (user) => {
+  if (isMembershipRenewalExemptUser(user)) return true;
+  if (await activeCorporateEmployee(user.id)) return true;
+  const today = new Date().toISOString().split('T')[0];
+  const plan = await UserPlan.findOne({
+    where: { userId: user.id, status: 'active', startDate: { [Op.lte]: today }, endDate: { [Op.gte]: today } },
+    attributes: ['id'],
+  });
+  return Boolean(plan);
+};
+
+export const MEMBERSHIP_REQUIRED_BODY = {
+  success: false,
+  code: 'MEMBERSHIP_REQUIRED',
+  errorCode: 'MEMBERSHIP_REQUIRED',
+  message: 'Choose a plan or enter a promo code to start using My SmartHealth.',
+  details: { nextStep: 'choose_plan', reason: 'No active membership plan' },
+};
+
+/**
  * Membership/entitlement gate — minimal-gating model: allow by default; require an
  * active plan only for MEMBERSHIP_REQUIRED_FEATURES. It never deactivates the
  * account (account status is owned by syncUserStatusWithMembership), and returns a
@@ -100,6 +150,24 @@ export const validateMembership = async (req, res, next) => {
   // Skip for dev tokens
   if (req.guardrail === 'DEV_TOKEN') {
     return next();
+  }
+
+  // Paid access: an inactive individual member reaches only the pre-plan paths. An account
+  // that has a plan but was not yet marked active (paid on the web, nightly sync not run) is
+  // set active here instead of being refused.
+  if (req.userRole === 'user' && req.user?.id && req.user.status !== 'active' && !isPrePlanPath(normalizedFullPath(req))) {
+    // Deleted (erased) or suspended accounts are never re-activated from here.
+    if (req.user.status && req.user.status !== 'inactive') {
+      return res.status(403).json({ success: false, code: 'ACCOUNT_INACTIVE', message: 'This account is not active. Please contact support.' });
+    }
+    try {
+      if (!(await hasPaidAccess(req.user))) return res.status(403).json(MEMBERSHIP_REQUIRED_BODY);
+      await syncUserStatusWithMembership(req.user.id);
+      req.user.status = 'active';
+    } catch (error) {
+      console.error('[membership] paid-access check failed:', error.message);
+      return res.status(503).json({ success: false, message: 'Could not check your membership. Please try again.' });
+    }
   }
 
   // Minimal gating: everything except the explicit premium feature list is open,

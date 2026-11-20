@@ -185,7 +185,8 @@ export async function registerUser(req, res) {
       primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID,
       // Prevent privilege escalation / self-verification via extra body fields
       isAdmin: false,
-      status: isCorporateSignup ? "inactive" : "active",
+      // No free trial (owner decision 2026-11-20): an individual opens once they hold a plan.
+      status: "inactive",
       emailVerified: false,
     });
 
@@ -241,74 +242,8 @@ export async function registerUser(req, res) {
     // Versioned, provable consent when the app sends the person's acceptance (audit M22).
     await recordSignupConsent({ userId: newUser.id, req, source: 'register' });
 
-    // Auto-create trial membership for new users (30-day free trial)
-    try {
-      // Try to find existing free/trial plan, or create one
-      let trialPlan = await MembershipPlan.findOne({ where: { code: 'FREE_TRIAL' } });
-      
-      if (!trialPlan) {
-        // Create a free trial plan if it doesn't exist
-        trialPlan = await MembershipPlan.create({
-          name: 'Free Trial',
-          code: 'FREE_TRIAL',
-          description: '30-day free trial: 3 GP consultations OR 1 specialist consultation',
-          type: 'individual',
-          price: 0,
-          durationMonths: 1,
-          features: [
-            '3 General Physician consultations',
-            '1 Specialist consultation',
-            'Health records access',
-            'Appointment booking'
-          ],
-          benefits: [
-            'Choose between 3 GP visits or 1 specialist visit',
-            'Access to health records',
-            'Book appointments online'
-          ],
-          limitations: {
-            gpConsultations: 3,
-            specialistConsultations: 1,
-            consultationMode: 'either', // 'either' means 3 GP OR 1 specialist, not both
-            maxAppointments: 10
-          },
-          maxUsers: 1,
-          isActive: true,
-          isFeatured: false,
-          sortOrder: 0
-        });
-        console.log('✅ Created FREE_TRIAL membership plan');
-      }
-
-      // Calculate trial period dates (30 days)
-      const startDate = new Date();
-      const endDate = new Date();
-      endDate.setDate(endDate.getDate() + 30);
-
-      // Create user plan
-      await UserPlan.create({
-        userId: newUser.id,
-        membershipPlanId: trialPlan.id,
-        status: 'active',
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0],
-        autoRenew: false,
-        paymentMethod: 'free_trial',
-        paidAmount: 0,
-        metadata: {
-          trialStarted: true,
-          source: 'registration',
-          gpConsultationsUsed: 0,
-          specialistConsultationsUsed: 0,
-          gpConsultationsRemaining: 3,
-          specialistConsultationsRemaining: 1
-        }
-      });
-      console.log(`✅ Created trial membership for user ${newUser.id}`);
-    } catch (membershipError) {
-      // Log error but don't fail registration
-      console.error('⚠️ Failed to create trial membership:', membershipError.message);
-    }
+    // No free trial membership: individuals buy the ₹99 Basic plan or redeem a promo coupon
+    // (owner decision 2026-11-20); the membership gate keeps the rest closed until then.
 
     // Audit the successful login after registration
     await auditLoginAttempt(req, newUser.id, newUser.email, true);
@@ -453,9 +388,20 @@ export async function signInUser(req, res) {
     // Check if user exists
     let user = null;
     if (email) {
-      user = await User.findOne({
+      // Emails are matched without case, and a few emails belong to more than one
+      // account (user@ and User@). findOne picked whichever row Postgres returned first,
+      // so the right password could be refused. Sign in to the account the password fits.
+      const candidates = await User.findAll({
         where: sequelizeWhere(fn("lower", col("email")), email),
+        order: [["lastLoginAt", "DESC NULLS LAST"], ["id", "ASC"]],
+        limit: 5,
       });
+      user = candidates[0] || null;
+      if (candidates.length > 1) {
+        for (const candidate of candidates) {
+          if (await candidate.comparePassword(password)) { user = candidate; break; }
+        }
+      }
     } else if (phoneNumber) {
       user = await User.findOne({
         where: sequelizeWhere(
@@ -489,8 +435,14 @@ export async function signInUser(req, res) {
 
     await tryAutoActivateCorporateEmployeeForLogin(user);
 
+    // An individual without a plan signs in (password still checked below) to a session in which
+    // only plans, payment, promo coupons and account settings answer — the membership gate
+    // refuses the rest with MEMBERSHIP_REQUIRED. Refusing the sign-in left them no way to pay.
+    // Corporate employees still get ACCOUNT_INACTIVE: their access comes from HR, not a purchase.
+    const isPlanPendingIndividual = user.status === 'inactive' && user.isActive !== false && !user.isCorporate;
+
     // Account guard for suspended/inactive users
-    if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser) {
+    if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser && !isPlanPendingIndividual) {
       await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Inactive user attempted login');
       const details = await buildInactiveAccountContext(user.id);
       return res.status(403).json({
@@ -648,6 +600,7 @@ export async function signInUser(req, res) {
       token,
       refreshToken,
       requirePasswordChange,
+      membershipRequired: user.status !== 'active',
       user: {
         id: user.id,
         firstName: user.firstName,

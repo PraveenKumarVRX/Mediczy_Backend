@@ -113,7 +113,8 @@ async function findOrCreateUser(profile, provider) {
         phoneNumber: '', // Will be added by user later
         dateOfBirth: new Date('1990-01-01'), // Placeholder, will be updated by user
         gender: 'Other', // Will be updated by user
-        status: 'active'
+        // Opens once the member holds a plan (₹99 Basic or a promo coupon), not on sign-up.
+        status: 'inactive'
       });
       
       // Download and save profile picture for new user

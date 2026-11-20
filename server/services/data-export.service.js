@@ -160,6 +160,8 @@ async function _collectUserData(userId, client) {
     notifications,
     insurancePolicies,
     claims,
+    womensHealthSettings,
+    menstrualCycles,
   ] = await Promise.all([
     client.query(`SELECT * FROM users WHERE id = $1`, [userId]),
     client.query(`SELECT * FROM appointments WHERE "userId" = $1 ORDER BY "appointmentDate" DESC LIMIT 1000`, [userId]),
@@ -175,6 +177,8 @@ async function _collectUserData(userId, client) {
     client.query(`SELECT type, title, created_at FROM notifications WHERE "userId" = $1 ORDER BY created_at DESC LIMIT 200`, [userId]),
     client.query(`SELECT insurer_name, coverage_type, sum_insured, start_date, end_date FROM insurance_policies WHERE "userId" = $1`, [userId]),
     client.query(`SELECT claim_type, claim_amount, status, submitted_at FROM insurance_claims WHERE "patientId" = $1`, [userId]),
+    client.query(`SELECT enabled, cycle_length_days, period_length_days, status, updated_at FROM womens_health_settings WHERE user_id = $1`, [userId]),
+    client.query(`SELECT period_start, period_end, flow, symptoms, notes, created_at FROM menstrual_cycle_logs WHERE user_id = $1 ORDER BY period_start DESC`, [userId]),
   ]);
 
   const user = userRow.rows[0] || {};
@@ -198,6 +202,7 @@ async function _collectUserData(userId, client) {
       notifications:    notifications.rows,
       insurancePolicies: insurancePolicies.rows,
       claims:           claims.rows,
+      womensHealth:     { settings: womensHealthSettings.rows[0] || null, periods: menstrualCycles.rows },
     },
   };
 }
@@ -307,6 +312,8 @@ export async function executeErasure(userId, requestId) {
     await client.query(`DELETE FROM patient_medications WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM patient_conditions  WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM family_members      WHERE "userId" = $1`, [userId]);
+    await client.query(`DELETE FROM menstrual_cycle_logs   WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM womens_health_settings WHERE user_id = $1`, [userId]);
 
     // 3. Anonymize appointments (keep for clinical records but remove PII)
     await client.query(
@@ -323,7 +330,7 @@ export async function executeErasure(userId, requestId) {
     await client.query(
       `UPDATE data_deletion_requests
        SET status = 'completed', completed_at = NOW(),
-           tables_affected = ARRAY['users','patient_allergies','patient_medications','patient_conditions','family_members','appointments'],
+           tables_affected = ARRAY['users','patient_allergies','patient_medications','patient_conditions','family_members','menstrual_cycle_logs','womens_health_settings','appointments'],
            records_deleted = 1
        WHERE id = $1`,
       [requestId]

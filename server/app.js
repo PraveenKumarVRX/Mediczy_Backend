@@ -129,6 +129,7 @@ import reportsRouter from './routes/reports.route.js';
 import availabilityRouter from './routes/availability.route.js';
 import membershipRouter from './routes/membership.route.js';
 import wellnessRouter from './routes/wellness.route.js';
+import womensHealthRouter from './routes/womens-health.route.js';
 import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
 import healthProgramsRouter from './routes/health-programs.route.js';
 import teamRouter from './routes/team.route.js';
@@ -1416,6 +1417,7 @@ app.use("/api/doctor/delegation", delegationRouter); // Delegation logs, audit t
 app.use("/api/doctor/revenue", revenueInsightsRouter); // Revenue insights, profitability, claim tracking
 app.use("/api/doctor/engagement", patientEngagementRouter); // Patient engagement, post-visit instructions
 app.use("/api/membership", membershipRouter);
+app.use("/api/wellness/womens-health", womensHealthRouter); // Period log + cycle estimates (FORCED RLS) — mobile app
 app.use("/api/wellness", wellnessRouter); // Wellness tab aggregate (goals, challenges, HealthCoins) — mobile app
 app.use("/api/org-membership-plans", orgMembershipPlansRouter); // Organization-specific plan customization
 app.use("/api/programs", healthProgramsRouter);                // Health Coaching Framework — unlimited configurable programs

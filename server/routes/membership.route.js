@@ -11,6 +11,10 @@ import { quotePlanPurchase, upgradeBaseDue, SELF_SERVICE_PLAN_TYPES } from '../s
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
+import { syncUserStatusWithMembership } from '../middleware/membership.middleware.js';
+
+/** The lowest individual plan, bought (or redeemed) at sign-up. */
+export const ENTRY_PLAN_CODE = 'BASIC_MONTHLY';
 import {
   familyCoverageFromPlanBody,
   familyCoverageOf,
@@ -609,6 +613,9 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
       }
     });
 
+    // The account opens as soon as the plan is paid, not at the nightly sync.
+    await syncUserStatusWithMembership(req.user.id);
+
     // Send WhatsApp plan activation confirmation
     try {
       const phone = req.user.phoneNumber || req.user.phone;
@@ -627,7 +634,7 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
       console.error('WA plan activation notification error:', waErr.message);
     }
 
-    res.status(201).json({ userPlan });
+    res.status(201).json({ userPlan, accountStatus: 'active' });
   } catch(e){
     console.error(e);
     res.status(500).json({ message:'Subscription failed', error:e.message });
@@ -665,126 +672,123 @@ router.post('/validate-free-coupon', authUser, async (req, res) => {
   }
 });
 
+/**
+ * Redeem a free-membership promo coupon for a member: validates the coupon for this member,
+ * grants the plan for the coupon's free months and records the usage. Also used at sign-up, so
+ * a member with a promo code starts with a plan instead of the ₹99 Basic payment.
+ * Throws an Error with a member-facing message (and .status) when the coupon cannot be used.
+ */
+export async function redeemFreeMembershipCoupon({ user, couponCode, planId, scope = COUPON_SCOPES.MEMBERSHIP }) {
+  const fail = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
+  if (!couponCode) throw fail(400, 'Coupon code is required');
+
+  const validation = await validateFreeMembershipCoupon({ code: couponCode, userId: user.id, planId, scope });
+  const targetPlanId = planId || validation.boundPlanId || (await MembershipPlan.findOne({ where: { code: ENTRY_PLAN_CODE, isActive: true } }))?.id;
+  const plan = targetPlanId ? await MembershipPlan.findByPk(targetPlanId) : null;
+  if (!plan || !plan.isActive) throw fail(404, 'Plan not available');
+  if (validation.boundPlanId && validation.boundPlanId !== plan.id) throw fail(400, 'This coupon is not valid for the selected plan');
+
+  const planType = plan.planType || 'primary';
+  if (planType === 'primary') {
+    const alreadyActive = await UserPlan.findOne({
+      where: { userId: user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }]
+    });
+    if (alreadyActive) {
+      throw fail(400, 'You already have an active plan. Switch or upgrade it from Manage Plan.', {
+        code: 'PRIMARY_PLAN_ALREADY_ACTIVE',
+        action: 'Upgrade or change your existing plan instead of subscribing again'
+      });
+    }
+  } else {
+    const alreadyHasAddon = await UserPlan.findOne({ where: { userId: user.id, membershipPlanId: plan.id, status: 'active' } });
+    if (alreadyHasAddon) throw fail(400, 'You already have this addon plan active');
+  }
+
+  const startDate = new Date();
+  const durationDays = validation.freeMonths * 30;
+  const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
+  const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
+
+  const userPlan = await UserPlan.create({
+    userId: user.id,
+    membershipPlanId: plan.id,
+    startDate: startDate.toISOString().slice(0, 10),
+    endDate: endDate.toISOString().slice(0, 10),
+    paidAmount: 0,
+    paymentId: `FREE_MEMBERSHIP_${Date.now()}`,
+    paymentMethod: 'free_membership_coupon',
+    metadata: {
+      planName: plan.name,
+      planType,
+      tier: plan.tier,
+      features: plan.features,
+      benefits: plan.benefits,
+      limitations: plan.limitations,
+      appliedLimits: buildAppliedLimits(plan),
+      couponCode: validation.coupon.code,
+      freeMonths: validation.freeMonths,
+      grantType: 'FREE_MEMBERSHIP',
+      originalPrice: planPrice,
+      usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
+    }
+  });
+
+  await CouponUsage.create({
+    couponId: validation.coupon.id,
+    couponCode: validation.coupon.code,
+    userId: user.id,
+    hcPurchased: 0,
+    hcBonus: 0,
+    discountAmount: planPrice,
+    amountPaid: 0,
+    paymentId: userPlan.paymentId
+  });
+
+  await validation.coupon.update({
+    usageCount: Number(validation.coupon.usageCount || 0) + 1
+  });
+
+  // The account opens as soon as it holds a plan, not at the nightly sync.
+  await syncUserStatusWithMembership(user.id);
+
+  try {
+    const phone = user.phoneNumber || user.phone;
+    if (phone) {
+      let formattedPhone = String(phone).replace(/[^0-9+]/g, '');
+      if (!formattedPhone.startsWith('+')) formattedPhone = '+91' + formattedPhone;
+      whatsappProductionService.sendMembershipPlanActivated({
+        to: formattedPhone,
+        name: user.firstName || 'Member',
+        planName: plan.name,
+        startDate: userPlan.startDate,
+        endDate: userPlan.endDate
+      }).catch((e) => console.error('WA plan activation notification failed:', e.message));
+    }
+  } catch (waErr) {
+    console.error('WA plan activation notification error:', waErr.message);
+  }
+
+  return { userPlan, plan, coupon: { code: validation.coupon.code, freeMonths: validation.freeMonths } };
+}
+
 router.post('/redeem-free-coupon', authUser, async (req, res) => {
   try {
     const { couponCode, planId, scope = COUPON_SCOPES.MEMBERSHIP } = req.body;
-
-    if (!couponCode || !planId) {
-      return res.status(400).json({ message: 'Coupon code and plan ID are required' });
-    }
-
-    const validation = await validateFreeMembershipCoupon({
-      code: couponCode,
-      userId: req.user.id,
-      planId,
-      scope
-    });
-
-    const plan = await MembershipPlan.findByPk(planId);
-    if (!plan || !plan.isActive) {
-      return res.status(404).json({ message: 'Plan not available' });
-    }
-
-    if (validation.boundPlanId && validation.boundPlanId !== plan.id) {
-      return res.status(400).json({ message: 'This coupon is not valid for the selected plan' });
-    }
-
-    const planType = plan.planType || 'primary';
-    if (planType === 'primary') {
-      const alreadyActive = await UserPlan.findOne({
-        where: { userId: req.user.id, status: 'active' },
-        include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }]
-      });
-      if (alreadyActive) {
-        return res.status(400).json({
-          success: false,
-          message: 'You already have an active plan. Switch or upgrade it from Manage Plan.',
-          code: 'PRIMARY_PLAN_ALREADY_ACTIVE',
-          action: 'Upgrade or change your existing plan instead of subscribing again'
-        });
-      }
-    } else {
-      const alreadyHasAddon = await UserPlan.findOne({
-        where: { userId: req.user.id, membershipPlanId: plan.id, status: 'active' }
-      });
-      if (alreadyHasAddon) {
-        return res.status(400).json({ message: 'You already have this addon plan active' });
-      }
-    }
-
-    const startDate = new Date();
-    const durationDays = validation.freeMonths * 30;
-    const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
-    const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
-
-    const userPlan = await UserPlan.create({
-      userId: req.user.id,
-      membershipPlanId: plan.id,
-      startDate: startDate.toISOString().slice(0, 10),
-      endDate: endDate.toISOString().slice(0, 10),
-      paidAmount: 0,
-      paymentId: `FREE_MEMBERSHIP_${Date.now()}`,
-      paymentMethod: 'free_membership_coupon',
-      metadata: {
-        planName: plan.name,
-        planType,
-        tier: plan.tier,
-        features: plan.features,
-        benefits: plan.benefits,
-        limitations: plan.limitations,
-        appliedLimits: buildAppliedLimits(plan),
-        couponCode: validation.coupon.code,
-        freeMonths: validation.freeMonths,
-        grantType: 'FREE_MEMBERSHIP',
-        originalPrice: planPrice,
-        usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
-      }
-    });
-
-    await CouponUsage.create({
-      couponId: validation.coupon.id,
-      couponCode: validation.coupon.code,
-      userId: req.user.id,
-      hcPurchased: 0,
-      hcBonus: 0,
-      discountAmount: planPrice,
-      amountPaid: 0,
-      paymentId: userPlan.paymentId
-    });
-
-    await validation.coupon.update({
-      usageCount: Number(validation.coupon.usageCount || 0) + 1
-    });
-
-    try {
-      const phone = req.user.phoneNumber || req.user.phone;
-      if (phone) {
-        let formattedPhone = String(phone).replace(/[^0-9+]/g, '');
-        if (!formattedPhone.startsWith('+')) formattedPhone = '+91' + formattedPhone;
-        whatsappProductionService.sendMembershipPlanActivated({
-          to: formattedPhone,
-          name: req.user.firstName || 'Member',
-          planName: plan.name,
-          startDate: userPlan.startDate,
-          endDate: userPlan.endDate
-        }).catch((e) => console.error('WA plan activation notification failed:', e.message));
-      }
-    } catch (waErr) {
-      console.error('WA plan activation notification error:', waErr.message);
-    }
-
+    const result = await redeemFreeMembershipCoupon({ user: req.user, couponCode, planId, scope });
     return res.status(201).json({
       success: true,
-      message: `${validation.freeMonths}-month free membership activated`,
-      userPlan,
-      coupon: {
-        code: validation.coupon.code,
-        freeMonths: validation.freeMonths
-      }
+      message: `${result.coupon.freeMonths}-month free membership activated`,
+      userPlan: result.userPlan,
+      coupon: result.coupon,
+      accountStatus: 'active'
     });
   } catch (error) {
-    console.error('Redeem free membership coupon error:', error);
-    return res.status(400).json({ message: error.message || 'Failed to redeem membership coupon' });
+    console.error('Redeem free membership coupon error:', error.message);
+    const body = { success: false, message: error.message || 'Failed to redeem membership coupon' };
+    if (error.code) body.code = error.code;
+    if (error.action) body.action = error.action;
+    return res.status(error.status === 404 ? 404 : 400).json(body);
   }
 });
 

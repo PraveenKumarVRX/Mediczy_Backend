@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/cart/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -3794,7 +3794,7 @@
           "Sign-in"
         ],
         "summary": "Sign in with email, phone or employee login ID",
-        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "description": "An individual member with no plan still signs in: membershipRequired is true and, until a plan is bought or a promo coupon redeemed, only plans, payment, coupons and account settings answer (MEMBERSHIP_REQUIRED elsewhere). Corporate employees whose access has lapsed get 403 ACCOUNT_INACTIVE.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -12588,8 +12588,40 @@
         "tags": [
           "Membership"
         ],
-        "summary": "POST /api/membership/redeem-free-coupon",
-        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "summary": "Redeem a free-membership promo coupon",
+        "description": "planId is optional: the coupon's own plan, else the ₹99 Basic entry plan. Opens an inactive account at once.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "couponCode": {
+                    "type": "string"
+                  },
+                  "planId": {
+                    "description": "Database identifier of the specified resource.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "couponCode"
+                ]
+              }
+            }
+          }
+        },
         "parameters": [],
         "responses": {
           "200": {
@@ -13493,8 +13525,8 @@
         "tags": [
           "Account and sign-in"
         ],
-        "summary": "POST /api/users/register/verify-otp",
-        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "summary": "Finish sign-up with the verified code",
+        "description": "Individual accounts start inactive. Send couponCode to redeem a free-membership promo coupon at sign-up; otherwise membershipRequired is true and the member buys the ₹99 Basic plan (payment-order then subscribe). The response coupon object says whether the code applied.",
         "security": [],
         "parameters": [],
         "responses": {
@@ -13637,7 +13669,7 @@
           "Account and sign-in"
         ],
         "summary": "Sign in with email, phone or employee login ID",
-        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "description": "An individual member with no plan still signs in: membershipRequired is true and, until a plan is bought or a promo coupon redeemed, only plans, payment, coupons and account settings answer (MEMBERSHIP_REQUIRED elsewhere). Corporate employees whose access has lapsed get 403 ACCOUNT_INACTIVE.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -15860,6 +15892,791 @@
         "summary": "GET /api/membership-plans/card-image",
         "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
         "parameters": [],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AppObject"
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        }
+      }
+    },
+    "/api/wellness/womens-health": {
+      "get": {
+        "tags": [
+          "Women's health"
+        ],
+        "summary": "The member's women's health settings, period log, cycle estimates and signs to raise with a gynaecologist",
+        "description": "Estimates are calendar arithmetic over the logged periods (settings until two are logged) and pause while pregnant or breastfeeding. suggestEnable is a first-visit hint from gender on file, which is unreliable; let anyone turn the section on.",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "settings": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "cycleLengthDays": {
+                              "type": "integer",
+                              "minimum": 15,
+                              "maximum": 60
+                            },
+                            "periodLengthDays": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 15
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "NONE",
+                                "MENSTRUATION",
+                                "OVULATION",
+                                "PREGNANCY",
+                                "LACTATION"
+                              ]
+                            }
+                          }
+                        },
+                        "suggestEnable": {
+                          "type": "boolean"
+                        },
+                        "cycles": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "description": "Database identifier of the specified resource.",
+                                "oneOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "periodStart": {
+                                "type": "string",
+                                "format": "date"
+                              },
+                              "periodEnd": {
+                                "type": "string",
+                                "format": "date",
+                                "nullable": true
+                              },
+                              "flow": {
+                                "type": "string",
+                                "enum": [
+                                  "light",
+                                  "medium",
+                                  "heavy",
+                                  "very_heavy"
+                                ],
+                                "nullable": true
+                              },
+                              "symptoms": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "cramps",
+                                    "headache",
+                                    "bloating",
+                                    "acne",
+                                    "back_pain",
+                                    "breast_tenderness",
+                                    "fatigue",
+                                    "mood_changes",
+                                    "nausea",
+                                    "spotting",
+                                    "food_cravings",
+                                    "insomnia"
+                                  ]
+                                }
+                              },
+                              "notes": {
+                                "type": "string",
+                                "maxLength": 500,
+                                "nullable": true
+                              },
+                              "periodLengthDays": {
+                                "type": "integer",
+                                "nullable": true
+                              }
+                            }
+                          }
+                        },
+                        "estimates": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "signs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              },
+                              "suggestion": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "options": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
+      },
+      "delete": {
+        "tags": [
+          "Women's health"
+        ],
+        "summary": "Clear all of the member's women's health data (period log and settings)",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AppObject"
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        }
+      }
+    },
+    "/api/wellness/womens-health/settings": {
+      "put": {
+        "tags": [
+          "Women's health"
+        ],
+        "summary": "Save the member's women's health settings (partial update)",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "cycleLengthDays": {
+                    "type": "integer",
+                    "minimum": 15,
+                    "maximum": 60
+                  },
+                  "periodLengthDays": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 15
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "NONE",
+                      "MENSTRUATION",
+                      "OVULATION",
+                      "PREGNANCY",
+                      "LACTATION"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "cycleLengthDays": {
+                          "type": "integer",
+                          "minimum": 15,
+                          "maximum": 60
+                        },
+                        "periodLengthDays": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 15
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "NONE",
+                            "MENSTRUATION",
+                            "OVULATION",
+                            "PREGNANCY",
+                            "LACTATION"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
+      }
+    },
+    "/api/wellness/womens-health/cycles": {
+      "post": {
+        "tags": [
+          "Women's health"
+        ],
+        "summary": "Log a period",
+        "description": "409 duplicate_period when a period with that start date is already logged.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "periodStart": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "periodEnd": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true
+                  },
+                  "flow": {
+                    "type": "string",
+                    "enum": [
+                      "light",
+                      "medium",
+                      "heavy",
+                      "very_heavy"
+                    ],
+                    "nullable": true
+                  },
+                  "symptoms": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "cramps",
+                        "headache",
+                        "bloating",
+                        "acne",
+                        "back_pain",
+                        "breast_tenderness",
+                        "fatigue",
+                        "mood_changes",
+                        "nausea",
+                        "spotting",
+                        "food_cravings",
+                        "insomnia"
+                      ]
+                    }
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "periodStart"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AppObject"
+          },
+          "201": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "periodStart": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "periodEnd": {
+                          "type": "string",
+                          "format": "date",
+                          "nullable": true
+                        },
+                        "flow": {
+                          "type": "string",
+                          "enum": [
+                            "light",
+                            "medium",
+                            "heavy",
+                            "very_heavy"
+                          ],
+                          "nullable": true
+                        },
+                        "symptoms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "cramps",
+                              "headache",
+                              "bloating",
+                              "acne",
+                              "back_pain",
+                              "breast_tenderness",
+                              "fatigue",
+                              "mood_changes",
+                              "nausea",
+                              "spotting",
+                              "food_cravings",
+                              "insomnia"
+                            ]
+                          }
+                        },
+                        "notes": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "nullable": true
+                        },
+                        "periodLengthDays": {
+                          "type": "integer",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
+      }
+    },
+    "/api/wellness/womens-health/cycles/{id}": {
+      "patch": {
+        "tags": [
+          "Women's health"
+        ],
+        "summary": "Edit a logged period",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "periodStart": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "periodEnd": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true
+                  },
+                  "flow": {
+                    "type": "string",
+                    "enum": [
+                      "light",
+                      "medium",
+                      "heavy",
+                      "very_heavy"
+                    ],
+                    "nullable": true
+                  },
+                  "symptoms": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "cramps",
+                        "headache",
+                        "bloating",
+                        "acne",
+                        "back_pain",
+                        "breast_tenderness",
+                        "fatigue",
+                        "mood_changes",
+                        "nausea",
+                        "spotting",
+                        "food_cravings",
+                        "insomnia"
+                      ]
+                    }
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "periodStart": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "periodEnd": {
+                          "type": "string",
+                          "format": "date",
+                          "nullable": true
+                        },
+                        "flow": {
+                          "type": "string",
+                          "enum": [
+                            "light",
+                            "medium",
+                            "heavy",
+                            "very_heavy"
+                          ],
+                          "nullable": true
+                        },
+                        "symptoms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "cramps",
+                              "headache",
+                              "bloating",
+                              "acne",
+                              "back_pain",
+                              "breast_tenderness",
+                              "fatigue",
+                              "mood_changes",
+                              "nausea",
+                              "spotting",
+                              "food_cravings",
+                              "insomnia"
+                            ]
+                          }
+                        },
+                        "notes": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "nullable": true
+                        },
+                        "periodLengthDays": {
+                          "type": "integer",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Women's health"
+        ],
+        "summary": "Delete a logged period",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "$ref": "#/components/responses/AppObject"
