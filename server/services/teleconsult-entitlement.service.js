@@ -15,7 +15,7 @@
  * accident is a revenue loss, so every condition is explicit.
  */
 import { Op } from 'sequelize';
-import { UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
+import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 
 /** Total teleconsults used across every specialty on this plan. */
 export function usedTeleconsults(metadata) {
@@ -30,89 +30,133 @@ export function teleconsultAllowance(metadata) {
   return Number.isFinite(pooled) && pooled > 0 ? pooled : 0;
 }
 
+/** GP vs specialist, from the doctor's specialisation (no specialisation = general practice). */
+const GP_SPECIALTY = /general|family|physician|\bgp\b|internal medicine|primary care/i;
+export const isGeneralPractice = (specialty) => !specialty || GP_SPECIALTY.test(String(specialty));
+
+const istDate = (now = new Date()) => new Date(now.getTime() + 5.5 * 3600000).toISOString().slice(0, 10);
+
 /**
- * @returns {Promise<{
- *   hasPlan: boolean, planId: number|null, limit: number, used: number,
- *   remaining: number, covered: boolean, reason: string
- * }>}
+ * Entitlement on one plan's metadata (pure). New-style plans (2026-11-20 lineup) carry
+ * teleConsultLimits.gpFairUse {perDay, perMonth} and/or .specialist (a count for the plan period);
+ * older plans keep the single pooled allowance (allSpecialties).
  */
-export async function getTeleconsultEntitlement(userId, { consultationType = 'online' } = {}) {
+export function entitlementFor(metadata = {}, specialty, now = new Date(), extra = null) {
+  const own = metadata?.appliedLimits?.teleConsultLimits || {};
+  // Add-ons (Parents, Extra child, Chronic Care) add GP fair use and specialist consults.
+  const limits = extra && (own.gpFairUse || own.specialist !== undefined) ? {
+    ...own,
+    gpFairUse: own.gpFairUse ? {
+      perDay: own.gpFairUse.perDay == null ? null : Number(own.gpFairUse.perDay) + (Number(extra.perDay) || 0),
+      perMonth: Number(own.gpFairUse.perMonth) + (Number(extra.perMonth) || 0),
+    } : own.gpFairUse,
+    specialist: (Number(own.specialist) || 0) + (Number(extra.specialist) || 0),
+  } : own;
+  const usage = metadata?.usage || {};
+  const newStyle = limits.gpFairUse || limits.specialist !== undefined;
+  if (!newStyle) {
+    const limit = teleconsultAllowance(metadata);
+    if (!limit) return { kind: 'pooled', limit: 0, used: 0, remaining: 0, covered: false, reason: 'plan_has_no_teleconsult_benefit' };
+    const used = usedTeleconsults(metadata);
+    const remaining = Math.max(0, limit - used);
+    return { kind: 'pooled', limit, used, remaining, covered: remaining > 0, reason: remaining > 0 ? 'covered_by_plan' : 'teleconsult_allowance_exhausted' };
+  }
+  if (isGeneralPractice(specialty)) {
+    const fu = limits.gpFairUse;
+    if (!fu || !(Number(fu.perMonth) > 0)) return { kind: 'gp', limit: 0, used: 0, remaining: 0, covered: false, reason: 'plan_has_no_gp_benefit' };
+    const today = istDate(now);
+    const month = today.slice(0, 7);
+    const days = usage.teleConsultDays || {};
+    const monthUsed = Object.entries(days).filter(([d]) => d.startsWith(month)).reduce((t, [, n]) => t + (Number(n) || 0), 0);
+    const dayUsed = Number(days[today] || 0);
+    const perDay = Number(fu.perDay) || 0;
+    const dayLeft = perDay ? perDay - dayUsed : Infinity;
+    const remaining = Math.max(0, Math.min(Number(fu.perMonth) - monthUsed, dayLeft));
+    const reason = remaining > 0 ? 'covered_by_plan' : (perDay && dayUsed >= perDay ? 'daily_fair_use_reached' : 'monthly_fair_use_reached');
+    return { kind: 'gp', limit: Number(fu.perMonth), used: monthUsed, remaining, covered: remaining > 0, reason, window: 'month', perDay: perDay || null };
+  }
+  const limit = Number(limits.specialist) || 0;
+  if (!limit) return { kind: 'specialist', limit: 0, used: 0, remaining: 0, covered: false, reason: 'plan_has_no_specialist_benefit' };
+  const used = Number(usage.specialistUsed || 0);
+  const remaining = Math.max(0, limit - used);
+  return { kind: 'specialist', limit, used, remaining, covered: remaining > 0, reason: remaining > 0 ? 'covered_by_plan' : 'specialist_allowance_exhausted', window: 'plan' };
+}
+
+/** The member's active primary plan (an add-on bought later must not replace it), and what add-ons add. */
+async function activePlans(userId, { transaction, lock } = {}) {
+  const now = new Date();
+  const plans = await UserPlan.findAll({
+    where: {
+      userId,
+      status: 'active',
+      [Op.and]: [
+        { [Op.or]: [{ startDate: { [Op.lte]: now } }, { startDate: null }] },
+        { [Op.or]: [{ endDate: { [Op.gte]: now } }, { endDate: null }] },
+      ],
+    },
+    order: [['createdAt', 'DESC']],
+    include: [{ model: MembershipPlan, as: 'plan', required: false }],
+    ...(transaction ? { transaction } : {}),
+    ...(lock ? { lock: { level: lock, of: UserPlan } } : {}),
+  });
+  const isAddon = (p) => (p.metadata?.planType || p.plan?.planType || 'primary') === 'addon';
+  const primary = plans.find((p) => !isAddon(p)) || null;
+  const extras = plans.filter(isAddon).map((p) => p.plan?.metadata?.teleconsultExtra).filter(Boolean);
+  const extra = extras.length ? extras.reduce((t, e) => ({
+    perDay: t.perDay + (Number(e.perDay) || 0), perMonth: t.perMonth + (Number(e.perMonth) || 0), specialist: t.specialist + (Number(e.specialist) || 0),
+  }), { perDay: 0, perMonth: 0, specialist: 0 }) : null;
+  return { primary, extra };
+}
+
+/**
+ * @returns {Promise<{ hasPlan: boolean, planId: number|null, limit: number, used: number,
+ *   remaining: number, covered: boolean, reason: string, kind?: string }>}
+ */
+export async function getTeleconsultEntitlement(userId, { consultationType = 'online', specialty } = {}) {
   const none = (reason) => ({
     hasPlan: false, planId: null, limit: 0, used: 0, remaining: 0, covered: false, reason,
   });
-
   if (!userId) return none('no_user');
   if (String(consultationType).toLowerCase() !== 'online') return none('not_an_online_consultation');
-
-  const now = new Date();
   let plan;
+  let extra = null;
   try {
-    plan = await UserPlan.findOne({
-      where: {
-        userId,
-        status: 'active',
-        [Op.and]: [
-          { [Op.or]: [{ startDate: { [Op.lte]: now } }, { startDate: null }] },
-          { [Op.or]: [{ endDate: { [Op.gte]: now } }, { endDate: null }] },
-        ],
-      },
-      order: [['createdAt', 'DESC']],
-    });
+    ({ primary: plan, extra } = await activePlans(userId));
   } catch (error) {
     // Never block a booking because the entitlement lookup failed; the member
     // simply pays as they do today.
     console.error('[teleconsult-entitlement] lookup failed:', error.message);
     return none('lookup_failed');
   }
-
   if (!plan) return none('no_active_plan');
-
-  const metadata = plan.metadata || {};
-  const limit = teleconsultAllowance(metadata);
-  if (!limit) {
-    return { hasPlan: true, planId: plan.id, limit: 0, used: 0, remaining: 0, covered: false, reason: 'plan_has_no_teleconsult_benefit' };
-  }
-
-  const used = usedTeleconsults(metadata);
-  const remaining = Math.max(0, limit - used);
-  return {
-    hasPlan: true,
-    planId: plan.id,
-    limit,
-    used,
-    remaining,
-    covered: remaining > 0,
-    reason: remaining > 0 ? 'covered_by_plan' : 'teleconsult_allowance_exhausted',
-  };
+  return { hasPlan: true, planId: plan.id, ...entitlementFor(plan.metadata || {}, specialty, new Date(), extra) };
 }
 
 /**
- * Consume one teleconsult against the member's plan. Returns false when the
- * allowance was already spent — the caller must then charge normally.
- *
- * Mirrors POST /api/membership/usage/teleconsult so a consultation booked in
- * the app and one recorded by that endpoint count against the same balance.
+ * Consume one teleconsult against the member's primary plan. Returns false when it is not covered
+ * (allowance spent, or the daily/monthly fair use reached) — the caller must then charge normally.
  */
 export async function consumeTeleconsult(userId, specialty = 'general', count = 1, { transaction } = {}) {
-  const plan = await UserPlan.findOne({
-    where: { userId, status: 'active' },
-    order: [['createdAt', 'DESC']],
-    ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
-  });
+  const { primary: plan, extra } = await activePlans(userId, { transaction, lock: transaction?.LOCK?.UPDATE });
   if (!plan) return false;
-
   const metadata = { ...(plan.metadata || {}) };
-  const limit = teleconsultAllowance(metadata);
-  const used = usedTeleconsults(metadata);
-  if (!limit || used + count > limit) return false;
-
+  const ent = entitlementFor(metadata, specialty, new Date(), extra);
+  if (!ent.covered || ent.remaining < count) return false;
   const key = String(specialty || 'general');
   metadata.usage = { ...(metadata.usage || {}) };
   metadata.usage.teleConsult = { ...(metadata.usage.teleConsult || {}) };
   metadata.usage.teleConsult[key] = Number(metadata.usage.teleConsult[key] || 0) + Number(count);
-
+  if (ent.kind === 'gp') {
+    const today = istDate();
+    const cutoff = istDate(new Date(Date.now() - 62 * 86400000));
+    const days = Object.fromEntries(Object.entries(metadata.usage.teleConsultDays || {}).filter(([d]) => d >= cutoff));
+    days[today] = Number(days[today] || 0) + Number(count);
+    metadata.usage.teleConsultDays = days;
+  } else if (ent.kind === 'specialist') {
+    metadata.usage.specialistUsed = Number(metadata.usage.specialistUsed || 0) + Number(count);
+  }
   await plan.update({ metadata }, transaction ? { transaction } : {});
   return true;
 }
 
-export default { getTeleconsultEntitlement, consumeTeleconsult, usedTeleconsults, teleconsultAllowance };
+export default { getTeleconsultEntitlement, consumeTeleconsult, usedTeleconsults, teleconsultAllowance, entitlementFor, isGeneralPractice };

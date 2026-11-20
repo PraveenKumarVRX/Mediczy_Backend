@@ -151,6 +151,9 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261120000300-paid-basic-plan.migration.js',
   '20261120000400-health-checkup-holidays.migration.js',
   '20261120000500-users-one-member-account-per-phone.migration.js',
+  '20261120000600-diet-sync.migration.js',
+  '20261120000700-individual-plan-lineup.migration.js',
+  '20261120000800-plan-checkup-panel.migration.js',
 ];
 
 function runStep(step) {

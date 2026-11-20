@@ -58,7 +58,8 @@ jest.unstable_mockModule('../models/postgres/membership-plan.model.postgres.js',
   default: { findByPk: jest.fn(async () => null) },
 }));
 jest.unstable_mockModule('../models/postgres/membershipPlan.model.postgres.js', () => ({
-  UserPlan: { findOne: jest.fn(async () => assignedPlan) },
+  // findAll: the member's own 2026-11 lineup plans/add-ons (none here, so limits are unchanged).
+  UserPlan: { findOne: jest.fn(async () => assignedPlan), findAll: jest.fn(async () => []) },
   MembershipPlan: {},
 }));
 

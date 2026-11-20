@@ -153,7 +153,8 @@ describe('subscribe refuses corporate-prepaid plans', () => {
   it('only primary and add-on plans can be self-subscribed', () => {
     const r = src('routes/membership.route.js');
     const sub = r.slice(r.indexOf("router.post('/subscribe/:planId'"), r.indexOf('verifyPlanPayment(', r.indexOf("router.post('/subscribe/:planId'")));
-    expect(sub).toMatch(/SELF_SERVICE_PLAN_TYPES\.has\(planType\)/);
-    expect(sub).toMatch(/PLAN_NOT_SELF_SERVICE/);
+    // Since 2026-11-20 the rule lives in selfServiceRefusal (planType AND corporate type).
+    expect(sub).toMatch(/selfServiceRefusal\(plan, currentPrimary\?\.plan\)/);
+    expect(src('services/plan-pricing.service.js')).toMatch(/PLAN_NOT_SELF_SERVICE/);
   });
 });

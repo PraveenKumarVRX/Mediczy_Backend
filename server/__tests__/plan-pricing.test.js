@@ -45,11 +45,10 @@ describe('quotePlanPurchase', () => {
     await expect(quotePlanPurchase({ userId: 1, planId: 7 }, models({ plan: gold, current }))).resolves.toMatchObject({ ok: true, kind: 'upgrade', baseAmount: 4999 });
   });
 
-  it('an add-on is always a plain purchase', async () => {
+  it('an add-on is always a plain purchase (the current plan is read only to check its base tier)', async () => {
     const addon = { ...gold, planType: 'addon', price: '299' };
-    const m = models({ plan: addon, current: { membershipPlanId: 3, plan: { planType: 'primary' } } });
+    const m = models({ plan: addon, current: { membershipPlanId: 3, plan: { planType: 'primary', tier: 1 } } });
     await expect(quotePlanPurchase({ userId: 1, planId: 7 }, m)).resolves.toMatchObject({ kind: 'subscribe', baseAmount: 299 });
-    expect(m.UserPlan.findOne).not.toHaveBeenCalled();
   });
 
   it('an inactive or unknown plan cannot be priced', async () => {

@@ -68,7 +68,8 @@ const activeCorporateEmployee = async (userId) => {
 // reports, etc.) — is ungated. Add a premium feature by its method + full path.
 const MEMBERSHIP_REQUIRED_FEATURES = [
   { method: 'POST', path: '/api/family-members' },   // Add patient (family member / dependent)
-  { method: 'POST', path: '/api/pharmacy-orders' },  // Place a pharmacy order
+  // Pharmacy orders are open to everyone at list price (owner decision 2026-11-20, plan
+  // lineup report); members get the member discount (isPaidMember).
 ];
 
 // Full request path, independent of where in the stack the gate runs.
@@ -108,6 +109,20 @@ export const PRE_PLAN_PATHS = [
   '/api/fcm',
   '/api/auth',
   '/api/notifications',
+  // Buying lab tests and medicines at list price needs no plan (owner decision 2026-11-20):
+  // it is revenue, and it is how members are won. Member prices apply only to members.
+  '/api/labs',
+  '/api/lab-tests',
+  '/api/health-checkups',
+  '/api/cart',
+  '/api/pharmacy',
+  '/api/pharmacy-orders',
+  '/api/billing/orders',
+  '/api/billing/payments',
+  '/api/payments',
+  '/api/addresses',
+  '/api/masterdata',
+  '/api/prescriptions',
 ];
 
 export const isPrePlanPath = (path) =>
@@ -123,6 +138,23 @@ const hasPaidAccess = async (user) => {
     attributes: ['id'],
   });
   return Boolean(plan);
+};
+
+/**
+ * Member pricing: true when the person holds a current plan, is a funded corporate employee or is
+ * an exempt test account. Non-members still buy lab tests and medicines, at list price.
+ */
+export const isPaidMember = async (userId) => {
+  if (!userId) return false;
+  try {
+    const [user] = await postgresSequelize.query(
+      'SELECT id, email, metadata FROM users WHERE id = :userId LIMIT 1',
+      { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT });
+    return user ? await hasPaidAccess(user) : false;
+  } catch (error) {
+    console.error('[membership] member pricing check failed:', error.message);
+    return false; // list price, never a free discount by accident
+  }
 };
 
 export const MEMBERSHIP_REQUIRED_BODY = {

@@ -216,4 +216,18 @@ export const mobileRouters = [
     {"method":"delete","path":"/api/wellness/womens-health/cycles/{id}","public":false,"statuses":[200],"tag":"Women's health"},
     {"method":"delete","path":"/api/wellness/womens-health","public":false,"statuses":[200],"tag":"Women's health"},
   ] },
+  { file: "routes/diet-sync.route.js", mount: "/api/diet", operations: [
+    {"method":"get","path":"/api/diet/goals","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"put","path":"/api/diet/goals","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"get","path":"/api/diet/log","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"post","path":"/api/diet/log","public":false,"statuses":[200,201],"tag":"Diet"},
+    {"method":"put","path":"/api/diet/log/{date}","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"put","path":"/api/diet/water/{date}","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"patch","path":"/api/diet/log/{id}","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"delete","path":"/api/diet/log/{id}","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"get","path":"/api/diet/summary","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"delete","path":"/api/diet/data","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"get","path":"/api/diet/foods/search","public":false,"statuses":[200],"tag":"Diet"},
+    {"method":"get","path":"/api/diet/foods/{id}","public":false,"statuses":[200],"tag":"Diet"},
+  ] },
 ];

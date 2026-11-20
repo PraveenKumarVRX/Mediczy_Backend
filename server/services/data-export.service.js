@@ -162,6 +162,9 @@ async function _collectUserData(userId, client) {
     claims,
     womensHealthSettings,
     menstrualCycles,
+    dietGoals,
+    foodLog,
+    dietDays,
   ] = await Promise.all([
     client.query(`SELECT * FROM users WHERE id = $1`, [userId]),
     client.query(`SELECT * FROM appointments WHERE "userId" = $1 ORDER BY "appointmentDate" DESC LIMIT 1000`, [userId]),
@@ -179,6 +182,9 @@ async function _collectUserData(userId, client) {
     client.query(`SELECT claim_type, claim_amount, status, submitted_at FROM insurance_claims WHERE "patientId" = $1`, [userId]),
     client.query(`SELECT enabled, cycle_length_days, period_length_days, status, updated_at FROM womens_health_settings WHERE user_id = $1`, [userId]),
     client.query(`SELECT period_start, period_end, flow, symptoms, notes, created_at FROM menstrual_cycle_logs WHERE user_id = $1 ORDER BY period_start DESC`, [userId]),
+    client.query(`SELECT target_kcal, protein_g, carbs_g, fat_g, water_ml, goal, activity_level, dietary_preference, cuisine_region, updated_at FROM diet_goals WHERE user_id = $1`, [userId]),
+    client.query(`SELECT log_date, meal, name, servings, serving_unit, kcal, carb_g, protein_g, fat_g, fibre_g, source, created_at FROM food_log_entries WHERE user_id = $1 ORDER BY log_date DESC, created_at`, [userId]),
+    client.query(`SELECT log_date, water_ml, updated_at FROM diet_days WHERE user_id = $1 ORDER BY log_date DESC`, [userId]),
   ]);
 
   const user = userRow.rows[0] || {};
@@ -203,6 +209,7 @@ async function _collectUserData(userId, client) {
       insurancePolicies: insurancePolicies.rows,
       claims:           claims.rows,
       womensHealth:     { settings: womensHealthSettings.rows[0] || null, periods: menstrualCycles.rows },
+      diet:             { goals: dietGoals.rows[0] || null, foodLog: foodLog.rows, days: dietDays.rows },
     },
   };
 }
@@ -314,6 +321,9 @@ export async function executeErasure(userId, requestId) {
     await client.query(`DELETE FROM family_members      WHERE "userId" = $1`, [userId]);
     await client.query(`DELETE FROM menstrual_cycle_logs   WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM womens_health_settings WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM food_log_entries       WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM diet_days              WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM diet_goals             WHERE user_id = $1`, [userId]);
 
     // 3. Anonymize appointments (keep for clinical records but remove PII)
     await client.query(
@@ -330,7 +340,7 @@ export async function executeErasure(userId, requestId) {
     await client.query(
       `UPDATE data_deletion_requests
        SET status = 'completed', completed_at = NOW(),
-           tables_affected = ARRAY['users','patient_allergies','patient_medications','patient_conditions','family_members','menstrual_cycle_logs','womens_health_settings','appointments'],
+           tables_affected = ARRAY['users','patient_allergies','patient_medications','patient_conditions','family_members','menstrual_cycle_logs','womens_health_settings','food_log_entries','diet_days','diet_goals','appointments'],
            records_deleted = 1
        WHERE id = $1`,
       [requestId]

@@ -7,7 +7,7 @@ import pool from '../db/pgPool.js';
 import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
 import { verifyPlanPayment } from '../services/plan-payment-verification.service.js';
-import { quotePlanPurchase, upgradeBaseDue, SELF_SERVICE_PLAN_TYPES } from '../services/plan-pricing.service.js';
+import { quotePlanPurchase, upgradeBaseDue, selfServiceRefusal } from '../services/plan-pricing.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
@@ -203,6 +203,12 @@ function buildAppliedLimits(plan) {
     },
     teleConsultLimits: {
       allSpecialties: coverage.onlineConsult?.limit ?? 0,
+      // 2026-11-20 lineup: GP consults under fair use (per day / per month) and a separate
+      // specialist count. Older plans have neither and keep the pooled allowance above.
+      ...(coverage.onlineConsult?.fairUse ? {
+        gpFairUse: { perDay: coverage.onlineConsult.fairUse.perDay ?? null, perMonth: coverage.onlineConsult.fairUse.perMonth },
+        specialist: coverage.specialistConsult?.limit ?? 0,
+      } : {}),
     },
     healthCheckPackage: coverage.healthCheck?.package ?? null,
     priceINR: Number(plan.discountedPrice != null && plan.discountedPrice !== '0.00' && plan.discountedPrice !== 0 ? plan.discountedPrice : plan.price) || 0,
@@ -401,7 +407,9 @@ router.get('/plans', async (req,res) => {
     // collapse the duplicate ₹0 tiers the app was showing side by side. Nothing
     // is deactivated, so existing subscriptions and direct lookups are
     // unaffected; `?includeAll=true` returns the unfiltered list.
-    res.json({ plans: req.query.includeAll === 'true' ? plans : publicPlanCatalogue(plans) });
+    // Corporate plans are assigned by HR, never sold to individuals (owner decision 2026-11-20).
+    const individual = plans.filter((p) => String(p.type || '').toLowerCase() !== 'corporate');
+    res.json({ plans: req.query.includeAll === 'true' ? plans : publicPlanCatalogue(individual) });
   } catch(e) {
     console.error(e);
     res.status(500).json({ message:'Failed to get plans', error:e.message });
@@ -528,13 +536,16 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
     if(!plan || !plan.isActive) return res.status(404).json({ message:'Plan not available' });
 
     const planType = plan.planType || 'primary';
-    // Only plans members buy themselves. Corporate plans (planType
-    // 'health_checkup', e.g. "Corporate Equitas 2026") are prepaid by the
-    // employer, priced for HR reference, free to the employee and assigned by
-    // the corporate process — never self-subscribed, or anyone could take one free.
-    if (!SELF_SERVICE_PLAN_TYPES.has(planType)) {
-      return res.status(403).json({ success: false, code: 'PLAN_NOT_SELF_SERVICE', message: 'This plan is provided through your employer.' });
-    }
+    // Only plans members buy themselves. Corporate plans are prepaid by the employer, priced
+    // for HR reference, free to the employee and assigned by the corporate process — never
+    // self-subscribed, or anyone could take one free. Add-ons need a One or Family plan.
+    const currentPrimary = await UserPlan.findOne({
+      where: { userId: req.user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }],
+      order: [['createdAt', 'DESC']],
+    });
+    const refusal = selfServiceRefusal(plan, currentPrimary?.plan);
+    if (refusal) return res.status(refusal.status).json({ success: false, code: refusal.code, message: refusal.message });
     const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
 
     // Paid plans require a Razorpay payment ID — prevent free activation of paid plans.
@@ -687,6 +698,14 @@ export async function redeemFreeMembershipCoupon({ user, couponCode, planId, sco
   const plan = targetPlanId ? await MembershipPlan.findByPk(targetPlanId) : null;
   if (!plan || !plan.isActive) throw fail(404, 'Plan not available');
   if (validation.boundPlanId && validation.boundPlanId !== plan.id) throw fail(400, 'This coupon is not valid for the selected plan');
+  {
+    const currentPrimary = await UserPlan.findOne({
+      where: { userId: user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }],
+    });
+    const refusal = selfServiceRefusal(plan, currentPrimary?.plan);
+    if (refusal) throw fail(refusal.status === 409 ? 400 : refusal.status, refusal.message, { code: refusal.code });
+  }
 
   const planType = plan.planType || 'primary';
   if (planType === 'primary') {
@@ -939,6 +958,11 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
       return res.status(404).json({ message: 'Target plan not available' });
     }
     
+    const upgradeRefusal = selfServiceRefusal(newPlan, currentPlan);
+    if (upgradeRefusal && upgradeRefusal.code === 'PLAN_NOT_SELF_SERVICE') {
+      return res.status(403).json({ success: false, code: upgradeRefusal.code, message: upgradeRefusal.message });
+    }
+
     // New plan must also be a primary plan
     if (newPlan.planType === 'addon') {
       return res.status(400).json({ message: 'Cannot upgrade to an addon plan. Use subscribe endpoint for addons.' });

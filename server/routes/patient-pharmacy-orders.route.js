@@ -17,6 +17,8 @@ import multer from 'multer';
 import { authUser } from '../middleware/auth.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
+import { isPaidMember } from '../middleware/membership.middleware.js';
+import { resolveOrderPatient } from '../services/order-patient.service.js';
 import { resolveMedicine, priceLine, computeOrderTotals, requiresPrescription, STALE_UNIT_PRICING } from '../utils/pharmacy-pricing.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import {
@@ -89,37 +91,6 @@ async function appendStatusEvent(orderId, status, note = '') {
     [status, JSON.stringify(statusEvent(status, note)), orderId]
   );
   return result.rows[0] || null;
-}
-
-/** The patient an order is for: the signed-in user, or one of their own family members. */
-async function resolveOrderPatient(user, rawFamilyMemberId) {
-  const requested = String(rawFamilyMemberId ?? '').trim();
-  if (requested) {
-    if (!/^[1-9]\d{0,9}$/.test(requested)) return null;
-    const member = await withRlsTransaction(sharedPool, { orgId: 0, userId: user.id }, async (client) => {
-      const { rows } = await client.query(
-        `SELECT id, "firstName", "lastName", relationship
-           FROM family_members
-          WHERE id = $1 AND "userId" = $2 AND "isActive" IS NOT FALSE`,
-        [Number(requested), user.id],
-      );
-      return rows[0] || null;
-    });
-    if (!member) return null;
-    return {
-      type: 'family_member',
-      family_member_id: member.id,
-      name: [member.firstName, member.lastName].filter(Boolean).join(' ').trim() || null,
-      relationship: member.relationship || null,
-    };
-  }
-  const { rows } = await sharedPool.query('SELECT "firstName", "lastName" FROM users WHERE id = $1', [user.id]);
-  return {
-    type: 'self',
-    family_member_id: null,
-    name: [rows[0]?.firstName, rows[0]?.lastName].filter(Boolean).join(' ').trim() || null,
-    relationship: 'self',
-  };
 }
 
 const prescriptionItems = (items) => items.filter((item) => requiresPrescription(item.schedule));
@@ -215,7 +186,10 @@ async function computeOrderAmounts(enrichedItems, userId, couponCode) {
     appliedCouponCode = couponValidation.coupon.code;
   }
 
-  const automaticDiscount = policy.discount;
+  // The automatic medicine discount is a member price (owner decision 2026-11-20): members
+  // (current plan or employer cover) get it; everyone else buys at list price.
+  const memberPrice = await isPaidMember(userId);
+  const automaticDiscount = memberPrice ? policy.discount : 0;
   const usedCoupon = discountVal > automaticDiscount;
   if (!usedCoupon) {
     discountVal = automaticDiscount;
@@ -229,6 +203,8 @@ async function computeOrderAmounts(enrichedItems, userId, couponCode) {
     appliedCouponCode,
     usedCoupon,
     couponValidation,
+    memberPrice,
+    memberDiscountAvailable: policy.discount,
     totalAmount: parseFloat(Math.max(0, subtotal + deliveryChargeVal - discountVal).toFixed(2)),
   };
 }
@@ -334,6 +310,9 @@ router.post('/quote', authUser, async (req, res) => {
         coupon_code: amounts.appliedCouponCode,
         total_amount: amounts.totalAmount,
         currency: 'INR',
+        member_price: amounts.memberPrice,
+        // What a member would save on this basket; shown to non-members as the reason to join.
+        member_discount_available: amounts.memberPrice ? 0 : amounts.memberDiscountAvailable,
         requires_prescription: prescriptionItems(priced.enrichedItems).map((item) => ({
           medicine_name: item.brand_name || item.medicine_name,
           schedule: String(item.schedule).toUpperCase().trim(),

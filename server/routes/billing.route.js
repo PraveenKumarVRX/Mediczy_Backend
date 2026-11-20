@@ -1,5 +1,7 @@
 import { completeLabCheckout } from '../services/patient-lab-checkout.service.js';
 import express from 'express';
+import { isPaidMember } from '../middleware/membership.middleware.js';
+import { resolveOrderPatient } from '../services/order-patient.service.js';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
 import legacyBillingDeprecation from '../middleware/legacy-billing-deprecation.middleware.js';
 import ledgerBridge from '../services/billing-ledger-bridge.service.js';
@@ -95,76 +97,27 @@ router.get('/ledger/unified/:patientId', authUser, async (req, res) => {
  * Create new order
  */
 router.post('/orders/create', authUser, async (req, res) => {
+  // Security (2026-11-20): this endpoint used to store the subtotal/discount the client sent and
+  // the payment was charged from that stored total, so a tampered client could pay any amount.
+  // Orders are now created only by server-priced routes. What is left is the web checkout
+  // confirming an order the server already created for this member (e.g. a reorder).
   try {
-    const userId = req.user.id;
-    const {
-      orderType,
-      itemId,
-      subtotal,
-      tax,
-      discount,
-      currency,
-      billingAddress,
-      shippingAddress,
-      metadata,
-      notes
-    } = req.body;
-
-    // Validate required fields
-    if (!orderType || !subtotal) {
-      return res.status(400).json({
-        success: false,
-        message: 'Order type and subtotal are required'
-      });
+    const existingId = Number(req.body?.order?.id ?? req.body?.orderId);
+    if (Number.isSafeInteger(existingId) && existingId > 0) {
+      const order = await Order.findOne({ where: { id: existingId, userId: req.user.id } });
+      if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+      if (order.status !== 'pending') return res.status(409).json({ success: false, code: 'ORDER_NOT_PENDING', message: 'This order can no longer be paid' });
+      return res.status(200).json({ success: true, message: 'Order ready for payment', data: { order } });
     }
-
-    // Calculate total
-    const total = paymentGateway.calculateTotal(
-      parseFloat(subtotal),
-      parseFloat(tax || 0),
-      parseFloat(discount || 0)
-    );
-
-    // Generate order number
-    const orderNumber = paymentGateway.generateOrderReceipt('ORD');
-
-    // Create order
-    const order = await Order.create({
-      orderNumber,
-      userId,
-      orderType,
-      itemId,
-      status: 'pending',
-      subtotal: parseFloat(subtotal),
-      tax: parseFloat(tax || 0),
-      discount: parseFloat(discount || 0),
-      total,
-      currency: currency || 'INR',
-      billingAddress,
-      shippingAddress,
-      metadata,
-      notes
+    return res.status(410).json({
+      success: false,
+      code: 'CLIENT_PRICED_ORDERS_REMOVED',
+      message: 'Orders are priced by the server. Place medicine orders through the cart, book lab tests from Labs and buy plans from Plans.',
+      routes: { medicine: 'POST /api/billing/orders', labTests: 'POST /api/lab-tests', plans: 'POST /api/membership/payment-order' },
     });
-
-    const hospitalId = ledgerBridge.resolveHospitalIdFromUser(req.user);
-    if (hospitalId) {
-      await ledgerBridge.mirrorLegacyOrderToHospitalCharge(order, hospitalId, userId).catch(() => {});
-    }
-
-    return res.status(201).json({
-      success: true,
-      message: 'Order created successfully',
-      data: { order },
-      ledger: hospitalId ? { mirrored: true, canonical: '/api/hospital/billing' } : { mirrored: false },
-    });
-
   } catch (error) {
     console.error('Create order error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to create order',
-      error: error.message
-    });
+    return res.status(500).json({ success: false, message: 'Failed to create order' });
   }
 });
 
@@ -300,8 +253,18 @@ router.post(
     }
 
     // 15% off above 2,000 and a flat 40 delivery fee, from the shared policy so
-    // the cart, the order and the invoice cannot disagree.
-    const totals = computeOrderTotals(priced);
+    // the cart, the order and the invoice cannot disagree. The discount is a member price
+    // (owner decision 2026-11-20): non-members pay list price.
+    const policyTotals = computeOrderTotals(priced);
+    const memberPrice = await isPaidMember(userId);
+    const totals = memberPrice ? policyTotals : { ...policyTotals, discount: 0, discountPct: 0, total: Math.round((policyTotals.total + policyTotals.discount) * 100) / 100 };
+
+    // Who the order is for: the member, or one of their family members.
+    const rawFamilyMemberId = req.body?.familyMemberId ?? req.body?.family_member_id;
+    const patient = await resolveOrderPatient(req.user, rawFamilyMemberId);
+    if (!patient) {
+      return res.status(400).json({ success: false, code: 'FAMILY_MEMBER_NOT_FOUND', message: 'That family member is not on your account' });
+    }
 
     const orderNumber = paymentGateway.generateOrderReceipt('ORD');
 
@@ -329,7 +292,10 @@ router.post(
           discountPct: totals.discountPct,
           discountThreshold: totals.discountThreshold,
           deliveryFee: totals.deliveryFee,
+          memberPrice,
+          memberDiscountAvailable: memberPrice ? 0 : policyTotals.discount,
         },
+        patient,
       },
       notes: notes || null,
     };
@@ -652,13 +618,38 @@ router.post('/orders/:orderId/reorder', authUser, async (req, res) => {
       });
     }
 
-    // Calculate totals
-    const subtotal = itemsToReorder.reduce((sum, item) => {
-      return sum + (parseFloat(item.price) * (item.quantity || 1));
-    }, 0);
-    
-    const tax = subtotal * 0.05; // 5% tax
-    const total = paymentGateway.calculateTotal(subtotal, tax, 0);
+    // Re-price from today's catalogue (2026-11-20): this used to copy the old order's stored
+    // prices and add a flat 5% "tax" on top of MRPs that already include GST. Only medicine orders
+    // can be reordered; lab tests and consultations need a new booking.
+    if (!['medicine', 'pharmacy'].includes(originalOrder.orderType)) {
+      return res.status(400).json({ success: false, code: 'REORDER_NOT_SUPPORTED', message: 'Only medicine orders can be reordered. Book lab tests and consultations again from the app.' });
+    }
+    const priced = [];
+    const unresolved = [];
+    for (const item of itemsToReorder) {
+      const medicine = await resolveMedicine(sharedPool, {
+        medicineId: item.medicineId ?? item.medicine_id ?? item.id,
+        name: item.brandName || item.medicineName || item.name || item.medicine_name,
+      });
+      const line = medicine ? priceLine(medicine, item.quantity, { ...item, unit: 'pack' }) : null;
+      if (!medicine || line?.error) { unresolved.push(item.brandName || item.medicineName || item.name || 'item'); continue; }
+      priced.push(line);
+    }
+    if (unresolved.length) {
+      return res.status(400).json({ success: false, code: 'MEDICINE_NOT_IN_CATALOGUE', message: `These items are no longer in the catalogue: ${unresolved.join(', ')}. Add the rest from the cart.`, unresolved });
+    }
+    const rxLines = priced.filter((line) => requiresPrescription(line.schedule));
+    const priorPrescription = originalOrder.metadata?.prescriptionFileUrl || originalOrder.metadata?.prescriptionUrl || null;
+    if (rxLines.length && !priorPrescription) {
+      return res.status(400).json({ success: false, code: 'PRESCRIPTION_REQUIRED', message: 'These medicines need a prescription. Add them from the cart and attach one.' });
+    }
+    const policyTotals = computeOrderTotals(priced);
+    const memberPrice = await isPaidMember(userId);
+    const totals = memberPrice ? policyTotals : { ...policyTotals, discount: 0, total: Math.round((policyTotals.total + policyTotals.discount) * 100) / 100 };
+    const subtotal = totals.subtotal;
+    const tax = 0;
+    const total = totals.total;
+    itemsToReorder = priced;
 
     // Generate new order number
     const orderNumber = paymentGateway.generateOrderReceipt('REORD');
@@ -672,7 +663,7 @@ router.post('/orders/:orderId/reorder', authUser, async (req, res) => {
       status: 'pending',
       subtotal: subtotal,
       tax: tax,
-      discount: 0,
+      discount: totals.discount,
       total: total,
       currency: originalOrder.currency || 'INR',
       billingAddress: originalOrder.billingAddress,
@@ -681,8 +672,10 @@ router.post('/orders/:orderId/reorder', authUser, async (req, res) => {
       metadata: {
         items: itemsToReorder,
         deliveryAddress: deliveryAddress || originalOrder.metadata?.deliveryAddress,
-        prescriptionRequired: originalOrder.metadata?.prescriptionRequired,
-        prescriptionUrl: originalOrder.metadata?.prescriptionUrl,
+        prescriptionRequired: rxLines.length > 0,
+        prescriptionFileUrl: rxLines.length ? priorPrescription : null,
+        prescriptionReusedFromOrder: rxLines.length ? originalOrder.id : null,
+        pricing: { discountPct: totals.discountPct ?? 0, deliveryFee: totals.deliveryFee, memberPrice, repricedAt: new Date().toISOString() },
         originalOrderId: originalOrder.id,
         originalOrderNumber: originalOrder.orderNumber,
         isReorder: true,

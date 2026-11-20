@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/cart/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -16712,6 +16712,1651 @@
             "$ref": "#/components/responses/AppError"
           }
         }
+      }
+    },
+    "/api/diet/goals": {
+      "get": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "The member's diet goals (null until saved)",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "targetKcal": {
+                          "type": "integer",
+                          "minimum": 800,
+                          "maximum": 6000,
+                          "nullable": true
+                        },
+                        "proteinG": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "carbsG": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "fatG": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "waterMl": {
+                          "type": "integer",
+                          "minimum": 500,
+                          "maximum": 8000,
+                          "nullable": true
+                        },
+                        "goal": {
+                          "type": "string",
+                          "enum": [
+                            "weight_loss",
+                            "maintenance",
+                            "weight_gain",
+                            "muscle_gain",
+                            "general_health"
+                          ],
+                          "nullable": true
+                        },
+                        "activityLevel": {
+                          "type": "string",
+                          "enum": [
+                            "sedentary",
+                            "light",
+                            "moderate",
+                            "active",
+                            "very_active"
+                          ],
+                          "nullable": true
+                        },
+                        "dietaryPreference": {
+                          "type": "string",
+                          "enum": [
+                            "vegetarian",
+                            "non_vegetarian",
+                            "eggetarian",
+                            "vegan",
+                            "jain"
+                          ],
+                          "nullable": true
+                        },
+                        "cuisineRegion": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
+      },
+      "put": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Save diet goals (partial update)",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targetKcal": {
+                    "type": "integer",
+                    "minimum": 800,
+                    "maximum": 6000,
+                    "nullable": true
+                  },
+                  "proteinG": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "carbsG": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "fatG": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "waterMl": {
+                    "type": "integer",
+                    "minimum": 500,
+                    "maximum": 8000,
+                    "nullable": true
+                  },
+                  "goal": {
+                    "type": "string",
+                    "enum": [
+                      "weight_loss",
+                      "maintenance",
+                      "weight_gain",
+                      "muscle_gain",
+                      "general_health"
+                    ],
+                    "nullable": true
+                  },
+                  "activityLevel": {
+                    "type": "string",
+                    "enum": [
+                      "sedentary",
+                      "light",
+                      "moderate",
+                      "active",
+                      "very_active"
+                    ],
+                    "nullable": true
+                  },
+                  "dietaryPreference": {
+                    "type": "string",
+                    "enum": [
+                      "vegetarian",
+                      "non_vegetarian",
+                      "eggetarian",
+                      "vegan",
+                      "jain"
+                    ],
+                    "nullable": true
+                  },
+                  "cuisineRegion": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "targetKcal": {
+                          "type": "integer",
+                          "minimum": 800,
+                          "maximum": 6000,
+                          "nullable": true
+                        },
+                        "proteinG": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "carbsG": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "fatG": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "waterMl": {
+                          "type": "integer",
+                          "minimum": 500,
+                          "maximum": 8000,
+                          "nullable": true
+                        },
+                        "goal": {
+                          "type": "string",
+                          "enum": [
+                            "weight_loss",
+                            "maintenance",
+                            "weight_gain",
+                            "muscle_gain",
+                            "general_health"
+                          ],
+                          "nullable": true
+                        },
+                        "activityLevel": {
+                          "type": "string",
+                          "enum": [
+                            "sedentary",
+                            "light",
+                            "moderate",
+                            "active",
+                            "very_active"
+                          ],
+                          "nullable": true
+                        },
+                        "dietaryPreference": {
+                          "type": "string",
+                          "enum": [
+                            "vegetarian",
+                            "non_vegetarian",
+                            "eggetarian",
+                            "vegan",
+                            "jain"
+                          ],
+                          "nullable": true
+                        },
+                        "cuisineRegion": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
+      }
+    },
+    "/api/diet/log": {
+      "get": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "One day of the food log with totals by meal and what is left against the goals",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Defaults to today (India)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string"
+                        },
+                        "goals": {
+                          "type": "object",
+                          "properties": {
+                            "targetKcal": {
+                              "type": "integer",
+                              "minimum": 800,
+                              "maximum": 6000,
+                              "nullable": true
+                            },
+                            "proteinG": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "carbsG": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "fatG": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "waterMl": {
+                              "type": "integer",
+                              "minimum": 500,
+                              "maximum": 8000,
+                              "nullable": true
+                            },
+                            "goal": {
+                              "type": "string",
+                              "enum": [
+                                "weight_loss",
+                                "maintenance",
+                                "weight_gain",
+                                "muscle_gain",
+                                "general_health"
+                              ],
+                              "nullable": true
+                            },
+                            "activityLevel": {
+                              "type": "string",
+                              "enum": [
+                                "sedentary",
+                                "light",
+                                "moderate",
+                                "active",
+                                "very_active"
+                              ],
+                              "nullable": true
+                            },
+                            "dietaryPreference": {
+                              "type": "string",
+                              "enum": [
+                                "vegetarian",
+                                "non_vegetarian",
+                                "eggetarian",
+                                "vegan",
+                                "jain"
+                              ],
+                              "nullable": true
+                            },
+                            "cuisineRegion": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          },
+                          "nullable": true
+                        },
+                        "entries": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "description": "Database identifier of the specified resource.",
+                                "oneOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "date": {
+                                "type": "string",
+                                "format": "date"
+                              },
+                              "meal": {
+                                "type": "string",
+                                "enum": [
+                                  "breakfast",
+                                  "midMorningSnack",
+                                  "lunch",
+                                  "eveningSnack",
+                                  "dinner",
+                                  "other"
+                                ]
+                              },
+                              "foodId": {
+                                "description": "Database identifier of the specified resource.",
+                                "oneOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ],
+                                "nullable": true
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "servings": {
+                                "type": "number"
+                              },
+                              "servingUnit": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "kcal": {
+                                "type": "number"
+                              },
+                              "carbG": {
+                                "type": "number",
+                                "nullable": true
+                              },
+                              "proteinG": {
+                                "type": "number",
+                                "nullable": true
+                              },
+                              "fatG": {
+                                "type": "number",
+                                "nullable": true
+                              },
+                              "fibreG": {
+                                "type": "number",
+                                "nullable": true
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "catalogue",
+                                  "custom",
+                                  "plan"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "totals": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "byMeal": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "remaining": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "nullable": true
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Log a food: a catalogue food (foodId + servings) or a custom food (name + kcal)",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "meal": {
+                    "type": "string",
+                    "enum": [
+                      "breakfast",
+                      "midMorningSnack",
+                      "lunch",
+                      "eveningSnack",
+                      "dinner",
+                      "other"
+                    ]
+                  },
+                  "foodId": {
+                    "description": "Catalogue food; nutrients are computed by the server from servings.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "servings": {
+                    "type": "number",
+                    "minimum": 0.01,
+                    "maximum": 50
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Custom food name (when no foodId)."
+                  },
+                  "kcal": {
+                    "type": "number",
+                    "description": "Custom food energy (when no foodId)."
+                  },
+                  "carbG": {
+                    "type": "number"
+                  },
+                  "proteinG": {
+                    "type": "number"
+                  },
+                  "fatG": {
+                    "type": "number"
+                  },
+                  "fibreG": {
+                    "type": "number"
+                  },
+                  "servingUnit": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "custom",
+                      "plan"
+                    ]
+                  }
+                },
+                "required": [
+                  "date",
+                  "meal"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AppObject"
+          },
+          "201": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "meal": {
+                          "type": "string",
+                          "enum": [
+                            "breakfast",
+                            "midMorningSnack",
+                            "lunch",
+                            "eveningSnack",
+                            "dinner",
+                            "other"
+                          ]
+                        },
+                        "foodId": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ],
+                          "nullable": true
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "servings": {
+                          "type": "number"
+                        },
+                        "servingUnit": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "kcal": {
+                          "type": "number"
+                        },
+                        "carbG": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "proteinG": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "fatG": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "fibreG": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "catalogue",
+                            "custom",
+                            "plan"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
+      }
+    },
+    "/api/diet/log/{date}": {
+      "put": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Offline sync: replace one date's food log (and water, when sent) with the app's copy",
+        "description": "Repeatable: sending the same day twice leaves the same day. Send entries: [] to clear the date. Entries have the POST /api/diet/log shape without date.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "waterMl": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000,
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "entries"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/diet/water/{date}": {
+      "put": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Set water for one date (repeatable)",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "waterMl": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000,
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "waterMl"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string"
+                        },
+                        "waterMl": {
+                          "type": "integer",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/diet/log/{id}": {
+      "patch": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Edit a logged food",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "meal": {
+                    "type": "string",
+                    "enum": [
+                      "breakfast",
+                      "midMorningSnack",
+                      "lunch",
+                      "eveningSnack",
+                      "dinner",
+                      "other"
+                    ]
+                  },
+                  "foodId": {
+                    "description": "Catalogue food; nutrients are computed by the server from servings.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "servings": {
+                    "type": "number",
+                    "minimum": 0.01,
+                    "maximum": 50
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Custom food name (when no foodId)."
+                  },
+                  "kcal": {
+                    "type": "number",
+                    "description": "Custom food energy (when no foodId)."
+                  },
+                  "carbG": {
+                    "type": "number"
+                  },
+                  "proteinG": {
+                    "type": "number"
+                  },
+                  "fatG": {
+                    "type": "number"
+                  },
+                  "fibreG": {
+                    "type": "number"
+                  },
+                  "servingUnit": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "custom",
+                      "plan"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "meal": {
+                          "type": "string",
+                          "enum": [
+                            "breakfast",
+                            "midMorningSnack",
+                            "lunch",
+                            "eveningSnack",
+                            "dinner",
+                            "other"
+                          ]
+                        },
+                        "foodId": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ],
+                          "nullable": true
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "servings": {
+                          "type": "number"
+                        },
+                        "servingUnit": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "kcal": {
+                          "type": "number"
+                        },
+                        "carbG": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "proteinG": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "fatG": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "fibreG": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "catalogue",
+                            "custom",
+                            "plan"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Delete a logged food",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AppObject"
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        }
+      }
+    },
+    "/api/diet/summary": {
+      "get": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Daily totals over a range (at most 93 days)",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "targetKcal": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "days": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        }
+      }
+    },
+    "/api/diet/data": {
+      "delete": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Clear the member's food log and goals",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AppObject"
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        }
+      }
+    },
+    "/api/diet/foods/search": {
+      "get": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "Search the food catalogue (at least 2 characters)",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "description": "Database identifier of the specified resource.",
+                            "oneOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "servingUnit": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "perServing": {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          "per100g": {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "attribution": {
+                            "type": "string"
+                          },
+                          "reviewed": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        }
+      }
+    },
+    "/api/diet/foods/{id}": {
+      "get": {
+        "tags": [
+          "Diet"
+        ],
+        "summary": "One catalogue food",
+        "description": "See the resource-specific response fields. Additional response fields may be returned for compatibility. Authorization and tenant checks are enforced by the server.",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "description": "Database identifier of the specified resource.",
+                          "oneOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "servingUnit": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "perServing": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "per100g": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "attribution": {
+                          "type": "string"
+                        },
+                        "reviewed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     }
   },

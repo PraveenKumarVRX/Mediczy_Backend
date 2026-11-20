@@ -100,6 +100,7 @@ import healthAssessmentRouter from "./routes/health-assessment.route.js";
 import healthScoreRouter from "./routes/health-score.route.js";
 import reportAnalysisRouter from "./routes/report-analysis.route.js";
 import dietRouter from "./routes/diet.route.js";
+import dietSyncRouter from "./routes/diet-sync.route.js";
 import ayushmanRouter from "./routes/ayushman.route.js";
 import placesRouter from './routes/places.js';
 import ttsRouter from './routes/tts.route.js';
@@ -1508,6 +1509,7 @@ app.use("/api/ai-intelligence", authUser, aiIntelligenceRouter);
 app.use('/api/medcore-adoption', medcoreAdoptionRouter); // Clean-room MedCore capability adoption
 app.use("/api/v3/ai-analytics", authUser, aiAnalyticsRouter); // AI analytics dashboard (LLM ops, quality, tools, population health)
 app.use("/api/v3/ai-deeptech", authUser, aiDeepTechRouter); // DeepTech: HIS, Clinical NLP, Pre-auth, Multi-agent Context, Federated Learning
+app.use("/api/diet", dietSyncRouter); // Diet goals, food log and food search saved to the account (FORCED RLS)
 app.use("/api/diet", dietRouter); // Diet plan shortcut (alias for /api/ai-health/diet)
 // The Ayushman router was mounted only at "/api/ahunground" — a prefix
 // nothing calls and nothing allow-lists, while the ring-fencing allow-list

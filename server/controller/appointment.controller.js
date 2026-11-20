@@ -383,7 +383,7 @@ export const createAppointment = async (req, res) => {
       // The entitlement service covers 'online' only and says so itself, so the
       // condition matches rather than widening it.
       if (consultationFee > 0 && requestedConsultationType === 'online') {
-        const entitlement = await getTeleconsultEntitlement(userId, { consultationType: 'online' });
+        const entitlement = await getTeleconsultEntitlement(userId, { consultationType: 'online', specialty: doctor.specialization || 'general' });
         if (entitlement?.covered) {
           const consumed = await consumeTeleconsult(
             userId,

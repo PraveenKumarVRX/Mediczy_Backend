@@ -8,6 +8,8 @@ const familyQuery = jest.fn();
 const validateOrderCoupon = jest.fn();
 const recordCouponUsage = jest.fn();
 
+// Member pricing is not under test here (individual-plan-lineup.test.js): treat the caller as a member.
+jest.unstable_mockModule('../middleware/membership.middleware.js', () => ({ isPaidMember: async () => true }));
 jest.unstable_mockModule('../db/pgPool.js', () => ({ default: { query: poolQuery } }));
 jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({
   authUser: (req, _res, next) => { req.user = { id: 41 }; next(); },

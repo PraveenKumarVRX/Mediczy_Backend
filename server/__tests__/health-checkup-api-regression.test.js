@@ -5,6 +5,8 @@ const query = jest.fn();
 let user = { id: 1, role: 'user' };
 const tx = { commit: jest.fn(), rollback: jest.fn() };
 // Dates are not under test here (see checkup-closed-days.test.js): every date is open.
+// Plan-included check-ups are not under test here (order-pricing-and-plan-checkups.test.js).
+jest.unstable_mockModule('../services/plan-checkup.service.js',()=>({isPlanCheckupId:(id)=>String(id||'').startsWith('PLAN-'),planCheckupPackages:async()=>[],resolvePlanCheckup:async()=>({reason:'package_not_eligible'})}));
 jest.unstable_mockModule('../services/checkup-calendar.service.js',()=>({checkupDateBlock:async()=>null,closedDates:async()=>[],isSunday:()=>false}));
 jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({ authUser: (req, res, next) => { req.user = user; next(); } }));
 jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({ postgresSequelize: { query, QueryTypes: { SELECT: 'SELECT' }, transaction: async () => tx } }));

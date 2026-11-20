@@ -12,6 +12,27 @@
  */
 export const SELF_SERVICE_PLAN_TYPES = new Set(['primary', 'addon']);
 
+/** The ₹99 monthly entry plan; its payment is credited in full toward an annual plan. */
+export const ENTRY_PLAN_CODE = 'BASIC_MONTHLY';
+
+/**
+ * Why a member cannot buy this plan themselves, or null. Corporate plans are prepaid by the
+ * employer and assigned by HR; add-ons attach to a primary plan of at least metadata.requiresBaseTier.
+ */
+export function selfServiceRefusal(plan, currentPrimaryPlan) {
+  if (!SELF_SERVICE_PLAN_TYPES.has(plan?.planType || 'primary') || String(plan?.type || '').toLowerCase() === 'corporate') {
+    return { status: 403, code: 'PLAN_NOT_SELF_SERVICE', message: 'This plan is provided through your employer.' };
+  }
+  if ((plan.planType || 'primary') === 'addon') {
+    const meta = typeof plan.metadata === 'string' ? JSON.parse(plan.metadata || '{}') : (plan.metadata || {});
+    const need = Number(meta.requiresBaseTier);
+    if (Number.isFinite(need) && need > 0 && !(currentPrimaryPlan && Number(currentPrimaryPlan.tier || 0) >= need)) {
+      return { status: 409, code: 'BASE_PLAN_REQUIRED', message: 'Add-ons attach to a One or Family plan. Choose a plan first.' };
+    }
+  }
+  return null;
+}
+
 /** The plan's selling price in rupees (discounted price when set). */
 export function planPrice(plan) {
   const discounted = plan?.discountedPrice;
@@ -32,7 +53,10 @@ export function upgradeBaseDue(currentUserPlan, newPlan, now = new Date()) {
   const remainingDays = Math.max(0, Math.ceil((end - now) / dayMs));
   const paid = parseFloat(currentUserPlan.paidAmount || 0);
   const dailyRate = totalDays > 0 ? paid / totalDays : 0;
-  const proratedRefund = Math.round(dailyRate * remainingDays * 100) / 100;
+  // "Your first month counts": moving up from the ₹99 Start plan credits the whole payment of
+  // the current Start period, not just its unused days.
+  const fromEntryPlan = currentUserPlan.plan?.code === ENTRY_PLAN_CODE && remainingDays > 0;
+  const proratedRefund = fromEntryPlan ? Math.round(paid * 100) / 100 : Math.round(dailyRate * remainingDays * 100) / 100;
   // `discountedPrice || price` on purpose: it is what activation has always
   // charged. A "0.00" discount means free to the member — confirmed
   // 2026-11-14 for corporate-prepaid plans (price is an HR reference).
@@ -54,15 +78,15 @@ export function upgradeBaseDue(currentUserPlan, newPlan, now = new Date()) {
 export async function quotePlanPurchase({ userId, planId, now = new Date() }, { MembershipPlan, UserPlan }) {
   const plan = await MembershipPlan.findByPk(planId);
   if (!plan || !plan.isActive) return { ok: false, status: 404, code: 'PLAN_NOT_FOUND', message: 'Plan not available' };
-  if (!SELF_SERVICE_PLAN_TYPES.has(plan.planType || 'primary')) {
-    return { ok: false, status: 403, code: 'PLAN_NOT_SELF_SERVICE', message: 'This plan is provided through your employer.' };
-  }
+  const current = await UserPlan.findOne({
+    where: { userId, status: 'active' },
+    include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }],
+    order: [['createdAt', 'DESC']],
+  });
+  const refusal = selfServiceRefusal(plan, current?.plan);
+  if (refusal) return { ok: false, ...refusal };
 
   if (plan.planType !== 'addon') {
-    const current = await UserPlan.findOne({
-      where: { userId, status: 'active' },
-      include: [{ model: MembershipPlan, as: 'plan' }],
-    });
     if (current?.plan && current.plan.planType !== 'addon' && Number(current.membershipPlanId) !== Number(plan.id)) {
       const { baseAmountDue } = upgradeBaseDue(current, plan, now);
       return { ok: true, kind: 'upgrade', plan, baseAmount: baseAmountDue };
@@ -73,4 +97,4 @@ export async function quotePlanPurchase({ userId, planId, now = new Date() }, { 
   return { ok: true, kind: 'subscribe', plan, baseAmount: Math.max(0, parseFloat(plan.discountedPrice || plan.price || 0)) };
 }
 
-export default { planPrice, upgradeBaseDue, quotePlanPurchase };
+export default { planPrice, upgradeBaseDue, quotePlanPurchase, selfServiceRefusal, ENTRY_PLAN_CODE };

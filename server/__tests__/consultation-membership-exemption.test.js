@@ -37,7 +37,8 @@ jest.unstable_mockModule('../models/index.js', () => ({
 jest.unstable_mockModule('../models/postgres/membershipPlan.model.postgres.js', () => ({
   UserPlan: {
     findOne: jest.fn()
-  }
+  },
+  MembershipPlan: {}
 }));
 
 jest.unstable_mockModule('../models/user.model.intelligent.js', () => ({

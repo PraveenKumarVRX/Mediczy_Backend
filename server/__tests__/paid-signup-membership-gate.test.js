@@ -42,7 +42,8 @@ beforeEach(() => {
 
 describe('an individual member without a plan', () => {
   test('is refused everything except the pre-plan paths', async () => {
-    for (const path of ['/api/family-members', '/api/appointments/my', '/api/wellness/dashboard', '/api/lab-tests']) {
+    // Lab tests and medicines are open at list price since 2026-11-20 (individual-plan-lineup.test.js).
+    for (const path of ['/api/family-members', '/api/appointments/my', '/api/wellness/dashboard', '/api/diet/log']) {
       const { passed, res } = await call({ path });
       expect(passed).toBe(false);
       expect(res.statusCode).toBe(403);

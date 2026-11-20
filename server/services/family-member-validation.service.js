@@ -318,6 +318,7 @@ function buildTierLimits(tier, base) {
     ...base,
     coverageMode: 'tier',
     familyCoverage: tier,
+    tierRules: { spouse: rules.spouse, children: rules.children, parents: rules.parents },
     maxMembers: rules.spouse + rules.children + rules.parents,
     allowedRelations
   };
@@ -346,7 +347,61 @@ async function corporateSubscriptionPlans(userId, linkedPlanId, transaction) {
   return Array.isArray(rows) ? rows : [];
 }
 
+/**
+ * Coverage limits, extended by the member's own plans from the 2026-11-20 lineup: a personal
+ * Family/One plan's tier (the larger of it and an employer tier counts) plus Parents and
+ * Extra-child add-ons (metadata.familyExtension). Members without those plans are unchanged.
+ */
 async function resolvePlanLimits(userId, membershipTypeFallback = 'individual', userRecord = null, { transaction } = {}) {
+  const base = await resolveBasePlanLimits(userId, membershipTypeFallback, userRecord, { transaction });
+  return extendWithPersonalPlans(base, userId, { transaction });
+}
+
+const ZERO_RULES = Object.freeze({ spouse: 0, children: 0, parents: 0 });
+
+export async function extendWithPersonalPlans(limits, userId, { transaction } = {}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const active = await AssignedUserPlan.findAll({
+    where: { userId, status: 'active' },
+    include: [{ model: AssignedMembershipPlan, as: 'plan' }],
+    transaction
+  });
+  const live = active.filter((up) => up.plan && (!up.endDate || String(up.endDate).slice(0, 10) >= today));
+  const meta = (plan) => (typeof plan.metadata === 'string' ? parseJsonSafe(plan.metadata) : plan.metadata) || {};
+  const personalPrimary = live.find((up) => (up.plan.planType || 'primary') === 'primary' && meta(up.plan).lineup === '2026-11')?.plan || null;
+  const extensions = live.filter((up) => up.plan.planType === 'addon').map((up) => meta(up.plan).familyExtension).filter(Boolean);
+  if (!personalPrimary && !extensions.length) return limits;
+
+  const baseRules = limits.coverageMode === 'tier' ? (limits.tierRules || FAMILY_COVERAGE_TIERS[limits.familyCoverage] || ZERO_RULES) : ZERO_RULES;
+  const personalTier = personalPrimary ? familyCoverageOf(personalPrimary) : null;
+  const personalRules = personalTier ? FAMILY_COVERAGE_TIERS[personalTier] : ZERO_RULES;
+  const rules = {
+    spouse: Math.max(baseRules.spouse, personalRules.spouse),
+    children: Math.max(baseRules.children, personalRules.children),
+    parents: Math.max(baseRules.parents, personalRules.parents),
+  };
+  for (const ext of extensions) {
+    rules.parents = Math.min(2, rules.parents + (Number(ext.parents) || 0));
+    rules.children += Number(ext.children) || 0;
+  }
+  const allowedRelations = [
+    ...(rules.spouse > 0 ? RELATION_GROUPS.spouse : []),
+    ...(rules.children > 0 ? RELATION_GROUPS.children : []),
+    ...(rules.parents > 0 ? [...RELATION_GROUPS.parents, ...RELATION_GROUPS.parentsInLaw] : [])
+  ];
+  return {
+    ...limits,
+    coverageMode: 'tier',
+    familyCoverage: limits.familyCoverage || personalTier || 'employee',
+    tierRules: rules,
+    maxMembers: rules.spouse + rules.children + rules.parents,
+    allowedRelations,
+    source: `${limits.source || 'plan'}+personal-plans`,
+    planName: personalPrimary?.name || limits.planName || null
+  };
+}
+
+async function resolveBasePlanLimits(userId, membershipTypeFallback = 'individual', userRecord = null, { transaction } = {}) {
   const corporateScoped = isCorporateUser(userRecord, membershipTypeFallback)
     || await hasActiveCorporateRoster(userId, transaction);
 
@@ -511,7 +566,7 @@ const refuse = (reason, extra = {}) => ({ allowed: false, reason, ...extra });
 
 /** Coverage-tier rules: spouse <= 1; children <= 2; parents <= 2 from one side only. */
 function checkTierAllowance(limits, members, relation, relationship, inLawsAvailable) {
-  const rules = FAMILY_COVERAGE_TIERS[limits.familyCoverage];
+  const rules = limits.tierRules || FAMILY_COVERAGE_TIERS[limits.familyCoverage];
   const planLabel = planLabelOf(limits);
   if (limits.maxMembers === 0) {
     return refuse(`${planLabel} plan covers the employee only and does not allow family members`);
@@ -615,7 +670,7 @@ export const validateFamilyMemberAddition = async (userId, relationship, { trans
 
 /** Per-group allowance for a tier: { spouse, children, parents } with max/current/remaining. */
 function relationLimitsFor(limits, members, inLawsAvailable) {
-  const rules = FAMILY_COVERAGE_TIERS[limits.familyCoverage];
+  const rules = limits.tierRules || FAMILY_COVERAGE_TIERS[limits.familyCoverage];
   const counts = countByGroup(members);
   const group = (max, current, relations) => ({
     max,

@@ -479,7 +479,7 @@ router.post('/book', authUser, [
     // D-23: a member whose plan includes online consultations was still being
     // charged the doctor's full rate. The join path already honoured an active
     // plan, so the member could join for free but was quoted ₹800 to book.
-    const entitlement = await getTeleconsultEntitlement(patientId, { consultationType });
+    const entitlement = await getTeleconsultEntitlement(patientId, { consultationType, specialty: doctor.specialization || 'general' });
     const consultationFee = entitlement.covered ? 0 : listedFee;
 
     // Normalize symptoms to array (handles string, array, null)
