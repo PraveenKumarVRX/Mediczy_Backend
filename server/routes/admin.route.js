@@ -92,62 +92,6 @@ import {
 
 const router = express.Router();
 
-/**
- * Generate unique alphanumeric ID
- * @param {string} prefix - 'C' for Corporate, 'T' for Team member
- * @param {number} length - Total length including prefix (default: 6)
- * @returns {string} Unique ID like C12AB3 or T45XY6
- */
-function generateUniqueId(prefix, length = 6) {
-  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const randomLength = length - prefix.length;
-  let result = prefix;
-  
-  for (let i = 0; i < randomLength; i++) {
-    const randomIndex = crypto.randomInt(0, chars.length);
-    result += chars[randomIndex];
-  }
-  
-  return result;
-}
-
-/**
- * Check if unique ID exists in database
- * @param {string} uniqueId - The ID to check
- * @param {string} table - 'corporates' or 'users'
- * @returns {Promise<boolean>}
- */
-async function isUniqueIdExists(uniqueId, table) {
-  try {
-    const [result] = await postgresSequelize.query(
-      `SELECT unique_id FROM ${table} WHERE unique_id = :uniqueId LIMIT 1`,
-      { replacements: { uniqueId }, type: postgresSequelize.QueryTypes.SELECT }
-    );
-    return result && result.length > 0;
-  } catch (error) {
-    return false;
-  }
-}
-
-/**
- * Generate guaranteed unique ID with retries
- * @param {string} prefix - 'C' for Corporate, 'T' for Team member
- * @param {string} table - 'corporates' or 'users'
- * @param {number} maxRetries - Maximum retry attempts (default: 10)
- * @returns {Promise<string>}
- */
-async function generateGuaranteedUniqueId(prefix, table, maxRetries = 10) {
-  for (let i = 0; i < maxRetries; i++) {
-    const uniqueId = generateUniqueId(prefix);
-    const exists = await isUniqueIdExists(uniqueId, table);
-    if (!exists) {
-      return uniqueId;
-    }
-  }
-  // Fallback: use timestamp suffix if all retries failed
-  return `${prefix}${Date.now().toString(36).slice(-5).toUpperCase()}`;
-}
-
 // --------------------------------------------------------------------------
 // Demo data for admin tables (team/users/doctors) - non-persistent
 // --------------------------------------------------------------------------
@@ -1289,7 +1233,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
     const parsedAssignedTeamMemberId = assignedTeamMemberId === null ? null : (parseInt(assignedTeamMemberId) || null);
     
     // Generate unique corporate ID
-    const corporateUniqueId = await generateGuaranteedUniqueId('C', 'corporates');
+    const corporateUniqueId = null; // unique_id is issued by the database trigger (CLAUDE.md entity-UID rule 1); never minted here.
     
     // Insert new corporate
     const [result] = await postgresSequelize.query(`
@@ -3528,7 +3472,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           const corpAggregatorType = corporate.dataValues?.aggregator_type ?? corporate.aggregator_type ?? null;
           const corpTenantId = corporate.dataValues?.tenant_id ?? corporate.tenant_id ?? null;
 
-          const uniqueId = await generateGuaranteedUniqueId('U', 'users');
+          const uniqueId = null; // unique_id is issued by the database trigger (CLAUDE.md entity-UID rule 1); never minted here.
           const userInsertResult = await postgresSequelize.query(`
             INSERT INTO users (
               email, password, "firstName", "lastName", role, status,
@@ -7034,7 +6978,7 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
     const temporaryPassword = welcomeEmailService.generateSecurePassword();
 
     // Generate unique team member ID
-    const teamUniqueId = await generateGuaranteedUniqueId('T', 'users');
+    const teamUniqueId = null; // unique_id is issued by the database trigger (CLAUDE.md entity-UID rule 1); never minted here.
 
     // Create team user in database with metadata
     const teamMetadata = {

@@ -4,7 +4,6 @@ import bcrypt from 'bcrypt';
 import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
-import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * Lab Model (PostgreSQL)
@@ -182,10 +181,8 @@ const Lab = postgresSequelize.define('Lab', {
       if (lab.email) {
         lab.email = lab.email.toLowerCase();
       }
-      // Generate unique ID if not set
-      if (!lab.unique_id) {
-        lab.unique_id = await generateUniqueIdForModel(Lab, 'lab');
-      }
+      // unique_id is issued by the database (trg_entity_uid_* / generate_entity_uid), never here:
+      // CLAUDE.md entity-UID rule 1. Omitting it lets the trigger mint and register it.
     },
     beforeUpdate: async (lab) => {
       if (lab.changed('password') && lab.password) {

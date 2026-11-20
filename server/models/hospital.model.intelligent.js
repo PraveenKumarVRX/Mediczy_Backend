@@ -2,7 +2,6 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
 import { hashPasswordIfPlaintext } from '../utils/passwordHashing.js';
-import { generateUniqueIdForModel } from '../utils/uniqueIdGenerator.js';
 
 /**
  * Hospital Model
@@ -134,10 +133,8 @@ Hospital.beforeCreate(async (hospital) => {
   if (hospital.password) {
     hospital.password = await hashPasswordIfPlaintext(hospital.password, 10);
   }
-  // Generate unique ID if not set
-  if (!hospital.unique_id) {
-    hospital.unique_id = await generateUniqueIdForModel(Hospital, 'hospital');
-  }
+  // unique_id is issued by the database (trg_entity_uid_* / generate_entity_uid), never here:
+  // CLAUDE.md entity-UID rule 1. Omitting it lets the trigger mint and register it.
 });
 
 Hospital.beforeUpdate(async (hospital) => {

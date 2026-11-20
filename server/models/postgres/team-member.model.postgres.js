@@ -15,7 +15,6 @@ import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
 import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
-import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
 const TeamMember = sequelize.define('TeamMember', {
   id: {
@@ -230,9 +229,8 @@ const TeamMember = sequelize.define('TeamMember', {
 
 // Hooks
 TeamMember.beforeCreate(async (teamMember) => {
-  if (!teamMember.unique_id) {
-    teamMember.unique_id = await generateUniqueId('team');
-  }
+  // unique_id is issued by the database (trg_entity_uid_* / generate_entity_uid), never here:
+  // CLAUDE.md entity-UID rule 1. Omitting it lets the trigger mint and register it.
   
   if (teamMember.password) {
     teamMember.password = await hashPasswordIfPlaintext(teamMember.password, 10);

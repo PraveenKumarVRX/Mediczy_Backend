@@ -9,7 +9,6 @@ import bcrypt from 'bcrypt';
 import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
-import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 const Doctor = sequelize.define('Doctor', {
   id: {
@@ -552,10 +551,8 @@ const Doctor = sequelize.define('Doctor', {
 
   hooks: {
     beforeCreate: async (doctor) => {
-      // Generate unique ID if not set
-      if (!doctor.unique_id) {
-        doctor.unique_id = await generateUniqueIdForModel(Doctor, 'doctor');
-      }
+      // unique_id is issued by the database (trg_entity_uid_* / generate_entity_uid), never here:
+      // CLAUDE.md entity-UID rule 1. Omitting it lets the trigger mint and register it.
 
       if (doctor.password) {
         doctor.password = await hashPasswordIfPlaintext(doctor.password, 10);

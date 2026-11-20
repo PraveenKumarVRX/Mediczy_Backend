@@ -16,7 +16,6 @@ import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
 import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
-import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 const User = sequelize.define('User', {
   id: {
@@ -406,10 +405,8 @@ const User = sequelize.define('User', {
         user.username = user.username.trim().toLowerCase() || null;
       }
 
-      // Generate unique ID if not set
-      if (!user.unique_id) {
-        user.unique_id = await generateUniqueIdForModel(User, user.role || 'user');
-      }
+      // unique_id is issued by the database (trg_entity_uid_* / generate_entity_uid), never here:
+      // CLAUDE.md entity-UID rule 1. Omitting it lets the trigger mint and register it.
       
       // Hash password
       if (user.password) {

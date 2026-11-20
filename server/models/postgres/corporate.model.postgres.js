@@ -4,7 +4,6 @@ import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import postgresSequelize from '../../db/postgres-sequelize.js';
 import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
-import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * Corporate Model (PostgreSQL)
@@ -185,9 +184,8 @@ const Corporate = postgresSequelize.define('Corporate', {
   timestamps: true,
   hooks: {
     beforeCreate: async (corporate) => {
-      if (!corporate.uniqueId) {
-        corporate.uniqueId = await generateUniqueIdForModel(Corporate, 'corporate', 'uniqueId');
-      }
+      // unique_id is issued by the database (trg_entity_uid_* / generate_entity_uid), never here:
+      // CLAUDE.md entity-UID rule 1. Omitting it lets the trigger mint and register it.
       if (corporate.password) {
         corporate.password = await hashPasswordIfPlaintext(corporate.password, 10);
       }

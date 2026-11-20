@@ -4,7 +4,6 @@ import bcrypt from 'bcrypt';
 import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
-import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * DoctorAssistant Model (PostgreSQL)
@@ -162,10 +161,8 @@ const DoctorAssistant = postgresSequelize.define('DoctorAssistant', {
   ],
   hooks: {
     beforeCreate: async (assistant) => {
-      // Generate unique ID if not set
-      if (!assistant.unique_id) {
-        assistant.unique_id = await generateUniqueIdForModel(DoctorAssistant, 'assistant');
-      }
+      // unique_id is issued by the database (trg_entity_uid_* / generate_entity_uid), never here:
+      // CLAUDE.md entity-UID rule 1. Omitting it lets the trigger mint and register it.
       
       if (assistant.password) {
         assistant.password = await hashPasswordIfPlaintext(assistant.password, 10);

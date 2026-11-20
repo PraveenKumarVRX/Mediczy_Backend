@@ -12,7 +12,6 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 
 import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
-import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
 const Patient = sequelize.define('Patient', {
   id: {
@@ -197,9 +196,8 @@ const Patient = sequelize.define('Patient', {
 
 // Hooks
 Patient.beforeCreate(async (patient) => {
-  if (!patient.unique_id) {
-    patient.unique_id = await generateUniqueId('patient');
-  }
+  // unique_id is issued by the database (trg_entity_uid_* / generate_entity_uid), never here:
+  // CLAUDE.md entity-UID rule 1. Omitting it lets the trigger mint and register it.
   if (!patient.firstVisitDate) {
     patient.firstVisitDate = new Date();
   }
