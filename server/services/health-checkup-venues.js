@@ -19,3 +19,10 @@ export const VENUE_SEARCH_TEXT = `COALESCE(CASE WHEN jsonb_typeof(l.address)='ob
 export const VENUE_PIN = `substring(COALESCE(CASE WHEN jsonb_typeof(l.address)='object' THEN
   COALESCE(NULLIF(l.address->>'zipCode',''), NULLIF(l.address->>'pincode',''), NULLIF(l.address->>'postalCode',''),
   l.address->>'formatted_address', l.address->>'formatted') END, ${VENUE_SEARCH_TEXT}) from '[1-9][0-9]{5}')`;
+
+// A venue can only be offered for a check-up when it has time slots to book. Mirrors slots() in
+// health-checkup.route.js (first of these keys present). None of the hospitals has slots set up
+// (2026-11-20: 0 of 10,776), so without this every hospital dead-ended at "No slots on this date".
+export const VENUE_HAS_SLOTS = `(jsonb_typeof(COALESCE(l.metadata->'healthCheckupSlots', l.metadata->'health_checkup_slots',
+  l.metadata->'pickupSlots', l.metadata->'pickup_slots')) = 'array' AND jsonb_array_length(COALESCE(l.metadata->'healthCheckupSlots',
+  l.metadata->'health_checkup_slots', l.metadata->'pickupSlots', l.metadata->'pickup_slots')) > 0)`;
