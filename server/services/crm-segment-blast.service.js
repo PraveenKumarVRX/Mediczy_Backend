@@ -65,7 +65,7 @@ export async function processSegmentBlastJob({ tenantId, campaignId, leadId, nam
     return { skipped: true };
   }
 
-  const result = await dispatchToChannel({ channel, to, subject, message });
+  const result = await dispatchToChannel({ channel, to, subject, message, tenantId });
   await _logBlastEvent({
     tenantId, campaignId, leadId, channel, subject,
     status: result.success ? 'sent' : 'failed',

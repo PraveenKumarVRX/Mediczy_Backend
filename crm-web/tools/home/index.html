@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard · Medstar CRM</title>
+  <script src="/crm-tools/embed.js"></script>
+  <link rel="icon" href="/brand/medstar.svg">
+  <link rel="stylesheet" href="../whatsapp/styles.css">
+  <link rel="stylesheet" href="home.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">
+      <h1 id="hello">Dashboard</h1>
+      <p id="sub">Your day at Medstar CRM</p>
+    </div>
+    <div class="filters">
+      <select id="owner" aria-label="Whose figures" hidden>
+        <option value="all">Everyone</option>
+        <option value="me">Only mine</option>
+      </select>
+      <select id="period" aria-label="Period">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="3650">All time</option>
+      </select>
+    </div>
+    <nav class="links" aria-label="Shortcuts">
+      <a class="btn ghost" href="/crm/dashboard">Dashboard</a>
+      <a class="btn ghost" href="/crm/leads">Leads</a>
+      <a class="btn ghost" href="/crm-tools/inbox/">Inbox</a>
+      <a class="btn ghost" href="/crm-tools/engage/">Engage</a>
+    </nav>
+  </header>
+  <main>
+    <div id="banner" class="banner" hidden></div>
+    <section class="panel" aria-labelledby="myWork"><div class="panel-head"><h2 id="myWork">My work</h2><p class="muted">Right now, on leads you own.</p></div><div class="cards" id="mine"></div></section>
+    <details class="panel" id="setupPanel" hidden><summary><h2 id="setupH">Getting started</h2><span class="muted" id="setupCount"></span></summary><ul class="steps" id="setup"></ul></details>
+    <section class="panel" aria-labelledby="journeyH">
+      <div class="panel-head"><h2 id="journeyH">Patient journey</h2><p class="muted" id="journeyNote"></p></div>
+      <div id="journey"></div>
+    </section>
+    <section class="panel" id="orgPanel" aria-labelledby="orgH"><div class="panel-head"><h2 id="orgH">Hospital overview</h2><p class="muted" id="orgNote"></p></div><div class="cards" id="org"></div></section>
+    <div class="two">
+      <section class="panel" id="sourcesPanel" aria-labelledby="srcH"><div class="panel-head"><h2 id="srcH">New leads by source</h2><p class="muted" id="srcNote"></p></div><div id="sources"></div></section>
+      <section class="panel" aria-labelledby="repH"><div class="panel-head"><h2 id="repH">Reports</h2><p class="muted">Detailed dashboards, for drilling down. Also under Reports in the menu.</p></div><ul class="reports" id="reports"></ul></section>
+    </div>
+    <section class="panel" id="teamPanel" hidden aria-labelledby="teamH"><div class="panel-head"><h2 id="teamH">Team</h2></div><div id="team"></div></section>
+  </main>
+  <script src="home.js" defer></script>
+</body>
+</html>

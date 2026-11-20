@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calls · Medstar CRM</title>
+  <script src="/crm-tools/embed.js"></script>
+  <link rel="icon" href="/brand/medstar.svg">
+  <link rel="stylesheet" href="../whatsapp/styles.css">
+  <link rel="stylesheet" href="calls.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="back" href="/crm-tools/home/">← Home</a>
+    <div class="title"><h1>Calls</h1><p>TeleCMI calling, controlled from the CRM: agents, routing, call records and live calls</p></div>
+    <a class="btn ghost" href="/crm-tools/inbox/">Inbox</a>
+    <button class="btn ghost" id="refresh" type="button">Refresh</button>
+  </header>
+  <main>
+    <div id="banner" class="banner" hidden></div>
+    <p class="result" id="result" role="status"></p>
+    <section class="cards" id="cards" aria-label="Status"></section>
+
+    <section class="panel" id="livePanel" aria-labelledby="liveH">
+      <div class="panel-head"><div><h2 id="liveH">Live calls</h2><p class="muted">Incoming calls ringing now, with who the CRM recognises.</p></div></div>
+      <ul class="live" id="live"></ul>
+    </section>
+
+    <section class="panel admin-only" id="setupPanel" aria-labelledby="setupH" hidden>
+      <div class="panel-head"><div><h2 id="setupH">Connect TeleCMI</h2><p class="muted">Paste these into the TeleCMI dashboard. TeleCMI has no API for webhook settings, so this one step is done there.</p></div></div>
+      <ol class="setup" id="setup"></ol>
+    </section>
+
+    <section class="panel admin-only" id="agentsPanel" aria-labelledby="agentsH" hidden>
+      <div class="panel-head">
+        <div><h2 id="agentsH">Agents</h2><p class="muted">People who take calls. Calls ring the agent's mobile; link each agent to their CRM user so their leads ring them first and click-to-call uses their phone.</p></div>
+        <button class="btn" id="addAgentBtn" type="button">Add agent</button>
+      </div>
+      <form id="agentForm" class="form editor" hidden autocomplete="off"></form>
+      <div id="agents"></div>
+    </section>
+
+    <section class="panel admin-only" id="routingPanel" aria-labelledby="routingH" hidden>
+      <div class="panel-head"><div><h2 id="routingH">Incoming call routing</h2><p class="muted">Used when TeleCMI asks the CRM where to send a call (call-flow URL above).</p></div></div>
+      <form id="routingForm" class="form" autocomplete="off"></form>
+    </section>
+
+    <section class="panel admin-only" id="logsPanel" aria-labelledby="logsH" hidden>
+      <div class="panel-head">
+        <div><h2 id="logsH">Call records</h2><p class="muted">Webhooks file each call on the caller's lead as it happens. Every 10 minutes the CRM also pulls TeleCMI's call logs and files anything a webhook missed.</p></div>
+        <div class="actions"><button class="btn ghost" id="syncBtn" type="button">Pull last 24 hours now</button><a class="btn ghost" href="/crm-tools/inbox/">Calls in the Inbox</a></div>
+      </div>
+      <p class="muted" id="syncInfo"></p>
+    </section>
+  </main>
+  <script src="calls.js" defer></script>
+</body>
+</html>

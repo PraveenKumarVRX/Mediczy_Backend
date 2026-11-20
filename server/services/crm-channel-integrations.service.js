@@ -1,5 +1,7 @@
-/** Tenant connection inventory. Never supplies or enables delivery adapters. */
+/** Tenant channel connections. Saved records for email (SMTP), SMS (Twilio/MSG91/Textlocal) and WhatsApp
+ * (Gupshup/Twilio/Meta) are what crm-channel-delivery.service.js sends with; other channels are storage only. */
 import crypto from 'node:crypto';
+import nodemailer from '../integrations/nodemailer.js';
 import sharedPool from '../db/pgPool.js';
 import { CRM_CHANNELS, channelDefinition, providerDefinition, configurationErrors } from '../../shared/crm-channel-schema.mjs';
 export { CRM_CHANNELS };
@@ -38,8 +40,25 @@ function decrypt(value) {
   } catch { throw fail(503, 'Stored credentials cannot be verified. Contact the platform administrator.'); }
 }
 function configOf(row) { return typeof row?.config === 'string' ? JSON.parse(row.config || '{}') : row?.config || {}; }
+// Mirrors the adapters in crm-channel-delivery.service.js. Keep the two in step.
+const DELIVERY_PROVIDERS = { email: ['smtp'], sms: ['twilio', 'msg91', 'textlocal'], whatsapp: ['gupshup', 'twilio', 'meta'] };
+// Messages older code stored on save/disable. They described a design where saving never enabled
+// delivery, which stopped being true once the delivery adapters read these records.
+const STALE_MESSAGES = new Set(['Inventory saved. Delivery is not activated by this record.', 'Inventory disabled. Live provider configuration is managed separately.']);
+function deliveryState(row, config) {
+  const wired = (DELIVERY_PROVIDERS[row.provider] || []).includes(config.provider);
+  const label = providerDefinition(row.provider, config.provider)?.label || config.provider;
+  if (!wired) return { deliveryMode: 'storage_only', deliveryActive: false, message: 'Saved. This CRM does not send through this provider yet.' };
+  if (row.status !== 'configured') return { deliveryMode: 'disabled', deliveryActive: false, message: 'Disabled. Nothing is sent on this channel until it is saved again.' };
+  if (!row.encrypted_credentials) return { deliveryMode: 'incomplete', deliveryActive: false, message: `Connected to ${label}, but credentials are missing.` };
+  if (process.env.CRM_OUTBOUND_ENABLED !== 'true') return { deliveryMode: 'paused', deliveryActive: false, message: `Connected to ${label}. Sending is paused on this installation until outbound messaging is switched on.` };
+  return { deliveryMode: 'live', deliveryActive: true, message: `Connected. Messages send through ${label}.` };
+}
 function safeRow(row) {
   const config = configOf(row), provider = config.provider || null;
+  const delivery = deliveryState(row, config);
+  // Connectivity test results are kept; only the stale save/disable text is replaced.
+  const healthMessage = !row.health_message || STALE_MESSAGES.has(row.health_message) ? delivery.message : row.health_message;
   const fields = providerDefinition(row.provider, provider)?.fields || [];
   return {
     id: row.id, channel: row.provider, provider, status: row.status, accountRef: row.account_ref,
@@ -47,9 +66,9 @@ function safeRow(row) {
     credentialsConfigured: Boolean(row.encrypted_credentials),
     // New records carry a field-name manifest. Legacy records deliberately report unknown per-field state.
     credentialFields: Array.isArray(config.credentialFields) ? config.credentialFields : null,
-    credentialsUpdatedAt: row.credentials_updated_at, healthScore: null, healthMessage: row.health_message,
+    credentialsUpdatedAt: row.credentials_updated_at, healthScore: null, healthMessage,
     lastHealthCheckAt: row.last_health_check_at, updatedAt: row.updated_at, revision: row.revision,
-    deliveryMode: 'inventory_only', deliveryActive: false,
+    deliveryMode: delivery.deliveryMode, deliveryActive: delivery.deliveryActive, deliveryMessage: delivery.message,
   };
 }
 export async function listCrmChannelIntegrations(tenant) {
@@ -60,7 +79,7 @@ export async function listCrmChannelIntegrations(tenant) {
   return CRM_CHANNELS.map(channel => byChannel.get(channel) || {
     channel, provider: null, status: 'not_configured', accountRef: null, config: {}, credentialsConfigured: false,
     credentialFields: [], credentialsUpdatedAt: null, healthScore: null, healthMessage: null, lastHealthCheckAt: null,
-    updatedAt: null, revision: null, deliveryMode: 'inventory_only', deliveryActive: false,
+    updatedAt: null, revision: null, deliveryMode: 'not_configured', deliveryActive: false,
   });
 }
 async function transaction(id, channel, expectedRevision, work) {
@@ -106,7 +125,7 @@ export async function upsertCrmChannelIntegration(tenant, channel, input = {}, a
     for (const key of removed) delete merged[key];
     const supportedSecrets = Object.fromEntries(Object.entries(merged).filter(([key]) => secretKeys.has(key)));
     const encrypted = encrypt(supportedSecrets);
-    const storedConfig = { ...config, provider, credentialFields: Object.keys(supportedSecrets).sort(), deliveryMode: 'inventory_only' };
+    const storedConfig = { ...config, provider, credentialFields: Object.keys(supportedSecrets).sort() };
     const { rows: [next] } = await client.query(`INSERT INTO crm_marketing_integrations
       (tenant_id,provider,integration_type,status,account_ref,config,encrypted_credentials,credentials_updated_at,credentials_fingerprint,health_message,created_by)
       VALUES ($1,$2,'communication','configured',$3,$4::jsonb,$5,NOW(),NULL,$6,$7)
@@ -114,10 +133,24 @@ export async function upsertCrmChannelIntegration(tenant, channel, input = {}, a
       config=EXCLUDED.config,encrypted_credentials=EXCLUDED.encrypted_credentials,credentials_updated_at=NOW(),credentials_fingerprint=NULL,
       health_score=NULL,health_message=EXCLUDED.health_message,last_health_check_at=NULL,updated_at=clock_timestamp()
       RETURNING ${columns}`, [id, channel, input.accountRef?.trim() || null, JSON.stringify(storedConfig), encrypted,
-      'Inventory saved. Delivery is not activated by this record.', actor]);
-    await audit(client, id, next, actor, 'inventory_saved', { channel, provider, changedCredentialFields: Object.keys(credentials), removedCredentialFields: removed, replacedProvider: Boolean(row && !sameProvider), deliveryActive: false });
-    return safeRow(next);
+      null, actor]);
+    const saved = safeRow(next);
+    await audit(client, id, next, actor, 'inventory_saved', { channel, provider, changedCredentialFields: Object.keys(credentials), removedCredentialFields: removed, replacedProvider: Boolean(row && !sameProvider), deliveryMode: saved.deliveryMode });
+    return saved;
   });
+}
+/** Connectivity-only checks: open/authenticate with the provider, send nothing. Not every provider has
+ * a safe no-op connectivity check, so only those are tested live; the rest stay storage-only, truthfully. */
+async function checkConnectivity(channel, config, credentials) {
+  if (channel === 'email' && config.provider === 'smtp' && config.smtpHost && config.smtpPort && config.username && credentials.password) {
+    const transport = nodemailer.createTransport({
+      host: config.smtpHost, port: Number(config.smtpPort), secure: Number(config.smtpPort) === 465,
+      auth: { user: config.username, pass: credentials.password }, connectionTimeout: 10000,
+    });
+    try { await transport.verify(); return { tested: true, success: true, message: 'SMTP connection and authentication succeeded.' }; }
+    catch (error) { return { tested: true, success: false, message: `SMTP connection failed: ${error.message}` }; }
+  }
+  return null;
 }
 export async function testCrmChannelIntegration(tenant, channel, input = {}, actor = null) {
   const id = identity(tenant, channel);
@@ -126,10 +159,16 @@ export async function testCrmChannelIntegration(tenant, channel, input = {}, act
     if (row.status === 'disabled') throw fail(409, 'Inventory record is disabled.');
     const credentials = decrypt(row.encrypted_credentials);
     if (!Object.keys(credentials).length) throw fail(422, 'No stored credentials to verify.');
-    const { rows: [next] } = await client.query(`UPDATE crm_marketing_integrations SET health_score=NULL,health_message=$1,
-      last_health_check_at=clock_timestamp(),updated_at=clock_timestamp() WHERE tenant_id=$2 AND id=$3 RETURNING ${columns}`,
-    ['Encrypted storage verified. Provider connectivity and delivery were not tested.', id, row.id]);
-    await audit(client, id, next, actor, 'storage_verified', { channel, deliveryTested: false });
+    const config = configOf(row);
+    const live = await checkConnectivity(channel, config, credentials);
+    const message = live ? live.message : 'Credentials are stored and readable. This provider has no safe connection test, so nothing was sent.';
+    const { rows: [next] } = await client.query(`UPDATE crm_marketing_integrations SET health_score=$1,health_message=$2,
+      last_health_check_at=clock_timestamp(),updated_at=clock_timestamp() WHERE tenant_id=$3 AND id=$4 RETURNING ${columns}`,
+    [live ? (live.success ? 100 : 0) : null, message, id, row.id]);
+    await audit(client, id, next, actor, 'storage_verified', { channel, deliveryTested: Boolean(live?.tested), deliverySuccess: live?.success ?? null });
+    // 422, not 502/504/52x: Cloudflare intercepts those gateway-error ranges and replaces the body
+    // with its own generic error page, which would hide this message from whoever clicked "Test".
+    if (live && !live.success) throw fail(422, message);
     return safeRow(next);
   });
 }
@@ -138,13 +177,13 @@ export async function changeCrmChannelIntegration(tenant, channel, action, input
   if (!['disable', 'disconnect'].includes(action) || input.confirm !== action) throw fail(400, 'Confirm the requested inventory action.');
   return transaction(id, channel, input.expectedRevision, async (client, row) => {
     if (!row) throw fail(404, 'No saved inventory record.');
-    await audit(client, id, row, actor, action === 'disconnect' ? 'inventory_disconnected' : 'inventory_disabled', { channel, credentialsDeleted: action === 'disconnect', liveProviderChanged: false });
+    await audit(client, id, row, actor, action === 'disconnect' ? 'inventory_disconnected' : 'inventory_disabled', { channel, credentialsDeleted: action === 'disconnect', deliveryStopped: true });
     if (action === 'disconnect') {
       await client.query("DELETE FROM crm_marketing_integrations WHERE tenant_id=$1 AND id=$2 AND integration_type='communication'", [id, row.id]);
       return { channel, disconnected: true };
     }
     const { rows: [next] } = await client.query(`UPDATE crm_marketing_integrations SET status='disabled',health_score=NULL,
-      health_message='Inventory disabled. Live provider configuration is managed separately.',last_health_check_at=NULL,updated_at=clock_timestamp()
+      health_message=NULL,last_health_check_at=NULL,updated_at=clock_timestamp()
       WHERE tenant_id=$1 AND id=$2 RETURNING ${columns}`, [id, row.id]);
     return safeRow(next);
   });

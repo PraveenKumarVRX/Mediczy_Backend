@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inbox · Medstar CRM</title>
+  <script src="/crm-tools/embed.js"></script>
+  <link rel="icon" href="/brand/medstar.svg">
+  <link rel="stylesheet" href="../whatsapp/styles.css?v=20261116">
+  <link rel="stylesheet" href="inbox.css?v=20261116d">
+</head>
+<body class="inbox-page">
+  <!-- Shown only when the page is opened on its own; inside the CRM the app's header says "Inbox". -->
+  <header class="topbar inbox-top">
+    <a class="back" href="/crm/leads">← Leads</a>
+    <div class="title"><h1>Inbox</h1></div>
+  </header>
+
+  <div id="banner" class="banner inbox-banner" role="status" hidden></div>
+
+  <div class="inbox" id="inbox" data-view="list">
+    <!-- ── Queue ── -->
+    <aside class="queue" aria-label="Conversations">
+      <div class="queue-tools">
+        <input id="search" type="search" placeholder="Search name, mobile or email" aria-label="Search conversations" autocomplete="off">
+        <div class="seg" role="tablist" aria-label="Conversation status">
+          <button class="seg-btn active" role="tab" aria-selected="true" data-status="open">Open <span class="count" id="countOpen">0</span></button>
+          <button class="seg-btn" role="tab" aria-selected="false" data-status="pending">Waiting <span class="count" id="countPending">0</span></button>
+          <button class="seg-btn" role="tab" aria-selected="false" data-status="closed">Done <span class="count" id="countClosed">0</span></button>
+        </div>
+        <div class="queue-filters">
+          <div class="chips" role="group" aria-label="Channel">
+            <button class="chip active" data-channel="">All</button>
+            <button class="chip" data-channel="whatsapp">WhatsApp</button>
+            <button class="chip" data-channel="call">Calls</button>
+            <button class="chip" data-channel="sms">SMS</button>
+            <button class="chip" data-channel="email">Email</button>
+          </div>
+          <div class="row-2">
+            <button class="chip due-chip" id="dueChip" type="button" aria-pressed="false">Follow-ups due <span class="count" id="countDue">0</span></button>
+            <select id="assigned" aria-label="Whose conversations">
+              <option value="">Everyone</option>
+              <option value="me">Mine</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <ul class="convo-list" id="convoList" aria-live="polite"></ul>
+      <nav class="queue-foot" id="adminLinks" aria-label="Inbox setup" hidden>
+        <a href="/crm-tools/calls/">Calling setup</a>
+        <a href="/crm-tools/whatsapp/">WhatsApp templates</a>
+      </nav>
+    </aside>
+
+    <!-- ── Conversation ── -->
+    <section class="thread-pane" aria-label="Conversation">
+      <div class="empty-thread" id="emptyThread">
+        <h2>Select a conversation</h2>
+        <p class="muted">Every WhatsApp message, call, SMS, email and team note for a patient sits in one timeline, with their details and tasks alongside.</p>
+      </div>
+
+      <div class="thread" id="thread" hidden>
+        <div class="thread-head">
+          <button class="icon-btn back-to-list" id="backToList" type="button" aria-label="Back to conversations">←</button>
+          <div class="who">
+            <h2 id="threadName"></h2>
+            <div class="sub" id="threadSub"></div>
+          </div>
+          <div class="head-actions">
+            <button class="btn small" id="callBtn" type="button">Call</button>
+            <div class="seg small" role="group" aria-label="Conversation status" id="statusSeg">
+              <button class="seg-btn" type="button" data-set-status="open">Open</button>
+              <button class="seg-btn" type="button" data-set-status="pending">Waiting</button>
+              <button class="seg-btn" type="button" data-set-status="closed">Done</button>
+            </div>
+            <button class="btn ghost small patient-toggle" id="patientToggle" type="button" aria-controls="patientPane">Patient</button>
+          </div>
+        </div>
+        <div class="timeline-filter chips" role="group" aria-label="Show in timeline" id="timelineFilter">
+          <button class="chip active" type="button" data-show="all">All</button>
+          <button class="chip" type="button" data-show="messages">Messages</button>
+          <button class="chip" type="button" data-show="calls">Calls</button>
+          <button class="chip" type="button" data-show="notes">Notes</button>
+          <button class="chip" type="button" data-show="activity">Activity</button>
+        </div>
+
+        <ol class="messages" id="messages" aria-live="polite"></ol>
+
+        <form class="composer" id="composer" autocomplete="off">
+          <div class="composer-top">
+            <div class="chips compact" role="radiogroup" aria-label="Reply channel" id="replyChannels">
+              <button type="button" class="chip" data-reply="whatsapp">WhatsApp</button>
+              <button type="button" class="chip" data-reply="sms">SMS</button>
+              <button type="button" class="chip" data-reply="email">Email</button>
+              <button type="button" class="chip" data-reply="note">Internal note</button>
+            </div>
+            <span class="muted small-text" id="channelHint"></span>
+          </div>
+          <input id="replySubject" placeholder="Subject" maxlength="200" aria-label="Email subject" hidden>
+          <div class="quick-pop" id="quickPop" hidden>
+            <input id="quickSearch" type="search" placeholder="Search quick answers and scripts…" aria-label="Search quick answers">
+            <ul id="quickList" role="listbox" aria-label="Quick answers"></ul>
+          </div>
+          <div id="textMode">
+            <textarea id="replyText" rows="2" maxlength="4096" placeholder="Type a reply… (Enter to send, Shift+Enter for a new line)" aria-label="Reply"></textarea>
+          </div>
+          <div id="templateMode" hidden>
+            <p class="muted small-text" id="templateHint"></p>
+            <select id="templatePick" aria-label="Approved template"></select>
+            <div class="template-preview" id="templatePreview"></div>
+            <div class="template-params" id="templateParams"></div>
+          </div>
+          <div class="composer-actions">
+            <button class="btn ghost small" id="toggleTemplate" type="button">Use a template</button>
+            <button class="btn ghost small" id="quickBtn" type="button" aria-expanded="false" aria-controls="quickPop">Quick answers</button>
+            <span class="result" id="sendResult" role="status"></span>
+            <button class="btn" id="sendBtn" type="submit">Send</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ── Patient ── -->
+    <aside class="patient-pane" id="patientPane" aria-label="Patient details" hidden>
+      <div class="p-scroll">
+        <div class="p-head">
+          <button class="icon-btn patient-close" id="patientClose" type="button" aria-label="Back to conversation">←</button>
+          <div class="avatar big" id="pAvatar" aria-hidden="true"></div>
+          <div class="p-id">
+            <h2 id="pName"></h2>
+            <div class="sub" id="pContact"></div>
+          </div>
+        </div>
+        <div class="p-owner">
+          <span id="pOwner"></span>
+          <button class="link-btn" id="assignMe" type="button">Assign to me</button>
+          <label class="p-priority">Priority
+            <select id="pPriority" aria-label="Priority">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </label>
+        </div>
+
+        <section class="p-section" aria-labelledby="journeyH">
+          <h3 id="journeyH">Patient journey</h3>
+          <ol class="stepper" id="stepper"></ol>
+          <label class="stage-detail">Stage detail
+            <select id="stageSelect" aria-label="Journey stage detail">
+              <optgroup label="Enquiry">
+                <option value="new">New enquiry</option>
+                <option value="attempting_contact">Trying to reach</option>
+              </optgroup>
+              <optgroup label="Contacted">
+                <option value="contacted">Contacted</option>
+                <option value="qualified">Qualified</option>
+              </optgroup>
+              <optgroup label="Appointment">
+                <option value="appointment_requested">Appointment requested</option>
+                <option value="appointment_booked">Appointment booked</option>
+                <option value="appointment_confirmed">Appointment confirmed</option>
+              </optgroup>
+              <optgroup label="Visit">
+                <option value="visited">Visited</option>
+                <option value="consulted">Consulted doctor</option>
+                <option value="investigation_advised">Tests advised</option>
+                <option value="procedure_advised">Procedure advised</option>
+                <option value="admission_advised">Admission advised</option>
+              </optgroup>
+              <optgroup label="Outcome">
+                <option value="billing_completed">Treated and billed</option>
+                <option value="nurture">Follow up later</option>
+                <option value="lost">Lost</option>
+              </optgroup>
+            </select>
+          </label>
+        </section>
+
+        <section class="p-section next" aria-labelledby="nextH">
+          <h3 id="nextH">Next step</h3>
+          <p class="next-line" id="nextLine"></p>
+          <div class="p-actions">
+            <button class="btn small" id="followupBtn" type="button">Schedule follow-up</button>
+            <button class="btn ghost small" id="apptBtn" type="button">Book appointment</button>
+          </div>
+          <form class="mini-form" id="followupForm" hidden autocomplete="off">
+            <label>What<input id="fuTitle" maxlength="200" value="Call back" required></label>
+            <div class="presets" role="group" aria-label="Quick times">
+              <button type="button" class="chip" data-in="60">In 1 hour</button>
+              <button type="button" class="chip" data-tomorrow="10">Tomorrow 10 am</button>
+              <button type="button" class="chip" data-days="3">In 3 days</button>
+            </div>
+            <label>When<input id="fuWhen" type="datetime-local" required></label>
+            <div class="mini-actions"><button class="btn ghost small" type="button" data-cancel>Cancel</button><button class="btn small" type="submit">Add follow-up</button></div>
+          </form>
+          <form class="mini-form" id="apptForm" hidden autocomplete="off">
+            <label>Date and time<input id="apWhen" type="datetime-local" required></label>
+            <label>Doctor or department (optional)<input id="apNote" maxlength="150" placeholder="e.g. Dr Rao, Cardiology"></label>
+            <div class="mini-actions"><button class="btn ghost small" type="button" data-cancel>Cancel</button><button class="btn small" type="submit">Book appointment</button></div>
+          </form>
+        </section>
+
+        <section class="p-section" aria-labelledby="tasksH">
+          <h3 id="tasksH">Tasks</h3>
+          <ul class="tasks" id="taskList"></ul>
+        </section>
+
+        <section class="p-section" aria-labelledby="detailsH">
+          <div class="p-section-head"><h3 id="detailsH">Details</h3><button class="link-btn" id="editContact" type="button">Edit</button></div>
+          <dl class="facts" id="facts"></dl>
+          <form class="mini-form" id="contactForm" hidden autocomplete="off">
+            <p class="muted small-text">Saving updates the lead, its Contacts-page record and the patient profile together.</p>
+            <label>Name<input id="cfName" maxlength="255" required></label>
+            <label>Mobile<input id="cfPhone" inputmode="tel" maxlength="20" placeholder="10-digit mobile"></label>
+            <label>Email<input id="cfEmail" type="email" maxlength="200"></label>
+            <label>City<input id="cfCity" maxlength="100"></label>
+            <div class="mini-actions"><button class="btn ghost small" id="cfCancel" type="button">Cancel</button><button class="btn small" type="submit">Save details</button></div>
+          </form>
+        </section>
+
+        <section class="p-section" aria-labelledby="activityH">
+          <h3 id="activityH">Activity</h3>
+          <div class="stats" id="stats"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <script src="inbox.js?v=20261116e" defer></script>
+</body>
+</html>

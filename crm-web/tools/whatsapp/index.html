@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WhatsApp Control · Medstar CRM</title>
+  <script src="/crm-tools/embed.js"></script>
+  <link rel="icon" href="/brand/medstar.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="back" href="/crm/dashboard">← Back to CRM</a>
+    <div class="title">
+      <h1>WhatsApp Control</h1>
+      <p>Templates, languages and live events for your Gupshup WhatsApp app</p>
+    </div>
+    <a class="btn ghost" href="/crm-tools/inbox/">Inbox</a>
+    <button id="refreshAll" class="btn ghost" type="button">Refresh</button>
+  </header>
+
+  <main>
+    <div id="banner" class="banner" hidden></div>
+
+    <section class="cards" id="statusCards" aria-label="Connection status"></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Templates</h2>
+          <p class="muted">Every template is reviewed by Meta before it can be sent. Names follow <code>medstar_&lt;purpose&gt;_&lt;language&gt;</code>.</p>
+        </div>
+        <div class="actions">
+          <select id="filterStatus" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="pending_approval">In review</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="disabled">Disabled</option>
+          </select>
+          <select id="filterLanguage" aria-label="Filter by language"><option value="">All languages</option></select>
+          <button id="syncTemplates" class="btn ghost" type="button">Check status with Meta</button>
+          <button id="loadLibrary" class="btn ghost" type="button">Load hospital library</button>
+          <button id="submitDrafts" class="btn" type="button" disabled>Submit selected</button>
+        </div>
+      </div>
+      <div id="templates" class="families"><p class="muted">Loading…</p></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>New template</h2>
+          <p class="muted">Write once per language. Use <code>{{patient_name}}</code>-style variables; they are converted to Meta's <code>{{1}}</code> format.</p>
+        </div>
+      </div>
+      <form id="newTemplate" class="form" novalidate>
+        <div class="row">
+          <label>Purpose<input name="purpose" required maxlength="80" placeholder="e.g. Appointment reminder"></label>
+          <label>Category
+            <select name="category">
+              <option value="utility">Utility (reminders, updates)</option>
+              <option value="marketing">Marketing (offers, campaigns)</option>
+              <option value="authentication">Authentication (one-time codes)</option>
+            </select>
+          </label>
+        </div>
+        <label>Sample values <span class="muted">(comma-separated, in variable order; Meta needs realistic examples)</span>
+          <input name="examples" placeholder="Ravi Kumar, Dr. Suresh Rao, 18 Nov 2026 10:30 AM">
+        </label>
+        <div id="variants"></div>
+        <div class="row">
+          <button id="addLanguage" class="btn ghost" type="button">+ Add language</button>
+          <span class="spacer"></span>
+          <button class="btn ghost" type="submit" name="mode" value="draft">Save as draft</button>
+          <button class="btn" type="submit" name="mode" value="submit">Save &amp; submit to Meta</button>
+        </div>
+        <p id="formResult" class="result" role="status"></p>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Send a template</h2>
+          <p class="muted">Sends an approved template to a lead. The language is picked from the lead's preferred language, falling back to English.</p>
+        </div>
+      </div>
+      <form id="sendTemplate" class="form" novalidate>
+        <div class="row">
+          <label>Template<select name="family" required></select></label>
+          <label>Lead ID<input name="leadId" required inputmode="numeric" placeholder="e.g. 12"></label>
+          <label>Language<select name="language"><option value="">Lead's preference</option></select></label>
+        </div>
+        <label>Values <span class="muted">(comma-separated, in variable order)</span><input name="params" placeholder="Ravi Kumar, Dr. Suresh Rao, 18 Nov 10:30 AM"></label>
+        <div class="row"><span class="spacer"></span><button class="btn" type="submit">Send</button></div>
+        <p id="sendResult" class="result" role="status"></p>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>Event log</h2><p class="muted">Everything Gupshup has told the CRM: messages, delivery, template reviews, account and billing. Message text is never stored here.</p></div>
+      </div>
+      <ul id="events" class="events"><li class="muted">Loading…</li></ul>
+    </section>
+  </main>
+
+  <template id="variantRow">
+    <div class="variant">
+      <div class="row">
+        <label class="lang">Language<select name="language"></select></label>
+        <button class="btn ghost remove" type="button" aria-label="Remove language">Remove</button>
+      </div>
+      <label>Message<textarea name="body" rows="3" maxlength="1024" placeholder="Dear {{patient_name}}, your appointment with {{doctor}} is confirmed for {{time}}. Please arrive 15 minutes early."></textarea></label>
+      <ul class="lint"></ul>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

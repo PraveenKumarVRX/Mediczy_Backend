@@ -1,4 +1,5 @@
 import express from 'express';
+import { assertV2LeadAccess } from '../services/crm-access.service.js';
 import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
 import {
   createLead,
@@ -13,6 +14,11 @@ import {
 
 const router = express.Router();
 router.use(authCRM);
+// Field executives reach only their own leads (crm-access.service.js).
+router.param('id', async (req, res, next, id) => {
+  try { await assertV2LeadAccess(req.crmUser, req.crmUser?.tenantId, id); if (req.body?.targetLeadId) await assertV2LeadAccess(req.crmUser, req.crmUser?.tenantId, req.body.targetLeadId); next(); }
+  catch (e) { res.status(e.statusCode || 500).json({ success: false, message: e.statusCode ? e.message : 'Not allowed' }); }
+});
 
 function tenantIdFromRequest(req, res) {
   const tenantId = resolveTenantId(req.crmUser);

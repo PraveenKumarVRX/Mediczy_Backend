@@ -1,0 +1,19 @@
+.crm-settings { color-scheme:dark; color:#f1f5f9; background:#0a0e1a; overflow-wrap:anywhere; }
+.crm-settings .settings-muted { color:#b6c2d4; }
+.crm-settings .settings-card { border:1px solid #384760; background:#111827; border-radius:1rem; padding:1.25rem; }
+.crm-settings .settings-status { color:#d6e0f0; background:#27324a; border-radius:1rem; padding:.3rem .6rem; font-size:.75rem; }
+.crm-settings label { color:#d6e0f0; font-size:.875rem; }
+.crm-settings :where(input:not([type=checkbox]),select) { display:block; width:100%; min-width:0; height:44px; margin-top:.35rem; padding:0 .75rem; border:1px solid #64748b; border-radius:.5rem; color:#f8fafc; background:#080f20; font-size:.875rem; }
+.crm-settings input::placeholder { color:#acb9cf; opacity:1; }
+.crm-settings .settings-secret { padding-right:48px!important; }
+.crm-settings .settings-eye { position:absolute; right:0; top:0; margin-top:0; display:flex; align-items:center; justify-content:center; width:44px; height:44px; color:#cbd5e1; }
+.crm-settings .settings-button { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; min-height:44px; padding:.5rem .85rem; border:1px solid #64748b; border-radius:.5rem; background:#1c2940; color:#f1f5f9; font-size:.875rem; text-decoration:none; }
+.crm-settings .settings-primary { background:#613ac7; border-color:#a98be8; color:#fff; }
+.crm-settings .settings-danger { color:#ffd0d5; }
+.crm-settings .settings-error { color:#ffb7c4; }
+.crm-settings .settings-saved { color:#87edc0; }
+.crm-settings .settings-link { color:#c7b5ff; text-decoration:underline; }
+.crm-settings .settings-checkbox { width:24px; height:24px; accent-color:#9b7bef; flex-shrink:0; }
+.crm-settings :where(input,select,button,a):focus-visible { outline:2px solid #cab7ff; outline-offset:3px; }
+.crm-settings :where(button,input,select):disabled { opacity:.5; cursor:not-allowed; }
+.crm-settings [aria-invalid=true] { border-color:#ffb7c4; }

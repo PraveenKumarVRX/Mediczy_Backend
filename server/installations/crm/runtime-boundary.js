@@ -13,6 +13,6 @@ export function validateDedicatedEnvironment(env) {
 export function dedicatedBoundary(installation){return(req,res,next)=>{
  if(req.get('host')?.toLowerCase()!==new URL(installation.origin).host)return res.status(421).json({success:false,code:'wrong_installation_host'});
  for(const header of ['X-Tenant-ID','X-Tenant-Code']){const value=req.get(header);if(value&&![String(installation.tenantId),installation.tenantUid].includes(value))return res.status(403).json({success:false,code:'wrong_installation_tenant'});}
- if(!req.path.startsWith('/api/crm')&&!req.path.startsWith('/api/mobile/')&&!req.path.startsWith('/api/feature-flags'))return res.status(404).json({success:false,code:'not_in_crm_runtime'});
+ if(!req.path.startsWith('/api/crm')&&!req.path.startsWith('/api/mobile/')&&!req.path.startsWith('/api/feature-flags')&&!req.path.startsWith('/api/password-reset')&&!req.path.startsWith('/api/branding')&&!req.path.startsWith('/api/onboarding')&&!req.path.startsWith('/api/channel-webhooks/')&&!req.path.startsWith('/api/team/')&&!req.path.startsWith('/api/field/')&&!req.path.startsWith('/api/app/'))return res.status(404).json({success:false,code:'not_in_crm_runtime'});
  next();
 };}

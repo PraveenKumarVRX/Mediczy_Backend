@@ -7,6 +7,7 @@
  */
 
 import sharedPool from '../db/pgPool.js';
+import { captureContactForLead, retireCapturedContact } from './crm-contact-capture.service.js';
 
 export const CRM_V2_DEFAULT_TENANT_ID = Number(process.env.CRM_V2_DEFAULT_TENANT_ID || 7);
 
@@ -18,6 +19,9 @@ const LIFECYCLE_STAGE_MAP = {
   lost: 'lost',
   dead: 'lost',
 };
+
+const JOURNEY_ORDER = ['new', 'attempting_contact', 'contacted', 'qualified', 'appointment_requested', 'appointment_booked',
+  'appointment_confirmed', 'visited', 'consulted', 'investigation_advised', 'procedure_advised', 'admission_advised', 'billing_completed', 'won'];
 
 const STATUS_MAP = {
   converted: 'converted',
@@ -112,12 +116,19 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
 
     if (existingV2.rows[0]) {
       await db.query(
-        `UPDATE crm_leads_v2 SET lifecycle_stage = $1, status = $2, priority = $3, score = $4,
+        // The Leads page only knows new/contacted/qualified. A lead already further along the hospital
+        // journey (appointment booked, visited, ...) keeps that stage; lost and converted still apply.
+        `UPDATE crm_leads_v2 SET lifecycle_stage = CASE
+             WHEN $1::text IN ('new','contacted','qualified')
+              AND array_position($8::text[], lifecycle_stage::text) > array_position($8::text[], $1::text) THEN lifecycle_stage
+             ELSE $1::text END,
+           status = $2, priority = $3, score = $4,
            source_taxonomy_id = $5, updated_at = NOW()
          WHERE id = $6 AND tenant_id = $7`,
-        [lifecycleStage, status, priority, score, sourceTaxonomyId, existingV2.rows[0].id, tenantId]
+        [lifecycleStage, status, priority, score, sourceTaxonomyId, existingV2.rows[0].id, tenantId, JOURNEY_ORDER]
       );
       await db.query(`UPDATE crm_leads_v2 SET owner_user_id=$1, identity_id=COALESCE(identity_id,person_id) WHERE id=$2 AND tenant_id=$3`, [lead.assigned_to || lead.created_by || null, existingV2.rows[0].id, tenantId]);
+      await captureContactForLead(db, legacyLeadId, tenantId); // keeps the Contacts page in step; never throws
       return existingV2.rows[0].id;
     }
 
@@ -135,6 +146,7 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
       ]
     );
     await db.query(`UPDATE crm_leads_v2 SET owner_user_id=$1, identity_id=COALESCE(identity_id,person_id) WHERE id=$2 AND tenant_id=$3`, [lead.assigned_to || lead.created_by || null, inserted.rows[0].id, tenantId]);
+    await captureContactForLead(db, legacyLeadId, tenantId); // keeps the Contacts page in step; never throws
     return inserted.rows[0].id;
   } catch (err) {
     console.warn('[CRM v2 sync] failed for legacy lead', legacyLeadId, ':', err.message);
@@ -146,7 +158,17 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
 export async function removeLegacyLeadFromV2(legacyLeadId, tenantId = CRM_V2_DEFAULT_TENANT_ID) {
   if (!legacyLeadId) return;
   try {
-    await sharedPool.query(`DELETE FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id = $2`, [tenantId, legacyLeadId]);
+    const { rows } = await sharedPool.query(`DELETE FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id = $2 RETURNING contact_id`, [tenantId, legacyLeadId]);
+    // The v2 contact is created with the lead; retire it too unless another lead still uses it,
+    // otherwise deleted leads leave orphan contacts behind.
+    const contactIds = rows.map((r) => r.contact_id).filter(Boolean);
+    if (contactIds.length) {
+      await sharedPool.query(
+        `UPDATE crm_contacts_v2 c SET deleted_at = now() WHERE c.tenant_id = $1 AND c.id = ANY($2) AND c.deleted_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM crm_leads_v2 lv WHERE lv.tenant_id = c.tenant_id AND lv.contact_id = c.id)`,
+        [tenantId, contactIds]);
+    }
+    await retireCapturedContact(legacyLeadId);
   } catch (err) {
     console.warn('[CRM v2 sync] delete failed for legacy lead', legacyLeadId, ':', err.message);
   }

@@ -14,7 +14,13 @@ const FIELD_COLUMNS = {
   priority: 'lv.priority',
   score: 'lv.score',
   source_detail: 'lv.source_detail',
+  source: 'lv.source_detail',
+  owner_user_id: 'lv.owner_user_id',
   created_at: 'lv.created_at',
+  // Contact-level fields (Audiences in Engage): read through the lead's v2 contact.
+  city: '(SELECT c.city FROM crm_contacts_v2 c WHERE c.id = lv.contact_id)',
+  preferred_language: '(SELECT c.preferred_language FROM crm_contacts_v2 c WHERE c.id = lv.contact_id)',
+  consent_status: '(SELECT c.consent_status FROM crm_contacts_v2 c WHERE c.id = lv.contact_id)',
 };
 
 const OPERATORS = new Set(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'contains', 'since_days']);
@@ -45,6 +51,12 @@ function positiveInt(value) {
 /** Compile a whitelisted { conditions: [{field, op, value}] } definition into a parameterized SQL fragment. AND-only for v1. */
 export function compileFilterToSql(filterDefinition, paramsStart = []) {
   const params = [...paramsStart];
+  // Static audiences (the former marketing Lists): an explicit set of leads instead of rules.
+  if (filterDefinition?.type === 'static') {
+    const ids = (Array.isArray(filterDefinition.lead_ids) ? filterDefinition.lead_ids : []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0);
+    params.push(ids);
+    return { whereSql: `lv.id = ANY($${params.length}::bigint[])`, params };
+  }
   const conditions = Array.isArray(filterDefinition?.conditions) ? filterDefinition.conditions : [];
   const clauses = [];
 
@@ -145,7 +157,7 @@ export async function refreshSegmentMembership(segmentId, tenantId) {
   if (!segment) throw Object.assign(new Error('Segment not found'), { statusCode: 404 });
 
   const { whereSql, params } = compileFilterToSql(segment.filter_definition, [segment.tenant_id]);
-  const matchQuery = `SELECT lv.id FROM crm_leads_v2 lv WHERE lv.tenant_id = $1 AND (${whereSql})`;
+  const matchQuery = `SELECT lv.id FROM crm_leads_v2 lv WHERE lv.tenant_id = $1 AND lv.deleted_at IS NULL AND (${whereSql})`;
   const { rows: matches } = await guardedSharedPool(matchQuery, params);
   const matchedIds = matches.map((r) => r.id);
 

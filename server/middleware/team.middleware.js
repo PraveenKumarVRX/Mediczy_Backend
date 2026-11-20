@@ -15,14 +15,9 @@ const normalize = (value) => String(value || '').trim().toLowerCase();
 const hasNamedPermission = (permissions = [], required) => {
   const reqs = Array.isArray(required) ? required : [required];
   const normalizedPermissions = permissions.map(normalize).filter(Boolean);
-  return reqs.some((req) => {
-    const needle = normalize(req);
-    return normalizedPermissions.some((permission) =>
-      permission === needle ||
-      permission.includes(needle) ||
-      needle.includes(permission)
-    );
-  });
+  // Exact (case-insensitive) match. Substring matching let a narrower grant satisfy a broader
+  // requirement: "Field Force" passed requirePermission('Field Force Manager').
+  return reqs.some((req) => normalizedPermissions.includes(normalize(req)));
 };
 
 const isTeamAccount = (user = {}, metadata = {}) => Boolean(

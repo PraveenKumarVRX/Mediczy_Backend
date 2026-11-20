@@ -1,4 +1,5 @@
 import sharedPool from '../db/pgPool.js';
+import { captureContactForLead } from './crm-contact-capture.service.js';
 
 export const CRM_LIFECYCLE_STAGES = [
   'new',
@@ -109,13 +110,35 @@ async function ensurePerson(client, { tenantId, firstName, lastName, name, email
 async function recordEvent(client, { tenantId, leadId, personId, campaignId, eventType, fromStage, toStage, channel, actorUserId, idempotencyKey, metadata = {} }) {
   const result = await client.query(
     `INSERT INTO crm_funnel_events
-      (tenant_id, lead_id, person_id, identity_id, campaign_id, from_stage, to_stage, channel, actor_user_id, idempotency_key, metadata)
+      (tenant_id, lead_id, person_id, identity_id, campaign_id, event_type, from_stage, to_stage, channel, actor_user_id, idempotency_key, metadata)
      VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
      ON CONFLICT (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING *`,
     [tenantId, leadId || null, personId || null, campaignId || null, eventType, fromStage || null, toStage || null, channel || null, actorUserId || null, idempotencyKey || null, JSON.stringify(metadata)]
   );
   return result.rows[0] || null;
+}
+
+const LEGACY_STATUS_BY_STAGE = { new: 'new', attempting_contact: 'contacted', contacted: 'contacted', qualified: 'qualified', won: 'converted', lost: 'lost' };
+
+async function createLegacyTwin(client, { tenantId, input, stage, priority, actorUserId }) {
+  let ownerId = asPositiveInt(input.ownerUserId) || asPositiveInt(actorUserId);
+  if (!ownerId) {
+    const admin = await client.query(
+      `SELECT id FROM users WHERE tenant_id = $1 AND status = 'active' ORDER BY "isAdmin" DESC, id LIMIT 1`, [tenantId]
+    );
+    ownerId = admin.rows[0]?.id;
+    if (!ownerId) throw new Error('No active CRM user to own the lead');
+  }
+  const fullName = [input.firstName, input.lastName].filter(Boolean).join(' ').trim();
+  const name = String(input.name || fullName || input.email || input.phone || 'Unnamed lead').trim().slice(0, 255);
+  const result = await client.query(
+    `INSERT INTO crm_leads (name, email, phone, source, status, priority, notes, assigned_to, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    [name, input.email || null, input.phone || null, String(input.source || 'crm_api').slice(0, 100),
+      LEGACY_STATUS_BY_STAGE[stage] || 'qualified', priority, input.sourceDetail || null, ownerId, asPositiveInt(actorUserId) || ownerId]
+  );
+  return result.rows[0].id;
 }
 
 export async function createLead(input, actorUserId) {
@@ -161,12 +184,17 @@ export async function createLead(input, actorUserId) {
     });
     const stage = CRM_LIFECYCLE_STAGES.includes(input.lifecycleStage) ? input.lifecycleStage : 'new';
     const priority = ['low', 'medium', 'high', 'urgent'].includes(input.priority) ? input.priority : 'medium';
+    // The Leads page lists crm_leads scoped through crm_leads_v2.legacy_lead_id, so a v2-only lead is
+    // invisible there. Create the legacy row too, unless the caller is linking an existing one.
+    const legacyLeadId = asPositiveInt(input.legacyLeadId) || await createLegacyTwin(client, {
+      tenantId, input, stage, priority, actorUserId,
+    });
     const inserted = await client.query(
       `INSERT INTO crm_leads_v2
         (tenant_id, person_id, identity_id, org_unit_id, legacy_lead_id, lifecycle_stage, priority, source_taxonomy_id, campaign_id, source_detail, service_line, inquiry_type, owner_user_id, consent_status, metadata, created_by)
        VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15)
        RETURNING id`,
-      [tenantId, personId, asPositiveInt(input.orgUnitId), asPositiveInt(input.legacyLeadId), stage, priority, asPositiveInt(input.sourceTaxonomyId), asPositiveInt(input.campaignId), input.sourceDetail || null, input.serviceLine || null, input.inquiryType || null, asPositiveInt(input.ownerUserId) || actorUserId || null, (['unknown', 'granted', 'denied', 'withdrawn'].includes(input.consentStatus) ? input.consentStatus : 'unknown'), JSON.stringify(input.metadata || {}), actorUserId || null]
+      [tenantId, personId, asPositiveInt(input.orgUnitId), legacyLeadId, stage, priority, asPositiveInt(input.sourceTaxonomyId), asPositiveInt(input.campaignId), input.sourceDetail || null, input.serviceLine || null, input.inquiryType || null, asPositiveInt(input.ownerUserId) || actorUserId || null, (['unknown', 'granted', 'denied', 'withdrawn'].includes(input.consentStatus) ? input.consentStatus : 'unknown'), JSON.stringify(input.metadata || {}), actorUserId || null]
     );
     const leadId = inserted.rows[0].id;
 
@@ -183,6 +211,7 @@ export async function createLead(input, actorUserId) {
       metadata: { source_detail: input.sourceDetail || null },
     });
 
+    await captureContactForLead(client, legacyLeadId, tenantId); // Contacts page record; never throws
     await client.query('COMMIT');
     return getLead(leadId, tenantId);
   } catch (error) {
@@ -228,9 +257,9 @@ export async function transitionLead({ tenantId, leadId, toStage, actorUserId, n
     if (lead.lifecycle_stage !== toStage) {
       await client.query(
         `UPDATE crm_leads_v2
-            SET lifecycle_stage = $1,
-                status = CASE WHEN $1 = 'won' THEN 'converted' WHEN $1 = 'lost' THEN 'closed' ELSE status END,
-                converted_at = CASE WHEN $1 = 'won' THEN COALESCE(converted_at, NOW()) ELSE converted_at END,
+            SET lifecycle_stage = $1::text,
+                status = CASE WHEN $1::text = 'won' THEN 'converted' WHEN $1::text = 'lost' THEN 'closed' ELSE status END,
+                converted_at = CASE WHEN $1::text IN ('won', 'billing_completed') THEN COALESCE(converted_at, NOW()) ELSE converted_at END,
                 updated_at = NOW()
           WHERE id = $2 AND tenant_id = $3`,
         [toStage, leadId, tenantId]

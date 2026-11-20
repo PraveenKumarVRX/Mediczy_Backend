@@ -16,11 +16,18 @@
 
 import { Router } from 'express';
 import sharedPool from '../db/pgPool.js';
-import { authTeam, requirePermission } from '../middleware/team.middleware.js';
+import { recordReferral, campRegistrationToLead, syncVisitFollowUp } from '../services/crm-referral-network.service.js';
+import { authTeam as platformAuthTeam, requirePermission } from '../middleware/team.middleware.js';
+
+// Dedicated installations authenticate /api/field upstream (routes/crm-smart-force-auth.route.js),
+// pinning the tenant and setting req.teamUser/req.user; the platform check then has nothing to add.
+const authTeam = (req, res, next) => (req.dedicatedTeamAuth ? next() : platformAuthTeam(req, res, next));
 import HealthCamp from '../models/postgres/health-camp.model.postgres.js';
 
 const router = Router();
-const FF = requirePermission('Field Force');
+// Refuse accounts that carry no organisation instead of guessing one (see tenantId()).
+const requireTenant = (req, res, next) => (tenantId(req) ? next() : res.status(403).json({ error: 'This account is not linked to an organisation.' }));
+const FF = [requirePermission('Field Force'), requireTenant];
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -29,7 +36,8 @@ function today() {
 }
 
 function tenantId(req) {
-  return req.user?.tenantId || req.user?.tenant_id || req.user?.organizationId || 1;
+  // No fallback: defaulting to tenant 1 wrote and read another organisation's field data.
+  return req.user?.tenantId || req.user?.tenant_id || req.user?.organizationId || null;
 }
 
 // ─── ATTENDANCE ───────────────────────────────────────────────────────────────
@@ -299,6 +307,8 @@ router.patch('/visits/:id/check-out', authTeam, FF, async (req, res) => {
       ]
     );
     if (!rows.length) return res.status(404).json({ error: 'Visit not found or not in checked_in state' });
+    // The follow-up becomes a shared task (callback queue, Inbox, the app's task list). Never fails the check-out.
+    await syncVisitFollowUp(rows[0].tenant_id, rows[0].id).catch((e) => console.error('[field] follow-up task', e.message));
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -906,7 +916,7 @@ router.patch('/outreach/:id', authTeam, FF, async (req, res) => {
 // Team lead / regional manager can view their team's attendance and visits.
 // Requires 'Field Force Manager' permission (or admin).
 
-const FFM = requirePermission('Field Force Manager');
+const FFM = [requirePermission('Field Force Manager'), requireTenant];
 
 // GET /team/attendance?date=YYYY-MM-DD&tenant_id=X
 router.get('/team/attendance', authTeam, FFM, async (req, res) => {
@@ -1198,6 +1208,11 @@ router.post('/camps/:id/register', authTeam, FF, async (req, res) => {
       [req.params.id, tid, uid, patient_name, age||null, gender||null, phone||null,
        address||null, screening_notes||null, high_risk_flag||false, referred_to||null]
     );
+    // Every camp registration with a mobile becomes a CRM patient lead (once), so the call centre can follow up.
+    try {
+      const { rows: [t] } = await sharedPool.query(`SELECT unique_id FROM tenants WHERE id = $1`, [tid]);
+      if (t?.unique_id) rows[0].crm_lead_id = await campRegistrationToLead(tid, t.unique_id, uid, rows[0].id);
+    } catch (e) { console.error('[field-force] camp registration to CRM lead failed:', e.message); }
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1434,6 +1449,20 @@ router.get('/leads', authTeam, FF, async (req, res) => {
 });
 
 // POST /leads  — create a new lead from the field
+// POST /referrals — a patient referred by a doctor during a visit: a CRM patient lead credited to the doctor.
+router.post('/referrals', authTeam, FF, async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const { rows: [t] } = await sharedPool.query(`SELECT unique_id FROM tenants WHERE id = $1`, [tid]);
+    if (!t?.unique_id) return res.status(400).json({ error: 'Organisation not found' });
+    const ctx = { tenantId: Number(tid), tenantUid: t.unique_id, userId: req.user.id, role: 'sales_rep', manager: false, own: false, canEdit: true, canRefer: true };
+    const result = await recordReferral(ctx, req.body?.doctor_crm_id, req.body || {}, { channel: 'app' });
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Could not record the referral' });
+  }
+});
+
 router.post('/leads', authTeam, FF, async (req, res) => {
   // field_leads has no `city` column — fold it into notes if the caller sends one
   // (the doc's example includes it) rather than silently dropping the data.
@@ -1740,13 +1769,16 @@ router.post('/sync', authTeam, FF, async (req, res) => {
         case 'complete_visit': {
           // field_visits has no notes_actual column — outcome is the real free-text
           // narrative field; fall back to it when the doc-documented notes_actual is sent.
-          const { visit_id, notes_actual, outcome, checklist } = payload;
+          const { visit_id, notes_actual, outcome, checklist, next_action, follow_up_date } = payload;
           const { rows } = await sharedPool.query(
             `UPDATE field_visits SET status='completed', outcome=$3,
-               visit_checklist=COALESCE($4::jsonb, visit_checklist), check_out_at=NOW(), updated_at=NOW()
+               visit_checklist=COALESCE($4::jsonb, visit_checklist), check_out_at=NOW(), updated_at=NOW(),
+               next_action=COALESCE($5, next_action), follow_up_date=COALESCE($6::date, follow_up_date)
              WHERE id=$2 AND user_id=$1 RETURNING id`,
-            [uid, visit_id, outcome || notes_actual || null, checklist ? JSON.stringify(checklist) : null]
+            [uid, visit_id, outcome || notes_actual || null, checklist ? JSON.stringify(checklist) : null,
+             next_action || null, /^\d{4}-\d{2}-\d{2}$/.test(String(follow_up_date || '')) ? follow_up_date : null]
           );
+          if (rows[0]?.id) await syncVisitFollowUp(tid, rows[0].id).catch((e) => console.error('[field] follow-up task', e.message));
           result = { id: rows[0]?.id };
           break;
         }

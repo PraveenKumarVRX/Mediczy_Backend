@@ -164,7 +164,10 @@ export async function marketingCopilotChat({ messages = [], crmUser = {} }) {
     });
     reply = result.content?.trim() || '';
   } catch (err) {
-    reply = `I'm having trouble connecting to the AI service right now. Based on your CRM data: you have ${context.leadStats?.total || 0} leads (${context.leadStats?.hot_count || 0} hot) and ${context.dealStats?.active || 0} active deals worth ₹${Math.round(context.dealStats?.pipeline_value || 0).toLocaleString('en-IN')}. Try scoring all leads or following up your top hot leads first.`;
+    const anyKey = ['SARVAM_API_KEY','GROQ_API_KEY','OPENAI_API_KEY','GEMINI_API_KEY','GOOGLE_API_KEY','ISHA_INC_API_KEY','WORKSTATION_LLM_API_KEY','LOCAL_LLM_URL'].some((k) => String(process.env[k] || '').trim());
+    if (!anyKey) {
+      reply = 'The AI assistant is not set up on this CRM yet. An administrator needs to add an AI provider key before it can answer.';
+    } else reply = `I'm having trouble connecting to the AI service right now. Based on your CRM data: you have ${context.leadStats?.total || 0} leads (${context.leadStats?.hot_count || 0} hot) and ${context.dealStats?.active || 0} active deals worth ₹${Math.round(context.dealStats?.pipeline_value || 0).toLocaleString('en-IN')}. Try scoring all leads or following up your top hot leads first.`;
   }
 
   const { text, actions } = parseActionsFromReply(reply);
