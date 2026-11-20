@@ -23,6 +23,11 @@ const bad = (message) => new DietError(400, 'invalid_request', message);
 
 const validDate = (v) => typeof v === 'string' && ISO.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
 export const todayIST = (now = new Date()) => new Date(now.getTime() + 5.5 * 3600000).toISOString().slice(0, 10);
+/**
+ * A day is the phone's own date. Phones east of India can already be on the next calendar date,
+ * so "not in the future" allows up to one day after today's date in India (no zone is further ahead).
+ */
+export const latestDate = (today = todayIST()) => new Date(Date.parse(`${today}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 const round1 = (v) => (v === null || v === undefined ? null : Math.round(Number(v) * 10) / 10);
 
@@ -69,7 +74,7 @@ export function validateEntry(body = {}, { partial = false, today = todayIST() }
   const out = {};
   if (body.date !== undefined || !partial) {
     if (!validDate(body.date)) throw bad('date must be YYYY-MM-DD');
-    if (body.date > today) throw bad('date cannot be in the future');
+    if (body.date > latestDate(today)) throw bad('date cannot be in the future');
     out.date = body.date;
   }
   if (body.meal !== undefined || !partial) {
@@ -250,7 +255,7 @@ async function upsertWater(c, userId, date, waterMl) {
 /** Water for one date (repeatable: the same request twice leaves the same row). */
 export async function setWater(userId, date, waterMl) {
   if (!validDate(date)) throw bad('date must be YYYY-MM-DD');
-  if (date > todayIST()) throw bad('date cannot be in the future');
+  if (date > latestDate()) throw bad('date cannot be in the future');
   const w = validWater(waterMl);
   if (w === undefined) throw bad('waterMl is required');
   return asMember(userId, async (c) => { await upsertWater(c, userId, date, w); return { date, waterMl: w }; });
@@ -263,7 +268,7 @@ export async function setWater(userId, date, waterMl) {
 export async function replaceDay(userId, date, body = {}) {
   if (!validDate(date)) throw bad('date must be YYYY-MM-DD');
   const today = todayIST();
-  if (date > today) throw bad('date cannot be in the future');
+  if (date > latestDate(today)) throw bad('date cannot be in the future');
   if (!Array.isArray(body.entries)) throw bad('entries must be a list (send [] to clear the day)');
   if (body.entries.length > 100) throw bad('A day can hold at most 100 entries');
   const entries = body.entries.map((e, i) => {

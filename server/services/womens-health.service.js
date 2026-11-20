@@ -187,7 +187,8 @@ export function validateCycle(body = {}, { partial = false, today = todayIST() }
   if (body.periodStart !== undefined || !partial) {
     const start = parseDate(body.periodStart);
     if (!start) throw bad('periodStart must be a date (YYYY-MM-DD)');
-    if (start > today) throw bad('periodStart cannot be in the future');
+    // A phone east of India can already be on the next date; allow one day of lead.
+    if (start > addDays(today, 1)) throw bad('periodStart cannot be in the future');
     out.periodStart = iso(start);
   }
   if (body.periodEnd !== undefined) {

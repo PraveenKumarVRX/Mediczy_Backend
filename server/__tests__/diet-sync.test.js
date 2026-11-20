@@ -35,7 +35,9 @@ describe('validation', () => {
     expect(diet.validateEntry({ ...base, foodId: 7, servings: 2 }, { today: TODAY })).toEqual({ date: TODAY, meal: 'breakfast', foodId: 7, servings: 2 });
   });
   test('dates, meals and servings are checked', () => {
-    expect(() => diet.validateEntry({ date: '2026-11-21', meal: 'lunch', name: 'x', kcal: 1 }, { today: TODAY })).toThrow('future');
+    // One day of lead for phones east of India; two days ahead is refused.
+    expect(diet.validateEntry({ date: '2026-11-21', meal: 'lunch', name: 'x', kcal: 1 }, { today: TODAY })).toMatchObject({ date: '2026-11-21' });
+    expect(() => diet.validateEntry({ date: '2026-11-22', meal: 'lunch', name: 'x', kcal: 1 }, { today: TODAY })).toThrow('future');
     expect(() => diet.validateEntry({ date: TODAY, meal: 'brunch', name: 'x', kcal: 1 }, { today: TODAY })).toThrow('meal');
     expect(() => diet.validateEntry({ date: TODAY, meal: 'lunch', foodId: 7, servings: 0 }, { today: TODAY })).toThrow('servings');
   });
@@ -145,5 +147,14 @@ describe('storage, privacy and wiring', () => {
     const app = read('../app.js');
     expect(app.indexOf('app.use("/api/diet", dietSyncRouter)')).toBeGreaterThan(0);
     expect(app.indexOf('app.use("/api/diet", dietSyncRouter)')).toBeLessThan(app.indexOf('app.use("/api/diet", dietRouter)'));
+  });
+});
+
+describe('re-sent days from the app', () => {
+  test('an entry carrying its old server id (and other reply fields) is accepted, the id ignored', () => {
+    const resent = { id: 812, date: '2026-11-19', meal: 'lunch', foodId: null, name: 'Dal rice', servings: 1, servingUnit: null, kcal: 450, carbG: null, proteinG: 12, fatG: null, fibreG: null, source: 'custom', updatedAt: '2026-11-19T08:00:00Z' };
+    const out = diet.validateEntry({ ...resent, date: '2026-11-19' }, { today: TODAY });
+    expect(out).toMatchObject({ name: 'Dal rice', kcal: 450, proteinG: 12, source: 'custom' });
+    expect(out).not.toHaveProperty('id');
   });
 });

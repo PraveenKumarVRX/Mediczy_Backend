@@ -97,7 +97,8 @@ describe('validation', () => {
   test('a period needs a real, past start date', () => {
     expect(() => validateCycle({}, { today })).toThrow('periodStart');
     expect(() => validateCycle({ periodStart: '2026-02-30' }, { today })).toThrow('periodStart');
-    expect(() => validateCycle({ periodStart: '2026-11-21' }, { today })).toThrow('future');
+    expect(validateCycle({ periodStart: '2026-11-21' }, { today })).toMatchObject({ periodStart: '2026-11-21' }); // phone east of India
+    expect(() => validateCycle({ periodStart: '2026-11-22' }, { today })).toThrow('future');
   });
   test('end, flow, symptoms and notes are checked', () => {
     expect(() => validateCycle({ periodStart: '2026-11-10', periodEnd: '2026-11-09' }, { today })).toThrow('before');
