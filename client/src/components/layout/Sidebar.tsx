@@ -138,7 +138,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Database,    label: "Provider Network",        path: "/team/provider-network",        permission: "Corporate Management" },
   { icon: Briefcase,   label: "Broker Management",       path: "/team/broker-management",       permission: "Broker Management" },
   { icon: FlaskConical,label: "Corporate Health Booking",path: "/team/corporate-health-booking",permission: "Corporate Management" },
-  { icon: CalendarCheck,label: "Completed Check-ups",   path: "/team/completed-checkups",      permission: "Corporate Management" },
+  { icon: CalendarCheck,label: "Health Check-up Status",path: "/team/health-checkup-status",   permission: "Corporate Management" },
   { icon: Crown,       label: "User Plan Customization", path: "/team/user-plan-customization", permission: "Corporate Management" },
   { icon: Building2,   label: "Hospital Management",     path: "/team/hospital-management",     permission: "Hospital Management" },
   { icon: Building,    label: "Clinic Management",       path: "/team/clinic-management",       permission: "Clinic Management" },

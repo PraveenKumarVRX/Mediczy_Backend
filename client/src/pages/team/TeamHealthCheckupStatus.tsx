@@ -1,21 +1,21 @@
 /**
- * Team portal: employees who completed their annual health check-up, with reports to view,
- * download or share. Its own menu item, so Team does not have to open a company's booking
- * screen to find it. Same list and APIs as Corporate Health Booking → Completed Check-ups.
+ * Team portal: Health Check-up Status. Every eligible employee of a company and where they are
+ * in the annual health check-up, from not booked to report delivered, with reports to view,
+ * download or send. Same board as Corporate Health Booking → Check-up Status and HR's page.
  */
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Building2, CalendarCheck } from 'lucide-react';
-import CheckupCompletionsTable from '@/components/corporate/CheckupCompletionsTable';
+import { Building2, ClipboardCheck } from 'lucide-react';
+import HealthCheckupStatusBoard from '@/components/corporate/HealthCheckupStatusBoard';
 import api from '@/utils/api';
 
 interface Corporate { id: number; companyName: string }
-const LAST_KEY = 'team.completedCheckups.corporateId';
+const LAST_KEY = 'team.completedCheckups.corporateId'; // kept so the last company is remembered
 
-export default function TeamCompletedCheckups() {
+export default function TeamHealthCheckupStatus() {
   const [params, setParams] = useSearchParams();
   const [corporates, setCorporates] = useState<Corporate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,8 +54,8 @@ export default function TeamCompletedCheckups() {
       <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2"><CalendarCheck className="h-5 w-5 text-emerald-600" /> Completed Check-ups</h1>
-            <p className="text-sm text-muted-foreground">Employees who have completed their annual health check-up, with their reports to view, download or share.</p>
+            <h1 className="text-xl font-semibold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-emerald-600" /> Health Check-up Status</h1>
+            <p className="text-sm text-muted-foreground">Every eligible employee and where they are, from not booked to report delivered.</p>
           </div>
           <div className="w-full sm:w-80">
             <Select value={selectedId} onValueChange={choose} disabled={loading || corporates.length === 0}>
@@ -75,9 +75,9 @@ export default function TeamCompletedCheckups() {
           <Card><CardContent className="py-6 text-sm text-muted-foreground">No companies are assigned to you.</CardContent></Card>
         )}
         {!error && !loading && corporates.length > 0 && !selected && (
-          <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Choose a company to see its employees' completed check-ups and reports.</CardContent></Card>
+          <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Choose a company to see its employees' health check-up status.</CardContent></Card>
         )}
-        {selected && <CheckupCompletionsTable key={selected.id} mode="team" corporateId={selected.id} corporateName={selected.companyName} showTitle={false} />}
+        {selected && <HealthCheckupStatusBoard key={selected.id} mode="team" corporateId={selected.id} corporateName={selected.companyName} showTitle={false} />}
       </div>
     </MainLayout>
   );

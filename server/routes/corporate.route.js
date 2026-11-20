@@ -10,6 +10,7 @@ import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
 import { listCheckupCompletions, getCorporateReportFile, sendReportFile, auditReportAccess } from '../services/checkup-completions.service.js';
 import { shareCorporateHealthReport } from './corporate-bookings.route.js';
+import { listCheckupStatus } from '../services/checkup-status.service.js';
 import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
 import { prepareCorporateSchedule } from '../services/corporate-scheduling.service.js';
 import { createCorporateSsoRouter } from './corporate-sso.route.js';
@@ -4116,6 +4117,20 @@ router.get('/audit-log', authCorporate, async (req, res) => {
 // ─── Completed health check-ups with reports (owner decision 2026-11-20: HR has full access to view,
 // download and share; every access is written to audit_logs as PHI access) ─────────────────────
 const hrCorporateId = (req) => Number(req.user?.corporateId || req.user?.organization_id) || null;
+
+router.get('/checkup-status', authCorporate, async (req, res) => {
+  const corporateId = hrCorporateId(req);
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate on this account' });
+  try {
+    const { fy, search, stage, page, limit } = req.query;
+    const data = await listCheckupStatus({ corporateId, actorUserId: req.user.userId || req.user.id, fy, search, stage, page, limit });
+    await auditReportAccess(req, { action: 'hr_list_checkup_status', source: 'list', reportId: 0 });
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[corporate] checkup status error:', err.message);
+    return res.status(500).json({ success: false, message: 'Unable to load health check-up status' });
+  }
+});
 
 router.get('/checkup-completions', authCorporate, async (req, res) => {
   const corporateId = hrCorporateId(req);

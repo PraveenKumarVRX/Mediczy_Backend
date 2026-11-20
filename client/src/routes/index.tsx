@@ -322,7 +322,12 @@ const WhatsAppTemplates      = lazy(() => import("@/pages/team/WhatsAppTemplates
 const ChatwootOmnichannel   = lazy(() => import("@/pages/team/ChatwootOmnichannel"));
 const TeamCorporateManagement  = lazy(() => import("@/pages/team/TeamCorporateManagement"));
 const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealthBooking"));
-const TeamCompletedCheckups    = lazy(() => import("@/pages/team/TeamCompletedCheckups"));
+const TeamHealthCheckupStatus  = lazy(() => import("@/pages/team/TeamHealthCheckupStatus"));
+/** The page was called Completed Check-ups until 2026-11-20; old links keep working. */
+function LegacyCheckupStatusRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/team/health-checkup-status${search}`} replace />;
+}
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
 const TeamStaffManagement      = lazy(() => import("@/pages/team/TeamStaffManagement"));
 const TeamSocialInbox          = lazy(() => import("@/pages/team/TeamSocialInbox"));
@@ -1529,8 +1534,9 @@ const AppRoutes = () => {
         <Route path="/team/corporate-health-packages" element={<TeamGuard permission="Corporate Management"><CorporateHealthPackages /></TeamGuard>} />
         <Route path="/team/corporate-health-booking"
           element={<TeamGuard permission="Corporate Management"><CorporateHealthBooking /></TeamGuard>} />
-        <Route path="/team/completed-checkups"
-          element={<TeamGuard permission="Corporate Management"><TeamCompletedCheckups /></TeamGuard>} />
+        <Route path="/team/health-checkup-status"
+          element={<TeamGuard permission="Corporate Management"><TeamHealthCheckupStatus /></TeamGuard>} />
+        <Route path="/team/completed-checkups" element={<LegacyCheckupStatusRedirect />} />
         <Route path="/team/hospital-management"
           element={<TeamGuard permission="Hospital Management"><TeamHospitalManagementPage /></TeamGuard>} />
         <Route path="/team/clinic-management"

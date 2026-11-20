@@ -17,7 +17,7 @@ import { Link } from 'react-router-dom';
 import api from '@/utils/api';
 import { getUserType } from '@/hooks/auth';
 import TeamCheckupApprovals from '@/components/team/TeamCheckupApprovals';
-import CheckupCompletionsTable from '@/components/corporate/CheckupCompletionsTable';
+import HealthCheckupStatusBoard from '@/components/corporate/HealthCheckupStatusBoard';
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -780,7 +780,7 @@ export default function CorporateHealthBooking() {
                 className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'completed' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
                 onClick={() => setActiveTab('completed')}
               >
-                <span className="flex items-center gap-2"><CheckCircle className="h-4 w-4" /> Completed Check-ups</span>
+                <span className="flex items-center gap-2"><CheckCircle className="h-4 w-4" /> Check-up Status</span>
               </button>
             </div>
 
@@ -1216,7 +1216,7 @@ export default function CorporateHealthBooking() {
             ║      APPROVALS TAB             ║
             ╚════════════════════════════════╝ */}
         {activeTab === 'completed' && corporate?.id && (
-          <CheckupCompletionsTable mode="team" corporateId={corporate.id} corporateName={corporate.companyName} />
+          <HealthCheckupStatusBoard mode="team" corporateId={corporate.id} corporateName={corporate.companyName} />
         )}
 
         {activeTab === 'approvals' && (

@@ -257,8 +257,8 @@ const TeamEmployeeManagement = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline" size="sm" className="flex items-center gap-1.5">
-              <Link to={selectedCorporate ? `/team/completed-checkups?corporateId=${selectedCorporate.id}` : '/team/completed-checkups'}>
-                <CalendarCheck className="h-4 w-4" /> Completed check-ups &amp; reports
+              <Link to={selectedCorporate ? `/team/health-checkup-status?corporateId=${selectedCorporate.id}` : '/team/health-checkup-status'}>
+                <CalendarCheck className="h-4 w-4" /> Health check-up status
               </Link>
             </Button>
             {selectedCorporate && (

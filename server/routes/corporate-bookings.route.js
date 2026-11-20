@@ -25,6 +25,7 @@ import { notifyBooking } from '../services/health-checkup-notify.service.js';
 import { checkupDateBlock } from '../services/checkup-calendar.service.js';
 import { recordAutomatedSend } from '../services/team-sent-folder.service.js';
 import { listCheckupCompletions, getCorporateReportFile, sendReportFile } from '../services/checkup-completions.service.js';
+import { listCheckupStatus } from '../services/checkup-status.service.js';
 
 // ──────────────────────────────────────────────
 // Reports are stored in MinIO via uploadToMinio service
@@ -1141,6 +1142,18 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
 // ──────────────────────────────────────────────
 // Completed health check-ups with their reports (list + view/download), owner decision 2026-11-20
 // ──────────────────────────────────────────────
+// Health check-up status: every eligible employee and their stage, for one financial year.
+router.get('/checkup-status', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
+  try {
+    const { fy, search, stage, page, limit } = req.query;
+    const data = await listCheckupStatus({ corporateId: req.resolvedCorporate.id, actorUserId: req.user.id, fy, search, stage, page, limit });
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[corp-reports] checkup status error:', err.message);
+    return res.status(500).json({ success: false, message: 'Unable to load health check-up status' });
+  }
+});
+
 router.get('/checkup-completions', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   try {
     const { search, from, to, status, page, limit } = req.query;

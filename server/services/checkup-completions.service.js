@@ -18,7 +18,7 @@ import { corporateAccessAudit } from './corporate-access-audit.service.js';
 const sel = { type: postgresSequelize.QueryTypes.SELECT };
 const MAX_LIMIT = 200;
 
-const COMPLETIONS_SQL = `
+export const COMPLETIONS_SQL = `
   WITH rows AS (
     SELECT 'manual' AS source, chr.id AS report_id, chr.employee_id AS user_id,
            COALESCE(chr.checkup_completed_at, chr.report_date::timestamptz) AS checkup_date,
