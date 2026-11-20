@@ -59,7 +59,7 @@ export default function TeamCompletedCheckups() {
           </div>
           <div className="w-full sm:w-80">
             <Select value={selectedId} onValueChange={choose} disabled={loading || corporates.length === 0}>
-              <SelectTrigger aria-label="Company">
+              <SelectTrigger aria-label="Company" className="h-10 [&>span]:flex-1 [&>span]:text-left">
                 <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue placeholder={loading ? 'Loading companies…' : 'Choose a company'} />
               </SelectTrigger>
@@ -77,7 +77,7 @@ export default function TeamCompletedCheckups() {
         {!error && !loading && corporates.length > 0 && !selected && (
           <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Choose a company to see its employees' completed check-ups and reports.</CardContent></Card>
         )}
-        {selected && <CheckupCompletionsTable key={selected.id} mode="team" corporateId={selected.id} corporateName={selected.companyName} />}
+        {selected && <CheckupCompletionsTable key={selected.id} mode="team" corporateId={selected.id} corporateName={selected.companyName} showTitle={false} />}
       </div>
     </MainLayout>
   );

@@ -4121,8 +4121,8 @@ router.get('/checkup-completions', authCorporate, async (req, res) => {
   const corporateId = hrCorporateId(req);
   if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate on this account' });
   try {
-    const { search, from, to, page, limit } = req.query;
-    const data = await listCheckupCompletions({ corporateId, actorUserId: req.user.userId || req.user.id, search, from, to, page, limit });
+    const { search, from, to, status, page, limit } = req.query;
+    const data = await listCheckupCompletions({ corporateId, actorUserId: req.user.userId || req.user.id, search, from, to, status, page, limit });
     await auditReportAccess(req, { action: 'hr_list_checkup_reports', corporateId, source: 'list', reportId: 0 });
     return res.json({ success: true, data });
   } catch (err) {

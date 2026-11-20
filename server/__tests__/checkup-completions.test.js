@@ -29,7 +29,7 @@ beforeEach(() => { queries.length = 0; contexts.length = 0; respond = () => []; 
 
 describe('listCheckupCompletions', () => {
   test('runs in the corporate booking context, scoped to the corporate, and maps rows', async () => {
-    respond = (sql) => (sql.includes('count(*)::int AS total') ? [{ total: 2, employees: 1, reports: 1, awaiting_reports: 1 }] : [manualRow, bookingRow]);
+    respond = (sql) => (sql.includes('AS all_rows') ? [{ total: 2, all_rows: 2, employees: 1, reports: 1, awaiting_reports: 1, sent: 1, not_sent: 0 }] : [manualRow, bookingRow]);
     const out = await svc.listCheckupCompletions({ corporateId: 45, actorUserId: 7, limit: 5000, page: 0, from: 'yesterday', to: '2026-12-31' });
     expect(contexts).toEqual([{ corporateId: 45, bookedByUserId: 7 }]);
     expect(queries).toHaveLength(2);
@@ -38,13 +38,26 @@ describe('listCheckupCompletions', () => {
       expect(q.opts.replacements).toMatchObject({ corporateId: 45, from: null, to: '2026-12-31' });
     }
     expect(queries[0].opts.replacements).toMatchObject({ limit: 200, offset: 0 });
-    expect(out.summary).toEqual({ employeesCompleted: 1, reports: 1, awaitingReports: 1 });
+    expect(out.summary).toMatchObject({ employeesCompleted: 1, reports: 1, awaitingReports: 1 });
     expect(out.rows[0]).toMatchObject({
       key: 'manual-47', source: 'manual', reportId: 47, status: 'report_available', canShare: true,
       employee: { userId: 4898, name: 'Lella Mallesh', employeeId: '103818', department: 'Sales' },
       report: { sizeBytes: 12378110, hasFile: true, notifiedEmail: true, notifiedWhatsapp: false },
     });
     expect(out.rows[1]).toMatchObject({ key: 'booking-9', status: 'awaiting_report', report: null, canShare: false });
+  });
+
+  test('a status filter narrows the page and the total, while the summary keeps every chip count', async () => {
+    respond = (sql) => (sql.includes('AS all_rows') ? [{ total: 30, all_rows: 101, employees: 74, reports: 101, awaiting_reports: 0, sent: 71, not_sent: 30 }] : []);
+    const out = await svc.listCheckupCompletions({ corporateId: 5, actorUserId: 7, status: 'not_sent' });
+    expect(queries[0].sql).toContain("AND rows.source <> 'booking' AND NOT (COALESCE(rows.notified_email, false) OR COALESCE(rows.notified_whatsapp, false))");
+    expect(queries[1].sql).toContain("count(*) FILTER (WHERE s.source <> 'booking' AND NOT");
+    expect(out).toMatchObject({ total: 30, status: 'not_sent', summary: { all: 101, reports: 101, sentToEmployee: 71, notSent: 30 } });
+    queries.length = 0;
+    const any = await svc.listCheckupCompletions({ corporateId: 5, actorUserId: 7, status: "x'; DROP TABLE users; --" });
+    expect(any.status).toBeNull();
+    expect(queries[0].sql).toContain('AND true ORDER BY');
+    expect(queries.some((q) => q.sql.includes('DROP'))).toBe(false);
   });
 
   test('every source is filtered by the corporate, pre-employment reports are left out', () => {

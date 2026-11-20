@@ -1143,8 +1143,8 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
 // ──────────────────────────────────────────────
 router.get('/checkup-completions', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   try {
-    const { search, from, to, page, limit } = req.query;
-    const data = await listCheckupCompletions({ corporateId: req.resolvedCorporate.id, actorUserId: req.user.id, search, from, to, page, limit });
+    const { search, from, to, status, page, limit } = req.query;
+    const data = await listCheckupCompletions({ corporateId: req.resolvedCorporate.id, actorUserId: req.user.id, search, from, to, status, page, limit });
     return res.json({ success: true, data });
   } catch (err) {
     console.error('[corp-reports] completions error:', err.message);

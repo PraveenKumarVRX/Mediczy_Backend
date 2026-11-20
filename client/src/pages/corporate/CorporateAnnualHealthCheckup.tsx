@@ -480,7 +480,7 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
         )}
 
         {/* Completed check-ups with reports: view, download, share (HR full access, every access audited) */}
-        <CheckupCompletionsTable mode="hr" className="bg-slate-900/60 border-slate-700/60 text-slate-100" />
+        <CheckupCompletionsTable mode="hr" cardClassName="bg-slate-900/60 border-slate-700/60 text-slate-100" />
 
         {/* Report Status panel */}
         <Card className="bg-slate-900/60 border-slate-700/60">

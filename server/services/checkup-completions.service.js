@@ -88,25 +88,41 @@ const rowOut = (r) => ({
   canShare: r.source === 'manual',
 });
 
-/** The list, a page of it and a summary. */
-export async function listCheckupCompletions({ corporateId, actorUserId, search = '', from = null, to = null, page = 1, limit = 50 }) {
+// Status chips: report ready, awaiting the report, or a report not yet sent to the employee.
+export const STATUSES = ['report_available', 'awaiting_report', 'not_sent'];
+const sentSql = (a) => `(COALESCE(${a}.notified_email, false) OR COALESCE(${a}.notified_whatsapp, false))`;
+const statusSql = (a, status) => ({
+  report_available: `${a}.source <> 'booking'`,
+  awaiting_report: `${a}.source = 'booking'`,
+  not_sent: `${a}.source <> 'booking' AND NOT ${sentSql(a)}`,
+}[status] || 'true');
+
+/** The list, a page of it and a summary. The summary ignores the status filter so every chip can show its count. */
+export async function listCheckupCompletions({ corporateId, actorUserId, search = '', from = null, to = null, status = '', page = 1, limit = 50 }) {
   const n = Math.min(Math.max(Number(limit) || 50, 1), MAX_LIMIT);
   const p = Math.max(Number(page) || 1, 1);
   const replacements = {
     corporateId, search: String(search || '').trim().slice(0, 80),
     from: ISO.test(String(from || '')) ? from : null, to: ISO.test(String(to || '')) ? to : null,
   };
+  const st = STATUSES.includes(status) ? status : '';
   return withCorporateBookingContext({ corporateId, bookedByUserId: actorUserId }, async (transaction) => {
-    const rows = await postgresSequelize.query(`${COMPLETIONS_SQL} ORDER BY rows.checkup_date DESC NULLS LAST, rows.report_id DESC LIMIT :limit OFFSET :offset`,
+    const rows = await postgresSequelize.query(`${COMPLETIONS_SQL} AND ${statusSql('rows', st)} ORDER BY rows.checkup_date DESC NULLS LAST, rows.report_id DESC LIMIT :limit OFFSET :offset`,
       { ...sel, replacements: { ...replacements, limit: n, offset: (p - 1) * n }, transaction });
     const [summary] = await postgresSequelize.query(
-      `SELECT count(*)::int AS total, count(DISTINCT user_id)::int AS employees,
-              count(*) FILTER (WHERE source <> 'booking')::int AS reports, count(*) FILTER (WHERE source = 'booking')::int AS awaiting_reports
+      `SELECT count(*) FILTER (WHERE ${statusSql('s', st)})::int AS total, count(*)::int AS all_rows, count(DISTINCT user_id)::int AS employees,
+              count(*) FILTER (WHERE ${statusSql('s', 'report_available')})::int AS reports,
+              count(*) FILTER (WHERE ${statusSql('s', 'awaiting_report')})::int AS awaiting_reports,
+              count(*) FILTER (WHERE s.source <> 'booking' AND ${sentSql('s')})::int AS sent,
+              count(*) FILTER (WHERE ${statusSql('s', 'not_sent')})::int AS not_sent
          FROM (${COMPLETIONS_SQL}) s`, { ...sel, replacements, transaction });
     return {
       rows: rows.map(rowOut),
-      page: p, limit: n, total: summary.total,
-      summary: { employeesCompleted: summary.employees, reports: summary.reports, awaitingReports: summary.awaiting_reports },
+      page: p, limit: n, total: summary.total, status: st || null,
+      summary: {
+        employeesCompleted: summary.employees, reports: summary.reports, awaitingReports: summary.awaiting_reports,
+        sentToEmployee: summary.sent, notSent: summary.not_sent, all: summary.all_rows,
+      },
     };
   });
 }
