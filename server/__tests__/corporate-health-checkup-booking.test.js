@@ -3,6 +3,8 @@ import express from 'express';
 import request from 'supertest';
 const query=jest.fn(),tx={id:'dedicated-connection'},transaction=jest.fn(async fn=>fn(tx));
 const email=jest.fn(),whatsapp=jest.fn();let role='team';
+// Dates are not under test here (see checkup-closed-days.test.js): every date is open.
+jest.unstable_mockModule('../services/checkup-calendar.service.js',()=>({checkupDateBlock:async()=>null,closedDates:async()=>[],isSunday:()=>false}));
 jest.unstable_mockModule('../db/postgres-sequelize.js',()=>({postgresSequelize:{query,transaction,QueryTypes:{SELECT:'SELECT'}}}));
 jest.unstable_mockModule('../middleware/auth.middleware.js',()=>({authUser:(req,_res,next)=>{req.user={id:7,role,isTeam:role==='team'};next();}}));
 jest.unstable_mockModule('../middleware/corporateTenant.js',()=>({requireCorporateAccess:(req,_res,next)=>{req.resolvedCorporate={id:45};next();}}));

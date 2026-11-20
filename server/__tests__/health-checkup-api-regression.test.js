@@ -4,6 +4,8 @@ import request from 'supertest';
 const query = jest.fn();
 let user = { id: 1, role: 'user' };
 const tx = { commit: jest.fn(), rollback: jest.fn() };
+// Dates are not under test here (see checkup-closed-days.test.js): every date is open.
+jest.unstable_mockModule('../services/checkup-calendar.service.js',()=>({checkupDateBlock:async()=>null,closedDates:async()=>[],isSunday:()=>false}));
 jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({ authUser: (req, res, next) => { req.user = user; next(); } }));
 jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({ postgresSequelize: { query, QueryTypes: { SELECT: 'SELECT' }, transaction: async () => tx } }));
 jest.unstable_mockModule('../services/payment-gateway.service.js', () => ({ default: { verifyRazorpaySignature: () => true, createRazorpayOrder: async () => ({ orderId: 'order-1', amount: 50, currency: 'INR' }) } }));

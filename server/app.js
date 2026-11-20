@@ -130,6 +130,7 @@ import availabilityRouter from './routes/availability.route.js';
 import membershipRouter from './routes/membership.route.js';
 import wellnessRouter from './routes/wellness.route.js';
 import womensHealthRouter from './routes/womens-health.route.js';
+import checkupHolidaysRouter from './routes/checkup-holidays.route.js';
 import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
 import healthProgramsRouter from './routes/health-programs.route.js';
 import teamRouter from './routes/team.route.js';
@@ -1519,6 +1520,7 @@ app.use("/api/ahunground", ayushmanRouter); // retained alias
 app.use('/api/places', placesRouter);
 
 app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats endpoint, outside /api to bypass middleware)
+app.use('/api/admin/checkup-holidays', checkupHolidaysRouter); // Closed days for health check-ups (admin/team)
 app.use('/api/admin', adminRouter);
 app.use('/api/admin', adminApiRouter); // API credentials, aggregators, and other admin APIs
 app.use('/api/admin/orders-revenue', adminOrdersRevenueRouter); // Real orders/payments/membership-upgrade purchase history

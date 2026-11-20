@@ -22,6 +22,7 @@ import { corporateReportDownloadUrl } from '../services/corporate-report-storage
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 import { computeReportSla } from '../services/corporate-wellness-mis.service.js';
 import { notifyBooking } from '../services/health-checkup-notify.service.js';
+import { checkupDateBlock } from '../services/checkup-calendar.service.js';
 import { recordAutomatedSend } from '../services/team-sent-folder.service.js';
 
 // ──────────────────────────────────────────────
@@ -485,7 +486,8 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, requireCorporateAcc
     corporateId,
     corporateName = '',
     sendEmail = true,
-    sendWhatsapp = true
+    sendWhatsapp = true,
+    overrideReason = ''  // emergency booking on a Sunday/holiday: why (recorded on the order)
   } = req.body;
 
   if (!corporateId) {
@@ -497,6 +499,22 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, requireCorporateAcc
       message: 'employeeId, labId, checkupDate and testPackage are required'
     });
   }
+
+  // Sundays and national/festival holidays are closed for check-ups. Team staff may book one
+  // anyway for an emergency by giving a reason, which is written onto the order.
+  const closedDay = await checkupDateBlock(String(checkupDate).slice(0, 10));
+  const override = String(overrideReason || '').trim();
+  if (closedDay && override.length < 10) {
+    return res.status(409).json({
+      success: false,
+      code: closedDay.code,
+      message: closedDay.message,
+      overridable: true,
+      action: 'For an emergency, send overrideReason (at least 10 characters) to book this date anyway.'
+    });
+  }
+  const overrideNote = closedDay ? ` | CLOSED-DAY OVERRIDE (${closedDay.holiday || 'Sunday'}) by ${req.user.email}: ${override}` : '';
+  if (closedDay) console.warn(`[corporate-bookings] closed-day override for ${checkupDate} by user ${req.user.id}: ${override}`);
 
   try {
     // ── 1. Fetch employee details ──────────────────────────────────
@@ -517,7 +535,7 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, requireCorporateAcc
     const order=await createCorporateCheckupOrder({
       corporateId:resolvedCorporateId, employeeId, labId, bookedByUserId:req.user.id,
       orderNumber, testPackage,
-      notes:`Corp Health Checkup | Lab: ${labName} (ID:${labId}) | Date: ${checkupDate} ${checkupTime || ''} | ${notes} | Booked by team: ${req.user.email}`
+      notes:`Corp Health Checkup | Lab: ${labName} (ID:${labId}) | Date: ${checkupDate} ${checkupTime || ''} | ${notes} | Booked by team: ${req.user.email}${overrideNote}`
     });
     const bookingId=order.id;
     const employeeFullName = `${employee.firstName} ${employee.lastName}`.trim();

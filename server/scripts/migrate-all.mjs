@@ -149,6 +149,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261120000100-users-email-unique-ignoring-case.migration.js',
   '20261120000200-womens-health.migration.js',
   '20261120000300-paid-basic-plan.migration.js',
+  '20261120000400-health-checkup-holidays.migration.js',
 ];
 
 function runStep(step) {
