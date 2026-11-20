@@ -122,12 +122,14 @@ describe('sending and auditing', () => {
     expect(headers['Content-Disposition']).toBe('inline; filename="r"');
   });
 
-  test('HR access is written to audit_logs as PHI and a failed write does not break the request', async () => {
-    const req = { user: { id: 45, userId: 31, role: 'corporate_hr', email: 'hr@example.com' }, ip: '1.2.3.4', headers: { 'user-agent': 'jest' }, method: 'GET', originalUrl: '/api/corporate/checkup-reports/manual/47/file' };
+  test('HR access is written to the corporate report access log with the HR user, and a failed write does not break the request', async () => {
+    const req = { user: { id: 45, corporateId: 45, userId: 31, role: 'hr_staff', email: 'hr@example.com' }, ip: '1.2.3.4', headers: {}, method: 'GET' };
     await svc.auditReportAccess(req, { action: 'hr_view_checkup_report', corporateId: 45, source: 'manual', reportId: 47, employeeUserId: 4898 });
-    expect(queries[0].sql).toContain('INSERT INTO audit_logs');
-    expect(queries[0].sql).toContain("true, 'corporate_hr_report_access'");
-    expect(queries[0].opts.replacements).toMatchObject({ userId: '31', action: 'hr_view_checkup_report', resourceId: 'manual-47' });
+    expect(queries[0].sql).toContain('INSERT INTO corporate_report_access_log');
+    expect(queries[0].opts.replacements).toMatchObject({ corporateId: 45, userId: 31, actorType: 'hr', action: 'hr_view_checkup_report', resourceId: 'manual-47' });
+    await svc.auditReportAccess(req, { action: 'hr_list_checkup_reports', source: 'list', reportId: 0 });
+    expect(queries[1].opts.replacements).toMatchObject({ resourceId: 'checkup-completions', title: 'Completed check-ups list' });
+    for (const a of ['hr_list_checkup_reports', 'hr_view_checkup_report', 'hr_download_checkup_report', 'hr_share_checkup_report']) expect(a.length).toBeLessThanOrEqual(30); // action is VARCHAR(30)
     respond = () => { throw new Error('db down'); };
     await expect(svc.auditReportAccess(req, { action: 'x', corporateId: 1, source: 'manual', reportId: 1 })).resolves.toBeUndefined();
   });

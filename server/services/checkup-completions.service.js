@@ -2,7 +2,7 @@
  * Completed health check-ups for a corporate, with their reports — one list for the Team portal
  * (/api/corporate-bookings/checkup-completions) and the corporate HR portal
  * (/api/corporate/checkup-completions). Owner decision 2026-11-20: HR gets full access to view,
- * download and share reports; every HR access is written to audit_logs (is_phi).
+ * download and share reports; every HR access is written to corporate_report_access_log.
  *
  * Rows come from: reports uploaded by Team (corporate_health_reports), lab reports that arrived by
  * email and were matched to the employee (reports with metadata.emailId, linked to the corporate
@@ -13,6 +13,7 @@
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { withCorporateBookingContext } from './corporate-health-checkup-booking.service.js';
 import { readStoredReportFile } from './corporate-report-storage-client.js';
+import { corporateAccessAudit } from './corporate-access-audit.service.js';
 
 const sel = { type: postgresSequelize.QueryTypes.SELECT };
 const MAX_LIMIT = 200;
@@ -174,19 +175,18 @@ export function sendReportFile(res, file, disposition = 'inline') {
   return res.end(file.buffer);
 }
 
-/** Every HR access to a report (view, download, share, list export) goes to audit_logs. */
-export async function auditReportAccess(req, { action, corporateId, source, reportId, employeeUserId = null }) {
+/**
+ * Every HR access (list, view, download, share) goes to corporate_report_access_log, the same
+ * log the HR report download already uses. (audit_logs is FORCED RLS and refused these rows.)
+ */
+const accessAudit = corporateAccessAudit(postgresSequelize);
+export async function auditReportAccess(req, { action, source = null, reportId = null, employeeUserId = null }) {
   try {
-    await postgresSequelize.query(
-      `INSERT INTO audit_logs (id, user_id, user_type, user_email, action, resource_type, resource_id, data_fields, ip_address, user_agent,
-                               method, endpoint, status, status_code, is_phi, purpose, timestamp, created_at, updated_at)
-       VALUES (gen_random_uuid(), :userId, :userType, :email, :action, 'corporate_health_report', :resourceId, :fields::jsonb, :ip, :ua,
-               :method, :endpoint, 'success', 200, true, 'corporate_hr_report_access', now(), now(), now())`,
-      { replacements: {
-        userId: String(req.user?.userId ?? req.user?.id ?? ''), userType: String(req.user?.role || req.userRole || 'corporate'), email: req.user?.email || null,
-        action, resourceId: `${source}-${reportId}`, fields: JSON.stringify({ corporateId, source, reportId, employeeUserId }),
-        ip: req.ip || null, ua: String(req.headers?.['user-agent'] || '').slice(0, 300), method: req.method, endpoint: req.originalUrl,
-      } });
+    await accessAudit.record(req, {
+      action,
+      resourceId: reportId ? `${source}-${reportId}` : 'checkup-completions',
+      title: employeeUserId ? `Health check-up report of employee user ${employeeUserId}` : 'Completed check-ups list',
+    });
   } catch (error) {
     console.error('[checkup-completions] audit write failed:', error.message);
   }
