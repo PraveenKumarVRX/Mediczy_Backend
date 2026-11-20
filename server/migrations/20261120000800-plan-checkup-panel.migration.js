@@ -2,9 +2,9 @@
  * The health check-up included in One (1, the member) and Family (2: the member and spouse) —
  * booked as a ₹0 package through /api/health-checkups (services/plan-checkup.service.js).
  *
- * The core panel below is the common Indian basic health check-up composition and is a PROPOSAL
- * pending clinical sign-off (metadata ...healthCheck.reviewRequired = true). Team can change it in
- * the admin Plans screen (membership plan metadata).
+ * The core panel below is the common Indian basic health check-up composition, APPROVED by the
+ * owner on 2026-11-20 (metadata ...healthCheck.reviewRequired = false, approval recorded). Team can
+ * change it in the admin Plans screen (membership plan metadata).
  *
  * Run: node scripts/ssm-env-loader.mjs scripts/run-one-migration.mjs migrations/20261120000800-plan-checkup-panel.migration.js
  */
@@ -21,7 +21,8 @@ export async function up(client) {
       `UPDATE membership_plans
           SET metadata = jsonb_set(metadata, '{coverageDetails,healthCheck}',
                 COALESCE(metadata->'coverageDetails'->'healthCheck', '{}'::jsonb)
-                || jsonb_build_object('tests', $2::jsonb, 'eligibleRelations', $3::jsonb, 'preparationInstructions', $4::jsonb, 'reviewRequired', true), true),
+                || jsonb_build_object('tests', $2::jsonb, 'eligibleRelations', $3::jsonb, 'preparationInstructions', $4::jsonb, 'reviewRequired', false,
+                     'approval', jsonb_build_object('approvedBy', 'owner', 'approvedAt', '2026-11-20')), true),
               "updatedAt" = now()
         WHERE code = $1`,
       [code, JSON.stringify(CORE_PANEL), JSON.stringify(relations), JSON.stringify(PREPARATION)]);
