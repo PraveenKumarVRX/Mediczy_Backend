@@ -24,6 +24,7 @@ import { computeReportSla } from '../services/corporate-wellness-mis.service.js'
 import { notifyBooking } from '../services/health-checkup-notify.service.js';
 import { checkupDateBlock } from '../services/checkup-calendar.service.js';
 import { recordAutomatedSend } from '../services/team-sent-folder.service.js';
+import { listCheckupCompletions, getCorporateReportFile, sendReportFile } from '../services/checkup-completions.service.js';
 
 // ──────────────────────────────────────────────
 // Reports are stored in MinIO via uploadToMinio service
@@ -1031,107 +1032,136 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
 // POST /api/corporate-bookings/reports/:id/share
 // Re-send email + WhatsApp for an already-uploaded report
 // ──────────────────────────────────────────────
+/**
+ * Re-send an uploaded report to the employee (email + WhatsApp). Shared by the Team portal and,
+ * since 2026-11-20, the corporate HR portal. `corporateId` scopes the report; the caller has
+ * already checked that the actor may act for that corporate.
+ * @returns {Promise<{ status: number, body: object }>}
+ */
+export async function shareCorporateHealthReport({ reportId, corporateId, senderUserId, sendEmail = true, sendWhatsapp = true, corporateName = '' }) {
+  const id = parseInt(reportId);
+  const [row] = await postgresSequelize.query(
+    `SELECT chr.*, pr.metadata AS storage_metadata, u."firstName", u."lastName", u.email, u."phoneNumber"
+     FROM corporate_health_reports chr
+     JOIN users u ON u.id = chr.employee_id
+     LEFT JOIN LATERAL (SELECT r.metadata FROM reports r WHERE r."userId"=chr.employee_id AND r.metadata->>'source'='team_corporate_health_upload' AND r.metadata->>'corporateHealthReportId'=chr.id::text LIMIT 1) pr ON true
+     WHERE chr.id = :id AND chr.corporate_id = :corporateId LIMIT 1`,
+    { replacements: { id, corporateId: Number(corporateId) }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  if (!row) return { status: 404, body: { success: false, message: 'Report not found' } };
+
+  if(row.storage_metadata?.storageBackend==='corporate_minio')row.report_url=await corporateReportDownloadUrl(row.s3_key,row.storage_metadata.bucket);
+  const employeeFullName = `${row.firstName} ${row.lastName}`.trim();
+  const displayDate = new Date(row.report_date).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'long', year: 'numeric'
+  });
+  const reportLabel = REPORT_TYPE_LABELS[row.report_type] || row.report_type;
+
+  let emailStatus = 'skipped';
+  let waStatus = 'skipped';
+
+  if (sendEmail!==false&&sendEmail!=='false') {
+    if (isPlaceholderEmail(row.email)) {
+      console.log(`ℹ️ [corp-reports] Share email skipped — placeholder address: ${row.email}`);
+      emailStatus = 'skipped_placeholder';
+    } else {
+      try {
+        const html = buildReportEmailHtml({
+          employeeName: employeeFullName,
+          corporateName,
+          reports:[{reportName:row.report_name,reportUrl:row.report_url,mimeType:row.mime_type}],
+          reportLabel,
+          reportDate: displayDate,
+          reportUrl: row.report_url,
+          notes: row.notes,
+          mimeType: row.mime_type
+        });
+        await sendCorporateEmail(senderUserId, {
+          to: row.email,
+          subject: `Your ${reportLabel} Report — ${corporateName}`,
+          html: html
+        });
+        emailStatus = 'sent';
+      } catch (e) {
+        emailStatus = 'failed';
+        console.error('[corp-reports] share email failed:', e.message);
+      }
+    }
+  }
+
+  if (sendWhatsapp!==false&&sendWhatsapp!=='false') {
+    const rawPhone = (row.phoneNumber || '').replace(/\D/g, '');
+    const phoneE164 = rawPhone.startsWith('91') ? `+${rawPhone}` : `+91${rawPhone}`;
+    if (rawPhone.length >= 10) {
+      try {
+        const waText =
+          `📋 *Health Report — ${reportLabel}*\n\n` +
+          `Dear ${employeeFullName},\n\n` +
+          `Your *${row.report_name}* report (${displayDate}) from *${corporateName}* is available:\n\n` +
+          `🔗 ${row.report_url}\n\n` +
+          `— My SmartHealth | ${corporateName} Wellness Team`;
+        await whatsappProductionService.sendSessionMessage({ to: phoneE164, body: waText });
+        waStatus = 'sent';
+      } catch (e) {
+        waStatus = 'failed';
+        console.error('[corp-reports] share WA failed:', e.message);
+      }
+    }
+  }
+
+  await postgresSequelize.query(
+    `UPDATE corporate_health_reports
+     SET notified_email = CASE WHEN :emailSent THEN TRUE ELSE notified_email END,
+         notified_whatsapp = CASE WHEN :waSent THEN TRUE ELSE notified_whatsapp END,
+         notified_at = NOW()
+     WHERE id = :id`,
+    { replacements: { id, emailSent: emailStatus === 'sent', waSent: waStatus === 'sent' }, type: postgresSequelize.QueryTypes.UPDATE }
+  );
+
+  return { status: 200, body: { success: true, message: 'Notifications resent', notifications: { email: emailStatus, whatsapp: waStatus }, employeeUserId: row.employee_id } };
+}
+
 router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
     const { sendEmail = true, sendWhatsapp = true, corporateName = '' } = req.body;
-
-    const [row] = await postgresSequelize.query(
-      `SELECT chr.*, pr.metadata AS storage_metadata, u."firstName", u."lastName", u.email, u."phoneNumber"
-       FROM corporate_health_reports chr
-       JOIN users u ON u.id = chr.employee_id
-       LEFT JOIN LATERAL (SELECT r.metadata FROM reports r WHERE r."userId"=chr.employee_id AND r.metadata->>'source'='team_corporate_health_upload' AND r.metadata->>'corporateHealthReportId'=chr.id::text LIMIT 1) pr ON true
-       WHERE chr.id = :id LIMIT 1`,
-      { replacements: { id: parseInt(id) }, type: postgresSequelize.QueryTypes.SELECT }
+    const [owner] = await postgresSequelize.query(
+      `SELECT corporate_id FROM corporate_health_reports WHERE id = :id LIMIT 1`,
+      { replacements: { id: parseInt(req.params.id) }, type: postgresSequelize.QueryTypes.SELECT }
     );
-
-    if (!row || (req.body.corporateId && Number(req.body.corporateId)!==row.corporate_id)) return res.status(404).json({ success: false, message: 'Report not found' });
-    if (!(await assertCorporateAccessForId(req, res, row.corporate_id))) return;
-
-    if(row.storage_metadata?.storageBackend==='corporate_minio')row.report_url=await corporateReportDownloadUrl(row.s3_key,row.storage_metadata.bucket);
-    const employeeFullName = `${row.firstName} ${row.lastName}`.trim();
-    const displayDate = new Date(row.report_date).toLocaleDateString('en-IN', {
-      day: 'numeric', month: 'long', year: 'numeric'
-    });
-    const reportLabel = REPORT_TYPE_LABELS[row.report_type] || row.report_type;
-
-    let emailStatus = 'skipped';
-    let waStatus = 'skipped';
-
-    if (sendEmail!==false&&sendEmail!=='false') {
-      if (isPlaceholderEmail(row.email)) {
-        console.log(`ℹ️ [corp-reports] Share email skipped — placeholder address: ${row.email}`);
-        emailStatus = 'skipped_placeholder';
-      } else {
-        try {
-          const html = buildReportEmailHtml({
-            employeeName: employeeFullName,
-            corporateName,
-            reports:[{reportName:row.report_name,reportUrl:row.report_url,mimeType:row.mime_type}],
-            reportLabel,
-            reportDate: displayDate,
-            reportUrl: row.report_url,
-            notes: row.notes,
-            mimeType: row.mime_type
-          });
-          await sendCorporateEmail(req.user.id, {
-            to: row.email,
-            subject: `Your ${reportLabel} Report — ${corporateName}`,
-            html: html
-          });
-          emailStatus = 'sent';
-        } catch (e) {
-          emailStatus = 'failed';
-          console.error('[corp-reports] share email failed:', e.message);
-        }
-      }
-    }
-
-    if (sendWhatsapp!==false&&sendWhatsapp!=='false') {
-      const rawPhone = (row.phoneNumber || '').replace(/\D/g, '');
-      const phoneE164 = rawPhone.startsWith('91') ? `+${rawPhone}` : `+91${rawPhone}`;
-      if (rawPhone.length >= 10) {
-        try {
-          const waText =
-            `📋 *Health Report — ${reportLabel}*\n\n` +
-            `Dear ${employeeFullName},\n\n` +
-            `Your *${row.report_name}* report (${displayDate}) from *${corporateName}* is available:\n\n` +
-            `🔗 ${row.report_url}\n\n` +
-            `— My SmartHealth | ${corporateName} Wellness Team`;
-          await whatsappProductionService.sendSessionMessage({ to: phoneE164, body: waText });
-          waStatus = 'sent';
-        } catch (e) {
-          waStatus = 'failed';
-          console.error('[corp-reports] share WA failed:', e.message);
-        }
-      }
-    }
-
-    // Update notification flags
-    await postgresSequelize.query(
-      `UPDATE corporate_health_reports
-       SET notified_email = CASE WHEN :emailSent THEN TRUE ELSE notified_email END,
-           notified_whatsapp = CASE WHEN :waSent THEN TRUE ELSE notified_whatsapp END,
-           notified_at = NOW()
-       WHERE id = :id`,
-      {
-        replacements: {
-          id: parseInt(id),
-          emailSent: emailStatus === 'sent',
-          waSent: waStatus === 'sent'
-        },
-        type: postgresSequelize.QueryTypes.UPDATE
-      }
-    );
-
-    return res.json({
-      success: true,
-      message: 'Notifications resent',
-      notifications: { email: emailStatus, whatsapp: waStatus }
-    });
+    if (!owner || (req.body.corporateId && Number(req.body.corporateId)!==owner.corporate_id)) return res.status(404).json({ success: false, message: 'Report not found' });
+    if (!(await assertCorporateAccessForId(req, res, owner.corporate_id))) return;
+    const result = await shareCorporateHealthReport({ reportId: req.params.id, corporateId: owner.corporate_id, senderUserId: req.user.id, sendEmail, sendWhatsapp, corporateName });
+    return res.status(result.status).json(result.body);
   } catch (err) {
     console.error('[corp-reports] share error:', err);
     return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────
+// Completed health check-ups with their reports (list + view/download), owner decision 2026-11-20
+// ──────────────────────────────────────────────
+router.get('/checkup-completions', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
+  try {
+    const { search, from, to, page, limit } = req.query;
+    const data = await listCheckupCompletions({ corporateId: req.resolvedCorporate.id, actorUserId: req.user.id, search, from, to, page, limit });
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[corp-reports] completions error:', err.message);
+    return res.status(500).json({ success: false, message: 'Unable to load completed check-ups' });
+  }
+});
+
+// The report id is :reportId, never :id — requireCorporateAccess reads req.params.id as the
+// corporate id, which would treat a report id as a corporate id (the entity-UID rule's hazard).
+router.get('/checkup-reports/:source/:reportId/file', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
+  try {
+    const file = await getCorporateReportFile({ corporateId: req.resolvedCorporate.id, actorUserId: req.user.id, source: req.params.source, reportId: req.params.reportId });
+    if (!file) return res.status(404).json({ success: false, message: 'Report not found' });
+    return sendReportFile(res, file, req.query.download === '1' ? 'attachment' : 'inline');
+  } catch (err) {
+    console.error('[corp-reports] report file error:', err.message);
+    if (!res.headersSent) return res.status(err.status === 404 ? 404 : 502).json({ success: false, code: err.code, message: err.status === 404 ? err.message : 'Unable to load the report' });
   }
 });
 

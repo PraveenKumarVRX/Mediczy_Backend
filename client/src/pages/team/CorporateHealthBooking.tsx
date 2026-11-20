@@ -17,6 +17,7 @@ import { Link } from 'react-router-dom';
 import api from '@/utils/api';
 import { getUserType } from '@/hooks/auth';
 import TeamCheckupApprovals from '@/components/team/TeamCheckupApprovals';
+import CheckupCompletionsTable from '@/components/corporate/CheckupCompletionsTable';
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -159,7 +160,7 @@ export default function CorporateHealthBooking() {
   const { toast } = useToast();
 
   // ── tabs ──
-  const [activeTab, setActiveTab] = useState<'book' | 'approvals' | 'history' | 'reports'>('book');
+  const [activeTab, setActiveTab] = useState<'book' | 'approvals' | 'history' | 'reports' | 'completed'>('book');
 
   // ── employee search ──
   const [employeeSearch, setEmployeeSearch] = useState('');
@@ -750,7 +751,7 @@ export default function CorporateHealthBooking() {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 mb-6 border-b">
+            <div className="flex gap-2 mb-6 border-b overflow-x-auto whitespace-nowrap">
               <button
                 className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'book' ? 'border-blue-600 text-blue-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
                 onClick={() => setActiveTab('book')}
@@ -774,6 +775,12 @@ export default function CorporateHealthBooking() {
                 onClick={() => setActiveTab('reports')}
               >
                 <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> Health Reports</span>
+              </button>
+              <button
+                className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'completed' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setActiveTab('completed')}
+              >
+                <span className="flex items-center gap-2"><CheckCircle className="h-4 w-4" /> Completed Check-ups</span>
               </button>
             </div>
 
@@ -1208,6 +1215,10 @@ export default function CorporateHealthBooking() {
         {/* ╔════════════════════════════════╗
             ║      APPROVALS TAB             ║
             ╚════════════════════════════════╝ */}
+        {activeTab === 'completed' && corporate?.id && (
+          <CheckupCompletionsTable mode="team" corporateId={corporate.id} corporateName={corporate.companyName} />
+        )}
+
         {activeTab === 'approvals' && (
           <TeamCheckupApprovals corporateId={corporate?.id} corporateName={corporate?.companyName} />
         )}

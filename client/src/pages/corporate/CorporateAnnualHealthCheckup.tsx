@@ -18,6 +18,7 @@ import api from '@/utils/api';
 import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 import { exportToCSV } from '@/utils/exportToExcel';
+import CheckupCompletionsTable from '@/components/corporate/CheckupCompletionsTable';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -477,6 +478,9 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Completed check-ups with reports: view, download, share (HR full access, every access audited) */}
+        <CheckupCompletionsTable mode="hr" className="bg-slate-900/60 border-slate-700/60 text-slate-100" />
 
         {/* Report Status panel */}
         <Card className="bg-slate-900/60 border-slate-700/60">

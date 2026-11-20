@@ -53,3 +53,32 @@ export async function readCorporateReportFile(key,bucket){
   const response=await getCorporateReportClient().send(new GetObjectCommand({Bucket:bucket,Key:key}));
   return Buffer.from(await response.Body.transformToByteArray());
 }
+
+/* Reports were uploaded to whichever store was current at the time (minio.mediqzy.com,
+ * minio-pacs.mediqzy.com, iDrive e2, AWS S3), and the stored URL names that store. Read each one
+ * from its own store: the default client alone cannot reach files written before a switch. */
+const STORE_PREFIXES=['CORPORATE_REPORTS_MINIO','PACS_ARCHIVE_MINIO','MINIO','PACS_MINIO'];
+const storeClients=new Map();
+function storeForHost(host){
+  for(const prefix of STORE_PREFIXES){
+    const endpoint=process.env[`${prefix}_ENDPOINT`],accessKeyId=process.env[`${prefix}_ACCESS_KEY`],secretAccessKey=process.env[`${prefix}_SECRET_KEY`];
+    if(!endpoint||!accessKeyId||!secretAccessKey)continue;
+    let endpointHost;try{endpointHost=new URL(endpoint).host;}catch{continue;}
+    if(endpointHost!==host)continue;
+    if(!storeClients.has(prefix))storeClients.set(prefix,new S3Client({endpoint:endpoint.replace(/\/$/,''),region:process.env[`${prefix}_REGION`]||'us-east-1',credentials:{accessKeyId,secretAccessKey},forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',maxAttempts:2}));
+    return storeClients.get(prefix);
+  }
+  return null;
+}
+/** Read a stored report: from the store its URL names (path-style URL: /<bucket>/<key>), else the default store. */
+export async function readStoredReportFile({key,url=null,bucket=null}){
+  if(!key)throw new Error('Report storage location is missing');
+  let client=null,urlBucket=null;
+  if(url){try{const u=new URL(url);client=storeForHost(u.host);urlBucket=decodeURIComponent(u.pathname.split('/')[1]||'')||null;}catch{/* not a URL */}}
+  if(client){
+    const response=await client.send(new GetObjectCommand({Bucket:urlBucket||bucket,Key:key}));
+    return Buffer.from(await response.Body.transformToByteArray());
+  }
+  if(!bucket)throw new Error('Report storage location is missing');
+  return readCorporateReportFile(key,bucket);
+}

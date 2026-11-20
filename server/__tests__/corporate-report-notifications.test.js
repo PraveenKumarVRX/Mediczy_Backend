@@ -4,7 +4,7 @@ jest.unstable_mockModule('../db/postgres-sequelize.js',()=>({postgresSequelize:{
 jest.unstable_mockModule('../middleware/auth.middleware.js',()=>({authUser:(req,_res,next)=>{req.user={id:7,role:'team',isTeam:true};next();}}));
 jest.unstable_mockModule('../middleware/corporateTenant.js',()=>({requireCorporateAccess:(req,_res,next)=>{req.resolvedCorporate={id:45};next();}}));
 jest.unstable_mockModule('../services/corporate-health-reports.service.js',()=>({saveCorporateHealthReports:save}));
-jest.unstable_mockModule('../services/corporate-report-storage-client.js',()=>({corporateReportDownloadUrl:sign}));
+jest.unstable_mockModule('../services/corporate-report-storage-client.js',()=>({corporateReportDownloadUrl:sign,readStoredReportFile:jest.fn()}));
 jest.unstable_mockModule('../services/emailService.js',()=>({default:{sendOutboundEmail:send}}));
 jest.unstable_mockModule('../services/whatsapp-production.service.js',()=>({default:{sendSessionMessage:wa}}));
 jest.unstable_mockModule('../services/corporate-wellness-mis.service.js',()=>({computeReportSla:()=>({dueAt:new Date('2026-10-30'),status:'on_time'})}));
@@ -19,7 +19,7 @@ test('seven uploaded reports generate one email with seven fresh links and corre
 });
 test('resharing a private report uses its actual report-array email shape and refreshed link',async()=>{
  const row={id:1,corporate_id:45,employee_id:9,firstName:'Test',lastName:'Employee',email:'patient@example.invalid',phoneNumber:'9999999999',report_name:'Annual health checkup',report_type:'annual_health_checkup',report_date:'2026-10-28',s3_key:'file-1',report_url:'old',mime_type:'application/pdf',storage_metadata:{storageBackend:'corporate_minio',bucket:'pacs-entity-001'}};
- query.mockImplementation(async sql=>sql.includes('SELECT chr.*')?[row]:[]);
+ query.mockImplementation(async sql=>sql.includes('SELECT corporate_id FROM corporate_health_reports')?[{corporate_id:45}]:sql.includes('SELECT chr.*')?[row]:[]);
  const result=await request(app).post('/reports/1/share').send({corporateId:45,sendEmail:true,sendWhatsapp:false});expect(result.status).toBe(200);expect(result.body.notifications.email).toBe('sent');expect(send.mock.calls[0][1].htmlContent).toContain('https://storage.example/signed/file-1');expect(wa).not.toHaveBeenCalled();
 });
 test('report IDs cannot be shared from another selected corporate',async()=>{

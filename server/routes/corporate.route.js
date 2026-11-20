@@ -8,6 +8,8 @@ import { findExistingEmployeeAccount, isOneAccountPerPhoneViolation, rosterFinan
 import { fiscalYearOf } from '../utils/ist-date.js';
 import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
+import { listCheckupCompletions, getCorporateReportFile, sendReportFile, auditReportAccess } from '../services/checkup-completions.service.js';
+import { shareCorporateHealthReport } from './corporate-bookings.route.js';
 import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
 import { prepareCorporateSchedule } from '../services/corporate-scheduling.service.js';
 import { createCorporateSsoRouter } from './corporate-sso.route.js';
@@ -4111,6 +4113,60 @@ router.get('/audit-log', authCorporate, async (req, res) => {
 
 // Compatibility for cached clients. Access is recorded by the actual server
 // operation; client claims cannot create or duplicate audit evidence.
+// ─── Completed health check-ups with reports (owner decision 2026-11-20: HR has full access to view,
+// download and share; every access is written to audit_logs as PHI access) ─────────────────────
+const hrCorporateId = (req) => Number(req.user?.corporateId || req.user?.organization_id) || null;
+
+router.get('/checkup-completions', authCorporate, async (req, res) => {
+  const corporateId = hrCorporateId(req);
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate on this account' });
+  try {
+    const { search, from, to, page, limit } = req.query;
+    const data = await listCheckupCompletions({ corporateId, actorUserId: req.user.id, search, from, to, page, limit });
+    await auditReportAccess(req, { action: 'hr_list_checkup_reports', corporateId, source: 'list', reportId: 0 });
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[corporate] checkup completions error:', err.message);
+    return res.status(500).json({ success: false, message: 'Unable to load completed check-ups' });
+  }
+});
+
+router.get('/checkup-reports/:source/:reportId/file', authCorporate, async (req, res) => {
+  const corporateId = hrCorporateId(req);
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate on this account' });
+  try {
+    const file = await getCorporateReportFile({ corporateId, actorUserId: req.user.id, source: req.params.source, reportId: req.params.reportId });
+    if (!file) return res.status(404).json({ success: false, message: 'Report not found' });
+    const download = req.query.download === '1';
+    await auditReportAccess(req, { action: download ? 'hr_download_checkup_report' : 'hr_view_checkup_report', corporateId, source: req.params.source, reportId: req.params.reportId, employeeUserId: file.employeeUserId });
+    return sendReportFile(res, file, download ? 'attachment' : 'inline');
+  } catch (err) {
+    console.error('[corporate] checkup report file error:', err.message);
+    if (!res.headersSent) return res.status(err.status === 404 ? 404 : 502).json({ success: false, code: err.code, message: err.status === 404 ? err.message : 'Unable to load the report' });
+  }
+});
+
+router.post('/checkup-reports/:reportId/share', authCorporate, async (req, res) => {
+  const corporateId = hrCorporateId(req);
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate on this account' });
+  try {
+    // Sent as the corporate's assigned Team member, so it comes from the same care desk as Team's shares.
+    const [corp] = await postgresSequelize.query(
+      `SELECT "companyName", "assignedTo" FROM corporates WHERE id = :corporateId LIMIT 1`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
+    const { sendEmail = true, sendWhatsapp = true } = req.body || {};
+    const result = await shareCorporateHealthReport({
+      reportId: req.params.reportId, corporateId, senderUserId: Number(corp?.assignedTo) || req.user.id,
+      sendEmail, sendWhatsapp, corporateName: corp?.companyName || '',
+    });
+    if (result.status === 200) await auditReportAccess(req, { action: 'hr_share_checkup_report', corporateId, source: 'manual', reportId: req.params.reportId, employeeUserId: result.body.employeeUserId });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error('[corporate] checkup report share error:', err.message);
+    return res.status(500).json({ success: false, message: 'Unable to share the report' });
+  }
+});
+
 router.post('/reports/:id/log-access', authCorporate, (req, res) => {
   return res.json({ success: true });
 });
