@@ -28,6 +28,7 @@
  */
 import { QueryTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 const MISSING_SCHEMA = ['42703', '42P01'];
 const errorCode = (error) => error?.original?.code || error?.parent?.code || error?.code;
@@ -615,6 +616,10 @@ export async function getMemberECard(userId, policyId, memberId) {
       roomRentLimit: policy.roomRentLimit,
       tpa: policy.tpa,
       missing: policy.missing,
+      // SmartCRM policies: the insurer's card document, for this member or dependant.
+      download: policy.source === 'smartcrm'
+        ? { url: `/api/employee/insurance/e-card?policyId=${encodeURIComponent(policy.id)}&memberId=${encodeURIComponent(member.memberId)}`, format: 'pdf' }
+        : null,
     },
     topUp: detail.ladder
       ? { policyId: detail.ladder.topUpPolicyId, startsPayingAfter: detail.ladder.startsPayingAfter }
@@ -641,7 +646,11 @@ export async function listPolicyClaims(userId, policyId) {
 
   let rows;
   try {
-    rows = await sequelize.query(
+    // insurance_claims has FORCED row-level security keyed on the member: read
+    // it as them, or every row is invisible and the list is always empty.
+    rows = await sequelize.transaction(async (transaction) => {
+      await setRlsContext(transaction, { userId });
+      return sequelize.query(
       `SELECT claim_number     AS "claimNumber",
               claim_type       AS "claimType",
               diagnosis,
@@ -660,8 +669,9 @@ export async function listPolicyClaims(userId, policyId) {
         WHERE policy_id = :policyId AND patient_id = :userId
         ORDER BY COALESCE(submitted_at, created_at) DESC NULLS LAST, id DESC
         LIMIT 100`,
-      { replacements: { policyId: Number(policyId), userId }, type: QueryTypes.SELECT }
-    );
+      { replacements: { policyId: Number(policyId), userId }, type: QueryTypes.SELECT, transaction }
+      );
+    });
   } catch (error) {
     // Only the column arriving with 20261111000400 is tolerated, and it is
     // reported rather than passed off as an empty claim history.

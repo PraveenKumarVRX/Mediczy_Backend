@@ -16,7 +16,9 @@
  *   POST   /enrolment/payment/initiate   (Idempotency-Key required)
  *   GET    /enrolment/payment/status
  *   POST   /enrolment/submit             (Idempotency-Key required)
- *   POST   /enrolment/dependents         (Idempotency-Key required)
+ *
+ *   GET    /insurance/claims             the member's claims from SmartCRM
+ *   GET    /insurance/e-card?policyId=&memberId=   e-card PDF (self or a dependant)
  *
  * Everything is inert unless SMARTCRM_INTEGRATION_ENABLED=true and the
  * member's corporate has a binding switched on.
@@ -28,6 +30,7 @@ import {
   describeLink, eligibility, getActiveLink, linkMember, refreshMember, unlinkMember,
 } from '../services/smartcrm/member-link.service.js';
 import { runOperation } from '../services/smartcrm/enrolment.service.js';
+import { listMemberClaims, getMemberEcard } from '../services/smartcrm/member-documents.service.js';
 import { loadBinding } from '../services/smartcrm/config.js';
 
 const router = express.Router();
@@ -45,8 +48,8 @@ function sendError(res, error) {
   return res.status(500).json({ success: false, code: 'INTERNAL', message: 'Something went wrong.' });
 }
 
-/** Query params the enrolment GETs may forward; nothing else is passed on. */
-const FORWARDABLE_QUERY = ['payment_id', 'order_id', 'session_token'];
+/** Query params the enrolment GETs may forward (SmartCRM's names); nothing else is passed on. */
+const FORWARDABLE_QUERY = ['enrollment_session_token', 'payment_ref'];
 const pickQuery = (q = {}) => Object.fromEntries(
   FORWARDABLE_QUERY.filter((k) => typeof q[k] === 'string' && q[k].length <= 200).map((k) => [k, q[k]])
 );
@@ -99,6 +102,28 @@ router.post('/insurance/refresh', authUser, async (req, res) => {
   } catch (error) { return sendError(res, error); }
 });
 
+router.get('/insurance/claims', authUser, async (req, res) => {
+  try {
+    const claims = await listMemberClaims({ userId: req.user.id, requestId: requestIdOf(req) });
+    return res.json({ success: true, data: { claims, source: 'smartcrm' } });
+  } catch (error) { return sendError(res, error); }
+});
+
+// policyId / memberId are the wallet's own ids (GET /api/employee/policies);
+// the service checks they are a SmartCRM row of the caller's family.
+router.get('/insurance/e-card', authUser, async (req, res) => {
+  try {
+    const file = await getMemberEcard({
+      userId: req.user.id, policyId: req.query.policyId, memberId: req.query.memberId, requestId: requestIdOf(req),
+    });
+    if (file.url) return res.redirect(302, file.url);
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${file.filename}"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.end(file.buffer);
+  } catch (error) { return sendError(res, error); }
+});
+
 const ENROLMENT_ROUTES = [
   ['get',    '/enrolment/window',           'window'],
   ['post',   '/enrolment/session',          'session'],
@@ -109,7 +134,6 @@ const ENROLMENT_ROUTES = [
   ['post',   '/enrolment/payment/initiate', 'paymentInitiate'],
   ['get',    '/enrolment/payment/status',   'paymentStatus'],
   ['post',   '/enrolment/submit',           'submit'],
-  ['post',   '/enrolment/dependents',       'dependents'],
 ];
 
 for (const [method, path, operation] of ENROLMENT_ROUTES) {

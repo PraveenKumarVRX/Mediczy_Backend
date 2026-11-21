@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "1.7.0",
+    "version": "2.0.0",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/cart/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -1439,7 +1439,7 @@
         "summary": "Payment status",
         "parameters": [
           {
-            "name": "payment_id",
+            "name": "enrollment_session_token",
             "in": "query",
             "required": false,
             "schema": {
@@ -1448,16 +1448,7 @@
             }
           },
           {
-            "name": "order_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 200
-            }
-          },
-          {
-            "name": "session_token",
+            "name": "payment_ref",
             "in": "query",
             "required": false,
             "schema": {
@@ -1616,81 +1607,112 @@
         }
       }
     },
-    "/api/employee/enrolment/dependents": {
-      "post": {
+    "/api/employee/insurance/claims": {
+      "get": {
         "tags": [
           "Insurance (SmartCRM)"
         ],
-        "summary": "Mid-term dependant addition (creates an HR approval request)",
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9_-]{8,128}$"
-            },
-            "description": "Same key + same body replays the stored answer (header Idempotent-Replayed: true); same key + different body is 422."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "SmartCRM's own payload, passed through unchanged."
-              }
-            }
-          }
-        },
+        "summary": "The caller's insurance claims from SmartCRM",
+        "description": "Read live from SmartCRM for the linked member, limited there to policies of the member's own employer. Requires a link (409 NOT_LINKED).",
         "responses": {
           "200": {
-            "description": "SmartCRM's answer",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
-                  "description": "SmartCRM's own payload, passed through unchanged."
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Saved (submit)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "SmartCRM's own payload, passed through unchanged."
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "Pending HR approval, with request_id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "SmartCRM's own payload, passed through unchanged."
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Refused by SmartCRM (`detail`) or a missing Idempotency-Key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "SmartCRM's own payload, passed through unchanged."
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "smartcrm"
+                          ]
+                        },
+                        "claims": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "claimNumber": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "patientName": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "relation": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "hospital": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "ailment": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "admissionDate": {
+                                "type": "string",
+                                "format": "date",
+                                "nullable": true
+                              },
+                              "dischargeDate": {
+                                "type": "string",
+                                "format": "date",
+                                "nullable": true
+                              },
+                              "claimType": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "billedAmount": {
+                                "type": "number",
+                                "nullable": true
+                              },
+                              "paidAmount": {
+                                "type": "number",
+                                "nullable": true
+                              },
+                              "status": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "sumInsured": {
+                                "type": "number",
+                                "nullable": true
+                              },
+                              "policyNumber": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "smartcrm"
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1698,26 +1720,104 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
-          "402": {
-            "description": "Payment pending",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "SmartCRM's own payload, passed through unchanged."
-                }
-              }
-            }
+          "404": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
           },
           "409": {
             "$ref": "#/components/responses/SmartCrmRefusal"
           },
-          "422": {
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "503": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          }
+        }
+      }
+    },
+    "/api/employee/insurance/e-card": {
+      "get": {
+        "tags": [
+          "Insurance (SmartCRM)"
+        ],
+        "summary": "E-card document for the caller or one of their covered dependants",
+        "description": "policyId and memberId are the wallet's ids (GET /api/employee/policies); they must be a SmartCRM policy of the caller's own family. Returns the PDF (or image) inline, or as an attachment with download=1; a 302 to the insurer's https link when the insurer serves it that way.",
+        "parameters": [
+          {
+            "name": "policyId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The e-card document",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "302": {
+            "description": "Redirect to the insurer's https e-card link"
+          },
+          "400": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
+          },
+          "409": {
             "$ref": "#/components/responses/SmartCrmRefusal"
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/SmartCrmRefusal"
           },
           "503": {
             "$ref": "#/components/responses/SmartCrmRefusal"
@@ -19501,6 +19601,22 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "download": {
+                "type": "object",
+                "description": "The insurer's card document (SmartCRM policies): GET this url with the member's token.",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "pdf"
+                    ]
+                  }
+                },
+                "nullable": true
               }
             }
           },

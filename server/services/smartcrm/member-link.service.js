@@ -18,7 +18,7 @@ import {
   SOURCE_SYSTEM, SmartCrmError, integrationEnabled, loadBinding, schemaAvailable,
 } from './config.js';
 import { partnerRequest } from './partner-client.js';
-import { mapSummary } from './summary-mapper.js';
+import { mapSummary, policiesNeedingDetail } from './summary-mapper.js';
 import { applyProjection, retireProjection } from './projection.service.js';
 import { auditPartnerEvent } from './audit.js';
 import { withRlsTransaction } from '../../middleware/rls-context.middleware.js';
@@ -253,7 +253,27 @@ export async function refreshMember({ userId, force = false, requestId = null, f
     throw new SmartCrmError('UPSTREAM_REJECTED', 'Your insurance details could not be refreshed.', 502, { upstreamStatus: response.status });
   }
 
-  const mapped = mapSummary(response.body);
+  // Dependants come one policy per call: read each other active policy too.
+  // Any of these failing fails the refresh, and the last good projection stays.
+  const byPolicy = {};
+  for (const { key, policyNo } of policiesNeedingDetail(response.body)) {
+    let detail;
+    try {
+      detail = await partnerRequest(binding, link, { op: 'summary', method: 'GET', userId: id, requestId, fetchImpl, query: { policy_no: policyNo } });
+    } catch (error) {
+      await markLink(link, { last_error: String(error.code || 'error').slice(0, 200) }, db);
+      await audit('smartcrm.summary.failed', { code: error.code, policy: 'detail' });
+      throw error;
+    }
+    if (detail.status !== 200) {
+      await markLink(link, { last_error: `upstream_${detail.status}` }, db);
+      await audit('smartcrm.summary.rejected', { status: detail.status, policy: 'detail' });
+      throw new SmartCrmError('UPSTREAM_REJECTED', 'Your insurance details could not be refreshed.', 502, { upstreamStatus: detail.status });
+    }
+    byPolicy[key] = detail.body;
+  }
+
+  const mapped = mapSummary(response.body, byPolicy);
   if (!mapped.ok) {
     // Keep what was last projected (it came from a good read) but say so.
     await markLink(link, { last_error: `payload_shape: ${mapped.reason}`.slice(0, 200) }, db);

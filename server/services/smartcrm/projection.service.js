@@ -41,6 +41,8 @@ export async function applyProjection(link, mapped, db = pool) {
         tpaName: policy.tpa,
         sourceContract: mapped.contract,
         knownPolicyType: policy.knownType,
+        sourcePolicyType: policy.sourcePolicyType ?? null,
+        isPrimary: policy.isPrimary ?? null,
       };
       const { rows: [row] } = await client.query(
         `INSERT INTO insurance_policies
@@ -75,8 +77,10 @@ export async function applyProjection(link, mapped, db = pool) {
           `INSERT INTO policy_members
              ("policyId", "userId", "primaryMemberUserId", relationship, "memberName", "dateOfBirth",
               "individualSumInsured", "memberCardNumber", "coverageStartDate", "coverageEndDate",
-              "isActive", source_system, source_ref, source_synced_at, "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamp, NOW()), $10, TRUE, $11, $12, NOW(), NOW(), NOW())
+              "isActive", source_system, source_ref, source_synced_at, "createdAt", "updatedAt",
+              "sumInsuredUsed", "sumInsuredRemaining", metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamp, NOW()), $10, TRUE, $11, $12, NOW(), NOW(), NOW(),
+                   $13, $14, $15::jsonb)
            ON CONFLICT (source_system, source_ref) WHERE source_system IS NOT NULL
            DO UPDATE SET relationship = EXCLUDED.relationship,
                          "userId" = EXCLUDED."userId",
@@ -87,14 +91,19 @@ export async function applyProjection(link, mapped, db = pool) {
                          "coverageStartDate" = EXCLUDED."coverageStartDate",
                          "coverageEndDate" = EXCLUDED."coverageEndDate",
                          "isActive" = TRUE,
+                         "sumInsuredUsed" = EXCLUDED."sumInsuredUsed",
+                         "sumInsuredRemaining" = EXCLUDED."sumInsuredRemaining",
+                         metadata = COALESCE(policy_members.metadata, '{}'::jsonb) || EXCLUDED.metadata,
                          source_synced_at = NOW(),
                          "updatedAt" = NOW()
              WHERE policy_members."primaryMemberUserId" = EXCLUDED."primaryMemberUserId"
                AND policy_members."policyId" = EXCLUDED."policyId"
            RETURNING id`,
           [row.id, isSelf ? link.user_id : null, link.user_id, member.relationship, member.name,
-            member.dateOfBirth, member.sumInsured, member.cardNumber, policy.startDate, policy.endDate,
-            SOURCE_SYSTEM, memberRef]
+            member.dateOfBirth, member.sumInsured, member.cardNumber, member.validFrom || policy.startDate,
+            member.validTo || policy.endDate, SOURCE_SYSTEM, memberRef,
+            member.sumInsuredUsed ?? null, member.sumInsuredRemaining ?? null,
+            JSON.stringify({ sourceRelation: member.sourceRelation ?? null, sourceContract: mapped.contract })]
         );
         if (!m) {
           throw new SmartCrmError('MEMBER_CONFLICT', 'This insurance membership is already linked to another account.', 409);

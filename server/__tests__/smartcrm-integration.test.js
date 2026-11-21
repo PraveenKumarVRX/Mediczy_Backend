@@ -36,7 +36,9 @@ jest.unstable_mockModule('../db/pgPool.js', () => ({ default: fakeDb }));
 
 const config = await import('../services/smartcrm/config.js');
 const client = await import('../services/smartcrm/partner-client.js');
-const { mapSummary } = await import('../services/smartcrm/summary-mapper.js');
+const await_mapper = await import('../services/smartcrm/summary-mapper.js');
+const { mapSummary } = await_mapper;
+const documents = await import('../services/smartcrm/member-documents.service.js');
 const links = await import('../services/smartcrm/member-link.service.js');
 const enrolment = await import('../services/smartcrm/enrolment.service.js');
 const await_overlay = await import('../services/smartcrm/wallet-overlay.js');
@@ -52,17 +54,22 @@ const LINK = {
   source_corporate: 'EQUITAS', emp_id: 'EQ1234', source_member_id: 'M-1', status: 'active',
   consent_id: '00000000-0000-0000-0000-000000000001', last_synced_at: null,
 };
-const SUMMARY = {
-  member: { id: 'M-1' },
-  policies: [{
-    id: 'P-1', policy_type: 'GHI', policy_name: 'Group Health', policy_number: 'GHI/2026/1',
-    insurer: 'Star Health', sum_insured: 500000, start_date: '2026-04-01', end_date: '2027-03-31',
-    members: [
-      { id: 'M-1', relationship: 'Self', name: 'Test Employee' },
-      { id: 'D-1', relationship: 'Wife', name: 'Test Spouse', date_of_birth: '1990-02-03' },
-    ],
-  }],
+// SmartCRM's real summary shape (partner_mediqzy_views.py, commit db971d1).
+const POLICY_GHI = {
+  policyNo: 'GHI/2026/1', productName: 'Group Health', policyType: 'GHI', corporate: 'EQUITAS', payer: 'Medi Assist',
+  status: 'Active', effectiveFrom: '2026-04-01', effectiveTo: '2027-03-31', isPrimary: true, isActive: true,
+  employeeSumInsured: '5,00,000', cardNo: 'MA-100',
 };
+const SPOUSE = {
+  id: 77, InsuredName: 'Test Spouse', RELATIONTXT: 'Wife', DOB: '1990-02-03', CardNo: 'MA-101',
+  Suminsured: '500000', BalanceSumInsured: '450000', PolicyNumber: 'GHI/2026/1', InsuranceCo: 'Star Health',
+  ValidFrom: '2026-04-01', ValidTo: '2027-03-31',
+};
+const summaryBody = ({ member = { id: 'M-1', Name: 'Test Employee', DOB: '1988-05-06' }, policy = POLICY_GHI, policies = [POLICY_GHI], dependents = [SPOUSE] } = {}) => ({
+  success: true,
+  data: { member, policy, policies, ecard: { cardNo: policy?.cardNo, insuranceCo: 'Star Health' }, dependents },
+});
+const SUMMARY = summaryBody();
 
 const fetchReturning = (...responses) => {
   const fn = jest.fn();
@@ -156,10 +163,21 @@ describe('partner client', () => {
     expect(init.redirect).toBe('error');
   });
 
-  it('has no claims operation until SmartCRM deploys its P0 fix', async () => {
-    expect(client.PARTNER_PATHS.claims).toBeUndefined();
-    await expect(client.partnerRequest(BINDING, LINK, { op: 'claims', userId: 1, fetchImpl: jest.fn() }))
+  it('claims and e-card are read-only operations; the dependants path SmartCRM never had is gone', async () => {
+    expect(client.PARTNER_PATHS.claims).toEqual({ path: 'insurance/claims/', methods: ['GET'] });
+    expect(client.PARTNER_PATHS.ecard).toMatchObject({ path: 'insurance/ecard/', methods: ['GET'] });
+    expect(client.PARTNER_PATHS.ecard.maxBodyBytes).toBeGreaterThan(1024 * 1024);
+    expect(client.PARTNER_PATHS.dependents).toBeUndefined();
+    await expect(client.partnerRequest(BINDING, LINK, { op: 'claims', method: 'POST', userId: 1, fetchImpl: jest.fn() }))
       .rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
+    await expect(client.partnerRequest(BINDING, LINK, { op: 'dependents', method: 'POST', userId: 1, fetchImpl: jest.fn() }))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
+  });
+
+  it('sends the consent id when given one', async () => {
+    const fetchImpl = fetchReturning({ body: {} });
+    await client.partnerRequest(BINDING, LINK, { op: 'window', userId: 7646, consentId: LINK.consent_id, fetchImpl });
+    expect(fetchImpl.mock.calls[0][1].headers['X-Mediqzy-Consent-Id']).toBe(LINK.consent_id);
   });
 
   it('refuses a call with no acting user', async () => {
@@ -194,21 +212,48 @@ describe('partner client', () => {
 });
 
 // ── the payload mapper ──────────────────────────────────────────────────────
-describe('summary mapper (provisional contract, fails closed)', () => {
-  it('maps a well-formed summary', () => {
+describe('summary mapper (SmartCRM db971d1 contract, fails closed)', () => {
+  const { policyTypeOf, money, policiesNeedingDetail } = await_mapper;
+
+  it('maps a real summary: employee from member + policies[], dependants with balance', () => {
     const m = mapSummary(SUMMARY);
     expect(m.ok).toBe(true);
     expect(m.memberId).toBe('M-1');
-    expect(m.policies[0].members.map((x) => x.relationship)).toEqual(['self', 'spouse']);
-    expect(m.policies[0].policyType).toBe('GHI');
+    const [p] = m.policies;
+    expect(p).toMatchObject({ id: 'GHI20261', policyNumber: 'GHI/2026/1', policyType: 'GHI', sumInsured: 500000, status: 'active', insurer: 'Star Health', tpa: 'Medi Assist' });
+    expect(p.members.map((x) => [x.id, x.relationship, x.name, x.cardNumber])).toEqual([
+      ['self', 'self', 'Test Employee', 'MA-100'],
+      ['dep-77', 'spouse', 'Test Spouse', 'MA-101'],
+    ]);
+    expect(p.members[1]).toMatchObject({ sumInsured: 500000, sumInsuredRemaining: 450000, sumInsuredUsed: 50000, dateOfBirth: '1990-02-03' });
+  });
+
+  it('reads free-text policy types and sums insured', () => {
+    expect(policyTypeOf('GMC', 'Group Mediclaim')).toBe('GHI');
+    expect(policyTypeOf('Rollover-Floater', '')).toBe('GHI');
+    expect(policyTypeOf('GHI', 'Parents Top Up')).toBe('PARENTS_TOPUP');
+    expect(policyTypeOf('', 'Super Top-up 10L')).toBe('GHI_TOPUP');
+    expect(policyTypeOf('GPA', '')).toBe('GPA');
+    expect(policyTypeOf('', 'Group Term Life')).toBe('GTLI');
+    expect(policyTypeOf('Something else', '')).toBeNull();
+    expect(money('₹ 5,00,000.00')).toBe(500000);
+    expect(money('')).toBeNull();
+    expect(money('NA')).toBeNull();
+  });
+
+  it('asks for each other active policy, never an expired one or the primary again', () => {
+    const topUp = { ...POLICY_GHI, policyNo: 'TOP-9', productName: 'Top Up', isPrimary: false };
+    const old = { ...POLICY_GHI, policyNo: 'GHI/2025/1', isPrimary: false, isActive: false };
+    expect(policiesNeedingDetail(summaryBody({ policies: [POLICY_GHI, topUp, old] }))).toEqual([{ key: 'TOP9', policyNo: 'TOP-9' }]);
   });
 
   it.each([
-    ['no member id', { ...SUMMARY, member: {} }],
-    ['policies not a list', { member: { id: 'M-1' }, policies: {} }],
-    ['a dependant with no name', { member: { id: 'M-1' }, policies: [{ ...SUMMARY.policies[0], members: [{ id: 'M-1', relationship: 'self' }, { id: 'D', relationship: 'son' }] }] }],
-    ['a policy with no self member', { member: { id: 'M-1' }, policies: [{ ...SUMMARY.policies[0], members: [{ id: 'D', relationship: 'son', name: 'X' }] }] }],
-    ['a policy with no type', { member: { id: 'M-1' }, policies: [{ ...SUMMARY.policies[0], policy_type: '' }] }],
+    ['success false', { ...SUMMARY, success: false }],
+    ['no member id', summaryBody({ member: { Name: 'X' } })],
+    ['policies not a list', summaryBody({ policies: {} })],
+    ['a dependant with no name', summaryBody({ dependents: [{ ...SPOUSE, InsuredName: '' }] })],
+    ['a dependant of another policy', summaryBody({ dependents: [{ ...SPOUSE, PolicyNumber: 'OTHER-1' }] })],
+    ['an active policy whose dependants were not read', summaryBody({ policies: [POLICY_GHI, { ...POLICY_GHI, policyNo: 'TOP-9', isPrimary: false }] })],
   ])('projects nothing for %s', (_label, body) => {
     expect(mapSummary(body).ok).toBe(false);
   });
@@ -234,7 +279,7 @@ describe('refresh', () => {
 
   it('refuses and hides everything when SmartCRM returns a different member id', async () => {
     handlers.push([/UPDATE policy_members SET "isActive" = FALSE/, () => ({ rows: [], rowCount: 2 })]);
-    const body = { ...SUMMARY, member: { id: 'M-OTHER' } };
+    const body = summaryBody({ member: { id: 'M-OTHER', Name: 'Someone' } });
     await expect(links.refreshMember({ userId: 7646, fetchImpl: fetchReturning({ body }) }, fakeDb))
       .rejects.toMatchObject({ code: 'MEMBER_MISMATCH', status: 409 });
     expect(calls.some((c) => c.sql.startsWith('INSERT INTO policy_members'))).toBe(false);
@@ -260,6 +305,30 @@ describe('refresh', () => {
   it('a 401 from SmartCRM is a configuration fault, not the member\'s', async () => {
     await expect(links.refreshMember({ userId: 7646, fetchImpl: fetchReturning({ status: 401, body: {} }) }, fakeDb))
       .rejects.toMatchObject({ code: 'NOT_CONFIGURED', status: 503 });
+  });
+
+  it('reads each other active policy with policy_no and projects every policy\'s family', async () => {
+    let policyId = 100;
+    handlers.push(
+      [/INSERT INTO insurance_policies/, () => [{ id: ++policyId }]],
+      [/INSERT INTO policy_members/, () => [{ id: 201 }]],
+    );
+    const topUp = { ...POLICY_GHI, policyNo: 'TOP-9', productName: 'Super Top Up', isPrimary: false, employeeSumInsured: '1000000' };
+    const primary = summaryBody({ policies: [POLICY_GHI, topUp] });
+    const detail = summaryBody({ policy: topUp, policies: [POLICY_GHI, topUp], dependents: [{ ...SPOUSE, id: 78, PolicyNumber: 'TOP-9' }] });
+    const fetchImpl = fetchReturning({ body: primary }, { body: detail });
+    const out = await links.refreshMember({ userId: 7646, fetchImpl }, fakeDb);
+    expect(out).toMatchObject({ refreshed: true, policies: 2, members: 4 });
+    expect(new URL(fetchImpl.mock.calls[1][0]).searchParams.get('policy_no')).toBe('TOP-9');
+    const types = calls.filter((c) => c.sql.startsWith('INSERT INTO insurance_policies')).map((c) => c.params[1]);
+    expect(types).toEqual(['GHI', 'GHI_TOPUP']);
+  });
+
+  it('fails the whole refresh if a per-policy read fails, writing nothing', async () => {
+    const topUp = { ...POLICY_GHI, policyNo: 'TOP-9', isPrimary: false };
+    const fetchImpl = fetchReturning({ body: summaryBody({ policies: [POLICY_GHI, topUp] }) }, { status: 404, body: { success: false } });
+    await expect(links.refreshMember({ userId: 7646, fetchImpl }, fakeDb)).rejects.toMatchObject({ code: 'UPSTREAM_REJECTED' });
+    expect(calls.some((c) => /^INSERT INTO (insurance_policies|policy_members)/.test(c.sql))).toBe(false);
   });
 
   it('is throttled per member', async () => {
@@ -342,7 +411,7 @@ describe('linking', () => {
 
 // ── enrolment pass-through ──────────────────────────────────────────────────
 describe('enrolment', () => {
-  const OPEN = { status: 200, body: { state: 'open' } };
+  const OPEN = { status: 200, body: { success: true, data: { isOpen: true, state: 'open' } } };
 
   it('is refused unless the employer is on in-app enrolment, and says where to go instead', async () => {
     handlers = baseHandlers({ binding: { ...BINDING, enrolment_mode: 'web' } });
@@ -352,7 +421,7 @@ describe('enrolment', () => {
 
   it('refuses a submit while the window is closed, without calling submit', async () => {
     handlers.push([/INSERT INTO insurance_enrolment_requests/, () => [{ id: 1 }]]);
-    const fetchImpl = fetchReturning({ body: { state: 'closed', reason: 'expired' } });
+    const fetchImpl = fetchReturning({ body: { success: true, data: { isOpen: false, state: 'expired', message: 'expired' } } });
     await expect(enrolment.runOperation('submit', { userId: 7646, body: { a: 1 }, idempotencyKey: 'key-12345678', fetchImpl }, fakeDb))
       .rejects.toMatchObject({ code: 'ENROLMENT_CLOSED', details: { reason: 'expired' } });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -366,11 +435,13 @@ describe('enrolment', () => {
       .rejects.toMatchObject({ code: 'ENROLMENT_CLOSED' });
   });
 
-  it('requires an idempotency key for submit, payment and dependants', async () => {
-    for (const op of ['submit', 'paymentInitiate', 'dependents']) {
+  it('requires an idempotency key for submit and payment; there is no dependants operation', async () => {
+    for (const op of ['submit', 'paymentInitiate']) {
       await expect(enrolment.runOperation(op, { userId: 7646, body: {}, fetchImpl: jest.fn() }, fakeDb))
         .rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REQUIRED' });
     }
+    await expect(enrolment.runOperation('dependents', { userId: 7646, body: {}, fetchImpl: jest.fn() }, fakeDb))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
   });
 
   it('passes SmartCRM\'s status through and stores it against the key', async () => {
@@ -383,6 +454,9 @@ describe('enrolment', () => {
     expect(out).toEqual({ status: 202, body: { request_id: 'HR-55' } });
     const [, init] = fetchImpl.mock.calls[1];
     expect(init.headers['Idempotency-Key']).toBe('key-12345678');
+    // SmartCRM refuses every enrolment call without the member's consent id.
+    expect(fetchImpl.mock.calls[0][1].headers['X-Mediqzy-Consent-Id']).toBe(LINK.consent_id);
+    expect(init.headers['X-Mediqzy-Consent-Id']).toBe(LINK.consent_id);
     const stored = calls.find((c) => c.sql.startsWith('UPDATE insurance_enrolment_requests SET state = $2'));
     expect(stored.params.slice(0, 3)).toEqual([77, 'done', 202]);
   });
@@ -432,9 +506,14 @@ describe('wallet window status', () => {
 
 describe('route', () => {
   const src = readFileSync(join(ROOT, 'routes/employee-insurance.route.js'), 'utf8');
-  it('never takes a user, member, corporate or employee id from the request', () => {
-    expect(src).not.toMatch(/req\.(params|query|body)\.(userId|user_id|emp_id|empId|memberId|corporateId|corporate_id)/);
+  it('never takes a user, corporate or employee id from the request', () => {
+    expect(src).not.toMatch(/req\.(params|query|body)\.(userId|user_id|emp_id|empId|corporateId|corporate_id)/);
     expect(src).not.toMatch(/router\.\w+\(\s*'[^']*:/); // no path params at all
+    // The only ids taken are the wallet's own policy/member row ids, for the
+    // e-card, and the service checks them against the caller's family.
+    expect(src.match(/req\.query\.memberId/g)).toHaveLength(1);
+    const svc = readFileSync(join(ROOT, 'services/smartcrm/member-documents.service.js'), 'utf8');
+    expect(svc).toContain('AND pm."primaryMemberUserId" = $3');
   });
   it('is mounted under /api/employee, which ring-fencing already allows', () => {
     const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
@@ -482,5 +561,84 @@ describe('wallet overlay — web enrolment for an employer on Mediqzy data', () 
     const sql = readFileSync(join(ROOT, 'migrations/20261113000200-smartcrm-integration.migration.js'), 'utf8');
     expect(sql).toMatch(/smartcrm_bindings_api_needs_source CHECK/);
     expect(sql).toMatch(/smartcrm_bindings_web_needs_url CHECK/);
+  });
+});
+
+describe('member claims and e-cards from SmartCRM', () => {
+  const CLAIM = {
+    id: 5, Employee_ID: 'EQ1234', Claim_Number: 'CL-1', Name_of_the_Patient: 'Test Spouse', Relation: 'Spouse',
+    Name_of_Hospital: 'City Hospital', Ailment: 'Fever', Date_of_Admission: '2026-08-01', Date_of_Discharge: '2026-08-03',
+    Claim_Type: 'Cashless', Total_Bill_Amount: '42,000', Paid_Amount: '40000', Primary_Claim_Status: 'Settled',
+    Sum_Insured: '500000', POLICY_NUMBER: 'GHI/2026/1',
+  };
+
+  it('lists the linked member\'s claims, mapped and audited', async () => {
+    const fetchImpl = fetchReturning({ body: { success: true, data: { claims: [CLAIM] } } });
+    const claims = await documents.listMemberClaims({ userId: 7646, fetchImpl }, fakeDb);
+    expect(new URL(fetchImpl.mock.calls[0][0]).pathname).toBe('/api/v2/partner/mediqzy/insurance/claims/');
+    expect(claims).toEqual([expect.objectContaining({
+      claimNumber: 'CL-1', patientName: 'Test Spouse', hospital: 'City Hospital', billedAmount: 42000, paidAmount: 40000,
+      status: 'Settled', admissionDate: '2026-08-01', source: 'smartcrm',
+    })]);
+    expect(audited()).toContain('smartcrm.claims.read');
+  });
+
+  it('refuses without a link and reads nothing', async () => {
+    handlers = baseHandlers({ link: null });
+    const fetchImpl = jest.fn();
+    await expect(documents.listMemberClaims({ userId: 7646, fetchImpl }, fakeDb)).rejects.toMatchObject({ code: 'NOT_LINKED' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  const pdf = Buffer.from('%PDF-1.4 test card').toString('base64');
+  const ecardRow = (over = {}) => [/FROM policy_members pm JOIN insurance_policies p/, (params) => {
+    calls.at(-1).ecardParams = params;
+    return [{ relationship: 'spouse', card_no: 'MA-101', name: 'Test Spouse', policy_no: 'GHI/2026/1', ...over }];
+  }];
+
+  it('a dependant\'s card is asked for by the card number on the caller\'s own row', async () => {
+    handlers.push(ecardRow());
+    const fetchImpl = fetchReturning({ body: { success: true, data: { source: 'uploaded', filename: 'MA 101.pdf', documentBase64: pdf } } });
+    const file = await documents.getMemberEcard({ userId: 7646, policyId: '101', memberId: '201', fetchImpl }, fakeDb);
+    const ownership = calls.find((c) => c.sql.includes('FROM policy_members pm JOIN insurance_policies p'));
+    expect(ownership.params).toEqual([201, 101, 7646, 'smartcrm']);
+    const u = new URL(fetchImpl.mock.calls[0][0]);
+    expect(u.pathname).toBe('/api/v2/partner/mediqzy/insurance/ecard/');
+    expect(u.searchParams.get('policy_no')).toBe('GHI/2026/1');
+    expect(u.searchParams.get('card_no')).toBe('MA-101');
+    expect(u.searchParams.get('emp_id')).toBe('EQ1234');
+    expect(file).toMatchObject({ mimeType: 'application/pdf', filename: 'MA-101.pdf' });
+    expect(file.buffer.subarray(0, 4).toString()).toBe('%PDF');
+  });
+
+  it('the employee\'s own card sends no card number (SmartCRM picks the employee row)', async () => {
+    handlers.push(ecardRow({ relationship: 'self', card_no: 'MA-100' }));
+    const fetchImpl = fetchReturning({ body: { success: true, data: { documentBase64: pdf } } });
+    await documents.getMemberEcard({ userId: 7646, policyId: 101, memberId: 200, fetchImpl }, fakeDb);
+    expect(new URL(fetchImpl.mock.calls[0][0]).searchParams.has('card_no')).toBe(false);
+  });
+
+  it('another family\'s row, a native policy or a bad id is not found, and SmartCRM is never asked', async () => {
+    handlers.push([/FROM policy_members pm JOIN insurance_policies p/, () => []]);
+    const fetchImpl = jest.fn();
+    await expect(documents.getMemberEcard({ userId: 7646, policyId: 1, memberId: 2, fetchImpl }, fakeDb)).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    await expect(documents.getMemberEcard({ userId: 7646, policyId: 'x', memberId: 2, fetchImpl }, fakeDb)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('only a real document is passed on; an insurer https link is a redirect; anything else is refused', async () => {
+    handlers.push(ecardRow());
+    const notADoc = fetchReturning({ body: { success: true, data: { documentBase64: Buffer.from('<html>').toString('base64') } } });
+    await expect(documents.getMemberEcard({ userId: 7646, policyId: 1, memberId: 2, fetchImpl: notADoc }, fakeDb)).rejects.toMatchObject({ code: 'BAD_UPSTREAM_PAYLOAD' });
+    const link = fetchReturning({ body: { success: true, data: { documentUrl: 'https://insurer.example/card/1.pdf' } } });
+    await expect(documents.getMemberEcard({ userId: 7646, policyId: 1, memberId: 2, fetchImpl: link }, fakeDb)).resolves.toMatchObject({ url: 'https://insurer.example/card/1.pdf' });
+    const plainHttp = fetchReturning({ body: { success: true, data: { documentUrl: 'http://insurer.example/card/1.pdf' } } });
+    await expect(documents.getMemberEcard({ userId: 7646, policyId: 1, memberId: 2, fetchImpl: plainHttp }, fakeDb)).rejects.toMatchObject({ code: 'ECARD_NOT_AVAILABLE' });
+  });
+
+  it('SmartCRM\'s "not issued" is shown as that, not as an error', async () => {
+    handlers.push(ecardRow());
+    const fetchImpl = fetchReturning({ status: 404, body: { success: false, error: { code: 'ECARD_NOT_AVAILABLE', message: 'x' } } });
+    await expect(documents.getMemberEcard({ userId: 7646, policyId: 1, memberId: 2, fetchImpl }, fakeDb)).rejects.toMatchObject({ code: 'ECARD_NOT_AVAILABLE', status: 404 });
   });
 });

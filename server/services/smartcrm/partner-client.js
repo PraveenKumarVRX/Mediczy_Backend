@@ -23,6 +23,12 @@ import { createTlsTransport } from './tls-transport.js';
 
 export const PARTNER_PATHS = Object.freeze({
   summary:          { path: 'insurance/summary/',          methods: ['GET'] },
+  // Scoped to the member's own corporate's policy numbers since SmartCRM
+  // db971d1 (the emp_id-only leak of 2026-11-13 is fixed there, with tests).
+  claims:           { path: 'insurance/claims/',           methods: ['GET'] },
+  // A PDF as base64 (or an insurer URL): bigger and slower than the rest,
+  // since SmartCRM may fall back to the insurer's live API.
+  ecard:            { path: 'insurance/ecard/',            methods: ['GET'], maxBodyBytes: 12 * 1024 * 1024, timeoutMs: 25_000 },
   window:           { path: 'enrollment/window/',          methods: ['GET'] },
   session:          { path: 'enrollment/session/',         methods: ['POST'] },
   draft:            { path: 'enrollment/draft/',           methods: ['GET', 'PUT', 'DELETE'] },
@@ -30,11 +36,10 @@ export const PARTNER_PATHS = Object.freeze({
   paymentInitiate:  { path: 'enrollment/payment/initiate/', methods: ['POST'] },
   paymentStatus:    { path: 'enrollment/payment/status/',  methods: ['GET'] },
   submit:           { path: 'enrollment/submit/',          methods: ['POST'] },
-  dependents:       { path: 'dependents/',                 methods: ['POST'] },
 });
-// Deliberately absent: insurance/claims/. Its emp_id-only lookup leaked other
-// corporates' claims (SmartCRM P0, fix built 2026-11-13, not yet deployed).
-// It is added here only once SmartCRM confirms the fix is live.
+// Not here: adding, changing or removing a covered dependant. SmartCRM has no
+// partner endpoint for it yet (its member portal raises an HR request), so the
+// old 'dependents/' entry pointed at a path that does not exist.
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -57,8 +62,8 @@ export const breakerStates = () => [...breakers.values()].map((b) => b.toJSON())
  * @returns {Promise<{ status:number, body:any, ms:number }>}
  */
 export async function partnerRequest(binding, link, {
-  op, method = 'GET', userId, query = {}, body, idempotencyKey, requestId,
-  timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl,
+  op, method = 'GET', userId, query = {}, body, idempotencyKey, requestId, consentId,
+  timeoutMs, fetchImpl,
 } = {}) {
   if (!integrationEnabled()) throw new SmartCrmError('DISABLED', 'Insurance sync is switched off.', 503);
   const spec = PARTNER_PATHS[op];
@@ -103,6 +108,8 @@ export async function partnerRequest(binding, link, {
     'X-Mediqzy-User-Id': String(actor),
   };
   if (requestId) headers['X-Request-Id'] = String(requestId).slice(0, 120);
+  // SmartCRM refuses enrolment calls without it and stores it with the request.
+  if (consentId) headers['X-Mediqzy-Consent-Id'] = String(consentId).slice(0, 128);
   if (idempotencyKey) headers['Idempotency-Key'] = String(idempotencyKey);
   let payload;
   if (body !== undefined && method !== 'GET') {
@@ -111,7 +118,7 @@ export async function partnerRequest(binding, link, {
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), timeoutMs ?? spec.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const started = Date.now();
   let response;
   try {
@@ -138,7 +145,7 @@ export async function partnerRequest(binding, link, {
     // Never followed: a redirect would carry the partner key somewhere else.
     throw new SmartCrmError('UPSTREAM_REDIRECT', 'The insurer system answered unexpectedly.', 502, { upstreamStatus: response.status });
   }
-  if (text.length > MAX_BODY_BYTES) {
+  if (text.length > (spec.maxBodyBytes ?? MAX_BODY_BYTES)) {
     throw new SmartCrmError('BAD_UPSTREAM_PAYLOAD', 'The insurer system sent an oversized response.', 502);
   }
   let parsed = null;

@@ -81,6 +81,7 @@ const cardFromPolicyRoster = async (userId) =>
     const rows = await sequelize.query(
       `SELECT m.id                      AS "memberRowId",
               m."relationship"          AS "relationship",
+              m."memberCardNumber"      AS "cardNumber",
               m."individualSumInsured"  AS "sumInsured",
               m."sumInsuredUsed"        AS "used",
               m."sumInsuredRemaining"   AS "remaining",
@@ -112,7 +113,10 @@ const cardFromPolicyRoster = async (userId) =>
     return {
       source: 'policy_roster',
       ecard: {
-        cardNumber: `POL-${row.policyNumber}-${row.memberRowId}`,
+        // The insurer-issued card number, or none. A number minted here
+        // (it used to be POL-<policy>-<row id>) would not match the insurer's
+        // records at an admission desk, which is worse than showing no number.
+        cardNumber: row.cardNumber || null,
         memberId: String(row.memberRowId),
         policyNumber: row.policyNumber,
         policyType: row.policyType || null,

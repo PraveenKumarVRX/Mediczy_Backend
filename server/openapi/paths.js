@@ -135,9 +135,39 @@ const insurance = {
   },
   '/api/employee/enrolment/quote': { post: enrol('Price a selection (refused while the window is closed)', { requestBody: body(passThrough) }) },
   '/api/employee/enrolment/payment/initiate': { post: enrol('Start an online payment', { requestBody: body(passThrough), idempotent: true }) },
-  '/api/employee/enrolment/payment/status': { get: enrol('Payment status', { query: ['payment_id', 'order_id', 'session_token'].map(queryParam) }) },
+  '/api/employee/enrolment/payment/status': { get: enrol('Payment status', { query: ['enrollment_session_token', 'payment_ref'].map(queryParam) }) },
   '/api/employee/enrolment/submit': { post: enrol('Submit the enrolment', { requestBody: body(passThrough), idempotent: true, description: '201 saved · 202 pending HR with request_id · 402 payment pending · 400 with detail. Refused (409 ENROLMENT_CLOSED) while the window is not open.' }) },
-  '/api/employee/enrolment/dependents': { post: enrol('Mid-term dependant addition (creates an HR approval request)', { requestBody: body(passThrough), idempotent: true }) },
+  '/api/employee/insurance/claims': {
+    get: op(smartcrmTag, 'The caller\'s insurance claims from SmartCRM', {
+      description: 'Read live from SmartCRM for the linked member, limited there to policies of the member\'s own employer. Requires a link (409 NOT_LINKED).',
+      responses: {
+        200: okWith({ data: { type: 'object', properties: { source: { type: 'string', enum: ['smartcrm'] }, claims: { type: 'array', items: { type: 'object', properties: {
+          id: { type: 'string', nullable: true }, claimNumber: { type: 'string', nullable: true }, patientName: { type: 'string', nullable: true },
+          relation: { type: 'string', nullable: true }, hospital: { type: 'string', nullable: true }, ailment: { type: 'string', nullable: true },
+          admissionDate: { type: 'string', format: 'date', nullable: true }, dischargeDate: { type: 'string', format: 'date', nullable: true },
+          claimType: { type: 'string', nullable: true }, billedAmount: { type: 'number', nullable: true }, paidAmount: { type: 'number', nullable: true },
+          status: { type: 'string', nullable: true }, sumInsured: { type: 'number', nullable: true }, policyNumber: { type: 'string', nullable: true },
+          source: { type: 'string', enum: ['smartcrm'] },
+        } } } } } }, ['success', 'data']),
+        404: R('SmartCrmRefusal'), 502: R('SmartCrmRefusal'), ...enrolmentRefusals,
+      },
+    }),
+  },
+  '/api/employee/insurance/e-card': {
+    get: op(smartcrmTag, 'E-card document for the caller or one of their covered dependants', {
+      description: 'policyId and memberId are the wallet\'s ids (GET /api/employee/policies); they must be a SmartCRM policy of the caller\'s own family. Returns the PDF (or image) inline, or as an attachment with download=1; a 302 to the insurer\'s https link when the insurer serves it that way.',
+      params: [
+        { name: 'policyId', in: 'query', required: true, schema: { type: 'integer' } },
+        { name: 'memberId', in: 'query', required: true, schema: { type: 'integer' } },
+        { name: 'download', in: 'query', required: false, schema: { type: 'string', enum: ['1'] } },
+      ],
+      responses: {
+        200: { description: 'The e-card document', content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } }, 'image/png': { schema: { type: 'string', format: 'binary' } }, 'image/jpeg': { schema: { type: 'string', format: 'binary' } } } },
+        302: { description: 'Redirect to the insurer\'s https e-card link' },
+        400: R('SmartCrmRefusal'), 404: R('SmartCrmRefusal'), 502: R('SmartCrmRefusal'), ...enrolmentRefusals,
+      },
+    }),
+  },
 };
 
 // ── /api/addresses — address lookup (Google Places via the integration layer)

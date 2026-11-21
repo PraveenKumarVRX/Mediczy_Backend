@@ -210,6 +210,7 @@ export const schemas = {
         insurer: nullable(str), memberId: str, memberName: nullable(str), relation: str, relationGroup: str, dob: nullable(str),
         validFrom: nullable(str), validTill: nullable(str), sumInsured: nullable(num), shared: bool, copayPercent: nullable(num),
         roomRentLimit: nullable(num), tpa: nullable({ type: 'object' }), missing: strArr,
+        download: nullable({ type: 'object', description: 'The insurer\'s card document (SmartCRM policies): GET this url with the member\'s token.', properties: { url: str, format: { type: 'string', enum: ['pdf'] } } }),
       } },
       topUp: nullable({ type: 'object', properties: { policyId: str, startsPayingAfter: num } }),
     },

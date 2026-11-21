@@ -1,4 +1,5 @@
 import express from 'express';
+import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
 import { body, param } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import pool from '../db/pgPool.js';
@@ -622,7 +623,9 @@ router.get('/claims', authUser, async (req, res) => {
   try {
     const policyId = req.query.policyId && /^\d+$/.test(String(req.query.policyId)) ? Number(req.query.policyId) : null;
     const limit = Math.min(Number(req.query.limit) || 50, 100);
-    const { rows } = await pool.query(
+    // insurance_claims has FORCED row-level security: outside the member's own
+    // RLS context every row is invisible, so this always returned [] before.
+    const { rows } = await withRlsTransaction(pool, { userId: req.user.id }, (client) => client.query(
       `SELECT c.*
          FROM insurance_claims c
          LEFT JOIN user_insurances ui ON ui.id = c.user_insurance_id
@@ -631,7 +634,7 @@ router.get('/claims', authUser, async (req, res) => {
         ORDER BY c.submitted_at DESC NULLS LAST
         LIMIT $3`,
       [req.user.id, policyId, limit]
-    );
+    ));
     return res.json({ success: true, claims: rows });
   } catch (e) {
     console.error('[insurance] GET /claims error:', e.message);

@@ -7,11 +7,13 @@
  * that cost money or create a request, and a refusal — not a queue — when the
  * window is closed or SmartCRM is unreachable.
  *
- * SmartCRM's partner write endpoints (enrollment/window, session, draft,
- * quote, payment/*, submit, dependents) are specified in SmartCRM's tab of
- * the plan but NOT BUILT on SmartCRM's side as of 2026-11-13. Until they are,
- * every call here returns SmartCRM's 404, and the binding's enrolment_mode
- * must stay 'off' or 'web'.
+ * SmartCRM's partner enrolment endpoints (enrollment/window, session, draft,
+ * quote, payment/initiate, payment/status, submit) exist as of SmartCRM
+ * db971d1 (backend/api_v2/partner_mediqzy_enrollment.py). Every one of them
+ * requires X-Mediqzy-Consent-Id: we send the consent recorded with the link.
+ * Their answers come wrapped as { success, data } (window) or as the web
+ * enrolment view's own body (the rest), and are passed to the app unchanged.
+ * There is no partner endpoint for adding or removing a covered dependant.
  */
 import crypto from 'node:crypto';
 import pool from '../../db/pgPool.js';
@@ -33,7 +35,6 @@ export const OPERATIONS = Object.freeze({
   paymentInitiate: { op: 'paymentInitiate', method: 'POST',   needsOpen: true, idempotent: true },
   paymentStatus:   { op: 'paymentStatus',   method: 'GET' },
   submit:          { op: 'submit',          method: 'POST',   needsOpen: true, idempotent: true },
-  dependents:      { op: 'dependents',      method: 'POST',   idempotent: true },
 });
 
 const WINDOW_CACHE_MS = 60_000;
@@ -86,14 +87,16 @@ export async function getWindow(userId, { requestId, fetchImpl, ctx } = {}, db =
   const cached = windowCache.get(userId);
   if (cached && Date.now() - cached.at < WINDOW_CACHE_MS) return cached.value;
   const response = guardUpstream(await partnerRequest(context.binding, context.link, {
-    op: 'window', method: 'GET', userId, requestId, fetchImpl,
+    op: 'window', method: 'GET', userId, requestId, fetchImpl, consentId: context.link.consent_id,
   }));
-  const body = response.body && typeof response.body === 'object' ? response.body : {};
+  // SmartCRM: { success: true, data: { isOpen, state, message, window, webEnrollUrl, submission } }
+  const raw = response.body && typeof response.body === 'object' ? response.body : {};
+  const body = raw.data && typeof raw.data === 'object' ? raw.data : raw;
   const value = {
     status: response.status,
-    open: response.status === 200 && body.state === 'open',
+    open: response.status === 200 && body.state === 'open' && body.isOpen !== false,
     state: typeof body.state === 'string' ? body.state : null,
-    reason: typeof body.reason === 'string' ? body.reason : null,
+    reason: typeof body.reason === 'string' ? body.reason : (typeof body.message === 'string' ? body.message : null),
     body: response.body,
   };
   if (response.status === 200) windowCache.set(userId, { at: Date.now(), value });
@@ -200,6 +203,7 @@ export async function runOperation(name, {
     const response = guardUpstream(await partnerRequest(ctx.binding, ctx.link, {
       op: spec.op, method: spec.method, userId, query, body,
       idempotencyKey: spec.idempotent ? idempotencyKey : undefined, requestId, fetchImpl,
+      consentId: ctx.link.consent_id,
     }));
     await release('done', response);
     if (name === 'submit' || name === 'draftPut' || name === 'draftDelete') windowCache.delete(userId);

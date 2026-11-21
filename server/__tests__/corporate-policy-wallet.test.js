@@ -42,7 +42,7 @@ const load = async (handlers = {}) => {
     return handler ?? [];
   });
   jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({
-    postgresSequelize: { query, transaction: jest.fn() },
+    postgresSequelize: { query, transaction: jest.fn(async (fn) => fn('tx')) },
   }));
   // The SmartCRM enrolment overlay reads through pgPool; no member here is
   // linked, so its tables report absent and it adds only the native fields.
@@ -478,6 +478,14 @@ describe('claims per policy', () => {
     expect(sql).toContain('patient_id = :userId');
     expect(sql).not.toContain('"policyId"');
     expect(sql).not.toContain('"patientId"');
+  });
+
+  it('reads insurance_claims as the member (FORCED row-level security)', async () => {
+    const { listPolicyClaims, calls } = await load({ policies: [policyRow()], members: [memberRow()], claims: [] });
+    await listPolicyClaims(19, '1');
+    const userSet = calls.find((c) => c.sql.includes("set_config('app.current_user_id'"));
+    expect(userSet?.replacements).toEqual({ userId: '19' });
+    expect(calls.findIndex((c) => c === userSet)).toBeLessThan(calls.findIndex((c) => c.shape === 'claims'));
   });
 
   it('says the column is unmigrated rather than passing it off as no claims', async () => {

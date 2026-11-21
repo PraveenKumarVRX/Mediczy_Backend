@@ -8,8 +8,21 @@ import axios from '../integrations/axios.js';
 class MDIndiaTPA {
   constructor() {
     this.baseURL = process.env.MDINDIA_TPA_BASE_URL || 'https://APISet.mdindia.com:8167/Way2Wealth/Way2WealthService.svc/rest';
-    this.username = process.env.MDINDIA_TPA_USERNAME || 'Way2Wealth';
-    this.password = process.env.MDINDIA_TPA_PASSWORD || 'MdIndia@123';
+  }
+
+  // Credentials come from the environment only. A literal fallback here was a
+  // real-looking account password in source control; without the variables
+  // every call fails with a clear "not configured" error instead.
+  get username() {
+    const value = process.env.MDINDIA_TPA_USERNAME;
+    if (!value) throw new Error('MD India TPA is not configured (MDINDIA_TPA_USERNAME is not set)');
+    return value;
+  }
+
+  get password() {
+    const value = process.env.MDINDIA_TPA_PASSWORD;
+    if (!value) throw new Error('MD India TPA is not configured (MDINDIA_TPA_PASSWORD is not set)');
+    return value;
   }
 
   /**
