@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import api from '@/utils/api';
+import ProviderNetworkBookableLabs from '@/components/team/ProviderNetworkBookableLabs';
 import {
   ArrowLeft,
   Upload,
@@ -63,6 +64,7 @@ const TeamProviderNetwork = () => {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
+  const [bookableHint, setBookableHint] = useState('');
   const authHeader = useMemo(() => {
     const token = localStorage.getItem('teamToken');
     return token ? { Authorization: `Bearer ${token}` } : undefined;
@@ -118,7 +120,8 @@ const TeamProviderNetwork = () => {
         const thin = Array.isArray(data.incompleteFields) && data.incompleteFields.length
           ? ` Added without ${data.incompleteFields.join(', ')}.`
           : '';
-        setStatus(true, `${single.name} added to the network.${thin}`);
+        setStatus(true, `${single.name} added to the network.${thin}${single.provider_type === 'lab' ? ' To offer it for check-ups, add it to a company below.' : ''}`);
+        if (single.provider_type === 'lab') setBookableHint(single.name.trim());
         setSingle({ provider_type: single.provider_type, name: '', city: '', state: '', address: '', pincode: '', phone: '', email: '' });
         if (data.batchId) await fetchBatch(data.batchId);
       } else {
@@ -483,6 +486,8 @@ const TeamProviderNetwork = () => {
             </Button>
           </CardContent>
         </Card>
+
+        <ProviderNetworkBookableLabs authHeader={authHeader} searchHint={bookableHint} />
 
         {batch && (
           <Card>

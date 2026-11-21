@@ -5,6 +5,7 @@ import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import pool from '../db/pgPool.js';
 import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 import { createHash } from 'crypto';
+import { listDirectoryLabs, addDirectoryLabToNetworks, BookableError } from '../services/provider-network-bookable.service.js';
 
 const router = Router();
 const requireProviderNetworkAccess = requirePermission(['Corporate Management', 'Provider Network']);
@@ -880,6 +881,29 @@ router.post('/publish/:batchId', authTeam, requireProviderNetworkAccess, async (
   } catch (error) {
     console.error('[provider-network-bot] publish failed:', error);
     return res.status(500).json({ success: false, error: 'Publish failed' });
+  }
+});
+
+// Published labs, with the companies that can already book each one.
+router.get('/directory/labs', authTeam, requireProviderNetworkAccess, async (req, res) => {
+  try {
+    return res.json({ success: true, labs: await listDirectoryLabs({ search: req.query.search, limit: req.query.limit }) });
+  } catch (error) {
+    console.error('[provider-network-bot] directory labs failed:', error);
+    return res.status(500).json({ success: false, error: 'Could not load the published labs' });
+  }
+});
+
+// Makes a published lab bookable for the chosen companies. Managing a company's network
+// is a Corporate Management right, as on the Corporate Management page.
+router.post('/directory/:providerId/add-to-network', authTeam, requirePermission(['Corporate Management']), async (req, res) => {
+  try {
+    const result = await addDirectoryLabToNetworks({ providerId: req.params.providerId, corporateIds: req.body?.corporateIds, actorUserId: req.teamUser?.id });
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    if (error instanceof BookableError) return res.status(error.status).json({ success: false, error: error.message });
+    console.error('[provider-network-bot] add to network failed:', error);
+    return res.status(500).json({ success: false, error: 'Could not add the lab to the network' });
   }
 });
 
