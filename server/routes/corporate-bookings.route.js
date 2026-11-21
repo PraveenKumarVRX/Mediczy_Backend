@@ -603,7 +603,7 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, requireCorporateAcc
         try {
           // Fallback: plain text session message
           const waText =
-            `🏥 *Health Checkup Booking Confirmed*\n\n` +
+            `🏥 *Health Checkup Booked*\n\n` +
             `Dear ${employeeFullName},\n\n` +
             `Your *${corporateName}* health checkup has been booked.\n\n` +
             `📋 *Package:* ${testPackage}\n` +
@@ -1209,7 +1209,7 @@ function buildHealthCheckupEmailHtml({ employeeName, corporateName, labName, lab
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Health Checkup Booking Confirmation</title>
+  <title>Health Checkup Booked</title>
 </head>
 <body style="font-family: Arial, sans-serif; background: #f5f5f5; margin:0; padding:0;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5; padding:30px 0;">
@@ -1218,7 +1218,7 @@ function buildHealthCheckupEmailHtml({ employeeName, corporateName, labName, lab
         <!-- Header -->
         <tr>
           <td style="background: linear-gradient(135deg, #1a56db 0%, #7c3aed 100%); padding:32px 40px; text-align:center;">
-            <h1 style="color:#fff; margin:0; font-size:24px; font-weight:700;">🏥 Health Checkup Confirmed</h1>
+            <h1 style="color:#fff; margin:0; font-size:24px; font-weight:700;">🏥 Health Checkup Booked</h1>
             <p style="color:rgba(255,255,255,0.85); margin:8px 0 0; font-size:14px;">${corporateName} Employee Wellness Programme</p>
           </td>
         </tr>
@@ -1226,7 +1226,7 @@ function buildHealthCheckupEmailHtml({ employeeName, corporateName, labName, lab
         <tr>
           <td style="padding:32px 40px 16px;">
             <p style="font-size:16px; color:#374151; margin:0 0 8px;">Dear <strong>${employeeName}</strong>,</p>
-            <p style="font-size:15px; color:#6b7280; margin:0;">Your health checkup appointment has been <strong style="color:#059669;">successfully booked</strong> as part of your <strong>${corporateName}</strong> wellness benefit.</p>
+            <p style="font-size:15px; color:#6b7280; margin:0;">Your health checkup appointment has been <strong style="color:#059669;">successfully booked</strong> as part of your <strong>${corporateName}</strong> wellness benefit. We will confirm the appointment with the lab and let you know.</p>
           </td>
         </tr>
         <!-- Booking details card -->
@@ -1501,6 +1501,14 @@ router.post('/team-orders/:orderId/:action(confirm|complete|cancel)', authUser, 
       corporateId: req.resolvedCorporate.id, orderId: req.params.orderId, action: req.params.action,
       actorUserId: req.user.id, note: req.body?.reason || req.body?.note || null,
     });
+    // Tell the employee, as an employee app booking is told (email, plus SMS/WhatsApp where possible).
+    const kind = { confirm: 'approved', complete: 'completed', cancel: 'cancelled' }[req.params.action];
+    void notifyBooking({
+      booking_reference: checkup.bookingReference, user_id: checkup.employee?.id, appointment_date: checkup.appointment?.date,
+      time_slot: checkup.appointment?.timeSlot || '', package_name: checkup.packageName,
+      lab_snapshot: { name: checkup.lab?.name || null, address: typeof checkup.lab?.address === 'string' ? checkup.lab.address : null },
+      patient_details: {},
+    }, kind).catch((e) => console.error(`[corporate-bookings] team order ${kind} notify failed`, e.message));
     return res.json({ success: true, checkup });
   } catch (err) {
     if (err instanceof LifecycleError) return res.status(err.status).json({ success: false, code: err.code, message: err.message });

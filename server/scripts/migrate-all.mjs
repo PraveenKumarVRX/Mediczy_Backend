@@ -155,6 +155,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261120000700-individual-plan-lineup.migration.js',
   '20261120000800-plan-checkup-panel.migration.js',
   '20261121000100-checkup-booking-events.migration.js',
+  '20261121000200-corporate-report-snapshots.migration.js',
 ];
 
 function runStep(step) {

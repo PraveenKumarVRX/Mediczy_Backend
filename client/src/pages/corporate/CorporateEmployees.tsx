@@ -35,6 +35,16 @@ interface Employee {
   overdueReports?: number;
 }
 
+const CHECKUP_STAGE: Record<string, { label: string; cls: string }> = {
+  not_eligible: { label: 'Not eligible', cls: 'bg-slate-700/50 text-slate-400' },
+  not_booked: { label: 'Not booked', cls: 'bg-slate-600/30 text-slate-300' },
+  booked: { label: 'Pending confirmation', cls: 'bg-amber-500/15 text-amber-400' },
+  confirmed: { label: 'Confirmed', cls: 'bg-blue-500/15 text-blue-400' },
+  checkup_done: { label: 'Check-up done', cls: 'bg-indigo-500/15 text-indigo-300' },
+  report_ready: { label: 'Report ready', cls: 'bg-violet-500/15 text-violet-300' },
+  delivered: { label: 'Report sent', cls: 'bg-emerald-500/15 text-emerald-400' },
+};
+
 interface HealthRecord {
   id: string;
   reportName: string;
@@ -117,6 +127,21 @@ const CorporateEmployees: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [selectedDept, setSelectedDept] = useState('all');
+  // Annual check-up stage per employee (same data as the Health Check-up Status board) and
+  // pre-employment status for hired candidates, matched by email. HR QA 2026-11-21 #1-2.
+  const [checkupIndex, setCheckupIndex] = useState<{
+    financialYear?: { label: string };
+    byEmployeeCode: Record<string, { stage: string; appointmentDate?: string | null; lab?: string | null; reportUploadedAt?: string | null }>;
+    preEmploymentByEmail: Record<string, { status: string; fitness?: string | null; appointmentAt?: string | null; fitnessIssuedAt?: string | null }>;
+  }>({ byEmployeeCode: {}, preEmploymentByEmail: {} });
+  const [checkupFilter, setCheckupFilter] = useState('all');
+  useEffect(() => {
+    api.get('/corporate/checkup-status/by-employee')
+      .then(({ data }) => setCheckupIndex({ byEmployeeCode: {}, preEmploymentByEmail: {}, ...((data as any)?.data || {}) }))
+      .catch(() => {});
+  }, []);
+  const checkupOf = (emp: Employee) => checkupIndex.byEmployeeCode[String(emp.employeeId || '').toLowerCase()];
+  const pemeOf = (emp: Employee) => (emp.email ? checkupIndex.preEmploymentByEmail[emp.email.toLowerCase()] : undefined);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const loadEmployees = async (status: 'active' | 'inactive' | 'all' = statusFilter) => {
@@ -153,13 +178,15 @@ const CorporateEmployees: React.FC = () => {
   const filteredEmployees = useMemo(() => {
     return employees
       .filter((emp) => selectedDept === 'all' || emp.department === selectedDept)
+      .filter((emp) => checkupFilter === 'all' || (checkupOf(emp)?.stage || 'unknown') === checkupFilter
+        || (checkupFilter === 'done' && ['checkup_done', 'report_ready', 'delivered'].includes(checkupOf(emp)?.stage || '')))
       .filter(
         (emp) =>
           emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           emp.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
           (emp.email || '').toLowerCase().includes(searchTerm.toLowerCase())
       );
-  }, [employees, searchTerm, selectedDept]);
+  }, [employees, searchTerm, selectedDept, checkupFilter, checkupIndex]);
 
   const departments = useMemo(() => Array.from(new Set(employees.map((e) => e.department))).filter(Boolean), [employees]);
 
@@ -523,6 +550,16 @@ const CorporateEmployees: React.FC = () => {
           ]}
           actions={
             <>
+              <Select value={checkupFilter} onValueChange={setCheckupFilter}>
+                <SelectTrigger className="w-[200px] bg-white/10 border-white/20 text-white" aria-label="Filter by annual check-up status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All check-up statuses</SelectItem>
+                  <SelectItem value="done">Check-up completed</SelectItem>
+                  {Object.entries(CHECKUP_STAGE).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'active' | 'inactive' | 'all')}>
                 <SelectTrigger className="w-[150px] bg-white/10 border-white/20 text-white">
                   <SelectValue />
@@ -871,7 +908,8 @@ const CorporateEmployees: React.FC = () => {
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Department</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Contact</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Health Status</th>
-                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Last Checkup</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Annual check-up{checkupIndex.financialYear?.label ? ` · FY ${checkupIndex.financialYear.label}` : ''}</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Pre-employment</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Actions</th>
                 </tr>
               </thead>
@@ -912,7 +950,28 @@ const CorporateEmployees: React.FC = () => {
                         {emp.healthStatus}
                       </Badge>
                     </td>
-                    <td className="p-3 text-slate-400">{emp.lastCheckup ? new Date(emp.lastCheckup).toLocaleDateString() : '—'}</td>
+                    <td className="p-3">
+                      {(() => {
+                        const c = checkupOf(emp);
+                        if (!c) return <span className="text-slate-500">—</span>;
+                        const st = CHECKUP_STAGE[c.stage] || { label: c.stage, cls: 'bg-slate-700/50 text-slate-300' };
+                        const date = c.stage === 'delivered' || c.stage === 'report_ready' ? c.reportUploadedAt : c.appointmentDate;
+                        return (
+                          <div className="space-y-0.5">
+                            <Badge className={st.cls}>{st.label}</Badge>
+                            {date && <p className="text-xs text-slate-500">{new Date(String(date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}{c.lab && c.stage !== 'delivered' && c.stage !== 'report_ready' ? ` · ${c.lab}` : ''}</p>}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="p-3">
+                      {(() => {
+                        const p = pemeOf(emp);
+                        if (!p) return <span className="text-slate-500">—</span>;
+                        const fit = p.fitness && p.fitness !== 'pending' ? p.fitness.replace(/_/g, ' ') : null;
+                        return <Badge className={fit === 'fit' ? 'bg-emerald-500/15 text-emerald-400' : fit ? 'bg-amber-500/15 text-amber-400' : 'bg-slate-700/50 text-slate-300'}>{fit ? `Fitness: ${fit}` : p.status.replace(/_/g, ' ')}</Badge>;
+                      })()}
+                    </td>
                     <td className="p-3">
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm"

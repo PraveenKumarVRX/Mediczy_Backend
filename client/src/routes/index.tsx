@@ -68,6 +68,7 @@ const NurseBooking          = lazy(() => import("@/pages/NurseBooking"));
 const LabBooking            = lazy(() => import("@/pages/LabBooking"));
 const HealthCheckupBooking  = lazy(() => import("@/pages/HealthCheckupBooking"));
 const PreEmploymentConsent  = lazy(() => import("@/pages/PreEmploymentConsent"));
+const CorporatePreEmployment = lazy(() => import("@/pages/corporate/CorporatePreEmployment"));
 const HomecareBooking       = lazy(() => import("@/pages/HomecareBooking"));
 const HealthFeedPage        = lazy(() => import("@/pages/HealthFeedPage"));
 const MyPlans               = lazy(() => import("@/pages/MyPlans"));
@@ -1709,6 +1710,7 @@ const AppRoutes = () => {
         <Route path="/corporate/compliance"              element={<CorporateCompliance />} />
         <Route path="/corporate/notifications"           element={<CorporateNotifications />} />
         <Route path="/corporate/annual-health-checkup"   element={<CorporateAnnualHealthCheckup />} />
+        <Route path="/corporate/pre-employment"          element={<CorporatePreEmployment />} />
         <Route path="/corporate/settings"                element={<CorporateSettings />} />
         <Route path="/corporate/help"                    element={<CorporateHelp />} />
         <Route path="/corporate/health-risk-assessment"  element={<CorporateHealthRiskAssessment />} />

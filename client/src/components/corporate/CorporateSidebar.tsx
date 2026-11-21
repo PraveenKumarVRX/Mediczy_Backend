@@ -46,6 +46,7 @@ const mainNavItems: SidebarItem[] = [
   { icon: UserCog, label: "User Management", href: "/corporate/user-management" },
   { icon: CalendarCheck, label: "Appointments", href: "/corporate/appointments" },
   { icon: ClipboardList, label: "Annual Health Checkup", href: "/corporate/annual-health-checkup" },
+  { icon: Stethoscope, label: "Pre-Employment Check-ups", href: "/corporate/pre-employment" },
   { icon: CalendarDays, label: "Wellness Calendar", href: "/corporate/wellness-calendar" },
   { icon: HeartPulse, label: "Health Analysis", href: "/corporate/health-analysis" },
   { icon: ShieldAlert, label: "Risk Assessment", href: "/corporate/health-risk-assessment" },

@@ -21,7 +21,9 @@ const CASE_STATUSES = new Set(['draft', 'invited', 'consent_pending', 'consented
 const FITNESS_STATUSES = new Set(['pending', 'fit', 'fit_with_restrictions', 'temporarily_unfit', 'unfit']);
 const hash = (value) => createHash('sha256').update(String(value)).digest('hex');
 const corporateId = (req) => Number(req.corporateUser?.id || req.user?.corporateId || req.user?.id);
-const actorId = (req) => Number(req.user?.userId || req.user?.id) || null;
+// The acting HR user. A direct corporate login has no user (its req.user.id is the corporate's
+// own id), and recording that number as a user would point at whichever user has that id.
+const actorId = (req) => Number(req.user?.userId) || null;
 const asDate = (value) => {
   if (!value) return null;
   const date = new Date(value);
@@ -77,7 +79,7 @@ router.get('/cases', authCorporate, async (req, res) => {
       `SELECT pc.*, c.full_name,c.email,c.phone
          FROM pre_employment_cases pc JOIN pre_employment_candidates c ON c.id=pc.candidate_id
         WHERE pc.corporate_id=:corporateId ${status ? 'AND pc.status=:status' : ''}
-        ORDER BY pc.created_at DESC LIMIT 100`,
+        ORDER BY pc.created_at DESC LIMIT 500`,
       { replacements: { corporateId: corporateId(req), ...(status ? { status } : {}) }, type: db.QueryTypes.SELECT }
     );
     return res.json({ success: true, cases: rows.map(hrCase) });
@@ -148,7 +150,7 @@ router.post('/cases/:caseId/invite', authCorporate, async (req, res) => {
       await db.query(`UPDATE pre_employment_cases SET status='invited',invitation_hash=:hash,invitation_expires_at=:expiresAt,invitation_used_at=NULL,updated_at=NOW() WHERE id=:id`, { replacements: { id: row.id, hash: hash(token), expiresAt }, transaction });
       await event(row.id, 'hr', actorId(req), 'invitation_issued', { expiresAt: expiresAt.toISOString() }, transaction);
     });
-    const appUrl = (process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+    const appUrl = (process.env.APP_URL || process.env.FRONTEND_URL || 'https://app.mediqzy.com').replace(/\/$/, '');
     const invitationUrl = `${appUrl}/pre-employment/consent/${token}`;
     const subject = 'Action required: pre-employment health check';
     // The body carries a one-off consent link, so it is recorded by subject and
@@ -177,6 +179,42 @@ router.post('/cases/:caseId/schedule', authCorporate, async (req, res) => {
     });
     return res.json({ success: true });
   } catch { return res.status(500).json({ success: false, message: 'Unable to schedule pre-employment case' }); }
+});
+
+// HR QA 2026-11-21: a case could not be cancelled, nor its history read.
+router.post('/cases/:caseId/cancel', authCorporate, async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ success: false, message: 'Give a reason for cancelling' });
+  try {
+    const row = await caseForCorporate(req.params.caseId, corporateId(req));
+    if (!row) return res.status(404).json({ success: false, message: 'Pre-employment case not found' });
+    if (['completed', 'cancelled'].includes(row.status)) return res.status(409).json({ success: false, message: `This case is already ${row.status}` });
+    await db.transaction(async (transaction) => {
+      await db.query(`UPDATE pre_employment_cases SET status='cancelled',invitation_hash=NULL,updated_at=NOW() WHERE id=:id`, { replacements: { id: row.id }, transaction });
+      await event(row.id, 'hr', actorId(req), 'case_cancelled', { reason: reason.slice(0, 500) }, transaction);
+    });
+    return res.json({ success: true });
+  } catch { return res.status(500).json({ success: false, message: 'Unable to cancel the case' }); }
+});
+
+router.get('/cases/:caseId/events', authCorporate, async (req, res) => {
+  try {
+    const row = await caseForCorporate(req.params.caseId, corporateId(req));
+    if (!row) return res.status(404).json({ success: false, message: 'Pre-employment case not found' });
+    const events = await db.query(
+      `SELECT e.event_type, e.actor_type, e.created_at, e.payload, u.email AS actor_email
+         FROM pre_employment_case_events e LEFT JOIN users u ON u.id = e.actor_user_id
+        WHERE e.case_id = :id ORDER BY e.created_at, e.id`,
+      { replacements: { id: row.id }, type: db.QueryTypes.SELECT }
+    );
+    // Only the workflow is shown; a clinical summary never leaves the clinical reviewer.
+    return res.json({ success: true, events: events.map((e) => ({
+      type: e.event_type, actor: e.actor_type, by: e.actor_email || null, at: e.created_at,
+      detail: e.event_type === 'appointment_scheduled' ? e.payload?.appointmentAt || null
+        : e.event_type === 'case_cancelled' ? e.payload?.reason || null
+          : e.event_type === 'fitness_outcome_recorded' ? e.payload?.fitnessStatus || null : null,
+    })) });
+  } catch { return res.status(500).json({ success: false, message: 'Unable to load the case history' }); }
 });
 
 router.post('/cases/:caseId/clinical-outcome', authCorporate, requireClinicalReviewer, async (req, res) => {

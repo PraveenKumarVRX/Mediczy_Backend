@@ -170,3 +170,25 @@ export async function listCheckupStatus({ corporateId, actorUserId, fy = null, s
     };
   });
 }
+
+/**
+ * Every employee's stage in one call, keyed by staff code, for the HR Employees list
+ * (HR QA 2026-11-21 #1). Pages through listCheckupStatus so the stage logic is the board's own.
+ */
+export async function checkupStageIndex({ corporateId, actorUserId, fy = null, maxRows = 20000 }) {
+  const byEmployeeCode = {};
+  const byUserId = {};
+  let year = null;
+  for (let page = 1; page <= Math.ceil(maxRows / MAX_LIMIT); page += 1) {
+    const data = await listCheckupStatus({ corporateId, actorUserId, fy, stage: '', page, limit: MAX_LIMIT });
+    year = data.financialYear;
+    for (const r of data.rows) {
+      const entry = { stage: r.stage, appointmentDate: r.appointment?.date || null, appointmentStatus: r.appointment?.status || null, lab: r.appointment?.lab || null, reportUploadedAt: r.report?.uploadedAt || null };
+      byUserId[r.employee.userId] = entry;
+      if (r.employee.employeeId) byEmployeeCode[String(r.employee.employeeId).toLowerCase()] = entry;
+    }
+    if (!data.rows.length || page * MAX_LIMIT >= data.total) break;
+  }
+  return { financialYear: year, byEmployeeCode, byUserId };
+}
+

@@ -10,7 +10,8 @@ import { parseTestList } from '../utils/health-package-tests.js';
 import express from 'express';
 import { listCheckupCompletions, getCorporateReportFile, sendReportFile, auditReportAccess } from '../services/checkup-completions.service.js';
 import { shareCorporateHealthReport } from './corporate-bookings.route.js';
-import { listCheckupStatus } from '../services/checkup-status.service.js';
+import { listCheckupStatus, checkupStageIndex } from '../services/checkup-status.service.js';
+import { REPORT_TYPES, buildReport, reportTypeOf } from '../services/corporate-report-builder.service.js';
 import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
 import { prepareCorporateSchedule } from '../services/corporate-scheduling.service.js';
 import { createCorporateSsoRouter } from './corporate-sso.route.js';
@@ -2012,14 +2013,18 @@ function reportRowShape(r) {
   return {
     id: String(r.id),
     title: r.title,
-    description: `${r.category || 'Custom'} report for ${r.period || 'the requested period'}`,
+    description: REPORT_TYPES.find((t) => t.key === r.report_type)?.description || `${r.category || 'Custom'} report for ${r.period || 'the requested period'}`,
     category: r.category,
+    reportType: r.report_type || reportTypeOf(r.category),
     generatedDate: r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : '',
+    generatedAt: r.created_at || null,
     period: r.period,
     periodStart: r.period_start || null,
     periodEnd: r.period_end || null,
     format: r.format,
-    size: '—',
+    rowCount: r.row_count ?? null,
+    saved: r.has_snapshot === true || Boolean(r.snapshot),
+    size: r.row_count != null ? `${r.row_count} row${r.row_count === 1 ? '' : 's'}` : '—',
     status: r.status,
     reportKey: r.report_key || null,
     scheduledFrequency: r.scheduled_frequency || null,
@@ -2029,47 +2034,66 @@ function reportRowShape(r) {
   };
 }
 
+const REPORT_COLUMNS = `id, title, category, period, period_start, period_end, format, status, created_at,
+  report_key, scheduled_frequency, delivery_status, delivered_at, metrics, report_type, row_count, (snapshot IS NOT NULL) AS has_snapshot`;
+
+/** The rows of a saved report: its snapshot, or for a report saved before snapshots, built now. */
+async function reportData(corporateId, report, actorUserId) {
+  if (report.snapshot?.headers && Array.isArray(report.snapshot.rows)) return { headers: report.snapshot.headers, rows: report.snapshot.rows, saved: true };
+  if (String(report.category || '').toLowerCase() === 'mis' || String(report.report_key || '').startsWith('weekly-mis-')) {
+    const metrics = report?.metrics && Object.keys(report.metrics).length
+      ? report.metrics
+      : await buildCorporateMisMetrics(corporateId, new Date(report.period_start).toISOString().slice(0, 10), new Date(report.period_end).toISOString().slice(0, 10));
+    return { headers: ['metric', 'value'], rows: misMetricsToRows(metrics), saved: true };
+  }
+  const built = await buildReport(corporateId, report.report_type || report.category, { actorUserId });
+  return { headers: built.headers, rows: built.rows, saved: false };
+}
+
+router.get('/reports/types', authCorporate, (req, res) => res.json({ success: true, data: { types: REPORT_TYPES } }));
+
 router.get('/reports', authCorporate, async (req, res) => {
   const corporateId = resolveCorporateIdFromUser(req.user);
   if (!corporateId) return res.json({ success: true, data: { reports: [] } });
   const [rows] = await postgresSequelize.query(
-    `SELECT id, title, category, period, period_start, period_end, format, status, created_at,
-            report_key, scheduled_frequency, delivery_status, delivered_at, metrics
-       FROM corporate_generated_reports WHERE corporate_id = :corporateId
-      ORDER BY created_at DESC`,
+    `SELECT ${REPORT_COLUMNS} FROM corporate_generated_reports WHERE corporate_id = :corporateId ORDER BY created_at DESC LIMIT 200`,
     { replacements: { corporateId } }
   );
   return res.json({ success: true, data: { reports: rows.map(reportRowShape) } });
 });
 
+// Builds the report now and saves its rows with it, so it reads the same whenever it is opened.
 router.post('/reports/generate', authCorporate, async (req, res) => {
   const corporateId = resolveCorporateIdFromUser(req.user);
   if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
-  const { type, period, format } = req.body || {};
-  if (String(type || '').toLowerCase().includes('mis')) {
-    const report = await generateCorporateMisReport(corporateId, {
-      period: period || 'previous_week',
-      generatedBy: req.user?.userId || req.user?.id || null,
-    });
-    return res.status(201).json({ success: true, data: { report: reportRowShape(report) } });
+  try {
+    const { type, period, format, fy } = req.body || {};
+    const formatName = ['CSV', 'Excel', 'PDF'].find((f) => f.toLowerCase() === String(format || 'csv').toLowerCase()) || 'CSV';
+    const built = await buildReport(corporateId, type, { actorUserId: req.user?.userId || req.user?.id, fy, week: period });
+    const label = REPORT_TYPES.find((t) => t.key === built.type).label;
+    const [rows] = await postgresSequelize.query(
+      `INSERT INTO corporate_generated_reports
+         (corporate_id, title, category, period, period_start, period_end, format, status, generated_by, report_type, snapshot, row_count, metrics, created_at)
+       VALUES (:corporateId, :title, :category, :period, :periodStart, :periodEnd, :format, 'ready', :generatedBy, :type,
+               CAST(:snapshot AS JSONB), :rowCount, CAST(:metrics AS JSONB), NOW())
+       RETURNING ${REPORT_COLUMNS}`,
+      {
+        replacements: {
+          corporateId, title: built.title, category: built.type === 'weekly_mis' ? 'MIS' : label, period: built.period,
+          periodStart: built.periodStart, periodEnd: built.periodEnd, format: formatName,
+          // A scoped HR user's id; a direct corporate login has none (its id is the corporate's, not a user's).
+          generatedBy: req.user?.userId || null, type: built.type,
+          snapshot: JSON.stringify({ headers: built.headers, rows: built.rows }), rowCount: built.rows.length,
+          metrics: JSON.stringify(built.metrics || {}),
+        },
+      }
+    );
+    await accessAudit.record(req, { resourceId: rows[0].id, title: built.title, action: 'generate' });
+    return res.status(201).json({ success: true, data: { report: reportRowShape(rows[0]) } });
+  } catch (error) {
+    console.error('[corporate] report generation failed:', error.message);
+    return res.status(500).json({ success: false, message: 'The report could not be generated' });
   }
-
-  const [rows] = await postgresSequelize.query(
-    `INSERT INTO corporate_generated_reports (corporate_id, title, category, period, format, status, generated_by)
-     VALUES (:corporateId, :title, :category, :period, :format, 'ready', :generatedBy)
-     RETURNING id, title, category, period, format, status, created_at`,
-    {
-      replacements: {
-        corporateId,
-        title: type || 'Custom Report',
-        category: type || 'Custom',
-        period: period || 'Custom',
-        format: format || 'CSV',
-        generatedBy: req.user?.id || null,
-      },
-    }
-  );
-  return res.status(201).json({ success: true, data: { report: reportRowShape(rows[0]) } });
 });
 
 router.post('/reports/weekly-mis/generate', authCorporate, async (req, res) => {
@@ -2080,26 +2104,37 @@ router.post('/reports/weekly-mis/generate', authCorporate, async (req, res) => {
       period: req.body?.period || 'previous_week',
       periodStart: req.body?.periodStart,
       periodEnd: req.body?.periodEnd,
-      generatedBy: req.user?.userId || req.user?.id || null,
+      generatedBy: req.user?.userId || null,
     });
-    return res.status(201).json({ success: true, data: { report: reportRowShape(report) } });
+    const rows = misMetricsToRows(report.metrics || {});
+    const [saved] = await postgresSequelize.query(
+      `UPDATE corporate_generated_reports SET report_type = 'weekly_mis', snapshot = CAST(:snapshot AS JSONB), row_count = :n
+        WHERE id = :id RETURNING ${REPORT_COLUMNS}`,
+      { replacements: { id: report.id, snapshot: JSON.stringify({ headers: ['metric', 'value'], rows }), n: rows.length } }
+    );
+    return res.status(201).json({ success: true, data: { report: reportRowShape(saved[0] || report) } });
   } catch (error) {
     console.error('[corporate] weekly MIS generation error:', error);
     return res.status(500).json({ success: false, message: 'Failed to generate weekly MIS report' });
   }
 });
 
+// The report's details and its first rows, as saved.
 router.get('/reports/:id/preview', authCorporate, async (req, res) => {
-  const corporateId = resolveCorporateIdFromUser(req.user);
-  const { id } = req.params;
-  const [rows] = await postgresSequelize.query(
-    `SELECT id, title, category, period, period_start, period_end, format, status, created_at,
-            report_key, scheduled_frequency, delivery_status, delivered_at, metrics
-       FROM corporate_generated_reports WHERE id = :id AND corporate_id = :corporateId`,
-    { replacements: { id, corporateId } }
-  );
-  if (!rows[0]) return res.status(404).json({ success: false, message: 'Report not found' });
-  return res.json({ success: true, data: { report: reportRowShape(rows[0]) } });
+  try {
+    const corporateId = resolveCorporateIdFromUser(req.user);
+    const [rows] = await postgresSequelize.query(
+      `SELECT ${REPORT_COLUMNS}, snapshot FROM corporate_generated_reports WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id: req.params.id, corporateId } }
+    );
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Report not found' });
+    const data = await reportData(corporateId, rows[0], req.user?.userId || req.user?.id);
+    await accessAudit.record(req, { resourceId: rows[0].id, title: rows[0].title, action: 'preview' });
+    return res.json({ success: true, data: { report: reportRowShape(rows[0]), headers: data.headers, rows: data.rows.slice(0, 50), totalRows: data.rows.length, saved: data.saved } });
+  } catch (error) {
+    console.error('[corporate] report preview failed:', error.message);
+    return res.status(500).json({ success: false, message: 'The report preview could not be loaded' });
+  }
 });
 
 router.get('/reports/:id/download', authCorporate, async (req, res) => {
@@ -2108,71 +2143,13 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
   const corporateId = resolveCorporateIdFromUser(req.user);
   const { id } = req.params;
   const [rows] = await postgresSequelize.query(
-    `SELECT id, title, category, period, period_start, period_end, format, status, created_at,
-            report_key, scheduled_frequency, delivery_status, delivered_at, metrics
-       FROM corporate_generated_reports WHERE id = :id AND corporate_id = :corporateId`,
+    `SELECT ${REPORT_COLUMNS}, snapshot FROM corporate_generated_reports WHERE id = :id AND corporate_id = :corporateId`,
     { replacements: { id, corporateId } }
   );
   const report = rows[0];
   if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
-
-  // Pull real underlying data for the report's category rather than just echoing metadata.
-  let reportRows, reportHeaders;
-  const category = String(report.category || '').toLowerCase();
-  if (category === 'mis' || String(report.report_key || '').startsWith('weekly-mis-')) {
-    const metrics = report?.metrics && Object.keys(report.metrics).length
-      ? report.metrics
-      : await buildCorporateMisMetrics(corporateId, new Date(report.period_start).toISOString().slice(0, 10), new Date(report.period_end).toISOString().slice(0, 10));
-    reportRows = misMetricsToRows(metrics).map((row) => ({
-      period_start: metrics.periodStart || new Date(report.period_start).toISOString().slice(0, 10),
-      period_end: metrics.periodEnd || new Date(report.period_end).toISOString().slice(0, 10),
-      metric: row.metric,
-      value: row.value,
-    }));
-    reportHeaders = ['period_start', 'period_end', 'metric', 'value'];
-  } else if (category.includes('claim')) {
-    const [claimRows] = await postgresSequelize.query(
-      `SELECT ic.claim_number, ic.claim_type, ic.claim_amount, ic.status, ic.submitted_date
-         FROM insurance_claims ic
-         JOIN user_associations ua ON ua."userId" = ic.patient_id
-        WHERE ua."entityId" = :corporateId AND ua."entityType" = 'corporate'
-          AND EXISTS (SELECT 1 FROM corporate_employees ce
-            JOIN corporate_employee_consents consent ON consent.corporate_id = ce.corporate_id
-              AND consent.employee_id = ce."employeeId" AND consent.consent_type = 'health_data'
-              AND consent.granted = true AND consent.revoked_at IS NULL
-            WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND ce."userId" = ic.patient_id)
-        ORDER BY ic.submitted_date DESC`,
-      { replacements: { corporateId } }
-    );
-    reportRows = claimRows;
-    reportHeaders = ['claim_number', 'claim_type', 'claim_amount', 'status', 'submitted_date'];
-  } else if (category.includes('risk') || category.includes('health')) {
-    const [riskRows] = await postgresSequelize.query(
-      `SELECT u."firstName", u."lastName", r.risk_level, r.overall_score, r.created_at
-         FROM ai_health_risk_scores r
-         JOIN user_associations ua ON ua."userId" = r.patient_id
-         JOIN users u ON u.id = r.patient_id
-        WHERE ua."entityId" = :corporateId AND ua."entityType" = 'corporate'
-          AND EXISTS (SELECT 1 FROM corporate_employees ce
-            JOIN corporate_employee_consents consent ON consent.corporate_id = ce.corporate_id
-              AND consent.employee_id = ce."employeeId" AND consent.consent_type = 'health_data'
-              AND consent.granted = true AND consent.revoked_at IS NULL
-            WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND ce."userId" = r.patient_id)
-        ORDER BY r.created_at DESC`,
-      { replacements: { corporateId } }
-    );
-    reportRows = riskRows;
-    reportHeaders = ['firstName', 'lastName', 'risk_level', 'overall_score', 'created_at'];
-  } else {
-    const [empRows] = await postgresSequelize.query(
-      `SELECT ce."employeeId", ce.department, ce.designation, u."firstName", u."lastName", u.email
-         FROM corporate_employees ce LEFT JOIN users u ON u.id = ce."userId"
-        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true`,
-      { replacements: { corporateId } }
-    );
-    reportRows = empRows;
-    reportHeaders = ['employeeId', 'department', 'designation', 'firstName', 'lastName', 'email'];
-  }
+  // The rows saved with the report; reports made before snapshots are built now.
+  const { headers: reportHeaders, rows: reportRows } = await reportData(corporateId, report, req.user?.userId || req.user?.id);
 
   await accessAudit.record(req, { resourceId: report.id, title: report.title, action: 'download' });
   const format = String(req.query.format || report.format || 'csv').toLowerCase();
@@ -4117,6 +4094,29 @@ router.get('/audit-log', authCorporate, async (req, res) => {
 // ─── Completed health check-ups with reports (owner decision 2026-11-20: HR has full access to view,
 // download and share; every access is written to audit_logs as PHI access) ─────────────────────
 const hrCorporateId = (req) => Number(req.user?.corporateId || req.user?.organization_id) || null;
+
+// Annual check-up stage and pre-employment status per employee, for the Employees list.
+router.get('/checkup-status/by-employee', authCorporate, async (req, res) => {
+  const corporateId = hrCorporateId(req);
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate on this account' });
+  try {
+    const index = await checkupStageIndex({ corporateId, actorUserId: req.user.userId || req.user.id, fy: req.query.fy });
+    // Pre-employment cases are for candidates; a hired candidate is matched to the employee by email.
+    const [peme] = await postgresSequelize.query(
+      `SELECT DISTINCT ON (lower(c.email)) lower(c.email) AS email, pc.status, pc.fitness_status, pc.appointment_at, pc.fitness_issued_at
+         FROM pre_employment_cases pc JOIN pre_employment_candidates c ON c.id = pc.candidate_id
+        WHERE pc.corporate_id = :corporateId AND c.email IS NOT NULL
+        ORDER BY lower(c.email), pc.created_at DESC`,
+      { replacements: { corporateId } }
+    );
+    const preEmploymentByEmail = Object.fromEntries(peme.map((p) => [p.email, { status: p.status, fitness: p.fitness_status, appointmentAt: p.appointment_at, fitnessIssuedAt: p.fitness_issued_at }]));
+    await auditReportAccess(req, { action: 'hr_list_checkup_status', source: 'employees', reportId: 0 });
+    return res.json({ success: true, data: { ...index, preEmploymentByEmail } });
+  } catch (err) {
+    console.error('[corporate] checkup status by employee error:', err.message);
+    return res.status(500).json({ success: false, message: 'Unable to load check-up status' });
+  }
+});
 
 router.get('/checkup-status', authCorporate, async (req, res) => {
   const corporateId = hrCorporateId(req);

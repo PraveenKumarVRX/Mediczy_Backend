@@ -1,4 +1,5 @@
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import emailServiceModule from './emailService.js';
 import { recordAutomatedSend } from './team-sent-folder.service.js';
 
@@ -95,16 +96,54 @@ export async function buildCorporateMisMetrics(corporateId, periodStart, periodE
     { replacements, type: postgresSequelize.QueryTypes.SELECT }
   );
 
-  const [checkupRow] = await postgresSequelize.query(
-    `SELECT
-       COUNT(*) AS booked_checkups,
-       COUNT(*) FILTER (WHERE status IN ('completed', 'reported')) AS completed_checkups
-     FROM lab_orders
-     WHERE test_category = 'corporate_health_checkup'
-       AND organization_id = :corporateId
-       AND created_at::date BETWEEN :periodStart AND :periodEnd`,
+  // Check-up bookings made in the week, by status and by type (HR QA 2026-11-21 #6).
+  // Team bookings are lab_orders, which is FORCED row-level security: read outside the
+  // corporate context they all disappear, and this count was always 0. Employee app
+  // bookings (health_checkup_bookings) and pre-employment cases were never counted.
+  const checkupRow = await postgresSequelize.transaction(async (transaction) => {
+    await setRlsContext(transaction, { orgId: Number(corporateId), userId: 0 });
+    const [row] = await postgresSequelize.query(
+      `WITH b AS (
+         SELECT CASE WHEN status IN ('pending', 'booked', 'ordered') THEN 'pending'
+                     WHEN status IN ('confirmed', 'scheduled') THEN 'confirmed'
+                     WHEN status IN ('completed', 'reported', 'sample_collected', 'processing', 'resulted', 'finalized') THEN 'completed'
+                     WHEN status = 'cancelled' THEN 'cancelled' ELSE 'pending' END AS bucket
+           FROM lab_orders
+          WHERE test_category = 'corporate_health_checkup' AND organization_id = :corporateId
+            AND created_at::date BETWEEN :periodStart AND :periodEnd
+         UNION ALL
+         SELECT CASE WHEN status IN ('booked', 'payment_pending') THEN 'pending'
+                     WHEN status IN ('confirmed', 'scheduled', 'rescheduled') THEN 'confirmed'
+                     WHEN status IN ('completed', 'reports_available') THEN 'completed'
+                     WHEN status = 'cancelled' THEN 'cancelled' ELSE 'pending' END
+           FROM health_checkup_bookings
+          WHERE corporate_id = :corporateId AND created_at::date BETWEEN :periodStart AND :periodEnd)
+       SELECT COUNT(*) AS annual_booked,
+              COUNT(*) FILTER (WHERE bucket = 'pending') AS pending,
+              COUNT(*) FILTER (WHERE bucket = 'confirmed') AS confirmed,
+              COUNT(*) FILTER (WHERE bucket = 'completed') AS completed,
+              COUNT(*) FILTER (WHERE bucket = 'cancelled') AS cancelled,
+              (SELECT COUNT(*) FROM lab_orders WHERE test_category = 'corporate_health_checkup' AND organization_id = :corporateId
+                  AND status = 'completed' AND updated_at::date BETWEEN :periodStart AND :periodEnd)
+              + (SELECT COUNT(*) FROM health_checkup_bookings WHERE corporate_id = :corporateId
+                  AND completed_at::date BETWEEN :periodStart AND :periodEnd) AS completed_in_week
+         FROM b`,
+      { replacements, type: postgresSequelize.QueryTypes.SELECT, transaction }
+    );
+    return row;
+  }).catch((error) => {
+    console.error(`[mis] check-up counts failed for corporate ${corporateId}: ${error.message}`);
+    return {};
+  });
+
+  // Pre-employment check-ups: a case counts as booked when it has an appointment in the week.
+  const [pemeRow] = await postgresSequelize.query(
+    `SELECT COUNT(*) FILTER (WHERE appointment_at::date BETWEEN :periodStart AND :periodEnd) AS booked,
+            COUNT(*) FILTER (WHERE status = 'completed' AND fitness_issued_at::date BETWEEN :periodStart AND :periodEnd) AS completed,
+            COUNT(*) FILTER (WHERE created_at::date BETWEEN :periodStart AND :periodEnd) AS created
+       FROM pre_employment_cases WHERE corporate_id = :corporateId`,
     { replacements, type: postgresSequelize.QueryTypes.SELECT }
-  ).catch(() => [{ booked_checkups: 0, completed_checkups: 0 }]);
+  ).catch(() => [{}]);
 
   const [reportRow] = await postgresSequelize.query(
     `SELECT
@@ -156,8 +195,17 @@ export async function buildCorporateMisMetrics(corporateId, periodStart, periodE
     periodEnd,
     enrolledEmployees: Number(employeeRow?.enrolled_employees || 0),
     activatedEmployees: Number(employeeRow?.activated_employees || 0),
-    bookedCheckups: Number(checkupRow?.booked_checkups || 0),
-    completedCheckups: Number(checkupRow?.completed_checkups || 0),
+    annualCheckupsBooked: Number(checkupRow?.annual_booked || 0),
+    preEmploymentBooked: Number(pemeRow?.booked || 0),
+    bookedCheckups: Number(checkupRow?.annual_booked || 0) + Number(pemeRow?.booked || 0),
+    bookingsByStatus: {
+      pending: Number(checkupRow?.pending || 0),
+      confirmed: Number(checkupRow?.confirmed || 0),
+      completed: Number(checkupRow?.completed || 0),
+      cancelled: Number(checkupRow?.cancelled || 0),
+    },
+    completedCheckups: Number(checkupRow?.completed_in_week || 0) + Number(pemeRow?.completed || 0),
+    preEmploymentCasesCreated: Number(pemeRow?.created || 0),
     bookedAppointments: Number(apptRow?.hr_booked_appointments || 0) + Number(apptRow?.employee_booked_appointments || 0),
     completedAppointments: Number(apptRow?.hr_booked_completed || 0) + Number(apptRow?.employee_booked_completed || 0),
     reportsUploaded,
@@ -175,8 +223,14 @@ export function misMetricsToRows(metrics) {
   return [
     { metric: 'Enrolled employees', value: metrics.enrolledEmployees },
     { metric: 'Activated employees', value: metrics.activatedEmployees },
-    { metric: 'Booked check-ups', value: metrics.bookedCheckups },
-    { metric: 'Completed check-ups', value: metrics.completedCheckups },
+    { metric: 'Check-ups booked (all)', value: metrics.bookedCheckups },
+    { metric: 'Annual health check-ups booked', value: metrics.annualCheckupsBooked ?? metrics.bookedCheckups },
+    { metric: 'Pre-employment check-ups booked', value: metrics.preEmploymentBooked ?? 0 },
+    { metric: 'Booked this week: pending', value: metrics.bookingsByStatus?.pending ?? 'N/A' },
+    { metric: 'Booked this week: confirmed', value: metrics.bookingsByStatus?.confirmed ?? 'N/A' },
+    { metric: 'Booked this week: completed', value: metrics.bookingsByStatus?.completed ?? 'N/A' },
+    { metric: 'Booked this week: cancelled', value: metrics.bookingsByStatus?.cancelled ?? 'N/A' },
+    { metric: 'Check-ups completed this week', value: metrics.completedCheckups },
     { metric: 'Booked doctor appointments', value: metrics.bookedAppointments },
     { metric: 'Completed doctor appointments', value: metrics.completedAppointments },
     { metric: 'Reports uploaded', value: metrics.reportsUploaded },

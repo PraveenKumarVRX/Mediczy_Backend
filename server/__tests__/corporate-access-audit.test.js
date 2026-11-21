@@ -89,20 +89,23 @@ test.each(['-1', 'abc', '1.5'])('audit pagination rejects invalid limit %s', asy
   expect(res.status).toHaveBeenCalledWith(400);
   expect(query).not.toHaveBeenCalled();
 });
+// A generated report is served from the rows saved with it (reportData); see corporate-report-builder.
+const savedRows = async () => ({ headers: ['employeeId'], rows: [{ employeeId: 'EMP-1' }], saved: true });
 test('direct generated-report download records access without a browser callback', async () => {
   const query = jest.fn().mockResolvedValueOnce([[{ id: 8, title: 'Roster', category: 'employees', format: 'csv' }]])
-    .mockResolvedValueOnce([[{ employeeId: 'EMP-1' }]]).mockResolvedValueOnce([]);
+    .mockResolvedValueOnce([]);
   const res = { ...response(), setHeader: jest.fn(), send: jest.fn() };
   res.status.mockReturnValue(res);
-  await handler('get', '/reports/:id/download', { query }, { resolveCorporateIdFromUser: user => user.corporateId, toCsv: () => 'employeeId\nEMP-1' })({ ...req, params: { id: 8 }, query: {} }, res);
-  expect(query.mock.calls[2][1].replacements).toMatchObject({ resourceId: '8', action: 'download', corporateId: 3 });
+  await handler('get', '/reports/:id/download', { query }, { resolveCorporateIdFromUser: user => user.corporateId, toCsv: () => 'employeeId\nEMP-1', REPORT_COLUMNS: '*', reportData: savedRows })({ ...req, params: { id: 8 }, query: {} }, res);
+  expect(query.mock.calls[0][1].replacements).toEqual({ id: 8, corporateId: 3 });
+  expect(query.mock.calls[1][1].replacements).toMatchObject({ resourceId: '8', action: 'download', corporateId: 3 });
   expect(res.send).toHaveBeenCalledWith('employeeId\nEMP-1');
 });
 test('generated-report export fails closed when evidence cannot be stored', async () => {
   const query = jest.fn().mockResolvedValueOnce([[{ id: 8, title: 'Roster', category: 'employees' }]])
-    .mockResolvedValueOnce([[]]).mockRejectedValueOnce(new Error('audit unavailable'));
+    .mockRejectedValueOnce(new Error('audit unavailable'));
   const res = { ...response(), setHeader: jest.fn(), send: jest.fn() };
-  await handler('get', '/reports/:id/download', { query }, { resolveCorporateIdFromUser: user => user.corporateId })({ ...req, params: { id: 8 }, query: {} }, res);
+  await handler('get', '/reports/:id/download', { query }, { resolveCorporateIdFromUser: user => user.corporateId, REPORT_COLUMNS: '*', reportData: savedRows })({ ...req, params: { id: 8 }, query: {} }, res);
   expect(res.status).toHaveBeenCalledWith(500);
   expect(res.send).not.toHaveBeenCalled();
   expect(res.setHeader).not.toHaveBeenCalledWith('Content-Disposition', expect.anything());
