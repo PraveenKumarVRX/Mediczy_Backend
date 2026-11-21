@@ -176,7 +176,10 @@ const TeamProviderNetwork = () => {
         }
       });
       if (data?.success) {
-        setStatus(true, `Excel ingest complete. Batch: ${data.batchId}`);
+        // Say what was read, so a sheet whose columns did not map is visible now, not as a QC failure later.
+        const read = Array.isArray(data.recognisedFields) && data.recognisedFields.length ? ` Read: ${data.recognisedFields.join(', ')}.` : '';
+        const skipped = Array.isArray(data.unmappedColumns) && data.unmappedColumns.length ? ` Columns not used: ${data.unmappedColumns.join(', ')}.` : '';
+        setStatus(true, `Excel ingest complete: ${data.ingested} rows, batch ${data.batchId}.${read}${skipped} Run QC next.`);
         await fetchBatch(data.batchId);
       } else {
         setStatus(false, data?.error || 'Excel ingest failed');

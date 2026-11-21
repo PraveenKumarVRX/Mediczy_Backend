@@ -26,6 +26,7 @@ import { checkupDateBlock } from '../services/checkup-calendar.service.js';
 import { recordAutomatedSend } from '../services/team-sent-folder.service.js';
 import { listCheckupCompletions, getCorporateReportFile, sendReportFile } from '../services/checkup-completions.service.js';
 import { listCheckupStatus } from '../services/checkup-status.service.js';
+import { listTeamOrders, transitionTeamOrder, bookingHistory, recordBookingEvent, LifecycleError } from '../services/team-checkup-lifecycle.service.js';
 
 // ──────────────────────────────────────────────
 // Reports are stored in MinIO via uploadToMinio service
@@ -1406,6 +1407,7 @@ const teamCheckupView = (r) => {
   const refs = Array.isArray(r.report_refs) ? r.report_refs : (() => { try { return JSON.parse(r.report_refs || '[]'); } catch { return []; } })();
   return {
     id: String(r.id),
+    source: 'employee',
     bookingReference: r.booking_reference,
     status: r.status,
     employee: { id: r.user_id, name: r.employee_name || patient.name || null, email: r.employee_email || null, phone: patient.phone || r.employee_phone || null },
@@ -1448,7 +1450,14 @@ router.get('/checkups', authUser, requireTeamOrAdmin, requireCorporateAccess, as
         LIMIT 200`,
       { replacements: { corporateId: req.resolvedCorporate.id, status: String(status || '').trim() }, type: postgresSequelize.QueryTypes.SELECT }
     );
-    return res.json({ success: true, checkups: rows.map(teamCheckupView) });
+    // Team bookings (lab_orders) belong in the same list: before 2026-11-21 they never
+    // appeared here, so nothing the wellness team booked could be confirmed or completed.
+    const teamStatus = String(status || '').trim() === 'booked' ? 'pending' : String(status || '').trim();
+    const team = await listTeamOrders({ corporateId: req.resolvedCorporate.id, actorUserId: req.user.id, status: teamStatus });
+    const checkups = [...rows.map(teamCheckupView), ...team].sort((a, b) =>
+      Number(['booked', 'pending'].includes(b.status)) - Number(['booked', 'pending'].includes(a.status))
+      || String(a.appointment?.date || '9999').localeCompare(String(b.appointment?.date || '9999')));
+    return res.json({ success: true, checkups });
   } catch (err) {
     console.error('[corporate-bookings] GET /checkups error:', err);
     return res.status(500).json({ success: false, message: err.message });
@@ -1466,10 +1475,49 @@ router.get('/pending-approvals', authUser, requireTeamOrAdmin, requireCorporateA
         ORDER BY b.appointment_date ASC, b.created_at ASC LIMIT 200`,
       { replacements: { corporateId: req.resolvedCorporate.id }, type: postgresSequelize.QueryTypes.SELECT }
     );
-    return res.json({ success: true, checkups: rows.map(teamCheckupView) });
+    const team = await listTeamOrders({ corporateId: req.resolvedCorporate.id, actorUserId: req.user.id, status: 'pending' });
+    return res.json({ success: true, checkups: [...rows.map(teamCheckupView), ...team] });
   } catch (err) {
     console.error('[corporate-bookings] GET /pending-approvals error:', err);
     return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/** Status history for an employee app booking; never blocks the status change itself. */
+async function logEmployeeBookingEvent(row, fromStatus, actorUserId, note = null) {
+  if (!row?.corporate_id) return;
+  await postgresSequelize.transaction((transaction) => recordBookingEvent({
+    corporateId: row.corporate_id, source: 'employee', bookingId: row.id, employeeUserId: row.user_id,
+    fromStatus, toStatus: row.status, actorUserId, note,
+  }, transaction)).catch((e) => console.error('[corporate-bookings] history write failed', e.message));
+}
+
+// POST /api/corporate-bookings/team-orders/:orderId/:action?corporateId=   action: confirm | complete | cancel
+// Team-booked check-ups (lab_orders). The param is :orderId, not :id: requireCorporateAccess
+// reads req.params.id as the corporate id.
+router.post('/team-orders/:orderId/:action(confirm|complete|cancel)', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
+  try {
+    const checkup = await transitionTeamOrder({
+      corporateId: req.resolvedCorporate.id, orderId: req.params.orderId, action: req.params.action,
+      actorUserId: req.user.id, note: req.body?.reason || req.body?.note || null,
+    });
+    return res.json({ success: true, checkup });
+  } catch (err) {
+    if (err instanceof LifecycleError) return res.status(err.status).json({ success: false, code: err.code, message: err.message });
+    console.error(`[corporate-bookings] team order ${req.params.action} error:`, err);
+    return res.status(500).json({ success: false, message: 'Unable to update the booking' });
+  }
+});
+
+// GET /api/corporate-bookings/bookings/:source/:bookingId/history?corporateId=   source: team | employee
+router.get('/bookings/:source(team|employee)/:bookingId/history', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
+  try {
+    const history = await bookingHistory({ corporateId: req.resolvedCorporate.id, source: req.params.source, bookingId: req.params.bookingId, actorUserId: req.user.id });
+    return res.json({ success: true, ...history });
+  } catch (err) {
+    if (err instanceof LifecycleError) return res.status(err.status).json({ success: false, message: err.message });
+    console.error('[corporate-bookings] history error:', err);
+    return res.status(500).json({ success: false, message: 'Unable to load the booking history' });
   }
 });
 
@@ -1489,6 +1537,7 @@ router.post('/checkups/:id/approve', authUser, requireTeamOrAdmin, async (req, r
       { replacements: { id: booking.id, by: req.user.id, note: req.body?.note ? String(req.body.note).slice(0, 500) : null, instructions }, type: postgresSequelize.QueryTypes.SELECT }
     );
     if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
+    await logEmployeeBookingEvent(row, 'booked', req.user.id, row.approval_note);
     void notifyBooking(row, 'approved').catch((e) => console.error('[corporate-bookings] approve notify failed', e.message));
     return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email, is_demo: booking.is_demo }) });
   } catch (err) {
@@ -1509,6 +1558,7 @@ router.post('/checkups/:id/reject', authUser, requireTeamOrAdmin, async (req, re
       { replacements: { id: booking.id, reason: (req.body?.reason ? String(req.body.reason) : 'Not approved by the wellness team').slice(0, 500) }, type: postgresSequelize.QueryTypes.SELECT }
     );
     if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
+    await logEmployeeBookingEvent(row, 'booked', req.user.id, row.cancellation_reason);
     void notifyBooking(row, 'cancelled').catch((e) => console.error('[corporate-bookings] reject notify failed', e.message));
     return res.json({ success: true, checkup: teamCheckupView({ ...row, employee_name: booking.employee_name, employee_email: booking.employee_email, is_demo: booking.is_demo }) });
   } catch (err) {
@@ -1550,6 +1600,7 @@ router.post('/checkups/:id/complete', authUser, requireTeamOrAdmin, async (req, 
       { replacements: { id: booking.id }, type: postgresSequelize.QueryTypes.SELECT }
     );
     if (!row) return res.status(409).json({ success: false, message: 'Booking status changed; reload' });
+    await logEmployeeBookingEvent(row, booking.status, req.user.id);
     // A completed corporate AHC consumes the employee's one-time entitlement.
     // Keeping the historical row active preserves reporting; usedAt is the durable
     // booking guard consulted by the employee AHC API.

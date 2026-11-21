@@ -162,3 +162,28 @@ describe('the route publishes what it should', () => {
     expect(src).toContain('unmappedColumns');
   });
 });
+
+describe('a lab list with only a street address (Team QA 2026-11-21)', () => {
+  it('reads a "Lab Address" column, and any other *_address heading', async () => {
+    const { normalizeRecord: n } = await import('../routes/provider-network-bot.route.js');
+    const row = { 'SL NO': 2, 'Lab Name': 'Likitha Diagnostics', 'Lab Address': 'MIG 252 Road no : 4 KPHB colony Hyderabad -500072', Pincode: '500072' };
+    expect(n(row, { provider_type: 'lab' })).toMatchObject({ name: 'Likitha Diagnostics', address: row['Lab Address'], pincode: '500072' });
+    expect(n({ 'Diagnostic Centre Address': 'Plot 4, Guntur' }).address).toBe('Plot 4, Guntur');
+  });
+
+  it('knows the state from a pincode only where the prefix is unambiguous', async () => {
+    const { stateFromPincode } = await import('../routes/provider-network-bot.route.js');
+    expect(stateFromPincode('500072')).toBe('Telangana');
+    expect(stateFromPincode('515001')).toBe('Andhra Pradesh');
+    expect(stateFromPincode('403001')).toBe('Goa');
+    expect(stateFromPincode('411007')).toBe('Maharashtra');
+    expect(stateFromPincode('248001')).toBeNull(); // UP / Uttarakhand share the prefix
+    expect(stateFromPincode('5000')).toBeNull();
+  });
+
+  it('force publish still refuses a row it cannot tell apart from its siblings', () => {
+    const src = read('routes/provider-network-bot.route.js');
+    expect(src).toContain("AND (COALESCE(TRIM(city), '') <> '' OR COALESCE(TRIM(address), '') <> '')");
+    expect(src).toContain('await fillPlaceFromAddress(records);');
+  });
+});

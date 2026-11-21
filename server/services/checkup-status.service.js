@@ -5,8 +5,8 @@
  *
  *   not_eligible  → no active annual check-up benefit this year
  *   not_booked    → has the benefit, no appointment yet
- *   booked        → employee booked, waiting for Team to confirm
- *   confirmed     → appointment confirmed (by Team, or booked by Team)
+ *   booked        → booked (by the employee or by Team), waiting for Team to confirm with the lab
+ *   confirmed     → Team confirmed the appointment
  *   checkup_done  → check-up done, report awaited
  *   report_ready  → report uploaded or received, not yet sent to the employee
  *   delivered     → report sent to the employee
@@ -63,7 +63,7 @@ const STATUS_SQL = `
      ORDER BY b.user_id, (b.status <> 'cancelled') DESC, b.appointment_date DESC, b.id DESC),
   lo AS (
     SELECT DISTINCT ON (o.patient_id) o.patient_id AS user_id, o.id, o.status, o.order_number AS ref, o.created_at,
-           o.sample_collected_at, l.name AS lab,
+           o.updated_at, o.sample_collected_at, l.name AS lab,
            substring(o.notes from 'Date: ([0-9]{4}-[0-9]{2}-[0-9]{2})')::date AS appointment_date,
            NULLIF(trim(substring(o.notes from 'Date: [0-9]{4}-[0-9]{2}-[0-9]{2} ([^|]*)')), '') AS time_slot
       FROM lab_orders o LEFT JOIN labs l ON l.id = o.lab_id
@@ -87,15 +87,17 @@ const STATUS_SQL = `
            bk.id AS bk_id, bk.status AS bk_status, bk.appointment_date AS bk_date, bk.time_slot AS bk_slot, bk.lab AS bk_lab, bk.ref AS bk_ref,
            bk.created_at AS bk_created, bk.approved_at, bk.completed_at,
            lo.id AS lo_id, lo.status AS lo_status, lo.appointment_date AS lo_date, lo.time_slot AS lo_slot, lo.lab AS lo_lab, lo.ref AS lo_ref,
-           lo.created_at AS lo_created, lo.sample_collected_at,
+           lo.created_at AS lo_created, lo.updated_at AS lo_updated, lo.sample_collected_at,
            rep.source AS rep_source, rep.report_id, rep.report_name, rep.mime_type, rep.file_size_bytes, rep.uploaded_at, rep.checkup_date AS rep_checkup_date,
            rep.has_file, rep.notified_email, rep.notified_whatsapp, rep.lab_name AS rep_lab, rep.report_count,
            CASE
              WHEN rep.user_id IS NOT NULL AND (rep.source = 'email' OR rep.notified_email OR rep.notified_whatsapp) THEN 'delivered'
              WHEN rep.user_id IS NOT NULL OR bk.status = 'reports_available' THEN 'report_ready'
              WHEN bk.status = 'completed' OR lo.status IN ('sample_collected', 'processing', 'in_progress', 'completed', 'resulted', 'finalized') THEN 'checkup_done'
-             WHEN bk.status IN ('confirmed', 'scheduled', 'rescheduled') OR lo.status IN ('pending', 'scheduled', 'confirmed', 'booked', 'ordered') THEN 'confirmed'
-             WHEN bk.status IN ('booked', 'payment_pending') THEN 'booked'
+             -- A Team booking starts 'pending' and is confirmed only when Team confirms it with the
+             -- lab (QA 2026-11-21 #14: pending bookings were shown as Confirmed).
+             WHEN bk.status IN ('confirmed', 'scheduled', 'rescheduled') OR lo.status IN ('scheduled', 'confirmed') THEN 'confirmed'
+             WHEN bk.status IN ('booked', 'payment_pending') OR lo.status IN ('pending', 'booked', 'ordered') THEN 'booked'
              WHEN ent.active THEN 'not_booked'
              ELSE 'not_eligible'
            END AS stage
@@ -116,7 +118,9 @@ const rowOut = (r) => {
   const own = r.bk_id && (r.bk_status !== 'cancelled' || !r.lo_id || r.lo_status === 'cancelled');
   const appointment = own
     ? { source: 'employee', id: Number(r.bk_id), status: r.bk_status, date: r.bk_date, slot: r.bk_slot, lab: r.bk_lab, reference: r.bk_ref, bookedAt: r.bk_created, confirmedAt: r.approved_at, completedAt: r.completed_at }
-    : r.lo_id ? { source: 'team', id: Number(r.lo_id), status: r.lo_status, date: r.lo_date, slot: r.lo_slot, lab: r.lo_lab, reference: r.lo_ref, bookedAt: r.lo_created, confirmedAt: r.lo_created, completedAt: r.sample_collected_at }
+    : r.lo_id ? { source: 'team', id: Number(r.lo_id), status: r.lo_status, date: r.lo_date, slot: r.lo_slot, lab: r.lo_lab, reference: r.lo_ref, bookedAt: r.lo_created,
+        confirmedAt: ['confirmed', 'scheduled'].includes(r.lo_status) ? r.lo_updated : null,
+        completedAt: r.lo_status === 'completed' ? (r.sample_collected_at || r.lo_updated) : r.sample_collected_at }
       : null;
   return {
     key: `emp-${r.user_id}`,

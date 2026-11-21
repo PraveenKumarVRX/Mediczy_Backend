@@ -170,8 +170,13 @@ function normalizeRecord(input, defaults = {}) {
   // "Location" in a network list is a town, not a street address, so it fills
   // city rather than being passed off as an address it is not.
   const city = pick(f, 'city', 'town', 'district', 'location', 'place', 'branch', 'area');
+  // "Lab Address", "Hospital Address", "Centre Address" fold to <kind>_address; a lab list
+  // headed that way (QA 2026-11-21) lost every address, so any *_address column counts.
   const address = pick(f, 'address', 'full_address', 'address_line', 'address_line_1',
-    'street', 'street_address', 'locality', 'landmark');
+    'street', 'street_address', 'lab_address', 'hospital_address', 'clinic_address',
+    'centre_address', 'center_address', 'provider_address', 'complete_address', 'address_1')
+    || pick(f, ...Object.keys(f).filter((k) => k.endsWith('_address')))
+    || pick(f, 'locality', 'landmark');
 
   return {
     provider_type: providerType,
@@ -258,8 +263,96 @@ async function createBatch({ sourceType, userId, notes }) {
   return batchId;
 }
 
+/**
+ * Many lists give only a street address ("MIG 252 Road no 4 KPHB colony Hyderabad -500072")
+ * with no city, state or pincode column, and every row then fails QC on city and state.
+ * Fill them from the address, but only from facts in it: a six-digit pincode, and a city
+ * we already hold in the lab or provider directory (with that city's state). Nothing is
+ * guessed; an address naming no known city still fails QC and says so.
+ */
+// India Post: the leading digits of a pincode name the state. Only unambiguous prefixes;
+// a prefix shared by two states (UP/Uttarakhand, Bihar/Jharkhand, the north-east) is left out.
+const PIN_STATE = [
+  ['403', 'Goa'], ['737', 'Sikkim'], ['744', 'Andaman and Nicobar Islands'], ['605', null],
+  ['11', 'Delhi'], ['12', 'Haryana'], ['13', 'Haryana'], ['14', 'Punjab'], ['15', 'Punjab'], ['17', 'Himachal Pradesh'],
+  ['30', 'Rajasthan'], ['31', 'Rajasthan'], ['32', 'Rajasthan'], ['33', 'Rajasthan'], ['34', 'Rajasthan'],
+  ['36', 'Gujarat'], ['37', 'Gujarat'], ['38', 'Gujarat'],
+  ['40', 'Maharashtra'], ['41', 'Maharashtra'], ['42', 'Maharashtra'], ['43', 'Maharashtra'], ['44', 'Maharashtra'],
+  ['45', 'Madhya Pradesh'], ['46', 'Madhya Pradesh'], ['47', 'Madhya Pradesh'], ['48', 'Madhya Pradesh'], ['49', 'Chhattisgarh'],
+  ['50', 'Telangana'], ['51', 'Andhra Pradesh'], ['52', 'Andhra Pradesh'], ['53', 'Andhra Pradesh'],
+  ['56', 'Karnataka'], ['57', 'Karnataka'], ['58', 'Karnataka'], ['59', 'Karnataka'],
+  ['60', 'Tamil Nadu'], ['61', 'Tamil Nadu'], ['62', 'Tamil Nadu'], ['63', 'Tamil Nadu'], ['64', 'Tamil Nadu'],
+  ['67', 'Kerala'], ['68', 'Kerala'], ['69', 'Kerala'],
+  ['70', 'West Bengal'], ['71', 'West Bengal'], ['72', 'West Bengal'], ['73', 'West Bengal'], ['74', 'West Bengal'],
+  ['75', 'Odisha'], ['76', 'Odisha'], ['77', 'Odisha'], ['78', 'Assam'],
+];
+export const stateFromPincode = (pin) => {
+  const p = String(pin || '');
+  if (!/^[1-9][0-9]{5}$/.test(p)) return null;
+  const hit = PIN_STATE.find(([prefix]) => p.startsWith(prefix));
+  return hit ? hit[1] : null;
+};
+// "MAHARASTRA", "Maharashtra", "Telangana " compare equal.
+const stateKey = (v) => text(v).toLowerCase().replace(/[^a-z]/g, '').replace(/h/g, '');
+
+async function fillPlaceFromAddress(records) {
+  for (const r of records) {
+    const spaced = /^([1-9][0-9]{2})\s+([0-9]{3})$/.exec(text(r.pincode));
+    if (spaced) r.pincode = `${spaced[1]}${spaced[2]}`;
+  }
+  const needs = records.filter((r) => text(r.address) && (!text(r.city) || !text(r.state) || !text(r.pincode)));
+  if (!needs.length) return;
+  for (const r of needs) {
+    if (!text(r.pincode)) {
+      const pin = /(?:^|[^0-9])([1-9][0-9]{2})\s?([0-9]{3})(?![0-9])/.exec(r.address);
+      if (pin) r.pincode = `${pin[1]}${pin[2]}`;
+    }
+  }
+  for (const r of needs) {
+    const pinState = stateFromPincode(r.pincode);
+    if (pinState && !text(r.state)) r.state = pinState;
+  }
+  if (!needs.some((r) => !text(r.city))) return;
+  let places = [];
+  try {
+    const { rows } = await pool.query(`
+      SELECT city, state FROM (
+        SELECT lower(trim(city)) AS city, trim(state) AS state, count(*) AS n,
+               row_number() OVER (PARTITION BY lower(trim(city)) ORDER BY count(*) DESC) AS rk
+          FROM (SELECT address->>'city' AS city, address->>'state' AS state FROM labs
+                UNION ALL SELECT city, state FROM smarthealth_provider_network) src
+         WHERE length(trim(COALESCE(city, ''))) >= 4 AND length(trim(COALESCE(state, ''))) >= 2
+         GROUP BY 1, 2) ranked
+       WHERE rk = 1`);
+    places = rows;
+  } catch (error) {
+    console.warn('[provider-network-bot] city lookup unavailable:', error.message);
+    return;
+  }
+  const escape = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const r of needs) {
+    if (text(r.city)) continue;
+    const addr = ` ${text(r.address).toLowerCase()} `;
+    const inState = text(r.state) ? stateKey(r.state) : null;
+    let best = null;
+    for (const p of places) {
+      // A city name inside a locality ("Chaithanya puri") must not place a Hyderabad lab in
+      // Puri, Odisha: when the state is known (from the sheet or the pincode) the city must be in it.
+      if (inState && stateKey(p.state) !== inState) continue;
+      const at = addr.search(new RegExp(`[^a-z]${escape(p.city)}[^a-z]`));
+      // The longest name wins ("navi mumbai" over "mumbai"), then the one nearest the end.
+      if (at >= 0 && (!best || p.city.length > best.city.length || (p.city.length === best.city.length && at > best.at))) best = { ...p, at };
+    }
+    if (!best) continue;
+    r.city = best.city.replace(/\b\w/g, (ch) => ch.toUpperCase());
+    if (!text(r.state)) r.state = best.state.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
+    r.metadata = { ...(r.metadata || {}), placeFromAddress: true };
+  }
+}
+
 async function persistRecords(batchId, sourceType, records) {
   if (!records.length) return;
+  await fillPlaceFromAddress(records);
 
   const query = `
     INSERT INTO provider_network_entries (
@@ -508,6 +601,7 @@ router.post('/ingest/excel', authTeam, requireProviderNetworkAccess, async (req,
       .filter((field) => normalized.some((r) => text(r[field])));
     const unmapped = Object.keys(rows[0] || {}).filter((h) => {
       const k = foldKey(h);
+      if (k.endsWith('_address') || k === 'sl_no' || k === 's_no') return false;
       return !['name', 'provider_name', 'hospital_name', 'clinic_name', 'lab_name', 'laboratory_name',
         'centre_name', 'center_name', 'city', 'town', 'district', 'location', 'state', 'address',
         'pincode', 'pin', 'pin_code', 'phone', 'mobile', 'contact_no', 'email', 'email_id',
@@ -669,7 +763,12 @@ router.post('/qc/:batchId', authTeam, requireProviderNetworkAccess, async (req, 
 async function publishBatch(batchId, { force = false } = {}) {
   // WARN entries are identified and placed, only thin on address or contact,
   // so they publish normally. Only FAIL needs the explicit force.
-  const publishFilter = force ? '' : `AND qc_status IN ('PASS', 'WARN')`;
+  // Force still refuses a row with neither a city nor an address: with nothing to tell
+  // branches apart they all hash to one fingerprint, and 15 Likitha branches were merged
+  // into a single directory entry with no location (QA 2026-11-21).
+  const publishFilter = force
+    ? `AND (COALESCE(TRIM(city), '') <> '' OR COALESCE(TRIM(address), '') <> '')`
+    : `AND qc_status IN ('PASS', 'WARN')`;
 
     const { rows: entries } = await guardedPool(
       `SELECT *
@@ -856,6 +955,6 @@ router.get('/directory/published', async (req, res) => {
 
 // Exported for tests: the parsing and QC rules are where a real spreadsheet
 // succeeds or fails, so they are checked directly rather than only through HTTP.
-export { normalizeRecord, computeQc, foldKey, normalizeProviderType, runQc, publishBatch, REQUIRED_FIELDS, RECOMMENDED_FIELDS };
+export { normalizeRecord, fillPlaceFromAddress, computeQc, foldKey, normalizeProviderType, runQc, publishBatch, REQUIRED_FIELDS, RECOMMENDED_FIELDS };
 
 export default router;
