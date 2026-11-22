@@ -179,7 +179,7 @@ export class ChatwootService {
          VALUES ($1,$2,$5,$3,$4) ON CONFLICT (bridge_conversation_id, direction, external_id) DO NOTHING RETURNING id`,
         [inbox.tenant_id, conversation.id, String(externalId),
           JSON.stringify({ content: String(content).slice(0, 20000), ...(status ? { status } : {}), ...(isPrivate ? { private: true } : {}) }), direction]);
-      if (jobs[0] && !isPrivate) await this.logEvent(db, inbox, conversation, direction === 'bot' ? 'outbound' : 'inbound', content, `${direction}:${externalId}`, direction === 'bot' ? 'sent' : 'received');
+      if (jobs[0] && !isPrivate) await this.logEvent(db, inbox, conversation, direction === 'bot' ? 'outbound' : 'inbound', content, direction === 'bot' ? `bot:${externalId}` : externalId, direction === 'bot' ? 'sent' : 'received');
       await db.query('COMMIT');
       return { queued: Boolean(jobs[0]), duplicate: !jobs[0], conversationId: conversation.crm_conversation_id };
     } catch (cause) {
@@ -192,8 +192,8 @@ export class ChatwootService {
     await db.query(
       `INSERT INTO crm_communication_events (tenant_id, conversation_id, lead_id, identity_id, channel, direction,
          body_preview, provider, provider_message_id, status, sent_at)
-       SELECT tenant_id, id, lead_id, identity_id, $3, $4, $5, 'chatwoot', $6, $7,
-         CASE WHEN $4 = 'outbound' AND $7 = 'sent' THEN NOW() ELSE NULL END
+       SELECT tenant_id, id, lead_id, identity_id, $3::text, $4::text, $5::text, 'chatwoot', $6::text, $7::text,
+         CASE WHEN $4::text = 'outbound' AND $7::text = 'sent' THEN NOW() ELSE NULL END
        FROM crm_conversations WHERE tenant_id = $1 AND id = $2`,
       [inbox.tenant_id, conversation.crm_conversation_id, inbox.channel, direction, String(content).slice(0, 2000), `${direction}:${externalId}`, status]);
     await db.query('UPDATE crm_conversations SET last_message_at = NOW(), updated_at = NOW() WHERE tenant_id = $1 AND id = $2',
