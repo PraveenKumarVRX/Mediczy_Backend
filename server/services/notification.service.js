@@ -601,7 +601,6 @@ class NotificationService {
 
       // Prepare mail options
       const mailOptions = {
-        from: `"My SmartHealth" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
         to: email,
         subject: title,
         html: htmlContent
@@ -616,7 +615,7 @@ class NotificationService {
           const filename = generateICalFilename(appointmentData, userType);
           mailOptions.attachments = [{
             filename: filename,
-            content: icalContent,
+            content: Buffer.from(icalContent, 'utf8'),
             contentType: 'text/calendar; charset=utf-8'
           }];
           console.log(`📅 Attached calendar file: ${filename}`);
@@ -625,19 +624,11 @@ class NotificationService {
         }
       }
 
-      // Send via nodemailer directly
-      const nodemailer = (await import('../integrations/nodemailer.js')).default;
-      const smtpPort = parseInt(process.env.SMTP_PORT) || 465;
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtppro.zoho.in',
-        port: smtpPort,
-        secure: smtpPort === 465,
-        auth: {
-          user: (process.env.SMTP_USER || '').trim(),
-          pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim()
-        }
-      });
-      const result = await transporter.sendMail(mailOptions);
+      // Member mail goes through the shared SES path as "My SmartHealth" <hello@mysmarthealth.in>
+      // (owner rule 2026-11-22). The old direct Brevo SMTP send failed every time (535: dead login)
+      // and would have sent from noreply@mediqzy.com, which SES cannot send as.
+      const { sendTransactionalEmail } = await import('./welcome-email.service.js');
+      const result = await sendTransactionalEmail({ ...mailOptions, fromName: 'My SmartHealth', provider: 'ses' });
 
       _logChannelActivity(
         `Email sent — ${title}`,

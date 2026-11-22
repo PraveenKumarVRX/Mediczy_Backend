@@ -1102,13 +1102,14 @@ export async function sendTeamWelcomeEmail(userData, temporaryPassword) {
 /**
  * Shared transactional email path for corporate outreach and other non-welcome sends.
  */
-export async function sendTransactionalEmail({ to, subject, html, text, fromName, bcc, provider }) {
+export async function sendTransactionalEmail({ to, subject, html, text, fromName, bcc, provider, attachments }) {
   const bodyHtml = html || `<pre style="font-family:Segoe UI,Arial,sans-serif;white-space:pre-wrap;">${String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
   const channel = await sendMail({
     to,
     subject,
     html: bodyHtml,
     ...(bcc ? { bcc } : {}),
+    ...(attachments?.length ? { attachments } : {}),
     from: fromName ? { name: fromName, email: undefined } : undefined,
   }, provider ? { provider } : {});
   return { success: true, provider: channel };

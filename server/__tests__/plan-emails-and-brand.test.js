@@ -96,3 +96,13 @@ describe('My SmartHealth branding in member email', () => {
     expect(read('services/welcome-email.service.js')).toContain(`replace(/"?Medi[cq]zy[^"<]*"?\\s*(?=<)/i, '"My SmartHealth" ')`);
   });
 });
+
+describe('member notification email', () => {
+  test('goes through the shared SES path as My SmartHealth (hello@), not the dead Brevo login or noreply@mediqzy.com', () => {
+    const src = read('services/notification.service.js');
+    const body = src.slice(src.indexOf('async sendEmail(userId'), src.indexOf('_logChannelActivity(\n        `Email sent'));
+    expect(body).toContain("sendTransactionalEmail({ ...mailOptions, fromName: 'My SmartHealth', provider: 'ses' })");
+    expect(body).not.toMatch(/createTransport|SMTP_FROM|SMTP_USER/);
+    expect(read('services/welcome-email.service.js')).toContain('...(attachments?.length ? { attachments } : {}),');
+  });
+});
