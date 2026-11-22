@@ -1,4 +1,5 @@
 import paymentService from '../services/payment.service.js';
+import { activatePlanFromRazorpay, isPlanOrder } from '../services/plan-activation.service.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import kafkaEvents from '../services/kafka-events.service.js';
 import { getIntelligentDB } from '../db/intelligent-db-adapter.js';
@@ -633,6 +634,9 @@ class PaymentController {
   // Helper methods
 
   async handlePaymentCaptured(payment) {
+    // A membership plan payment starts the plan here, even when the app never reported back
+    // (stuck-payment incident 2026-11-22). Errors propagate, so Razorpay retries the webhook.
+    await this.activatePlanIfPlanOrder({ orderId: payment?.order_id, paymentId: payment?.id });
     try {
       await db.PaymentTransaction.update(
         {
@@ -696,6 +700,20 @@ class PaymentController {
 
   async handleOrderPaid(order) {
     console.log('💰 Order paid:', order.id);
+    if (isPlanOrder(order)) await this.activatePlanIfPlanOrder({ orderId: order.id });
+  }
+
+  /**
+   * Plan orders are ours (notes.pricing 'server-v1', kind subscribe|upgrade); anything else is left
+   * to its own flow. Activation is idempotent on the payment id, so payment.captured and order.paid
+   * for one payment, and the app's own /subscribe, create one plan between them.
+   */
+  async activatePlanIfPlanOrder({ orderId, paymentId }) {
+    if (!orderId) return;
+    const result = await activatePlanFromRazorpay({ orderId, paymentId, via: 'webhook' });
+    if (result.ok || result.code !== 'NOT_A_PLAN_ORDER') {
+      console.log(`[payment-webhook] plan order ${orderId}: ${result.ok ? (result.alreadyActivated ? 'already active' : `activated user_plans ${result.userPlanId}`) : result.code}`);
+    }
   }
 
   calculateStatistics(transactions) {

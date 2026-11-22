@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "2.2.1",
+    "version": "2.3.0",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/cart/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -12988,6 +12988,156 @@
             "$ref": "#/components/responses/AppObject"
           },
           "201": {
+            "$ref": "#/components/responses/AppObject"
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        }
+      }
+    },
+    "/api/membership/reconcile": {
+      "post": {
+        "tags": [
+          "Membership"
+        ],
+        "summary": "Paid but still locked: finish the plan payment",
+        "description": "\"Already have a plan? Check again\". Asks Razorpay about the caller's own plan orders from the last 30 days and activates any that were paid but never activated (the app lost the checkout reply). Reachable while the account is locked. The membership gate does the same on the first gated request after sign-in. Reply: activated, pending and needsHelp counts, accountStatus, hasActivePlan, plan {id,name} and a message to show. 503 RECONCILE_UNAVAILABLE when Razorpay cannot be reached.",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "activated": {
+                      "type": "integer"
+                    },
+                    "pending": {
+                      "type": "integer"
+                    },
+                    "needsHelp": {
+                      "type": "integer"
+                    },
+                    "accountStatus": {
+                      "type": "string"
+                    },
+                    "hasActivePlan": {
+                      "type": "boolean"
+                    },
+                    "plan": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "activated",
+                    "pending",
+                    "needsHelp",
+                    "hasActivePlan",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AppRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "502": {
+            "$ref": "#/components/responses/AppError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AppError"
+          }
+        },
+        "parameters": []
+      }
+    },
+    "/api/membership/admin/activate-from-payment": {
+      "post": {
+        "tags": [
+          "Membership"
+        ],
+        "summary": "Support: start a member's plan from a Razorpay payment id",
+        "description": "Staff only (admin, super_admin, team). Verified against Razorpay exactly like the payment webhook: our server-priced plan order, captured, covering the order, not already used. 409 when not paid yet, 422 when a plan rule refuses it (needs a refund or a decision), 404 for an unknown payment.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paymentId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "paymentId"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "responses": {
+          "200": {
             "$ref": "#/components/responses/AppObject"
           },
           "400": {

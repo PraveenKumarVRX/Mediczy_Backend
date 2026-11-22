@@ -377,12 +377,26 @@ router.post('/', auth, async (req, res) => {
       description,
       priority = 'medium',
       category,
-      requester,
       assignee,
       dueDate,
       tags = [],
       source = 'web'
     } = req.body;
+    let { requester } = req.body;
+
+    // A member raises a ticket only as themselves: the list and detail routes show a member the
+    // tickets under their own email, so a requester taken from the body could file under someone
+    // else's address (and the member would never see the reply). Staff may file for a member.
+    const isStaffCaller = req.user?.isAdmin === true
+      || ['admin', 'super_admin', 'team', 'team_member', 'team_lead', 'support', 'support_agent', 'agent', 'hospital'].includes(req.user?.role);
+    if (!isStaffCaller && req.user?.id) {
+      requester = {
+        name: requester?.name || req.user.name || [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || req.user.email,
+        email: req.user.email,
+        role: 'User',
+        userId: req.user.id,
+      };
+    }
 
     // Validate required fields
     if (!title || !category || !requester) {

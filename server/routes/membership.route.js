@@ -7,11 +7,13 @@ import pool from '../db/pgPool.js';
 import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
 import { verifyPlanPayment } from '../services/plan-payment-verification.service.js';
+import { recordPlanOrder, markOrderActivatedByApp, reconcileUserPlanOrders, activateFromPaymentId } from '../services/plan-activation.service.js';
 import { quotePlanPurchase, upgradeBaseDue, selfServiceRefusal } from '../services/plan-pricing.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
 import { onPlanActivated } from '../services/plan-emails.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
+import { buildAppliedLimits, summariseCoverage } from '../utils/plan-limits.js';
 import { syncUserStatusWithMembership } from '../middleware/membership.middleware.js';
 
 /** The lowest individual plan, bought (or redeemed) at sign-up. */
@@ -192,85 +194,6 @@ const validateCouponForOrder = async ({ code, userId, scope, amount }) => {
     scope
   };
 };
-
-// ── Build appliedLimits from a plan's coverageDetails ─────────────────────────
-function buildAppliedLimits(plan) {
-  const coverage = plan.metadata?.coverageDetails || {};
-  return {
-    benefitLimits: {
-      pharmacyLimitINR: coverage.pharmacy?.limitINR ?? 0,
-      homeCareLimitINR: coverage.homeCare?.limitINR ?? 0,
-      ambulanceLimitINR: coverage.ambulance?.limitINR ?? 0,
-    },
-    teleConsultLimits: {
-      allSpecialties: coverage.onlineConsult?.limit ?? 0,
-      // 2026-11-20 lineup: GP consults under fair use (per day / per month) and a separate
-      // specialist count. Older plans have neither and keep the pooled allowance above.
-      ...(coverage.onlineConsult?.fairUse ? {
-        gpFairUse: { perDay: coverage.onlineConsult.fairUse.perDay ?? null, perMonth: coverage.onlineConsult.fairUse.perMonth },
-        specialist: coverage.specialistConsult?.limit ?? 0,
-      } : {}),
-    },
-    healthCheckPackage: coverage.healthCheck?.package ?? null,
-    priceINR: Number(plan.discountedPrice != null && plan.discountedPrice !== '0.00' && plan.discountedPrice !== 0 ? plan.discountedPrice : plan.price) || 0,
-    // The itemised picture. The three INR fields above were all this exposed,
-    // and they are 0 on most plans, so Benefits & Plans had nothing to render
-    // and showed dashes for Total Coverage and Utilized. coverageDetails
-    // actually carries discounts, insurance sums, a health-check count and the
-    // teleconsult unit — none of which reached the client.
-    coverage: summariseCoverage(coverage),
-  };
-}
-
-/**
- * Normalise a plan's coverageDetails into something a client can render.
- *
- * Returns itemised benefits plus a total. `totalCoverageINR` sums the monetary
- * limits only — a discount percentage and a visit count are real benefits but
- * are not rupees and must not be added into a money total. A plan whose limits
- * are all zero reports 0, not null: "no monetary cover" is an answer, a dash
- * is not.
- */
-function summariseCoverage(coverage = {}) {
-  const num = (value) => {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : 0;
-  };
-  const MONETARY = ['pharmacy', 'homeCare', 'ambulance', 'dental', 'labTests', 'optical', 'physiotherapy'];
-
-  const benefits = [];
-  for (const key of MONETARY) {
-    const item = coverage[key];
-    if (!item || typeof item !== 'object') continue;
-    benefits.push({
-      key,
-      limitINR: num(item.limitINR),
-      discountPct: item.discountPct === undefined ? null : num(item.discountPct),
-    });
-  }
-
-  const insurance = coverage.insurance && typeof coverage.insurance === 'object'
-    ? {
-      lifeINR: num(coverage.insurance.life),
-      healthINR: num(coverage.insurance.health),
-      accidentINR: num(coverage.insurance.accident),
-    }
-    : null;
-
-  const insuranceTotal = insurance ? insurance.lifeINR + insurance.healthINR + insurance.accidentINR : 0;
-
-  return {
-    totalCoverageINR: benefits.reduce((sum, b) => sum + b.limitINR, 0) + insuranceTotal,
-    benefits,
-    insurance,
-    healthCheck: coverage.healthCheck
-      ? { count: num(coverage.healthCheck.count), package: coverage.healthCheck.package ?? null }
-      : null,
-    teleconsult: coverage.onlineConsult
-      ? { limit: num(coverage.onlineConsult.limit), unit: coverage.onlineConsult.unit ?? null }
-      : null,
-  };
-}
 
 /**
  * What the member has actually consumed, so the client can show "Utilized" as
@@ -531,8 +454,21 @@ router.get('/my/current', authUser, async (req,res) => {
   }
 });
 
+/**
+ * The payment webhook or the sign-in reconcile may have activated this payment a moment before the
+ * app's own call arrives (services/plan-activation.service.js). That is success, not "payment
+ * already used": the member's plan is on, so answer as the activation would have.
+ */
+async function alreadyActivatedFor(req) {
+  const paymentId = req.body?.razorpay_payment_id;
+  if (!paymentId) return null;
+  return UserPlan.findOne({ where: { paymentId: String(paymentId), userId: req.user.id } });
+}
+
 router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (req,res) => {
   try {
+    const done = await alreadyActivatedFor(req);
+    if (done) return res.status(201).json({ userPlan: done, accountStatus: 'active', alreadyActivated: true });
     const plan = await MembershipPlan.findByPk(req.params.planId);
     if(!plan || !plan.isActive) return res.status(404).json({ message:'Plan not available' });
 
@@ -624,6 +560,8 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
         usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
       }
     });
+
+    if (verifiedPaymentId) await markOrderActivatedByApp({ orderId: req.body.razorpay_order_id, paymentId: verifiedPaymentId, userPlanId: userPlan.id, via: 'subscribe' });
 
     // The account opens as soon as the plan is paid, not at the nightly sync.
     await syncUserStatusWithMembership(req.user.id);
@@ -900,6 +838,8 @@ router.post('/payment-order', authUser, [
     if (!orderResult.success) {
       return res.status(500).json({ message: 'Failed to create payment order', error: orderResult.error });
     }
+    // Kept so a payment the app never reports back can still be found and finished (reconcile, webhook).
+    await recordPlanOrder({ userId: req.user.id, planId: Number(planId), kind: quote.kind, order: orderResult.order, couponCode: couponValidation?.coupon?.code || null });
     const gatewayConfig = paymentService.getGatewayConfig();
     res.json({
       success: true,
@@ -933,11 +873,72 @@ router.post('/payment-order', authUser, [
   }
 });
 
+// -------- PAID BUT NOT ACTIVE --------
+/**
+ * POST /api/membership/reconcile — "Already have a plan? Check again".
+ *
+ * Finishes any of the caller's plan orders from the last 30 days that Razorpay shows as paid but
+ * that never activated (the app lost the checkout reply, the network dropped). Reachable while the
+ * account is still locked (PRE_PLAN_PATHS). Scoped to req.user.id: only the caller's own orders.
+ */
+router.post('/reconcile', authUser, async (req, res) => {
+  try {
+    const result = await reconcileUserPlanOrders(req.user.id, { via: 'reconcile' });
+    const active = await UserPlan.findOne({
+      where: { userId: req.user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan', attributes: ['id', 'name', 'planType'] }],
+      order: [['createdAt', 'DESC']],
+    });
+    const { rows: [u] } = await pool.query('SELECT status FROM users WHERE id = $1', [req.user.id]);
+    return res.json({
+      success: true,
+      activated: result.activated.length,
+      pending: result.pending,
+      needsHelp: result.refused.length,
+      accountStatus: u?.status || null,
+      hasActivePlan: Boolean(active),
+      plan: active?.plan ? { id: active.plan.id, name: active.plan.name } : null,
+      message: active
+        ? 'Your plan is active.'
+        : result.refused.length
+          ? 'We found your payment but could not start the plan automatically. Our care team will sort it out — write to care@mysmarthealth.in.'
+          : 'We could not find a completed plan payment on this account yet.',
+    });
+  } catch (error) {
+    console.error(`[membership] reconcile failed for user ${req.user?.id}:`, error.message);
+    return res.status(503).json({ success: false, code: 'RECONCILE_UNAVAILABLE', message: 'We could not check your payment right now. Please try again in a minute.' });
+  }
+});
+
+/**
+ * POST /api/membership/admin/activate-from-payment { paymentId: "pay_..." }
+ *
+ * Support tool: start the plan a member paid for, from the payment id in their email or the
+ * Razorpay dashboard. Checked against Razorpay exactly like the webhook (our order, captured, enough,
+ * not already used); it cannot activate anything the member did not pay for.
+ */
+router.post('/admin/activate-from-payment', authUser, requireRole(['admin', 'super_admin', 'team']), [
+  body('paymentId').isString().trim().notEmpty(),
+], async (req, res) => {
+  try {
+    const result = await activateFromPaymentId(String(req.body.paymentId).trim());
+    console.log(`[membership] admin activate-from-payment ${req.body.paymentId} by user ${req.user?.id}: ${result.ok ? 'ok' : result.code}`);
+    if (result.ok) return res.json({ success: true, ...result });
+    return res.status(result.pending ? 409 : 422).json({ success: false, ...result });
+  } catch (error) {
+    console.error('[membership] admin activate-from-payment failed:', error.message);
+    const notFound = /not found|does not exist|BAD_REQUEST/i.test(error?.error?.description || error.message || '');
+    return res.status(notFound ? 404 : 502).json({ success: false, code: notFound ? 'PAYMENT_NOT_FOUND' : 'GATEWAY_ERROR', message: notFound ? 'Razorpay has no such payment.' : 'Could not reach Razorpay. Try again.' });
+  }
+});
+
 // -------- PLAN UPGRADE --------
 // Upgrade from current plan to a higher tier plan (prorated)
 router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], async (req, res) => {
   try {
     const newPlanId = parseInt(req.params.newPlanId);
+    const done = await alreadyActivatedFor(req);
+    if (done) return res.json({ success: true, message: 'Plan upgraded successfully', alreadyActivated: true, userPlan: done });
     
     // Find current active primary plan
     const currentUserPlan = await UserPlan.findOne({ 
@@ -1075,6 +1076,8 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
         usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
       }
     });
+
+    if (razorpay_payment_id) await markOrderActivatedByApp({ orderId: razorpay_order_id, paymentId: razorpay_payment_id, userPlanId: newUserPlan.id, via: 'upgrade' });
 
     if (couponValidation?.coupon) {
       await CouponUsage.create({

@@ -140,6 +140,8 @@ export const mobileRouters = [
     {"method":"post","path":"/api/membership/validate-free-coupon","public":false,"statuses":[200,201],"tag":"Membership"},
     {"method":"post","path":"/api/membership/redeem-free-coupon","public":false,"statuses":[200,201],"tag":"Membership"},
     {"method":"post","path":"/api/membership/payment-order","public":false,"statuses":[200,201],"tag":"Membership"},
+    {"method":"post","path":"/api/membership/reconcile","public":false,"statuses":[200,503],"tag":"Membership"},
+    {"method":"post","path":"/api/membership/admin/activate-from-payment","public":false,"statuses":[200,404,409,422,502],"tag":"Membership"},
     {"method":"post","path":"/api/membership/upgrade/{newPlanId}","public":false,"statuses":[200,201],"tag":"Membership"},
     {"method":"get","path":"/api/membership/upgrade-options","public":false,"statuses":[200],"tag":"Membership"},
     {"method":"get","path":"/api/membership/addons","public":false,"statuses":[200],"tag":"Membership"},

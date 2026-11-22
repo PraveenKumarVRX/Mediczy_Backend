@@ -157,6 +157,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261121000100-checkup-booking-events.migration.js',
   '20261121000200-corporate-report-snapshots.migration.js',
   '20261122000100-chatwoot-whatsapp-gupshup.migration.js',
+  '20261122000200-plan-payment-orders.migration.js',
 ];
 
 function runStep(step) {

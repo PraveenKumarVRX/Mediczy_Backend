@@ -22,6 +22,9 @@ jest.unstable_mockModule('../models/user.model.intelligent.js', () => ({
   default: { findOne: userFindOne, update: userUpdate },
 }));
 
+const reconcileUserPlanOrders = jest.fn();
+jest.unstable_mockModule('../services/plan-activation.service.js', () => ({ reconcileUserPlanOrders }));
+
 const { validateMembership, isPrePlanPath } = await import('../middleware/membership.middleware.js');
 
 const call = async ({ path, method = 'GET', status = 'inactive', user = {} }) => {
@@ -38,6 +41,39 @@ beforeEach(() => {
   sqlQuery.mockReset().mockResolvedValue([]);
   userFindOne.mockReset().mockResolvedValue({ status: 'inactive', email: 'm@example.invalid', metadata: {} });
   userUpdate.mockReset().mockResolvedValue([1]);
+  reconcileUserPlanOrders.mockReset().mockResolvedValue({ activated: [], pending: 0, refused: [], checked: 0 });
+});
+
+describe('a member who paid but whose app never finished activation (incident 2026-11-22)', () => {
+  test('is let in once the sign-in reconcile finds the paid order', async () => {
+    reconcileUserPlanOrders.mockImplementation(async () => {
+      userPlanFindOne.mockResolvedValue({ id: 2311, endDate: '2099-01-01' });
+      return { activated: [{ orderId: 'order_A1', userPlanId: 2311 }], pending: 0, refused: [], checked: 1 };
+    });
+    const { passed, req } = await call({ path: '/api/appointments/my' });
+    expect(reconcileUserPlanOrders).toHaveBeenCalledWith(41, { via: 'reconcile' });
+    expect(passed).toBe(true);
+    expect(req.user.status).toBe('active');
+  });
+
+  test('with nothing paid, is still refused (and a reconcile failure is not an error)', async () => {
+    expect((await call({ path: '/api/appointments/my' })).res.body.code).toBe('MEMBERSHIP_REQUIRED');
+    reconcileUserPlanOrders.mockRejectedValue(new Error('razorpay down'));
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    expect((await call({ path: '/api/appointments/my' })).res.body.code).toBe('MEMBERSHIP_REQUIRED');
+    spy.mockRestore();
+  });
+
+  test('can reach "check again" and raise and read their own support tickets, not the staff ticket tools', async () => {
+    expect((await call({ path: '/api/membership/reconcile', method: 'POST' })).passed).toBe(true);
+    for (const [method, path] of [['GET', '/api/tickets'], ['POST', '/api/tickets'], ['GET', '/api/tickets/TKT-123'], ['POST', '/api/tickets/TKT-123/messages']]) {
+      expect(isPrePlanPath(path, method)).toBe(true);
+    }
+    for (const [method, path] of [['GET', '/api/tickets/stats'], ['GET', '/api/tickets/agents'], ['GET', '/api/tickets/export/csv'], ['PUT', '/api/tickets/TKT-123'],
+      ['DELETE', '/api/tickets/TKT-123'], ['POST', '/api/tickets/bulk/x'], ['POST', '/api/tickets/TKT-123/assign']]) {
+      expect(isPrePlanPath(path, method)).toBe(false);
+    }
+  });
 });
 
 describe('an individual member without a plan', () => {
