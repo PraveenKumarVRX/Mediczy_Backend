@@ -44,6 +44,9 @@ function sendError(res, error) {
       ...(error.details && !('upstreamStatus' in error.details) ? { details: error.details } : {}),
     });
   }
+  if (error?.code === 'DEMO_ACCOUNT_BLOCKED') {
+    return res.status(403).json({ success: false, code: error.code, message: 'This demo login can only use the demo company\'s insurance.' });
+  }
   console.error('[employee-insurance]', error);
   return res.status(500).json({ success: false, code: 'INTERNAL', message: 'Something went wrong.' });
 }

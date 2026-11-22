@@ -146,6 +146,30 @@ describe('switches', () => {
 });
 
 // ── partner client ──────────────────────────────────────────────────────────
+describe('the sales demo login (owner approval 2026-11-22)', () => {
+  const DEMO_BINDING = { ...BINDING, tenant_slug: 'medibharat', smartcrm_corporate: 'My SmartHealth Corporate', api_key_env: 'SMARTCRM_KEY_EQUITAS' };
+  it("is refused a real employer's insurance before anything is sent", async () => {
+    const { runAsDemoAccount } = await import('../utils/demo-context.js');
+    const fetchImpl = fetchReturning({ body: SUMMARY });
+    await expect(runAsDemoAccount(8513, () => client.partnerRequest(BINDING, LINK, { op: 'summary', userId: 8513, fetchImpl })))
+      .rejects.toMatchObject({ code: 'DEMO_ACCOUNT_BLOCKED', status: 403 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  it("may reach SmartCRM's demo company (medibharat / My SmartHealth Corporate)", async () => {
+    const { runAsDemoAccount } = await import('../utils/demo-context.js');
+    const fetchImpl = fetchReturning({ body: SUMMARY });
+    const out = await runAsDemoAccount(8513, () => client.partnerRequest(DEMO_BINDING, { ...LINK, source_tenant: 'medibharat' }, { op: 'summary', userId: 8513, fetchImpl }));
+    expect(out.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(client.isDemoBinding({ tenant_slug: ' MediBharat ', smartcrm_corporate: 'my  smarthealth corporate' })).toBe(true);
+    expect(client.isDemoBinding(BINDING)).toBe(false);
+  });
+  it('ordinary members are unaffected', async () => {
+    const fetchImpl = fetchReturning({ body: SUMMARY });
+    expect((await client.partnerRequest(BINDING, LINK, { op: 'summary', userId: 7646, fetchImpl })).status).toBe(200);
+  });
+});
+
 describe('partner client', () => {
   it('sends the key, the acting Mediqzy user, and identity params a caller cannot override', async () => {
     const fetchImpl = fetchReturning({ body: SUMMARY });

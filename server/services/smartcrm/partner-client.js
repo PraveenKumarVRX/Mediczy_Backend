@@ -16,6 +16,7 @@
  * take every other broker's members with it.
  */
 import { CircuitBreaker } from '../../utils/circuit-breaker.js';
+import { currentDemoAccountId, DemoAccountBlockedError } from '../../utils/demo-context.js';
 import {
   PARTNER_PREFIX, SmartCrmError, apiKeyFor, integrationEnabled, partnerBaseUrl,
 } from './config.js';
@@ -61,11 +62,24 @@ export const breakerStates = () => [...breakers.values()].map((b) => b.toJSON())
  * @param {object}  options   { op, method, userId, query, body, idempotencyKey, requestId, timeoutMs, fetchImpl }
  * @returns {Promise<{ status:number, body:any, ms:number }>}
  */
+/**
+ * SmartCRM companies that are demo data on SmartCRM's side, as tenant|corporate (owner approval
+ * 2026-11-22: the shared sales demo login may enrol there). Comma-separated; case and spaces ignored.
+ */
+const DEMO_BINDINGS = String(process.env.SMARTCRM_DEMO_BINDINGS ?? 'medibharat|My SmartHealth Corporate')
+  .split(',').map((x) => x.trim().toLowerCase().replace(/\s+/g, ' ')).filter(Boolean);
+export const isDemoBinding = (binding) =>
+  DEMO_BINDINGS.includes(`${String(binding?.tenant_slug || '').trim().toLowerCase()}|${String(binding?.smartcrm_corporate || '').trim().toLowerCase().replace(/\s+/g, ' ')}`);
+
 export async function partnerRequest(binding, link, {
   op, method = 'GET', userId, query = {}, body, idempotencyKey, requestId, consentId,
   timeoutMs, fetchImpl,
 } = {}) {
   if (!integrationEnabled()) throw new SmartCrmError('DISABLED', 'Insurance sync is switched off.', 503);
+  // The demo-account guard (utils/demo-context.js) lists SmartCRM as blocked, but these calls use
+  // their own mTLS transport and never passed through it. Enforced here: the sales demo login may
+  // reach only SmartCRM's demo company, never a real employer's insurance.
+  if (currentDemoAccountId() !== null && !isDemoBinding(binding)) throw new DemoAccountBlockedError('the insurer (SmartCRM)');
   const spec = PARTNER_PATHS[op];
   if (!spec || !spec.methods.includes(method)) {
     throw new SmartCrmError('UNSUPPORTED_OPERATION', `No partner operation ${op} ${method}.`, 500);
