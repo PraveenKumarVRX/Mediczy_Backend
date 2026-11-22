@@ -95,13 +95,13 @@ const smartcrmTag = 'Insurance (SmartCRM)';
 const passThrough = { type: 'object', additionalProperties: true, description: 'SmartCRM\'s own payload, passed through unchanged.' };
 const idempotencyKey = { name: 'Idempotency-Key', in: 'header', required: true, schema: { type: 'string', pattern: '^[A-Za-z0-9_-]{8,128}$' }, description: 'Same key + same body replays the stored answer (header Idempotent-Replayed: true); same key + different body is 422.' };
 const enrolmentRefusals = { 409: R('SmartCrmRefusal'), 503: R('SmartCrmRefusal') };
-const enrol = (summary, { requestBody, idempotent, description, query } = {}) => op(smartcrmTag, summary, {
+const enrol = (summary, { requestBody, idempotent, description, query, ok } = {}) => op(smartcrmTag, summary, {
   description,
   requestBody,
   params: query,
   headers: idempotent ? [idempotencyKey] : undefined,
   responses: {
-    200: json(passThrough, 'SmartCRM\'s answer'),
+    200: json(ok || passThrough, ok ? 'Translated from SmartCRM\'s answer' : 'SmartCRM\'s answer'),
     ...(idempotent ? { 201: json(passThrough, 'Saved (submit)'), 202: json(passThrough, 'Pending HR approval, with request_id'), 402: json(passThrough, 'Payment pending'), 422: R('SmartCrmRefusal') } : {}),
     400: json(passThrough, 'Refused by SmartCRM (`detail`) or a missing Idempotency-Key'),
     ...enrolmentRefusals,
@@ -127,13 +127,34 @@ const insurance = {
     }),
   },
   '/api/employee/enrolment/window': { get: enrol('Enrolment window state (fails closed: only state "open" is open)') },
-  '/api/employee/enrolment/session': { post: enrol('Start an enrolment session', { requestBody: body(passThrough, false) }) },
+  '/api/employee/enrolment/session': { post: enrol('Start an enrolment session', { requestBody: body(passThrough, false),
+    description: 'SmartCRM\'s session, plus data.policyOptions: each SmartCRM policy option (a flat-priced bundle) as {id, name, type: "single", slabs: [one slab with premium in rupees, gst null, prorate false], selectionGroup, participationThresholdPct, benefits[{name, limit, note}]}. Options sharing a selectionGroup are alternatives; choose one.' }) },
   '/api/employee/enrolment/draft': {
     get: enrol('Read the server-side draft'),
     put: enrol('Save the draft (refused while the window is closed)', { requestBody: body(passThrough) }),
     delete: enrol('Discard the draft'),
   },
-  '/api/employee/enrolment/quote': { post: enrol('Price a selection (refused while the window is closed)', { requestBody: body(passThrough) }) },
+  '/api/employee/enrolment/quote': { post: enrol('Price a selection (refused while the window is closed)', {
+    description: 'Priced by SmartCRM. Send either SmartCRM\'s own selected_policy_options [{id}] or selection.selectedPolicyOptionIds; it goes on as {selected_policy_options: [{id}]}. The reply keeps SmartCRM\'s fields (optionalPremiumTotal, options, currency, paymentRequired, policyNo) and adds lines/total/gstIncluded/collectionMode. total is SmartCRM\'s optionalPremiumTotal in rupees; SmartCRM adds no GST to these bundles, so gstIncluded is false. Two options from one selectionGroup are refused (400, error.code SELECTION_GROUP_CONFLICT).',
+    requestBody: body({ type: 'object', properties: {
+      policyId: { type: 'string' }, sessionId: { type: 'string', nullable: true },
+      selected_policy_options: { type: 'array', maxItems: 20, items: { type: 'object', properties: { id: { type: 'string', pattern: '^[A-Za-z0-9_.:-]{1,100}$' } } } },
+      selection: { type: 'object', additionalProperties: true, properties: {
+        selectedPolicyOptionIds: { type: 'array', maxItems: 20, items: { type: 'string', pattern: '^[A-Za-z0-9_.:-]{1,100}$' } },
+        policyOptions: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, slabId: { type: 'string', nullable: true } } } },
+      } },
+    } }),
+    ok: { type: 'object', properties: { success: { type: 'boolean' }, data: { type: 'object', additionalProperties: true, properties: {
+      optionalPremiumTotal: { type: 'number', nullable: true, description: 'SmartCRM\'s price, rupees (same as total)' },
+      options: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      lines: { type: 'array', items: { type: 'object', properties: {
+        id: { type: 'string', nullable: true }, name: { type: 'string' }, annual: { type: 'number', nullable: true }, days: { type: 'number', nullable: true },
+        premium: { type: 'number', nullable: true }, gst: { type: 'number', nullable: true }, total: { type: 'number', nullable: true } } } },
+      total: { type: 'number', nullable: true, description: 'Rupees' }, gstIncluded: { type: 'boolean' },
+      collectionMode: { type: 'string', enum: ['online'], nullable: true }, currency: { type: 'string' },
+      paymentRequired: { type: 'boolean' }, policyNo: { type: 'string', nullable: true },
+    } } } },
+  }) },
   '/api/employee/enrolment/payment/initiate': { post: enrol('Start an online payment', { requestBody: body(passThrough), idempotent: true }) },
   '/api/employee/enrolment/payment/status': { get: enrol('Payment status', { query: ['enrollment_session_token', 'payment_ref'].map(queryParam) }) },
   '/api/employee/enrolment/submit': { post: enrol('Submit the enrolment', { requestBody: body(passThrough), idempotent: true, description: '201 saved · 202 pending HR with request_id · 402 payment pending · 400 with detail. Refused (409 ENROLMENT_CLOSED) while the window is not open.' }) },

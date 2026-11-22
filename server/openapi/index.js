@@ -16,7 +16,7 @@ import { schemas, securitySchemes, responses } from './components.js';
 import { paths } from './paths.js';
 import { mobilePaths, mobileSchemas, mobileResponses } from './mobile.js';
 
-export const APP_SPEC_VERSION = '2.0.0'; // 2.0.0: removed POST /api/employee/enrolment/dependents and renamed payment/status query params (both never worked: SmartCRM has no such endpoint/names); added insurance/claims, insurance/e-card, ecard.download
+export const APP_SPEC_VERSION = '2.1.0'; // 2.1.0: enrolment/quote translated to and from SmartCRM (request selection, reply lines/total/gstIncluded); enrolment/session adds data.policyOptions. 2.0.0: 2.0.0: removed POST /api/employee/enrolment/dependents and renamed payment/status query params (both never worked: SmartCRM has no such endpoint/names); added insurance/claims, insurance/e-card, ecard.download
 
 export function buildAppSpec() {
   return JSON.parse(JSON.stringify({

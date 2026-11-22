@@ -21,6 +21,7 @@ import {
   SmartCrmError, effectiveEnrolmentMode, loadBinding, schemaAvailable,
 } from './config.js';
 import { partnerRequest } from './partner-client.js';
+import { toSmartCrmQuote, fromSmartCrmQuote, withAppPolicyOptions } from './enrolment-translate.js';
 import { getActiveLink } from './member-link.service.js';
 import { auditPartnerEvent } from './audit.js';
 
@@ -200,11 +201,15 @@ export async function runOperation(name, {
       }
     }
 
+    // The app's quote and option shapes differ from SmartCRM's; see enrolment-translate.js.
+    const upstreamBody = name === 'quote' ? toSmartCrmQuote(body) : body;
     const response = guardUpstream(await partnerRequest(ctx.binding, ctx.link, {
-      op: spec.op, method: spec.method, userId, query, body,
+      op: spec.op, method: spec.method, userId, query, body: upstreamBody,
       idempotencyKey: spec.idempotent ? idempotencyKey : undefined, requestId, fetchImpl,
       consentId: ctx.link.consent_id,
     }));
+    if (response.status === 200 && name === 'quote') response.body = fromSmartCrmQuote(response.body);
+    if (response.status >= 200 && response.status < 300 && name === 'session') response.body = withAppPolicyOptions(response.body);
     await release('done', response);
     if (name === 'submit' || name === 'draftPut' || name === 'draftDelete') windowCache.delete(userId);
     await audit('smartcrm.enrolment.passed', {
