@@ -138,6 +138,7 @@ const insurance = {
     description: 'Priced by SmartCRM. Send either SmartCRM\'s own selected_policy_options [{id}] or selection.selectedPolicyOptionIds; it goes on as {selected_policy_options: [{id}]}. The reply keeps SmartCRM\'s fields (optionalPremiumTotal, options, currency, paymentRequired, policyNo) and adds lines/total/gstIncluded/collectionMode. total is SmartCRM\'s optionalPremiumTotal in rupees; SmartCRM adds no GST to these bundles, so gstIncluded is false. Two options from one selectionGroup are refused (400, error.code SELECTION_GROUP_CONFLICT).',
     requestBody: body({ type: 'object', properties: {
       policyId: { type: 'string' }, sessionId: { type: 'string', nullable: true },
+      payment_mode: { type: 'string', enum: ['online', 'payroll', 'salary'], description: 'Required when the policy offers both; salary = payroll' },
       selected_policy_options: { type: 'array', maxItems: 20, items: { type: 'object', properties: { id: { type: 'string', pattern: '^[A-Za-z0-9_.:-]{1,100}$' } } } },
       selection: { type: 'object', additionalProperties: true, properties: {
         selectedPolicyOptionIds: { type: 'array', maxItems: 20, items: { type: 'string', pattern: '^[A-Za-z0-9_.:-]{1,100}$' } },
@@ -150,8 +151,10 @@ const insurance = {
       lines: { type: 'array', items: { type: 'object', properties: {
         id: { type: 'string', nullable: true }, name: { type: 'string' }, annual: { type: 'number', nullable: true }, days: { type: 'number', nullable: true },
         premium: { type: 'number', nullable: true }, gst: { type: 'number', nullable: true }, total: { type: 'number', nullable: true } } } },
-      total: { type: 'number', nullable: true, description: 'Rupees' }, gstIncluded: { type: 'boolean' },
-      collectionMode: { type: 'string', enum: ['online'], nullable: true }, currency: { type: 'string' },
+      total: { type: 'number', nullable: true, description: 'Rupees, including GST when gstIncluded' }, gstIncluded: { type: 'boolean' },
+      gstTotal: { type: 'number', nullable: true }, paymentModes: { type: 'array', items: { type: 'string' } },
+      paymentModeRequired: { type: 'boolean' }, salaryDeduction: { type: 'object', nullable: true, additionalProperties: true },
+      collectionMode: { type: 'string', enum: ['online', 'salary'], nullable: true }, currency: { type: 'string' },
       paymentRequired: { type: 'boolean' }, policyNo: { type: 'string', nullable: true },
     } } } },
   }) },

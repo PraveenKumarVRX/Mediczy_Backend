@@ -15,8 +15,10 @@
  *     slabs[{id, premium, gst, prorate}]}]               whole bundle), benefits[], selectionGroup,
  *                                                       participationThresholdPct}]
  *
- * Amounts are rupees on both sides. SmartCRM adds no GST to these bundles: its total is exactly the
- * premium entered in the policy setup, so gstIncluded is false and gst is null.
+ * Amounts are rupees on both sides. From SmartCRM e03534de an option may carry a GST rate: quote then
+ * returns priced lines with gst, a gstTotal, and an optionalPremiumTotal that includes GST, plus the
+ * payment methods (paymentModes, paymentMode, paymentModeRequired, salaryDeduction), all kept as sent.
+ * The member's payment_mode (online | payroll; the app's 'salary' = payroll) is forwarded.
  * The price always comes from SmartCRM's optionalPremiumTotal; nothing here adds premiums up.
  * Replies keep every SmartCRM field and add the app-shaped ones, so either app shape works.
  */
@@ -48,9 +50,24 @@ export function selectedOptionIds(appBody) {
   return ids;
 }
 
+// SmartCRM's payment methods: online, or payroll (salary deduction; the app calls it 'salary').
+const PAYMENT_MODE = { online: 'online', payroll: 'payroll', salary: 'payroll' };
+
+/** The payment method the member chose, if any: payment_mode, or the app's collectionMode. */
+export function paymentModeOf(appBody) {
+  const b = appBody && typeof appBody === 'object' ? appBody : {};
+  const sel = b.selection && typeof b.selection === 'object' ? b.selection : {};
+  const raw = b.payment_mode ?? sel.payment_mode ?? b.collectionMode ?? sel.collectionMode;
+  if (raw === undefined || raw === null || raw === '') return null;
+  const mode = PAYMENT_MODE[String(raw).toLowerCase()];
+  if (!mode) throw new SmartCrmError('PAYMENT_MODE_NOT_OFFERED', 'Choose online payment or salary deduction.', 400);
+  return mode;
+}
+
 /** App quote body -> SmartCRM quote body. */
 export function toSmartCrmQuote(appBody) {
-  return { selected_policy_options: selectedOptionIds(appBody).map((id) => ({ id })) };
+  const mode = paymentModeOf(appBody);
+  return { selected_policy_options: selectedOptionIds(appBody).map((id) => ({ id })), ...(mode ? { payment_mode: mode } : {}) };
 }
 
 /** SmartCRM quote reply -> what the app's normalizeQuote reads. Non-200 replies are left alone. */
@@ -58,10 +75,21 @@ export function fromSmartCrmQuote(body) {
   const d = dataOf(body);
   if (!d || body.success === false) return body;
   const total = num(d.optionalPremiumTotal);
-  const lines = (Array.isArray(d.options) ? d.options : []).slice(0, MAX_OPTIONS).map((o) => {
+  // SmartCRM's own priced lines (with proration and GST) when it sends them (e03534de onwards);
+  // otherwise one line per chosen option, as before.
+  const priced = Array.isArray(d.lines) && d.lines.length;
+  const lines = (priced ? d.lines : Array.isArray(d.options) ? d.options : []).slice(0, MAX_OPTIONS).map((o) => {
     const premium = num(o?.premium ?? o?.amount);
-    return { id: text(o?.id, 100), name: text(o?.name) || 'Add-on cover', annual: premium, days: null, premium, gst: null, total: premium };
+    const gst = priced ? num(o?.gst) : null;
+    return {
+      id: text(o?.id === undefined || o?.id === null ? '' : String(o.id), 100), name: text(o?.name) || 'Add-on cover',
+      annual: priced ? num(o?.annual ?? o?.annual_premium) ?? null : premium,
+      days: priced ? num(o?.prorata_days ?? o?.days) : null,
+      premium, gst, total: priced ? num(o?.total) ?? (premium !== null ? premium + (gst || 0) : null) : premium,
+    };
   });
+  const gstTotal = num(d.gstTotal);
+  const mode = String(d.paymentMode || '').toLowerCase();
   // SmartCRM's own fields stay (optionalPremiumTotal, options, ...) for app builds that read them;
   // the app-shaped fields are added beside them.
   return {
@@ -71,8 +99,10 @@ export function fromSmartCrmQuote(body) {
       ...d,
       lines,
       total,
-      gstIncluded: false,
-      collectionMode: d.paymentRequired === true ? 'online' : null,
+      // optionalPremiumTotal includes GST once SmartCRM adds it; before that there was none.
+      gstIncluded: gstTotal !== null ? true : false,
+      gstTotal,
+      collectionMode: mode === 'payroll' ? 'salary' : mode === 'online' ? 'online' : d.paymentRequired === true ? 'online' : null,
       currency: text(d.currency, 8) || 'INR',
       paymentRequired: d.paymentRequired === true,
       policyNo: text(d.policyNo, 100),

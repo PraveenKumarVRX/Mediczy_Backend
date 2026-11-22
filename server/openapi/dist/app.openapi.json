@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/cart/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -1286,6 +1286,15 @@
                     "type": "string",
                     "nullable": true
                   },
+                  "payment_mode": {
+                    "type": "string",
+                    "enum": [
+                      "online",
+                      "payroll",
+                      "salary"
+                    ],
+                    "description": "Required when the policy offers both; salary = payroll"
+                  },
                   "selected_policy_options": {
                     "type": "array",
                     "maxItems": 20,
@@ -1398,15 +1407,34 @@
                         "total": {
                           "type": "number",
                           "nullable": true,
-                          "description": "Rupees"
+                          "description": "Rupees, including GST when gstIncluded"
                         },
                         "gstIncluded": {
                           "type": "boolean"
                         },
+                        "gstTotal": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "paymentModes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "paymentModeRequired": {
+                          "type": "boolean"
+                        },
+                        "salaryDeduction": {
+                          "type": "object",
+                          "nullable": true,
+                          "additionalProperties": true
+                        },
                         "collectionMode": {
                           "type": "string",
                           "enum": [
-                            "online"
+                            "online",
+                            "salary"
                           ],
                           "nullable": true
                         },
