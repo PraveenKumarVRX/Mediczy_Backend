@@ -112,6 +112,12 @@ export function fromSmartCrmQuote(body) {
 }
 
 /** One SmartCRM policy option (a flat-priced bundle) -> the app's option with a single slab. */
+const gstOn = (o) => {
+  const premium = num(o?.premium);
+  const rate = num(o?.gstRatePct);
+  return premium !== null && rate !== null ? Math.round(premium * rate) / 100 : null;
+};
+
 export function toAppOption(o) {
   const id = text(o?.id === undefined || o?.id === null ? '' : String(o.id), 100);
   if (!id) return null;
@@ -119,7 +125,8 @@ export function toAppOption(o) {
     id,
     name: text(o.name) || 'Add-on cover',
     type: 'single',
-    slabs: [{ id: `${id}:flat`, familyStructure: null, baseSumInsured: null, premium: num(o.premium), gst: null, prorate: false }],
+    // gstRatePct (SmartCRM e03534de): the slab carries the GST amount on the flat premium; the quote stays the price.
+    slabs: [{ id: `${id}:flat`, familyStructure: null, baseSumInsured: null, premium: num(o.premium), gst: gstOn(o), prorate: false }],
     // Options sharing a selection group are alternatives: the member may pick one of them.
     selectionGroup: text(o.selectionGroup, 100),
     participationThresholdPct: num(o.participationThresholdPct),
@@ -132,10 +139,17 @@ export function toAppOption(o) {
 }
 
 /** Session reply: adds the app-shaped policyOptions beside SmartCRM's own fields. */
+// The live session reply (checked 2026-11-22) is not wrapped in {data} and carries the options
+// under enrollment_ui.policy_options; both that and the documented data.policy_options are read.
 export function withAppPolicyOptions(body) {
-  const d = dataOf(body);
-  if (!d || !Array.isArray(d.policy_options)) return body;
-  return { ...body, data: { ...d, policyOptions: d.policy_options.slice(0, 50).map(toAppOption).filter(Boolean) } };
+  if (!body || typeof body !== 'object') return body;
+  const wrapped = dataOf(body);
+  const d = wrapped || body;
+  const list = Array.isArray(d.policy_options) ? d.policy_options
+    : Array.isArray(d.enrollment_ui?.policy_options) ? d.enrollment_ui.policy_options : null;
+  if (!list) return body;
+  const policyOptions = list.slice(0, 50).map(toAppOption).filter(Boolean);
+  return wrapped ? { ...body, data: { ...d, policyOptions } } : { ...body, policyOptions };
 }
 
 export default { selectedOptionIds, toSmartCrmQuote, fromSmartCrmQuote, toAppOption, withAppPolicyOptions };

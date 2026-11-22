@@ -76,3 +76,22 @@ describe('session options', () => {
     expect(withAppPolicyOptions({ success: true, data: {} })).toEqual({ success: true, data: {} });
   });
 });
+
+describe('session reply as SmartCRM actually sends it (2026-11-22)', () => {
+  test('options under enrollment_ui.policy_options, no {data} wrapper, become policyOptions with GST', () => {
+    const live = { valid: true, policy_id: 146, enrollment_ui: { policy_options: [
+      { id: 'msh_ghi_modular_iv', name: 'GHI Modular – Option IV', premium: '53846', currency: 'INR', optional: true, gstRatePct: 18 },
+      { id: 'no_gst', name: 'Plain', premium: '1000' },
+    ] } };
+    const out = withAppPolicyOptions(live);
+    expect(out.valid).toBe(true);
+    expect(out.enrollment_ui).toBe(live.enrollment_ui);
+    expect(out.policyOptions.map((o) => [o.id, o.slabs[0].premium, o.slabs[0].gst])).toEqual([['msh_ghi_modular_iv', 53846, 9692.28], ['no_gst', 1000, null]]);
+  });
+
+  test('the documented data.policy_options shape still works, and a reply without options is left alone', () => {
+    expect(withAppPolicyOptions({ success: true, data: { policy_options: [{ id: 'a', premium: 10 }] } }).data.policyOptions[0].id).toBe('a');
+    const none = { valid: true };
+    expect(withAppPolicyOptions(none)).toBe(none);
+  });
+});
