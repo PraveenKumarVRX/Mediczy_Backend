@@ -375,6 +375,13 @@ describe('refresh', () => {
 describe('linking', () => {
   const policyVersion = links.CONSENT_POLICY_VERSION;
 
+  it('records a consent version that fits patient_consents.policy_version (VARCHAR 20)', () => {
+    expect(links.CONSENT_RECORD_VERSION.length).toBeLessThanOrEqual(20);
+    const src = readFileSync(new URL('../services/smartcrm/member-link.service.js', import.meta.url), 'utf8');
+    expect(src).toContain('[id, CONSENT_RECORD_VERSION,');
+    expect(src).toContain('policy_version: CONSENT_POLICY_VERSION');
+  });
+
   it('requires explicit, current consent', async () => {
     handlers = baseHandlers({ link: null });
     await expect(links.linkMember({ userId: 7646, consent: 'yes', policyVersion }, fakeDb))

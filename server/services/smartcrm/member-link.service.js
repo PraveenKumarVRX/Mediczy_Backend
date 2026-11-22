@@ -24,6 +24,9 @@ import { auditPartnerEvent } from './audit.js';
 import { withRlsTransaction } from '../../middleware/rls-context.middleware.js';
 
 export const CONSENT_POLICY_VERSION = 'smartcrm-insurance-link-2026-11';
+// patient_consents.policy_version is VARCHAR(20); the app-facing version above is longer, so the
+// consent row records this short code and keeps the full version in its metadata.
+export const CONSENT_RECORD_VERSION = 'smartcrm-2026-11';
 const REFRESH_MIN_INTERVAL_MS = 60_000;
 const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 const lastRefreshAt = new Map();
@@ -139,9 +142,9 @@ export async function linkMember({ userId, consent, policyVersion, ip = null, us
       // organization_id is left NULL on purpose: it is a tenants/organisations
       // reference, and a corporates id in it is the id-collision bug the
       // entity uid rule exists to prevent. The corporate goes in metadata.
-      [id, CONSENT_POLICY_VERSION, ip ? String(ip).slice(0, 64) : null,
+      [id, CONSENT_RECORD_VERSION, ip ? String(ip).slice(0, 45) : null,
         userAgent ? String(userAgent).slice(0, 500) : null,
-        JSON.stringify({ scope: 'smartcrm_insurance_link', corporate_id: roster.corporate_id, source_tenant: binding.tenant_slug, source_corporate: binding.smartcrm_corporate })]
+        JSON.stringify({ scope: 'smartcrm_insurance_link', policy_version: CONSENT_POLICY_VERSION, corporate_id: roster.corporate_id, source_tenant: binding.tenant_slug, source_corporate: binding.smartcrm_corporate })]
     );
     const { rows: [created] } = await client.query(
       `INSERT INTO insurance_member_links
