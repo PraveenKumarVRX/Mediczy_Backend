@@ -41,7 +41,7 @@ async function getAdminEmailConfig() {
     user: row.username,
     pass: row.password,
     fromEmail: row.from_email || row.username,
-    fromName: row.from_name || 'Mediqzy',
+    fromName: row.from_name || 'My SmartHealth',
   };
 }
 
@@ -67,7 +67,7 @@ async function getTeamEmailSettingsConfig() {
     user: row.smtp_username || row.email,
     pass: row.smtp_password,
     fromEmail: row.smtp_username || row.email,
-    fromName: row.display_name || 'Mediqzy',
+    fromName: row.display_name || 'My SmartHealth',
   };
 }
 
@@ -88,7 +88,7 @@ function getEnvFallbackConfig() {
     user,
     pass,
     fromEmail: (process.env.SMTP_FROM || user).trim(),
-    fromName: 'Mediqzy',
+    fromName: 'My SmartHealth',
   };
 }
 
@@ -238,7 +238,7 @@ router.post(
     }
 
     try {
-      const toAddress = process.env.MARKETING_LEADS_TO || 'support@mediqzy.com';
+      const toAddress = process.env.MARKETING_LEADS_TO || 'care@mysmarthealth.in';
 
       // HTML-escape user-supplied values to prevent HTML injection in email
       const esc = (str) => String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
@@ -246,7 +246,7 @@ router.post(
       await sendLeadNotification({
         to: toAddress,
         replyTo: email,
-        subject: `New Mediqzy Demo Lead${organization ? ` - ${organization.substring(0, 80)}` : ''}`,
+        subject: `New My SmartHealth Demo Lead${organization ? ` - ${organization.substring(0, 80)}` : ''}`,
         text: [
           'New marketing demo lead',
           `Name: ${name}`,
@@ -260,7 +260,7 @@ router.post(
         ].join('\n'),
         html: `
           <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:720px">
-            <h2 style="margin:0 0 16px">New Mediqzy Demo Lead</h2>
+            <h2 style="margin:0 0 16px">New My SmartHealth Demo Lead</h2>
             <table style="width:100%;border-collapse:collapse">
               <tr><td style="padding:8px 0;font-weight:700">Name</td><td style="padding:8px 0">${esc(name)}</td></tr>
               <tr><td style="padding:8px 0;font-weight:700">Organization</td><td style="padding:8px 0">${esc(organization) || '-'}</td></tr>

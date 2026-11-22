@@ -24,7 +24,7 @@ const emailConfig = {
     port: process.env.SMTP_PORT || 587,
     secure: false, // true for 465, false for other ports
     auth: {
-        user: process.env.SMTP_USER || 'noreply@mediczy.com',
+        user: process.env.SMTP_USER || 'hello@mysmarthealth.in',
         pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD || 'your-app-password'
     }
 };
@@ -123,11 +123,11 @@ async function sendWelcomeEmail(userData) {
         const mailTransporter = await getTransporter();
 
         const mailOptions = {
-            from: `"Mediczy Healthcare" <${emailConfig.auth.user}>`,
+            from: `"My SmartHealth" <${emailConfig.auth.user}>`,
             to: email,
-            subject: `Welcome to Mediczy, ${firstName}! 🎉`,
+            subject: `Welcome to My SmartHealth, ${firstName}! 🎉`,
             html: htmlContent,
-            text: `Welcome to Mediczy, ${firstName}!\n\nYour account has been successfully created.\n\nEmail: ${email}\nMember ID: ${memberId}\n\nGet started now: ${variables.loginUrl}\n\nBest regards,\nThe Mediczy Team`
+            text: `Welcome to My SmartHealth, ${firstName}!\n\nYour account has been successfully created.\n\nEmail: ${email}\nMember ID: ${memberId}\n\nGet started now: ${variables.loginUrl}\n\nBest regards,\nThe My SmartHealth Team`
         };
 
         const info = await mailTransporter.sendMail(mailOptions);
@@ -207,11 +207,11 @@ async function sendPasswordResetEmail(userData, resetToken, expiryMinutes = 30) 
         const mailTransporter = await getTransporter();
 
         const mailOptions = {
-            from: `"Mediczy Security Team" <${emailConfig.auth.user}>`,
+            from: `"My SmartHealth Security Team" <${emailConfig.auth.user}>`,
             to: email,
-            subject: 'Reset Your Mediczy Password 🔐',
+            subject: 'Reset Your My SmartHealth Password 🔐',
             html: htmlContent,
-            text: `Hi ${firstName},\n\nWe received a request to reset your Mediczy password.\n\nReset your password here: ${resetUrl}\n\nThis link will expire in ${expiryMinutes} minutes.\n\nIf you didn't request this, please ignore this email.\n\nBest regards,\nThe Mediczy Security Team`,
+            text: `Hi ${firstName},\n\nWe received a request to reset your My SmartHealth password.\n\nReset your password here: ${resetUrl}\n\nThis link will expire in ${expiryMinutes} minutes.\n\nIf you didn't request this, please ignore this email.\n\nBest regards,\nThe My SmartHealth Security Team`,
             priority: 'high'
         };
 
@@ -254,14 +254,14 @@ async function sendPasswordChangedEmail(userData) {
         const mailTransporter = await getTransporter();
         
         const mailOptions = {
-            from: `"Mediczy Security Team" <${emailConfig.auth.user}>`,
+            from: `"My SmartHealth Security Team" <${emailConfig.auth.user}>`,
             to: email,
-            subject: 'Your Mediczy Password Was Changed',
+            subject: 'Your My SmartHealth Password Was Changed',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #3b82f6;">Password Changed Successfully</h2>
                     <p>Hi ${firstName},</p>
-                    <p>This is a confirmation that your Mediczy account password was changed successfully.</p>
+                    <p>This is a confirmation that your My SmartHealth account password was changed successfully.</p>
                     <p><strong>Change Details:</strong></p>
                     <ul>
                         <li>Time: ${changeDateTime || new Date().toLocaleString('en-IN')}</li>
@@ -270,12 +270,12 @@ async function sendPasswordChangedEmail(userData) {
                     <p style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #ef4444; margin: 20px 0;">
                         <strong>⚠️ Didn't make this change?</strong><br>
                         If you didn't change your password, please contact our security team immediately at 
-                        <a href="mailto:security@mediczy.com">security@mediczy.com</a>
+                        <a href="mailto:care@mysmarthealth.in">care@mysmarthealth.in</a>
                     </p>
-                    <p>Best regards,<br>The Mediczy Security Team</p>
+                    <p>Best regards,<br>The My SmartHealth Security Team</p>
                 </div>
             `,
-            text: `Hi ${firstName},\n\nYour Mediczy password was changed successfully.\n\nTime: ${changeDateTime || new Date().toLocaleString('en-IN')}\nIP: ${changeIp || 'Unknown'}\n\nIf you didn't make this change, contact security@mediczy.com immediately.\n\nBest regards,\nThe Mediczy Security Team`
+            text: `Hi ${firstName},\n\nYour My SmartHealth password was changed successfully.\n\nTime: ${changeDateTime || new Date().toLocaleString('en-IN')}\nIP: ${changeIp || 'Unknown'}\n\nIf you didn't make this change, contact care@mysmarthealth.in immediately.\n\nBest regards,\nThe My SmartHealth Security Team`
         };
 
         const info = await mailTransporter.sendMail(mailOptions);

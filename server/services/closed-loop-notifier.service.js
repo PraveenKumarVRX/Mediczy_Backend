@@ -20,7 +20,7 @@ import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 
 import { schemaVerifier, guardedQuery } from '../utils/schema-guard.js';
 const APP_URL   = process.env.APP_URL || 'https://app.mediqzy.com';
-const FROM_EMAIL = process.env.SES_FROM_EMAIL || process.env.EMAIL_FROM || 'support@mediqzy.com';
+const FROM_EMAIL = process.env.SES_FROM_EMAIL || process.env.EMAIL_FROM || 'hello@mysmarthealth.in';
 
 // ─── Ensure follow-up table exists ───────────────────────────────────────────
 
@@ -80,7 +80,7 @@ We'd love to know how we handled it.</p>
   <a href="${ratingUrl}">Rate on full scale (1–5)</a>
 </p>
 <hr style="border:none;border-top:1px solid #eee;margin-top:32px">
-<p style="font-size:11px;color:#999">Mediczy Healthcare · mediqzy.com</p>
+<p style="font-size:11px;color:#999">My SmartHealth · mediqzy.com</p>
 </body></html>`.trim();
 }
 
@@ -193,7 +193,7 @@ class ClosedLoopNotifierService {
       });
       const ok = await sendSesEmail({
         to:      row.requester_email,
-        subject: `How did we do? Rate your Mediczy support experience`,
+        subject: `How did we do? Rate your My SmartHealth support experience`,
         html,
       });
       if (ok) return 'email';

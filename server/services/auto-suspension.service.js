@@ -360,7 +360,7 @@ class AutoSuspensionService {
     const toEmail = invoice.billing_email || invoice.email;
     if (!toEmail) return;
 
-    const subject = `⚠️ Payment Overdue - Grace Period Started | Mediqzy`;
+    const subject = `⚠️ Payment Overdue - Grace Period Started | My SmartHealth`;
     const html = `
       <!DOCTYPE html>
       <html>
@@ -412,8 +412,8 @@ class AutoSuspensionService {
             <p style="margin-top: 20px;">If you've already made the payment, please contact our support team with the payment details.</p>
           </div>
           <div class="footer">
-            <p>Mediqzy Healthcare Platform</p>
-            <p>support@mediqzy.com | +91-XXXXXXXXXX</p>
+            <p>My SmartHealth</p>
+            <p>care@mysmarthealth.in</p>
           </div>
         </div>
       </body>
@@ -441,7 +441,7 @@ class AutoSuspensionService {
     if (!toEmail) return;
 
     const urgencyColor = daysRemaining === 1 ? '#D32F2F' : daysRemaining === 3 ? '#F57C00' : '#FF9800';
-    const subject = `🚨 ${daysRemaining} Day${daysRemaining > 1 ? 's' : ''} Until Account Suspension | Mediqzy`;
+    const subject = `🚨 ${daysRemaining} Day${daysRemaining > 1 ? 's' : ''} Until Account Suspension | My SmartHealth`;
     
     const html = `
       <!DOCTYPE html>
@@ -481,11 +481,11 @@ class AutoSuspensionService {
             </center>
             
             <p style="margin-top: 30px; font-size: 14px; color: #666;">
-              Need help? Contact us at support@mediqzy.com or call our billing team.
+              Need help? Contact us at care@mysmarthealth.in or call our billing team.
             </p>
           </div>
           <div class="footer">
-            <p>Mediqzy Healthcare Platform</p>
+            <p>My SmartHealth</p>
           </div>
         </div>
       </body>
@@ -512,7 +512,7 @@ class AutoSuspensionService {
     const toEmail = tenant.billing_email || tenant.email;
     if (!toEmail) return;
 
-    const subject = `🔴 Account Suspended | Mediqzy`;
+    const subject = `🔴 Account Suspended | My SmartHealth`;
     
     const html = `
       <!DOCTYPE html>
@@ -567,8 +567,8 @@ class AutoSuspensionService {
             </p>
           </div>
           <div class="footer">
-            <p>Mediqzy Healthcare Platform</p>
-            <p>Billing Support: billing@mediqzy.com</p>
+            <p>My SmartHealth</p>
+            <p>Billing Support: care@mysmarthealth.in</p>
           </div>
         </div>
       </body>
@@ -595,7 +595,7 @@ class AutoSuspensionService {
     const toEmail = tenant.billing_email || tenant.email;
     if (!toEmail) return;
 
-    const subject = `✅ Payment Received - Account Ready for Reactivation | Mediqzy`;
+    const subject = `✅ Payment Received - Account Ready for Reactivation | My SmartHealth`;
     
     const html = `
       <!DOCTYPE html>
@@ -629,14 +629,14 @@ class AutoSuspensionService {
             <p>Our team will reactivate your account within <strong>24 hours</strong>. If you need immediate reactivation, please contact support.</p>
             
             <center>
-              <a href="mailto:support@mediqzy.com?subject=Reactivation Request - ${tenant.name}" class="btn">Request Immediate Reactivation</a>
+              <a href="mailto:care@mysmarthealth.in?subject=Reactivation Request - ${tenant.name}" class="btn">Request Immediate Reactivation</a>
             </center>
             
-            <p style="margin-top: 20px;">Thank you for your continued trust in Mediqzy.</p>
+            <p style="margin-top: 20px;">Thank you for your continued trust in My SmartHealth.</p>
           </div>
           <div class="footer">
-            <p>Mediqzy Healthcare Platform</p>
-            <p>support@mediqzy.com</p>
+            <p>My SmartHealth</p>
+            <p>care@mysmarthealth.in</p>
           </div>
         </div>
       </body>

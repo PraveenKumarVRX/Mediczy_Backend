@@ -61,14 +61,14 @@ async function draftPrescriptionForCompletion({ appointment, notes, transaction 
       : (doctor.qualifications || doctor.qualification || 'MBBS'),
     doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
     specialty: doctor.specialization || 'General Medicine',
-    clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+    clinicName: doctor.clinicHospitalName || doctor.clinicName || 'My SmartHealth',
     clinicAddress: appointment.consultationType === 'in-person'
       ? (doctor.clinicAddress || 'Clinic')
       : 'Online Consultation / Telemedicine',
     clinicPhone: doctor.phone || doctor.phoneNumber,
     clinicEmail: doctor.email,
     clinicDetails: {
-      name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+      name: doctor.clinicHospitalName || doctor.clinicName || 'My SmartHealth',
       address: appointment.consultationType === 'in-person'
         ? (doctor.clinicAddress || 'Clinic')
         : 'Online Consultation / Telemedicine',

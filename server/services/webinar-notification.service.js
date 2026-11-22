@@ -310,7 +310,7 @@ class WebinarNotificationService {
   async sendEmailNotification(to, { subject, html, attachments = [] }) {
     return await emailService.sendEmail({
       to,
-      from: process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com',
+      from: process.env.SMTP_FROM || process.env.SMTP_USER || 'hello@mysmarthealth.in',
       subject,
       html,
       attachments
@@ -364,7 +364,7 @@ class WebinarNotificationService {
         <p><strong>📅 Calendar Invite:</strong> A calendar file (.ics) is attached to this email. Add it to your calendar for automatic reminders!</p>
         <p><strong>Join Link:</strong> <a href="https://app.mediqzy.com/webinar/${webinar.id}/room">Click here to join when it starts</a></p>
         <p style="margin-top: 30px;">Looking forward to seeing you there!</p>
-        <p>Best regards,<br>Mediczy Team</p>
+        <p>Best regards,<br>My SmartHealth Team</p>
       </div>
     `;
   }

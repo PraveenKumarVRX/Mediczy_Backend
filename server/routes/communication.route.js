@@ -10,6 +10,7 @@
  */
 
 import express from 'express';
+import { BRAND_NAME, brandFrom } from '../config/email-brand.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { SMSService } from '../services/sms.service.js';
 import twilio from '../integrations/twilio.js';
@@ -107,7 +108,7 @@ router.post('/email/send', authUser, async (req, res) => {
       to,
       subject,
       html: body,
-      from: process.env.EMAIL_FROM || 'noreply@mediczy.com'
+      from: brandFrom()
     });
 
     // Log the communication

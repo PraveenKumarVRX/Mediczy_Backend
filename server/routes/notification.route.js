@@ -513,8 +513,8 @@ router.post('/send-internal', async (req, res) => {
     const normalizedPriority = normalizePriority(priority);
     const emailRecipient = toEmail || (isEmailRecipient(to) ? to : undefined) || adminEmail;
     const phoneRecipient = toPhone || (typeof to === 'string' && !isEmailRecipient(to) ? to : undefined);
-    const notificationTitle = subject || title || 'Mediczy Notification';
-    const notificationMessage = bodyText || stripHtml(html) || whatsappBody || 'You have a new notification from Mediczy.';
+    const notificationTitle = subject || title || 'My SmartHealth Notification';
+    const notificationMessage = bodyText || stripHtml(html) || whatsappBody || 'You have a new notification from My SmartHealth.';
     const requestedChannels = channels.length
       ? channels
       : emailRecipient || html
@@ -538,7 +538,7 @@ router.post('/send-internal', async (req, res) => {
         if (emailRecipient) {
           const transporter = getInternalTransporter();
           await transporter.sendMail({
-            from: `"Mediczy System" <${process.env.SMTP_USER}>`,
+            from: `"My SmartHealth System" <${process.env.SMTP_USER}>`,
             to: emailRecipient,
             subject: notificationTitle,
             text: bodyText || stripHtml(html) || notificationMessage,

@@ -274,10 +274,10 @@ class PasswordResetService {
       // than the rest of Mediqzy's mail. That is exactly the message you least want filtered.
       await sendTransactionalEmail({
         to: account.email,
-        subject: 'Password Reset OTP - Mediczy',
+        subject: 'Password Reset OTP - My SmartHealth',
         html: this.getEmailOTPTemplate(account.name || account.email, otpCode),
         text: this.getEmailOTPTextTemplate(account.name || account.email, otpCode),
-        fromName: 'Mediqzy',
+        fromName: 'My SmartHealth',
       });
 
       console.log(`✅ Password reset OTP sent to email: ${account.email}`);
@@ -296,6 +296,7 @@ class PasswordResetService {
     }
 
     try {
+      // SMS wording must match the DLT-registered template (sender MEDICZY) exactly; change both together.
       const smsMessage = `Your Mediczy password reset OTP is: ${otpCode}. Valid for 10 minutes. Do not share this code with anyone.`;
 
       await this.smsService.sendSMS({
@@ -634,7 +635,7 @@ class PasswordResetService {
           <tr>
             <td bgcolor="#667eea" style="background-color: #667eea; background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; text-align: center;">
               <h1 style="color: white; margin: 0; font-size: 28px;">🔐 Password Reset</h1>
-              <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Mediczy Healthcare Platform</p>
+              <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">My SmartHealth</p>
             </td>
           </tr>
           
@@ -667,7 +668,7 @@ class PasswordResetService {
                 <p style="color: #495057; font-size: 14px; margin: 0 0 10px 0; font-weight: bold;">Security Tips:</p>
                 <ul style="color: #6c757d; font-size: 14px; line-height: 1.8; margin: 0; padding-left: 20px;">
                   <li>Never share your OTP with anyone</li>
-                  <li>Mediczy staff will never ask for your OTP</li>
+                  <li>My SmartHealth staff will never ask for your OTP</li>
                   <li>If you didn't request this, please ignore this email</li>
                   <li>Consider enabling two-factor authentication</li>
                 </ul>
@@ -675,7 +676,7 @@ class PasswordResetService {
               
               <p style="color: #6c757d; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
                 Best regards,<br>
-                <strong style="color: #667eea;">Mediczy Team</strong>
+                <strong style="color: #667eea;">My SmartHealth Team</strong>
               </p>
             </td>
           </tr>
@@ -684,7 +685,7 @@ class PasswordResetService {
           <tr>
             <td style="background: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;">
               <p style="color: #6c757d; font-size: 12px; margin: 0; line-height: 1.6;">
-                This is an automated message from Mediczy Healthcare Platform.<br>
+                This is an automated message from My SmartHealth.<br>
                 Please do not reply to this email.
               </p>
             </td>
@@ -703,7 +704,7 @@ class PasswordResetService {
    */
   getEmailOTPTextTemplate(name, otpCode) {
     return `
-Password Reset OTP - Mediczy
+Password Reset OTP - My SmartHealth
 
 Hello ${name},
 
@@ -715,15 +716,15 @@ Your OTP: ${otpCode}
 
 Security Tips:
 - Never share your OTP with anyone
-- Mediczy staff will never ask for your OTP
+- My SmartHealth staff will never ask for your OTP
 - If you didn't request this, please ignore this email
 - Consider enabling two-factor authentication
 
 Best regards,
-Mediczy Team
+My SmartHealth Team
 
 ---
-This is an automated message from Mediczy Healthcare Platform.
+This is an automated message from My SmartHealth.
 Please do not reply to this email.
     `;
   }

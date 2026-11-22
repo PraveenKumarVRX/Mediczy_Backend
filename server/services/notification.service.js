@@ -601,7 +601,7 @@ class NotificationService {
 
       // Prepare mail options
       const mailOptions = {
-        from: `"Mediczy" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+        from: `"My SmartHealth" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
         to: email,
         subject: title,
         html: htmlContent
@@ -679,6 +679,7 @@ class NotificationService {
 
       const result = await smsService.sendSMS({
         to: phone,
+        // SMS wording is bound to DLT-registered templates (sender MEDICZY); not rebranded here.
         message: `Mediczy: ${message}`
       });
 
@@ -718,7 +719,7 @@ class NotificationService {
       }
 
       // Send WhatsApp message via production service (real Twilio API)
-      const waBody = `*${title}*\n\n${message}\n\n_Mediczy Healthcare Platform_`;
+      const waBody = `*${title}*\n\n${message}\n\n_My SmartHealth_`;
       const result = await whatsappProductionService.sendSessionMessage({
         to: formattedPhone,
         body: waBody
@@ -767,7 +768,7 @@ class NotificationService {
                 <!-- Header -->
                 <tr>
                   <td style="background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%); padding: 30px; text-align: center;">
-                    <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Mediczy</h1>
+                    <h1 style="color: #ffffff; margin: 0; font-size: 24px;">My SmartHealth</h1>
                     <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 14px;">Healthcare at your fingertips</p>
                   </td>
                 </tr>
@@ -784,11 +785,11 @@ class NotificationService {
                 <tr>
                   <td style="background-color: #f8f9fa; padding: 25px 30px; text-align: center; border-top: 1px solid #e9ecef;">
                     <p style="color: #6c757d; font-size: 12px; margin: 0;">
-                      This is an automated message from Mediczy Healthcare Platform.<br>
+                      This is an automated message from My SmartHealth.<br>
                       Please do not reply to this email.
                     </p>
                     <p style="color: #6c757d; font-size: 12px; margin: 15px 0 0 0;">
-                      © ${new Date().getFullYear()} Mediczy. All rights reserved.
+                      © ${new Date().getFullYear()} My SmartHealth. All rights reserved.
                     </p>
                   </td>
                 </tr>

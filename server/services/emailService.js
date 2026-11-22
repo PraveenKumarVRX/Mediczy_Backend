@@ -122,7 +122,7 @@ class EmailService {
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; color: white; border-radius: 10px 10px 0 0;">
               <h1 style="margin: 0; font-size: 24px;">✅ SMTP Test Successful</h1>
-              <p style="margin: 10px 0 0 0; opacity: 0.9;">Mediqzy Email System</p>
+              <p style="margin: 10px 0 0 0; opacity: 0.9;">My SmartHealth</p>
             </div>
             <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e9ecef;">
               <h2 style="color: #2c3e50; margin-top: 0;">Configuration Details</h2>
@@ -155,7 +155,7 @@ class EmailService {
           </div>
         `,
         text: `
-SMTP Test Successful - Mediqzy Email System
+SMTP Test Successful - My SmartHealth
 
 Configuration Details:
 - Name: ${config.name}

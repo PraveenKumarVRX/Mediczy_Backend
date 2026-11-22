@@ -82,8 +82,8 @@ const ALERT_TEMPLATES = {
       <a href="{{dashboardUrl}}" class="btn">View Usage Dashboard</a>
     </div>
     <div class="footer">
-      <p>This is an automated message from Mediqzy SaaS Platform</p>
-      <p>© {{year}} Mediqzy. All rights reserved.</p>
+      <p>This is an automated message from My SmartHealth</p>
+      <p>© {{year}} My SmartHealth. All rights reserved.</p>
     </div>
   </div>
 </body>
@@ -151,8 +151,8 @@ const ALERT_TEMPLATES = {
       <a href="{{dashboardUrl}}" class="btn-secondary">View Dashboard</a>
     </div>
     <div class="footer">
-      <p>Need help? Contact support@mediqzy.com or call +91 9876543210</p>
-      <p>© {{year}} Mediqzy. All rights reserved.</p>
+      <p>Need help? Contact care@mysmarthealth.in</p>
+      <p>© {{year}} My SmartHealth. All rights reserved.</p>
     </div>
   </div>
 </body>
@@ -227,8 +227,8 @@ const ALERT_TEMPLATES = {
       <a href="{{dashboardUrl}}" class="btn" style="background: #5cb85c;">View Usage Report</a>
     </div>
     <div class="footer">
-      <p>Questions about billing? Contact billing@mediqzy.com</p>
-      <p>© {{year}} Mediqzy. All rights reserved.</p>
+      <p>Questions about billing? Contact care@mysmarthealth.in</p>
+      <p>© {{year}} My SmartHealth. All rights reserved.</p>
     </div>
   </div>
 </body>
@@ -346,7 +346,7 @@ class UsageAlertsService {
     
     // Add super admin for critical/exceeded
     if (alertLevel === 'critical' || alertLevel === 'exceeded') {
-      recipients.push('admin@mediqzy.com');
+      recipients.push('info@mysmarthealth.in');
     }
 
     // Send email
@@ -450,14 +450,14 @@ class UsageAlertsService {
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #0066cc;">Mediqzy Alert</h2>
+        <h2 style="color: #0066cc;">My SmartHealth Alert</h2>
         <p>Dear ${tenantName},</p>
         <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
           ${message}
         </div>
-        <p>If you have questions, please contact support@mediqzy.com</p>
+        <p>If you have questions, please contact care@mysmarthealth.in</p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-        <p style="color: #666; font-size: 12px;">© ${new Date().getFullYear()} Mediqzy</p>
+        <p style="color: #666; font-size: 12px;">© ${new Date().getFullYear()} My SmartHealth</p>
       </div>
     `;
 

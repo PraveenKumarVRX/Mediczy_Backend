@@ -12,6 +12,7 @@
  */
 
 import multer from 'multer';
+import { BRAND_NAME, brandFrom } from '../../config/email-brand.js';
 import rateLimit from 'express-rate-limit';
 import { ipKeyGenerator } from 'express-rate-limit';
 import { execFile } from 'child_process';
@@ -299,7 +300,7 @@ export async function sendAdminLeadEmail({ entityLabel, name, email, phone, city
     const extraTableRows = extraRows.map((r, i) => `<tr${i % 2 === 0 ? '' : ' style="background:#f1f5f9"'}><td style="padding:10px ${i % 2 === 0 ? '0' : '8px'};color:#64748b;font-weight:600;width:160px">${r[0]}</td><td style="padding:10px ${i % 2 === 0 ? '0' : '8px'};color:#0f172a">${r[1]}</td></tr>`).join('');
 
     await transporter.sendMail({
-      from: `"Mediczy Leads" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'support@mediqzy.com'}>`,
+      from: `"My SmartHealth Leads" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'care@mysmarthealth.in'}>`,
       to: 'info@mysmarthealth.in',
       subject: `🏥 New ${entityLabel} Lead: ${name} — ${city || 'India'}`,
       html: `
@@ -323,7 +324,7 @@ export async function sendAdminLeadEmail({ entityLabel, name, email, phone, city
             </div>
           </div>
           <div style="padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center">
-            <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · support@mediqzy.com</p>
+            <p style="margin:0;font-size:11px;color:#94a3b8">My SmartHealth · care@mysmarthealth.in</p>
           </div>
         </div>`,
     });
@@ -369,14 +370,14 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
           auth: { user: (process.env.SMTP_USER || '').trim(), pass: (process.env.SMTP_PASSWORD || '').trim() },
           tls: { rejectUnauthorized: false },
         });
-        fromAddress = process.env.EMAIL_FROM || `"Mediqzy" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`;
+        fromAddress = brandFrom();
       }
 
       // Create log entry before sending so we have the ID for the tracking pixel
       const logEntry = await EmailLog.create({
         to: email,
         from: fromAddress,
-        subject: `${otp.code} — Your Mediczy Email Verification OTP`,
+        subject: `${otp.code} — Your My SmartHealth Email Verification OTP`,
         status: 'pending',
         priority: 'high',
         configId: dbConfig ? dbConfig.id : null,
@@ -390,7 +391,7 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
       const htmlBody = `
           <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07101f;color:#e2e8f0;border-radius:16px;overflow:hidden">
             <div style="background:linear-gradient(135deg,${accentColor},#0891b2);padding:28px 32px">
-              <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">Mediczy ${entityLabel} Portal</h1>
+              <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">My SmartHealth ${entityLabel} Portal</h1>
               <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:14px">Email Verification</p>
             </div>
             <div style="padding:32px">
@@ -407,7 +408,7 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
       const sendResult = await transporter.sendMail({
         from: fromAddress,
         to: email,
-        subject: `${otp.code} — Your Mediczy Email Verification OTP`,
+        subject: `${otp.code} — Your My SmartHealth Email Verification OTP`,
         html: htmlBody,
       });
 

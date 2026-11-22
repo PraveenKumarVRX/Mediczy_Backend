@@ -1,4 +1,5 @@
 import express from 'express';
+import { BRAND_NAME, brandFrom } from '../config/email-brand.js';
 import { body, validationResult } from 'express-validator';
 import multer from 'multer';
 import XLSX from '../utils/excel-compat.js';
@@ -37,7 +38,7 @@ async function sendCRMEmail({ to, cc, subject, html, text }) {
       secure: parseInt(process.env.SMTP_PORT || '465') === 465,
       auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD || process.env.SMTP_PASS },
     };
-    let fromLabel = process.env.EMAIL_FROM_NAME || 'Mediqzy';
+    let fromLabel = process.env.EMAIL_FROM_NAME || BRAND_NAME;
     let fromAddr  = process.env.SMTP_USER || 'noreply@mediqzy.com';
     try {
       const { rows } = await sharedPool.query(

@@ -10,9 +10,9 @@ import nodemailer from '../integrations/nodemailer.js';
 import sharedPool from '../db/pgPool.js';
 
 const DEFAULT_CARE_TEAM_EMAIL = 'care@mysmarthealth.in';
-const DEFAULT_BOOKING_ALERT_FROM = 'noreply@mediqzy.com';
-const DEFAULT_REPLY_TO = 'support@mediqzy.com';
-const BOOKING_ALERT_FROM_NAME = 'Mediqzy Notifications';
+const DEFAULT_BOOKING_ALERT_FROM = 'hello@mysmarthealth.in';
+const DEFAULT_REPLY_TO = 'care@mysmarthealth.in';
+const BOOKING_ALERT_FROM_NAME = 'My SmartHealth Notifications';
 
 function getCareTeamEmail() {
   return (process.env.CARE_TEAM_EMAIL || DEFAULT_CARE_TEAM_EMAIL).trim().toLowerCase();
@@ -254,7 +254,7 @@ function buildBookingEmailHtml(details) {
       <h2 style="margin:0 0 12px;color:#0B1120;">New appointment booking request</h2>
       <p style="margin:0 0 16px;color:#374151;">A patient has submitted a booking request. Please review and assist if needed.</p>
       <table style="border-collapse:collapse;width:100%;font-size:14px;">${tableRows}</table>
-      <p style="margin:16px 0 0;color:#6b7280;font-size:12px;">Mediqzy care operations alert</p>
+      <p style="margin:16px 0 0;color:#6b7280;font-size:12px;">My SmartHealth care operations alert</p>
     </div>
   `;
 }
@@ -312,7 +312,7 @@ async function sendWithSmtpConfig(config, mailOptions) {
 export async function sendCareTeamBookingAlert(input = {}) {
   const details = normalizeCareTeamBookingDetails(input);
   const to = getCareTeamEmail();
-  const subject = `[Mediqzy] New booking — ${details.patientName} with ${details.doctorName} on ${details.appointmentDate} ${details.appointmentTime}`;
+  const subject = `[My SmartHealth] New booking — ${details.patientName} with ${details.doctorName} on ${details.appointmentDate} ${details.appointmentTime}`;
   const html = buildBookingEmailHtml(details);
   const text = buildPlainText(details);
 

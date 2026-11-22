@@ -275,16 +275,16 @@ async function sendVerificationEmail(tenant, owner) {
       
       await sgMail.send({
         to: owner.email,
-        from: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'noreply@mediqzy.com',
-        subject: `Welcome to ${tenant.name} on Mediczy!`,
+        from: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'hello@mysmarthealth.in',
+        subject: `Welcome to ${tenant.name} on My SmartHealth!`,
         html: `
-          <h1>Welcome to Mediczy!</h1>
+          <h1>Welcome to My SmartHealth!</h1>
           <p>Your organization <strong>${tenant.name}</strong> has been successfully registered.</p>
           <p><strong>Access URL:</strong> <a href="https://${tenant.subdomain}.mayden.in">https://${tenant.subdomain}.mayden.in</a></p>
           <p><strong>Plan:</strong> ${tenant.plan}</p>
           <p>Please verify your email by clicking the link below:</p>
           <a href="${verificationLink}">Verify Email</a>
-          <p>Thank you for choosing Mediczy!</p>
+          <p>Thank you for choosing My SmartHealth!</p>
         `
       });
       console.log(`Verification email sent to ${owner.email}`);

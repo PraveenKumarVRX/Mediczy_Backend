@@ -624,7 +624,7 @@ class ReportBuilderService {
   /** Export a real XLSX workbook; CSV remains a separate explicit format. */
   async exportToExcel(report, filename) {
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Mediqzy';
+    workbook.creator = 'My SmartHealth';
     workbook.created = new Date();
     const sheet = workbook.addWorksheet('Report');
     const data = Array.isArray(report.data) ? report.data : [];

@@ -1559,7 +1559,7 @@ const _buildProfessionalEmailHtml = ({ subject, message, companyName }) => {
           </tr>
           <tr>
             <td style="border-top:1px solid #e2e8f0;padding:14px 28px;color:#64748b;font-size:12px;line-height:1.6;">
-              Regards,<br/><strong>Team SmartHealth</strong><br/>support@mediqzy.com
+              Regards,<br/><strong>My SmartHealth Team</strong><br/>care@mysmarthealth.in
             </td>
           </tr>
         </table>
@@ -1862,7 +1862,7 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
               companyName,
             }),
             text: safeMessage,
-            fromName: 'SmartHealth Team',
+            fromName: 'My SmartHealth Team',
           });
 
           await _logTeamCommunication({
@@ -2464,7 +2464,7 @@ router.patch('/registered-doctors/:id/activate', authTeam, requirePermission('Do
     // Send activation email to doctor
     try {
       await _teamMailer().sendMail({
-        from: `"SmartHealth Team" <${process.env.SMTP_FROM || 'noreply@mediqzy.com'}>`,
+        from: `"My SmartHealth Team" <${process.env.SMTP_FROM || 'hello@mysmarthealth.in'}>`,
         to: doctor.email,
         subject: `✅ Your SmartHealth Doctor Account is Active — Welcome, ${doctorName}!`,
         html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -2495,7 +2495,7 @@ router.patch('/registered-doctors/:id/activate', authTeam, requirePermission('Do
     </div>
   </td></tr>
   <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
-    <p style="margin:0;font-size:11px;color:#94a3b8">SmartHealth · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
+    <p style="margin:0;font-size:11px;color:#94a3b8">My SmartHealth · Mayden SmartHealth Pvt Ltd · care@mysmarthealth.in</p>
   </td></tr>
 </table></td></tr></table></body></html>`,
       });
@@ -2540,7 +2540,7 @@ router.patch('/registered-doctors/:id/reject', authTeam, requirePermission('Doct
     const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
     try {
       await _teamMailer().sendMail({
-        from: `"SmartHealth Team" <${process.env.SMTP_FROM || 'noreply@mediqzy.com'}>`,
+        from: `"My SmartHealth Team" <${process.env.SMTP_FROM || 'hello@mysmarthealth.in'}>`,
         to: doctor.email,
         subject: `SmartHealth Doctor Registration — Update Required`,
         html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -2549,7 +2549,7 @@ router.patch('/registered-doctors/:id/reject', authTeam, requirePermission('Doct
 <table width="580" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.09);">
   <tr><td style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:40px;text-align:center;">
     <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">Registration Update</h1>
-    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px">Action required for your Mediczy doctor account</p>
+    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px">Action required for your My SmartHealth doctor account</p>
   </td></tr>
   <tr><td style="padding:36px 40px;">
     <p style="font-size:16px;color:#0f172a;font-weight:600;margin:0 0 12px">Hello, ${doctorName},</p>
@@ -2561,11 +2561,11 @@ router.patch('/registered-doctors/:id/reject', authTeam, requirePermission('Doct
       <p style="margin:6px 0 0;font-size:13px;color:#dc2626">${reason}</p>
     </div>
     <p style="color:#475569;font-size:14px;line-height:1.7">
-      Please contact <a href="mailto:support@mediqzy.com" style="color:#1d4ed8">support@mediqzy.com</a> for assistance or to re-submit your application.
+      Please contact <a href="mailto:care@mysmarthealth.in" style="color:#1d4ed8">care@mysmarthealth.in</a> for assistance or to re-submit your application.
     </p>
   </td></tr>
   <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
-    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
+    <p style="margin:0;font-size:11px;color:#94a3b8">My SmartHealth · Mayden SmartHealth Pvt Ltd · care@mysmarthealth.in</p>
   </td></tr>
 </table></td></tr></table></body></html>`,
       });

@@ -1,4 +1,5 @@
 import express from 'express';
+import { BRAND_NAME, brandFrom } from '../../config/email-brand.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import multer from 'multer';
@@ -528,7 +529,7 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
         : `<tr><td colspan="2" style="padding:10px 0;color:#94a3b8;font-style:italic">No documents uploaded</td></tr>`;
 
       await adminTransporter.sendMail({
-        from: `"Mediczy Leads" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
+        from: `"My SmartHealth Leads" <${process.env.SMTP_USER || 'care@mysmarthealth.in'}>`,
         to: 'info@mysmarthealth.in',
         subject: `🏥 New Clinic Lead: ${name} — ${city || 'India'}`,
         html: `
@@ -576,7 +577,7 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
               </div>
             </div>
             <div style="padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center">
-              <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · support@mediqzy.com · Bengaluru, India</p>
+              <p style="margin:0;font-size:11px;color:#94a3b8">My SmartHealth · care@mysmarthealth.in · Bengaluru, India</p>
             </div>
           </div>
         `,
@@ -616,7 +617,7 @@ router.post('/send-email-otp', authLimiter, async (req, res) => {
     const html = `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07101f;color:#e2e8f0;border-radius:16px;overflow:hidden">
         <div style="background:linear-gradient(135deg,#0d9488,#0891b2);padding:28px 32px">
-          <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">Mediczy Clinic Portal</h1>
+          <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">My SmartHealth Clinic Portal</h1>
           <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:14px">Email Verification</p>
         </div>
         <div style="padding:32px">
@@ -630,9 +631,9 @@ router.post('/send-email-otp', authLimiter, async (req, res) => {
       </div>`;
 
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM || `"Mediczy" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com'}>`,
+      from: brandFrom(),
       to: email,
-      subject: `${otp.code} — Your Mediczy Email Verification OTP`,
+      subject: `${otp.code} — Your My SmartHealth Email Verification OTP`,
       html
     });
 

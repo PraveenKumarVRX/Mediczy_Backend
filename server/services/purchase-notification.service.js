@@ -16,6 +16,7 @@
  */
 
 import { sendTransactionalEmail } from './welcome-email.service.js';
+import { BRAND_NAME, BRAND_SUPPORT_EMAIL } from '../config/email-brand.js';
 
 const ADMIN_ALERT_EMAILS = (process.env.PURCHASE_ALERT_EMAILS || 'parinitha@mysmarthealth.in,sk@mysmarthealth.in')
   .split(',')
@@ -81,7 +82,7 @@ function buildInvoiceHtml({
   return `
   <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a;">
     <div style="background:#0f766e;padding:24px 32px;border-radius:8px 8px 0 0;">
-      <h1 style="color:#fff;margin:0;font-size:20px;">Mediqzy</h1>
+      <h1 style="color:#fff;margin:0;font-size:20px;">${BRAND_NAME}</h1>
       <p style="color:#d1fae5;margin:4px 0 0;font-size:13px;">Order Confirmation &amp; Invoice</p>
     </div>
     <div style="border:1px solid #e5e7eb;border-top:none;padding:24px 32px;border-radius:0 0 8px 8px;">
@@ -117,7 +118,7 @@ function buildInvoiceHtml({
       <p style="font-size:12px;color:#888;margin:0 0 4px;">Billed to: ${escapeHtml(customerName)} · ${escapeHtml(customerEmail || '')} ${customerPhone ? '· ' + escapeHtml(customerPhone) : ''}</p>
       <p style="font-size:12px;color:#888;margin:16px 0 0;">Questions about this order? Reply to this email or reach us at hello@mysmarthealth.in.</p>
     </div>
-    <p style="text-align:center;font-size:11px;color:#aaa;margin-top:16px;">Mediqzy · This is an automated receipt for your records.</p>
+    <p style="text-align:center;font-size:11px;color:#aaa;margin-top:16px;">${BRAND_NAME} · This is an automated receipt for your records. Questions? Write to ${BRAND_SUPPORT_EMAIL}.</p>
   </div>`;
 }
 
@@ -188,9 +189,9 @@ async function sendCustomerPurchaseConfirmation(details) {
       : CUSTOMER_CONFIRMATION_BCC;
     await sendTransactionalEmail({
       to: details.customerEmail,
-      subject: `Your Mediqzy order confirmation — ${details.invoiceNumber} (${formatMoney(details.total, details.currency)})`,
+      subject: `Your ${BRAND_NAME} ${details.subjectNoun || 'order confirmation'} — ${details.invoiceNumber} (${formatMoney(details.total, details.currency)})`,
       html: buildInvoiceHtml(details),
-      fromName: 'Mediqzy',
+      fromName: BRAND_NAME,
       provider: 'ses',
       ...(bcc.length ? { bcc } : {}),
     });
@@ -270,7 +271,7 @@ async function sendAdminPurchaseAlert({
 
   const html = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:520px;margin:0 auto;">
-      <h2 style="margin:0 0 12px;color:#0f766e;">💰 New purchase on Mediqzy</h2>
+      <h2 style="margin:0 0 12px;color:#0f766e;">💰 New purchase on ${BRAND_NAME}</h2>
       <table style="width:100%;font-size:14px;border-collapse:collapse;">
         <tr><td style="padding:4px 0;color:#666;">Customer</td><td style="padding:4px 0;font-weight:600;">${escapeHtml(customerName)}</td></tr>
         <tr><td style="padding:4px 0;color:#666;">Email</td><td style="padding:4px 0;">${escapeHtml(customerEmail || '—')}</td></tr>
@@ -293,7 +294,7 @@ async function sendAdminPurchaseAlert({
   // comma-joined string of addresses.
   await Promise.all(ADMIN_ALERT_EMAILS.map(async (to) => {
     try {
-      await sendTransactionalEmail({ to, subject, html, fromName: 'Mediqzy Alerts', provider: 'ses' });
+      await sendTransactionalEmail({ to, subject, html, fromName: `${BRAND_NAME} Alerts`, provider: 'ses' });
       console.log(`✅ Admin purchase alert sent to ${to}`);
     } catch (err) {
       console.error(`❌ Admin purchase alert email FAILED for ${to}:`, err.message);
@@ -396,15 +397,23 @@ async function notifyOrderPurchase({ order, user, payment, lineItems, itemLabel 
  * without creating a DB Invoice record. (Follow-up: give membership upgrades
  * a proper orders row so they get full Invoice+PDF treatment too.)
  */
-async function notifyMembershipPurchase({ user, plan, payment, previousPlanName, amountDue }) {
+/**
+ * Payment acknowledgement for a paid plan: a first subscription, an add-on or an upgrade.
+ * kind: 'subscribe' (default when there is no previous plan) | 'upgrade'.
+ */
+async function notifyMembershipPurchase({ user, plan, payment, previousPlanName, amountDue, kind = previousPlanName ? 'upgrade' : 'subscribe', validFrom = null, validTo = null }) {
   try {
     const customerName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Customer';
     const invoiceNumber = `MEM-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Date.now()}`;
-    const itemLabel = `Membership upgrade: ${previousPlanName ? previousPlanName + ' → ' : ''}${plan.name}`;
+    const validity = validFrom && validTo ? ` (${validFrom} to ${validTo})` : '';
+    const itemLabel = kind === 'upgrade'
+      ? `Plan upgrade: ${previousPlanName ? previousPlanName + ' → ' : ''}${plan.name}${validity}`
+      : `${plan.name} plan${validity}`;
 
     const sends = [
       sendCustomerPurchaseConfirmation({
         invoiceNumber,
+        subjectNoun: 'payment receipt',
         issueDate: new Date(),
         customerName,
         customerEmail: user.email,

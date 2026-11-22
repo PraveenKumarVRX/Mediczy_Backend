@@ -12,7 +12,7 @@ import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 
-const FROM_EMAIL   = process.env.SES_FROM_EMAIL || process.env.EMAIL_FROM || 'support@mediqzy.com';
+const FROM_EMAIL   = process.env.SES_FROM_EMAIL || process.env.EMAIL_FROM || 'hello@mysmarthealth.in';
 const DIRECTOR_EMAIL = process.env.MEDICAL_DIRECTOR_EMAIL || process.env.ADMIN_EMAIL;
 
 // ─── Email renderer ───────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ function renderDigestHtml({ weekOf, componentScores, slaSummary, pendingProposal
 <html>
 <body style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px;color:#1e293b">
   <div style="background:#1a73e8;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">
-    <h1 style="margin:0;font-size:20px">🏥 Mediczy AI Quality Weekly Digest</h1>
+    <h1 style="margin:0;font-size:20px">🏥 My SmartHealth AI Quality Weekly Digest</h1>
     <p style="margin:4px 0 0;opacity:0.8;font-size:14px">Week of ${weekOf}</p>
   </div>
 
@@ -100,7 +100,7 @@ function renderDigestHtml({ weekOf, componentScores, slaSummary, pendingProposal
   </div>
 
   <p style="font-size:11px;color:#94a3b8;margin-top:16px">
-    Mediczy Healthcare · Automated AI Governance Digest · mediqzy.com<br>
+    My SmartHealth · Automated AI Governance Digest · mediqzy.com<br>
     To update notification preferences, contact info@mysmarthealth.in
   </p>
 </body>
@@ -122,7 +122,7 @@ async function sendDigestEmail(html, weekOf) {
       Destination: { ToAddresses: [DIRECTOR_EMAIL] },
       Content: {
         Simple: {
-          Subject: { Data: `Mediczy AI Quality Digest — Week of ${weekOf}`, Charset: 'UTF-8' },
+          Subject: { Data: `My SmartHealth AI Quality Digest — Week of ${weekOf}`, Charset: 'UTF-8' },
           Body:    { Html:  { Data: html, Charset: 'UTF-8' } },
         },
       },

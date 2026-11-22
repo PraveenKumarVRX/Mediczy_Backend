@@ -21,7 +21,7 @@ export async function generateHospitalBillPdf({ invoice, template, hospitalName 
       const title = header.title || 'Hospital Bill';
       const tplType = template?.template_type || 'itemized';
 
-      doc.fontSize(18).text(hospitalName || 'Mediczy Hospital', { align: 'center' });
+      doc.fontSize(18).text(hospitalName || 'My SmartHealth Hospital', { align: 'center' });
       doc.fontSize(14).text(title, { align: 'center' });
       doc.moveDown(0.5);
       doc.fontSize(10)

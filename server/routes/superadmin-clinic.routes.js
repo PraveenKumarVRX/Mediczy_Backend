@@ -137,8 +137,8 @@ async function sendClinicStatusEmail(email, clinicName, approved, rejectReason) 
       }
     });
     const subject = approved
-      ? `✅ Your Mediczy clinic account has been approved — ${clinicName}`
-      : `Your Mediczy clinic registration — update required for ${clinicName}`;
+      ? `✅ Your My SmartHealth clinic account has been approved — ${clinicName}`
+      : `Your My SmartHealth clinic registration — update required for ${clinicName}`;
     const loginUrl = `${process.env.FRONTEND_URL || 'https://app.mediqzy.com'}/clinic/login`;
     const html = approved
       ? `<div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;background:#f8fafc;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
@@ -147,11 +147,11 @@ async function sendClinicStatusEmail(email, clinicName, approved, rejectReason) 
           </div>
           <div style="padding:28px 32px">
             <p style="color:#0f172a;font-size:15px">Hi <strong>${clinicName}</strong>,</p>
-            <p style="color:#475569;font-size:14px;line-height:1.6">Great news! Our team has reviewed and approved your Mediczy clinic account. You can now sign in and start managing your practice.</p>
+            <p style="color:#475569;font-size:14px;line-height:1.6">Great news! Our team has reviewed and approved your My SmartHealth clinic account. You can now sign in and start managing your practice.</p>
             <div style="margin:24px 0;text-align:center">
               <a href="${loginUrl}" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-weight:700;font-size:14px;border-radius:8px;text-decoration:none">Sign in to your Clinic →</a>
             </div>
-            <p style="color:#94a3b8;font-size:12px">If you have any questions, reply to this email or contact support@mediqzy.com</p>
+            <p style="color:#94a3b8;font-size:12px">If you have any questions, reply to this email or contact care@mysmarthealth.in</p>
           </div>
         </div>`
       : `<div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;background:#f8fafc;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
@@ -160,19 +160,19 @@ async function sendClinicStatusEmail(email, clinicName, approved, rejectReason) 
           </div>
           <div style="padding:28px 32px">
             <p style="color:#0f172a;font-size:15px">Hi <strong>${clinicName}</strong>,</p>
-            <p style="color:#475569;font-size:14px;line-height:1.6">Thank you for registering on Mediczy. After review, we were unable to approve your account at this time.</p>
+            <p style="color:#475569;font-size:14px;line-height:1.6">Thank you for registering on My SmartHealth. After review, we were unable to approve your account at this time.</p>
             ${rejectReason ? `<div style="margin:16px 0;padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px"><p style="margin:0;color:#991b1b;font-size:13px"><strong>Reason:</strong> ${rejectReason}</p></div>` : ''}
-            <p style="color:#475569;font-size:14px;line-height:1.6">If you believe this is an error or would like to re-apply, please contact us at <a href="mailto:support@mediqzy.com" style="color:#0d9488">support@mediqzy.com</a>.</p>
+            <p style="color:#475569;font-size:14px;line-height:1.6">If you believe this is an error or would like to re-apply, please contact us at <a href="mailto:care@mysmarthealth.in" style="color:#0d9488">care@mysmarthealth.in</a>.</p>
           </div>
         </div>`;
     await transporter.sendMail({
-      from: `"Mediczy" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
+      from: `"My SmartHealth" <${process.env.SMTP_USER || 'care@mysmarthealth.in'}>`,
       to: email,
       subject,
       html,
       text: approved
-        ? `Hi ${clinicName}, your Mediczy clinic account has been approved. Sign in at ${loginUrl}`
-        : `Hi ${clinicName}, your registration was not approved at this time.${rejectReason ? ' Reason: ' + rejectReason : ''} Contact support@mediqzy.com for help.`
+        ? `Hi ${clinicName}, your My SmartHealth clinic account has been approved. Sign in at ${loginUrl}`
+        : `Hi ${clinicName}, your registration was not approved at this time.${rejectReason ? ' Reason: ' + rejectReason : ''} Contact care@mysmarthealth.in for help.`
     });
   } catch (err) {
     console.warn('Clinic status email failed (non-critical):', err.message);

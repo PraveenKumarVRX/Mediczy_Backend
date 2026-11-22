@@ -10,6 +10,7 @@ import { verifyPlanPayment } from '../services/plan-payment-verification.service
 import { quotePlanPurchase, upgradeBaseDue, selfServiceRefusal } from '../services/plan-pricing.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import purchaseNotification from '../services/purchase-notification.service.js';
+import { onPlanActivated } from '../services/plan-emails.service.js';
 import { publicPlanCatalogue } from '../utils/plan-catalogue.js';
 import { syncUserStatusWithMembership } from '../middleware/membership.middleware.js';
 
@@ -627,6 +628,10 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
     // The account opens as soon as the plan is paid, not at the nightly sync.
     await syncUserStatusWithMembership(req.user.id);
 
+    // Payment acknowledgement (paid plans) and, for a first plan, the welcome email. Not awaited:
+    // the member is not kept waiting, and an email problem cannot fail the activation.
+    void onPlanActivated({ user: req.user, plan, userPlan, paymentId: verifiedPaymentId, amount: Number(userPlan.paidAmount) || 0, kind: 'subscribe' });
+
     // Send WhatsApp plan activation confirmation
     try {
       const phone = req.user.phoneNumber || req.user.phone;
@@ -788,6 +793,8 @@ export async function redeemFreeMembershipCoupon({ user, couponCode, planId, sco
     console.error('WA plan activation notification error:', waErr.message);
   }
 
+  // A plan started with a coupon is free, so no receipt; a first plan still gets the welcome.
+  void onPlanActivated({ user, plan, userPlan, amount: 0, kind: 'coupon' });
   return { userPlan, plan, coupon: { code: validation.coupon.code, freeMonths: validation.freeMonths } };
 }
 

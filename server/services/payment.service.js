@@ -1,4 +1,5 @@
 import Razorpay from '../integrations/razorpay.js';
+import { BRAND_NAME } from '../config/email-brand.js';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -292,8 +293,10 @@ class PaymentService {
     return {
       keyId: process.env.RAZORPAY_KEY_ID,
       currency: 'INR',
-      name: 'Mediczy',
-      description: 'Healthcare Platform',
+      // Shown at the top of the Razorpay checkout. (The name on bank statements and in UPI apps
+      // is the business name in the Razorpay dashboard, set there.)
+      name: BRAND_NAME,
+      description: 'Health membership and care',
       theme: {
         color: '#10B981' // Green color
       }

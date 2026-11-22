@@ -534,14 +534,14 @@ router.post(
                 : (doctor.qualifications || doctor.qualification || 'MBBS'),
               doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
               specialty: doctor.specialization || 'General Medicine',
-              clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+              clinicName: doctor.clinicHospitalName || doctor.clinicName || 'My SmartHealth',
               clinicAddress: ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType)
                 ? 'Online Consultation / Telemedicine'
                 : (doctor.clinicAddress || 'Clinic'),
               clinicPhone: doctor.phone || doctor.phoneNumber,
               clinicEmail: doctor.email,
               clinicDetails: {
-                name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+                name: doctor.clinicHospitalName || doctor.clinicName || 'My SmartHealth',
                 address: ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType)
                   ? 'Online Consultation / Telemedicine'
                   : (doctor.clinicAddress || 'Clinic'),

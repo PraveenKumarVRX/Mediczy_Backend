@@ -107,10 +107,10 @@ const renderPrescriptionHTML = (prescription) => {
   const replacements = {
     '{{signatureSlot}}': signatureSlot,
     '{{logoSlot}}': logoSlot,
-    '{{clinicName}}': prescription.clinicName || prescription.clinicDetails?.name || 'Mediczy Healthcare',
+    '{{clinicName}}': prescription.clinicName || prescription.clinicDetails?.name || 'My SmartHealth',
     '{{clinicAddress}}': prescription.clinicAddress || prescription.clinicDetails?.address || 'Virtual Consultation Platform',
     '{{clinicPhone}}': prescription.clinicPhone || prescription.clinicDetails?.phone || '+91-XXX-XXX-XXXX',
-    '{{clinicEmail}}': prescription.clinicEmail || prescription.clinicDetails?.email || 'support@mediqzy.com',
+    '{{clinicEmail}}': prescription.clinicEmail || prescription.clinicDetails?.email || 'care@mysmarthealth.in',
     '{{clinicWebsite}}': 'www.mediczy.com',
     '{{patientName}}': prescription.patientName || 'N/A',
     '{{patientAge}}': prescription.patientAge || 'N/A',
@@ -258,7 +258,7 @@ const notifyPatientPrescriptionReady = async (prescription, patient) => {
           port: parseInt(process.env.SMTP_PORT || '587'),
           secure: process.env.SMTP_PORT === '465',
           auth: {
-            user: process.env.SMTP_USER || process.env.EMAIL_FROM || 'noreply@mediczy.com',
+            user: process.env.SMTP_USER || process.env.EMAIL_FROM || 'hello@mysmarthealth.in',
             pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD || ''
           },
           tls: { rejectUnauthorized: false }
@@ -287,7 +287,7 @@ const notifyPatientPrescriptionReady = async (prescription, patient) => {
           </div>`;
 
         await transporter.sendMail({
-          from: `"Mediczy Healthcare" <${process.env.SMTP_USER || process.env.EMAIL_FROM || 'noreply@mediczy.com'}>`,
+          from: `"My SmartHealth" <${process.env.SMTP_USER || process.env.EMAIL_FROM || 'hello@mysmarthealth.in'}>`,
           to: patientEmail,
           subject: `Your Prescription from Dr. ${doctorName} is Ready – ${prescription.prescriptionId}`,
           html,

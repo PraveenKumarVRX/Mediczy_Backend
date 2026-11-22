@@ -219,11 +219,11 @@ class SignupVerificationService {
   <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; text-align: center;">
       <h1 style="color: white; margin: 0;">✉️ Verify Your Email</h1>
-      <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0;">Welcome to Mediqzy Healthcare Platform</p>
+      <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0;">Welcome to My SmartHealth</p>
     </div>
     <div style="padding: 40px;">
       <p style="font-size: 16px; color: #333;">Hello ${firstName},</p>
-      <p style="font-size: 16px; color: #555;">Thank you for signing up with Mediqzy! Please use the OTP below to verify your email address:</p>
+      <p style="font-size: 16px; color: #555;">Thank you for signing up with My SmartHealth! Please use the OTP below to verify your email address:</p>
       <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 30px; text-align: center; margin: 20px 0;">
         <p style="color: white; font-size: 36px; font-weight: bold; letter-spacing: 8px; margin: 0;">${otpCode}</p>
       </div>
@@ -236,7 +236,7 @@ class SignupVerificationService {
       <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
       <p style="color: #6c757d; font-size: 12px;">
         Best regards,<br>
-        <strong>Mediqzy Team</strong><br>
+        <strong>My SmartHealth Team</strong><br>
         Your Health, Our Priority
       </p>
     </div>
@@ -246,17 +246,17 @@ class SignupVerificationService {
 
       const mailOptions = {
         to: email,
-        subject: `${otpCode} is your Mediqzy verification code`,
+        subject: `${otpCode} is your My SmartHealth verification code`,
         html: htmlContent,
-        text: `Hello ${firstName},\n\nYour Mediqzy registration OTP is: ${otpCode}\n\nThis OTP is valid for 10 minutes. Do not share this code.\n\nIf you didn't request this, please ignore this email.\n\nBest regards,\nMediqzy Team`,
+        text: `Hello ${firstName},\n\nYour My SmartHealth registration OTP is: ${otpCode}\n\nThis OTP is valid for 10 minutes. Do not share this code.\n\nIf you didn't request this, please ignore this email.\n\nBest regards,\nMy SmartHealth Team`,
         headers: {
-          'X-Mailer': 'Mediqzy',
+          'X-Mailer': 'My SmartHealth',
           'X-Priority': '1',
           'Precedence': 'transactional'
         }
       };
 
-      await sendTransactionalEmail({ ...mailOptions, fromName: 'Mediqzy' });
+      await sendTransactionalEmail({ ...mailOptions, fromName: 'My SmartHealth' });
       console.log(`📧 Signup email OTP sent to ${email}`);
       
     } catch (error) {
@@ -349,7 +349,7 @@ class SignupVerificationService {
       const now = new Date().toISOString();
 
       await sendTransactionalEmail({
-        fromName: 'Mediqzy System Alert',
+        fromName: 'My SmartHealth System Alert',
         to: alertEmail,
         subject: `🚨 WhatsApp OTP Delivery Failed — ${purpose} (${now.slice(0, 10)})`,
         html: `
@@ -364,7 +364,7 @@ class SignupVerificationService {
             </table>
             <p style="margin-top:16px;color:#555;">User has been automatically switched to <strong>Email OTP</strong> as fallback.</p>
             <hr style="margin:20px 0;border:none;border-top:1px solid #eee;">
-            <p style="color:#888;font-size:12px;margin:0;">Automated alert from Mediczy signup OTP system. Check Twilio dashboard for details.</p>
+            <p style="color:#888;font-size:12px;margin:0;">Automated alert from My SmartHealth signup OTP system. Check Twilio dashboard for details.</p>
           </div>
         `,
         text: `WhatsApp OTP Failure\n\nTime: ${now}\nPhone: ${maskedPhone}\nPurpose: ${purpose}\nAttempts: ${attempts}\nError: ${error}\n\nUser was switched to Email OTP fallback.`

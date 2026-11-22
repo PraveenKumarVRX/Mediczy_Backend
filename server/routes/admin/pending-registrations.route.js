@@ -5,6 +5,7 @@
  */
 
 import express from 'express';
+import { BRAND_NAME, brandFrom } from '../../config/email-brand.js';
 import bcrypt from 'bcrypt';
 import nodemailer from '../../integrations/nodemailer.js';
 import { authUser, requireRole } from '../../middleware/auth.middleware.js';
@@ -45,13 +46,13 @@ const buildApprovalEmail = (email, name, entityType, tempPassword) => {
     <tr><td style="background:linear-gradient(135deg,${color} 0%,${color}cc 100%);padding:52px 48px;text-align:center;">
       <div style="width:80px;height:80px;background:rgba(255,255,255,0.2);border-radius:50%;margin:0 auto 24px;line-height:80px;font-size:40px;">✓</div>
       <h1 style="margin:0;color:#ffffff;font-size:30px;font-weight:800;letter-spacing:-0.5px;">Account Approved! 🎉</h1>
-      <p style="margin:12px 0 0;color:rgba(255,255,255,0.85);font-size:16px;">Your ${label} is now live on Mediczy</p>
+      <p style="margin:12px 0 0;color:rgba(255,255,255,0.85);font-size:16px;">Your ${label} is now live on My SmartHealth</p>
     </td></tr>
     <!-- Body -->
     <tr><td style="padding:48px 48px 32px;">
       <p style="font-size:17px;color:#0f172a;margin:0 0 16px;font-weight:600;">Hello, ${name}!</p>
       <p style="color:#475569;line-height:1.8;margin:0 0 36px;font-size:15px;">
-        Congratulations! Your <strong>${label}</strong> registration on the <strong>Mediczy Healthcare Platform</strong> has been reviewed and <span style="color:${color};font-weight:700;">approved</span> by our team.
+        Congratulations! Your <strong>${label}</strong> registration on the <strong>My SmartHealth</strong> has been reviewed and <span style="color:${color};font-weight:700;">approved</span> by our team.
         Your account is now fully active and ready to use.
       </p>
 
@@ -95,13 +96,13 @@ const buildApprovalEmail = (email, name, entityType, tempPassword) => {
 
       <hr style="border:none;border-top:1.5px solid #e2e8f0;margin:0 0 28px;">
       <p style="color:#94a3b8;font-size:13px;line-height:1.8;margin:0;">
-        Need help? Contact us at <a href="mailto:support@mediqzy.com" style="color:${color};font-weight:600;">support@mediqzy.com</a>
+        Need help? Contact us at <a href="mailto:care@mysmarthealth.in" style="color:${color};font-weight:600;">care@mysmarthealth.in</a>
       </p>
     </td></tr>
 
     <!-- Footer -->
     <tr><td style="background:#f8fafc;padding:28px 48px;text-align:center;border-top:1.5px solid #e2e8f0;">
-      <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mediczy Healthcare &middot; Bengaluru, Karnataka, India</p>
+      <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 My SmartHealth &middot; Bengaluru, Karnataka, India</p>
       <p style="margin:8px 0 0;color:#cbd5e1;font-size:11px;">This email was sent to ${email}</p>
     </td></tr>
   </table>
@@ -125,7 +126,7 @@ const buildRejectionEmail = (email, name, entityType, reason) => {
     <tr><td style="padding:48px;">
       <p style="font-size:17px;color:#0f172a;margin:0 0 16px;font-weight:600;">Hello, ${name},</p>
       <p style="color:#475569;line-height:1.8;margin:0 0 28px;font-size:15px;">
-        Thank you for your interest in joining the Mediczy Healthcare Network. After careful review of your <strong>${label}</strong> registration, we are unable to approve your account at this time.
+        Thank you for your interest in joining the My SmartHealth Network. After careful review of your <strong>${label}</strong> registration, we are unable to approve your account at this time.
       </p>
       ${reason ? `<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:22px;margin-bottom:28px;">
         <p style="margin:0 0 10px;font-weight:700;color:#991b1b;font-size:14px;">Reason:</p>
@@ -133,11 +134,11 @@ const buildRejectionEmail = (email, name, entityType, reason) => {
       </div>` : ''}
       <p style="color:#475569;line-height:1.8;font-size:14px;margin:0 0 32px;">
         If you believe this was in error or wish to reapply with updated information, please contact our support team at
-        <a href="mailto:support@mediqzy.com" style="color:#0d9488;font-weight:600;">support@mediqzy.com</a>.
+        <a href="mailto:care@mysmarthealth.in" style="color:#0d9488;font-weight:600;">care@mysmarthealth.in</a>.
       </p>
     </td></tr>
     <tr><td style="background:#f8fafc;padding:24px 48px;text-align:center;border-top:1.5px solid #e2e8f0;">
-      <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mediczy Healthcare &middot; Bengaluru, Karnataka, India</p>
+      <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 My SmartHealth &middot; Bengaluru, Karnataka, India</p>
     </td></tr>
   </table>
 </td></tr>
@@ -157,7 +158,7 @@ const sendEmail = async (to, subject, html, text) => {
       }
     });
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM || `"Mediczy Healthcare" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+      from: brandFrom(),
       to, subject, html, text
     });
     return true;
@@ -177,13 +178,13 @@ const buildDoctorActivationEmail = (doctorName, email) => {
     <tr><td style="background:linear-gradient(135deg,#059669 0%,#0d9488 100%);padding:52px 48px;text-align:center;">
       <div style="width:80px;height:80px;background:rgba(255,255,255,0.2);border-radius:50%;margin:0 auto 24px;line-height:80px;font-size:40px;">✅</div>
       <h1 style="margin:0;color:#fff;font-size:28px;font-weight:800;">Account Activated!</h1>
-      <p style="margin:12px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">Your Mediczy doctor account is now live</p>
+      <p style="margin:12px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">Your My SmartHealth doctor account is now live</p>
     </td></tr>
     <tr><td style="padding:48px 48px 32px;">
       <p style="font-size:17px;color:#0f172a;font-weight:600;margin:0 0 16px">Hello, ${doctorName}!</p>
       <p style="color:#475569;line-height:1.8;font-size:15px;margin:0 0 32px">
         Congratulations! Our team has reviewed and verified your registration documents.
-        Your Mediczy doctor account is now <strong style="color:#059669">fully active</strong>.
+        Your My SmartHealth doctor account is now <strong style="color:#059669">fully active</strong>.
         You can log in using the email and password you created during registration.
       </p>
       <div style="text-align:center;margin-bottom:32px">
@@ -197,7 +198,7 @@ const buildDoctorActivationEmail = (doctorName, email) => {
       </div>
     </td></tr>
     <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
-      <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
+      <p style="margin:0;font-size:11px;color:#94a3b8">My SmartHealth · Mayden SmartHealth Pvt Ltd · care@mysmarthealth.in</p>
     </td></tr>
   </table>
 </td></tr></table></body></html>`;
@@ -397,9 +398,9 @@ router.post('/approve', authUser, requireRole('admin'), async (req, res) => {
       // Send activation email — doctor already has their own password
       await sendEmail(
         entityEmail,
-        `✅ Your Mediczy Doctor Account is Now Active — Welcome, ${entityName}!`,
+        `✅ Your My SmartHealth Doctor Account is Now Active — Welcome, ${entityName}!`,
         buildDoctorActivationEmail(entityName, entityEmail),
-        `Hello ${entityName},\n\nCongratulations! Your Mediczy doctor account is now active.\n\nLogin at: ${process.env.FRONTEND_URL || 'https://app.mediqzy.com'}/doctor/login\nUse the email and password you created during registration.\n\nMediczy Team`
+        `Hello ${entityName},\n\nCongratulations! Your My SmartHealth doctor account is now active.\n\nLogin at: ${process.env.FRONTEND_URL || 'https://app.mediqzy.com'}/doctor/login\nUse the email and password you created during registration.\n\nMy SmartHealth Team`
       );
       return res.json({ success: true, message: 'Doctor account activated', emailSent: true, entityName, entityEmail });
 
@@ -411,9 +412,9 @@ router.post('/approve', authUser, requireRole('admin'), async (req, res) => {
     const label = entityType.charAt(0).toUpperCase() + entityType.slice(1);
     const emailSent = await sendEmail(
       entityEmail,
-      `🎉 Your ${label} Account on Mediczy is Now Active!`,
+      `🎉 Your ${label} Account on My SmartHealth is Now Active!`,
       html,
-      `Hello ${entityName},\n\nYour ${label} account has been approved!\n\nLogin: ${process.env.FRONTEND_URL}/${entityType}/login\nEmail: ${entityEmail}\nTemporary Password: ${tempPassword}\n\nPlease change your password after first login.\n\nMediczy Team`
+      `Hello ${entityName},\n\nYour ${label} account has been approved!\n\nLogin: ${process.env.FRONTEND_URL}/${entityType}/login\nEmail: ${entityEmail}\nTemporary Password: ${tempPassword}\n\nPlease change your password after first login.\n\nMy SmartHealth Team`
     );
 
     res.json({ success: true, message: `${entityType} account approved`, emailSent, entityName, entityEmail });
@@ -481,9 +482,9 @@ router.post('/reject', authUser, requireRole('admin'), async (req, res) => {
     const label = entityType.charAt(0).toUpperCase() + entityType.slice(1);
     const emailSent = await sendEmail(
       entityEmail,
-      `Update on Your ${label} Registration with Mediczy`,
+      `Update on Your ${label} Registration with My SmartHealth`,
       html,
-      `Hello ${entityName},\n\nYour ${label} registration could not be approved.\n\n${reason ? `Reason: ${reason}\n\n` : ''}Contact support@mediqzy.com for assistance.\n\nMediczy Team`
+      `Hello ${entityName},\n\nYour ${label} registration could not be approved.\n\n${reason ? `Reason: ${reason}\n\n` : ''}Contact care@mysmarthealth.in for assistance.\n\nMy SmartHealth Team`
     );
 
     res.json({ success: true, message: `${entityType} registration rejected`, emailSent });

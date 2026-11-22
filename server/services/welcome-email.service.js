@@ -49,7 +49,9 @@ const CORPORATE_WELCOME_ATTACHMENT_TEMPLATES = Object.freeze({
 });
 
 function coerceSesFrom(from) {
-  const raw = String(from || '').trim();
+  // Brand rule (2026-11-22): no "Mediqzy"/"Mediczy" sender name reaches a member, whatever a
+  // setting (EMAIL_FROM, SMTP_FROM_NAME, a saved template) still says.
+  const raw = String(from || '').trim().replace(/"?Medi[cq]zy[^"<]*"?\s*(?=<)/i, '"My SmartHealth" ');
   const match = raw.match(/^"?([^"<]*)"?\s*<([^>]+)>$/);
   const name = (match ? match[1] : '').trim();
   const address = (match ? match[2] : raw).trim();
@@ -60,7 +62,7 @@ function coerceSesFrom(from) {
   if (address) {
     console.warn(`[email] From ${address} is not an SES-verified identity; sending as ${SES_FROM_ADDRESS}`);
   }
-  return `"${name || 'Mediqzy'}" <${SES_FROM_ADDRESS}>`;
+  return `"${name || 'My SmartHealth'}" <${SES_FROM_ADDRESS}>`;
 }
 
 function isZohoHost(host) {
@@ -77,8 +79,8 @@ async function sendViaSes(msg) {
   const client = await getSesClient();
   if (!client) throw new Error('SES client unavailable');
   const fromAddress = coerceSesFrom(typeof msg.from === 'object'
-    ? `"${msg.from.name || 'Mediqzy'}" <${msg.from.email || SES_FROM_ADDRESS}>`
-    : (msg.from || `"Mediqzy Corporate Health" <${SES_FROM_ADDRESS}>`));
+    ? `"${msg.from.name || 'My SmartHealth'}" <${msg.from.email || SES_FROM_ADDRESS}>`
+    : (msg.from || `"My SmartHealth" <${SES_FROM_ADDRESS}>`));
   // bcc is carried on msg and must be honoured by BOTH transports; SES needs it on Destination,
   // nodemailer takes a `bcc` field. Normalised to an array and filtered so an empty value can
   // never produce an empty recipient entry (SES rejects the whole send for that).
@@ -124,7 +126,7 @@ async function resolveSmtpConfig() {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASSWORD || process.env.SMTP_PASS,
     },
-    fromName: process.env.EMAIL_FROM_NAME || 'Mediqzy Team',
+    fromName: process.env.EMAIL_FROM_NAME || 'My SmartHealth Team',
     fromEmail: process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER,
   };
 
@@ -205,7 +207,7 @@ function isTransientMailError(error) {
 
 function buildFromAddress(msg, smtp = null) {
   if (typeof msg.from === 'object') {
-    const fromName = msg.from.name || smtp?.fromName || 'Mediqzy Corporate Health';
+    const fromName = msg.from.name || smtp?.fromName || 'My SmartHealth';
     const fromEmail = msg.from.email || smtp?.fromEmail || smtp?.auth?.user || 'hello@mysmarthealth.in';
     return `"${fromName}" <${fromEmail}>`;
   }
@@ -218,7 +220,7 @@ function buildFromAddress(msg, smtp = null) {
     return `"${smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`;
   }
 
-  return '"Mediqzy Corporate Health" <hello@mysmarthealth.in>';
+  return '"My SmartHealth" <hello@mysmarthealth.in>';
 }
 
 async function sendViaSmtp(msg) {
@@ -483,21 +485,21 @@ export async function sendDoctorWelcomeEmail(doctorData, temporaryPassword) {
   const msg = {
     to: email,
     from: {
-      email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
-      name: 'Mediqzy Healthcare Platform'
+      email: process.env.SENDGRID_FROM_EMAIL || 'hello@mysmarthealth.in',
+      name: 'My SmartHealth'
     },
-    subject: 'Welcome to Mediqzy - Doctor Portal Access 🏥',
+    subject: 'Welcome to My SmartHealth - Doctor Portal Access 🏥',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
         <div style="background-color: #0d9488; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to Mediqzy! 🎉</h1>
+          <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to My SmartHealth! 🎉</h1>
         </div>
         
         <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: #0d9488; margin-bottom: 20px;">Dear Dr. ${firstName} ${lastName},</h2>
           
           <p style="font-size: 16px; line-height: 1.6; color: #374151;">
-            Your doctor account has been successfully created on the Mediqzy Healthcare Platform! 🏥
+            Your doctor account has been successfully created on the My SmartHealth! 🏥
           </p>
           
           <div style="background-color: #f0fdfa; border-left: 4px solid #0d9488; padding: 20px; margin: 25px 0; border-radius: 5px;">
@@ -538,21 +540,20 @@ export async function sendDoctorWelcomeEmail(doctorData, temporaryPassword) {
           </div>
           
           <p style="font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-            Need assistance? Our support team is available 24/7:<br>
-            📧 Email: support@mediqzy.com<br>
-            📞 Phone: +91-1234567890
+            Need assistance? Write to us:<br>
+            📧 Email: care@mysmarthealth.in
           </p>
           
           <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
             <p style="color: #6b7280; font-size: 14px;">
               Best regards,<br>
-              <strong style="color: #0d9488;">The Mediqzy Team</strong>
+              <strong style="color: #0d9488;">The My SmartHealth Team</strong>
             </p>
           </div>
         </div>
         
         <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-          <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
+          <p>© 2026 My SmartHealth. All rights reserved.</p>
         </div>
       </div>
     `
@@ -587,21 +588,21 @@ export async function sendHospitalWelcomeEmail(hospitalData, temporaryPassword) 
   const msg = {
     to: email,
     from: {
-      email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
-      name: 'Mediqzy Healthcare Platform'
+      email: process.env.SENDGRID_FROM_EMAIL || 'hello@mysmarthealth.in',
+      name: 'My SmartHealth'
     },
-    subject: 'Welcome to Mediqzy - Hospital Portal Access 🏥',
+    subject: 'Welcome to My SmartHealth - Hospital Portal Access 🏥',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
         <div style="background-color: #0d9488; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to Mediqzy! 🎉</h1>
+          <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to My SmartHealth! 🎉</h1>
         </div>
         
         <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: #0d9488; margin-bottom: 20px;">Dear ${hospital_name} Team,</h2>
           
           <p style="font-size: 16px; line-height: 1.6; color: #374151;">
-            Your hospital/clinic has been successfully registered on the Mediqzy Healthcare Platform! 🏥
+            Your hospital/clinic has been successfully registered on the My SmartHealth! 🏥
           </p>
           
           <div style="background-color: #f0fdfa; border-left: 4px solid #0d9488; padding: 20px; margin: 25px 0; border-radius: 5px;">
@@ -643,13 +644,12 @@ export async function sendHospitalWelcomeEmail(hospitalData, temporaryPassword) 
           
           <p style="font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
             Need help? Contact us:<br>
-            📧 Email: support@mediqzy.com<br>
-            📞 Phone: +91-1234567890
+            📧 Email: care@mysmarthealth.in
           </p>
         </div>
         
         <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-          <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
+          <p>© 2026 My SmartHealth. All rights reserved.</p>
         </div>
       </div>
     `
@@ -684,7 +684,7 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
   const msg = {
     to: email,
     from: {
-      email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
+      email: process.env.SENDGRID_FROM_EMAIL || 'hello@mysmarthealth.in',
       name: 'My SmartHealth'
     },
     subject: 'Welcome to My SmartHealth - Corporate Portal Access 🏢',
@@ -741,8 +741,7 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
           
           <p style="font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
             Questions? We're here to help:<br>
-            📧 Corporate Support: corporate@mediqzy.com<br>
-            📞 Dedicated Hotline: +91-1234567890
+            📧 Corporate Support: care@mysmarthealth.in
           </p>
         </div>
         
@@ -789,7 +788,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
   const msg = {
     to: email,
     from: {
-      email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
+      email: process.env.SENDGRID_FROM_EMAIL || 'hello@mysmarthealth.in',
       name: 'My SmartHealth'
     },
     subject: `Welcome to ${companyName} Employee Health Portal – Your Login Details`,
@@ -851,7 +850,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
           </div>
           <p style="font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
             Need help? Contact your HR team or reach us at:<br>
-            📧 support@mediqzy.com &nbsp;|&nbsp; 📞 +91-1234567890
+            📧 care@mysmarthealth.in
           </p>
         </div>
         <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
@@ -901,7 +900,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
   const msg = {
     to: email,
     from: {
-      email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
+      email: process.env.SENDGRID_FROM_EMAIL || 'hello@mysmarthealth.in',
       name: 'My SmartHealth'
     },
     subject: `Reminder: Activate Your ${companyName} Health Portal Access`,
@@ -963,7 +962,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
           </div>
           <p style="font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
             Need help? Contact your HR team or reach us at:<br>
-            📧 support@mediqzy.com &nbsp;|&nbsp; 📞 +91-1234567890
+            📧 care@mysmarthealth.in
           </p>
         </div>
         <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
@@ -1003,7 +1002,7 @@ export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, h
   await sendMail({
     to,
     from: from || {
-      email: process.env.SENDGRID_FROM_EMAIL || "noreply@mediqzy.com",
+      email: process.env.SENDGRID_FROM_EMAIL || "hello@mysmarthealth.in",
       name: "My SmartHealth"
     },
     subject,
@@ -1025,21 +1024,21 @@ export async function sendTeamWelcomeEmail(userData, temporaryPassword) {
   const msg = {
     to: email,
     from: {
-      email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
-      name: 'Mediqzy Healthcare Platform'
+      email: process.env.SENDGRID_FROM_EMAIL || 'hello@mysmarthealth.in',
+      name: 'My SmartHealth'
     },
-    subject: 'Welcome to Mediqzy - Team Portal Access 👥',
+    subject: 'Welcome to My SmartHealth - Team Portal Access 👥',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
         <div style="background-color: #2563eb; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to Mediqzy! 🎉</h1>
+          <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to My SmartHealth! 🎉</h1>
         </div>
         
         <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: #2563eb; margin-bottom: 20px;">Dear ${firstName} ${lastName},</h2>
           
           <p style="font-size: 16px; line-height: 1.6; color: #374151;">
-            Your team account has been created on the Mediqzy Healthcare Platform! Welcome aboard! 👥
+            Your team account has been created on the My SmartHealth! Welcome aboard! 👥
           </p>
           
           <div style="background-color: #eff6ff; border-left: 4px solid #2563eb; padding: 20px; margin: 25px 0; border-radius: 5px;">
@@ -1071,13 +1070,12 @@ export async function sendTeamWelcomeEmail(userData, temporaryPassword) {
           
           <p style="font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
             Need help? Contact support:<br>
-            📧 Email: support@mediqzy.com<br>
-            📞 Phone: +91-1234567890
+            📧 Email: care@mysmarthealth.in
           </p>
         </div>
         
         <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-          <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
+          <p>© 2026 My SmartHealth. All rights reserved.</p>
         </div>
       </div>
     `

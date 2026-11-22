@@ -1282,7 +1282,7 @@ router.post(
 
       // Send welcome notification via SMS, WhatsApp, and Email
       try {
-        const credentialsMessage = `Welcome to Mediczy! 🏥\n\nYour account has been created by ${doctorName}.\n\n📱 *Login Credentials:*\nPhone: ${phoneNumber}\nEmail: ${generatedEmail}\nTemporary Password: *${tempPassword}*\n\n🔐 Please login at https://app.mediqzy.com and change your password immediately.\n\n_This is an auto-generated message. Please do not reply._`;
+        const credentialsMessage = `Welcome to My SmartHealth! 🏥\n\nYour account has been created by ${doctorName}.\n\n📱 *Login Credentials:*\nPhone: ${phoneNumber}\nEmail: ${generatedEmail}\nTemporary Password: *${tempPassword}*\n\n🔐 Please login at https://app.mediqzy.com and change your password immediately.\n\n_This is an auto-generated message. Please do not reply._`;
 
         // 1. Send SMS
         const notificationService = await import('../services/notification.service.js');
@@ -1308,8 +1308,8 @@ router.post(
         if (email && !email.includes('@mediczy.com')) {
           await notificationService.default.sendEmail(
             email,
-            'Welcome to Mediczy - Account Created',
-            `Dear ${firstName} ${lastName},\n\nYour Mediczy account has been created by ${doctorName}.\n\nLogin Credentials:\nEmail/Phone: ${phoneNumber}\nTemporary Password: ${tempPassword}\n\nPlease login at https://app.mediqzy.com and change your password immediately.\n\nBest regards,\nMediczy Team`
+            'Welcome to My SmartHealth - Account Created',
+            `Dear ${firstName} ${lastName},\n\nYour My SmartHealth account has been created by ${doctorName}.\n\nLogin Credentials:\nEmail/Phone: ${phoneNumber}\nTemporary Password: ${tempPassword}\n\nPlease login at https://app.mediqzy.com and change your password immediately.\n\nBest regards,\nMediczy Team`
           );
         }
       } catch (notificationError) {
