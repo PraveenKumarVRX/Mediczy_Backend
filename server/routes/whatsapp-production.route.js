@@ -1183,7 +1183,7 @@ export async function handleIncomingWhatsApp(req, res) {
       const deskNumber = normalizeWhatsAppNumber(phoneNumber);
       const handoffNow = await getHandoffState(phoneNumber).catch(() => null);
       const wantsPerson = !handoffNow?.active && asksForPerson(Body);
-      await whatsappDesk.inbound({ from: deskNumber, name: customerName, body: Body, messageId: MessageSid, mediaUrl: MediaUrl0, withPerson: Boolean(handoffNow?.active || wantsPerson) });
+      await whatsappDesk.inbound({ from: deskNumber, name: customerName, body: Body, messageId: MessageSid, withPerson: Boolean(handoffNow?.active || wantsPerson) });
       if (wantsPerson && await whatsappDesk.enabled()) {
         await setHandoffState(phoneNumber, { reason: 'asked_for_person', source: 'whatsapp' });
         await whatsappDesk.handoff({ to: deskNumber, name: customerName, reason: 'the member asked to talk to a person' });
@@ -1801,6 +1801,23 @@ bookingType === 'health_checkup'
 
 startGupshupInboundWorker(async event => {
   if (event.unsupportedMedia) {
+    // A photo or document goes to the Team in Chatwoot (the assistant cannot read files).
+    if (event.media?.url && await whatsappDesk.enabled()) {
+      const from = normalizeWhatsAppNumber(event.message.From);
+      const name = event.message.ProfileName || from;
+      const kind = { image: 'a photo', video: 'a video', audio: 'a voice note', sticker: 'a sticker' }[event.media.type] || 'a document';
+      await whatsappDesk.inbound({ from, name, body: event.media.caption || '', messageId: event.message.MessageSid,
+        attachment: { url: event.media.url, contentType: event.media.contentType, name: event.media.name, type: event.media.type }, withPerson: true });
+      const already = await getHandoffState(from).catch(() => null);
+      if (!already?.active) {
+        await setHandoffState(from, { reason: 'member_sent_file', source: 'whatsapp' });
+        await whatsappDesk.handoff({ to: from, name, reason: `the member sent ${kind}` });
+        const ack = "Thanks, I've passed your file to our support team. Someone will reply here shortly.";
+        await gupshup.sendText({ to: event.message.From, body: ack });
+        await whatsappDesk.botReply({ to: from, name, text: ack });
+      }
+      return;
+    }
     await gupshup.sendText({ to: event.message.From, body: 'Please send your request as text. Attachments are not supported on this channel yet.' });
     return;
   }

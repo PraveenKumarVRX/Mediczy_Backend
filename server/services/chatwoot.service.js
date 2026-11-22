@@ -32,7 +32,7 @@ export function verifyChatwootSignature({ rawBody, timestamp, signature, secret,
 }
 
 export class ChatwootService {
-  constructor({ db, http, dispatch, env = process.env, hooks = {} }) {
+  constructor({ db, http, dispatch, env = process.env, hooks = {}, media = null }) {
     this.db = db;
     this.http = http;
     this.dispatch = dispatch;
@@ -40,6 +40,9 @@ export class ChatwootService {
     // onAgentReply(mapping) / onResolved(mapping): an agent answered in Chatwoot / resolved the
     // conversation. Used to hand a WhatsApp chat to the Team and back to the assistant. Never throw.
     this.hooks = hooks;
+    // media.fetch(attachment) -> { buffer, contentType, filename } for a customer's file, already
+    // virus-scanned; throws with publicMessage when it cannot be passed on.
+    this.media = media;
   }
 
   get enabled() { return this.env.CHATWOOT_ENABLED === 'true'; }
@@ -69,6 +72,23 @@ export class ChatwootService {
       return response.data;
     } catch (cause) {
       // Axios errors carry request headers; never expose them to clients or logs.
+      throw Object.assign(error('Chatwoot API request failed', 502), { upstreamStatus: cause.response?.status });
+    }
+  }
+
+  /** POST a message with files (multipart). fields: flat strings; nested keys use brackets. */
+  async apiMultipart(account, path, fields, files) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, String(value));
+    for (const f of files) form.append('attachments[]', new Blob([f.buffer], { type: f.contentType || 'application/octet-stream' }), f.filename || 'attachment');
+    try {
+      const response = await this.http.request({
+        method: 'POST', url: `${this.baseUrl}/api/v1/accounts/${positiveId(account.account_id)}${path}`,
+        headers: { api_access_token: this.secret(account.api_token_env) },
+        data: form, timeout: 60000, maxRedirects: 0, maxBodyLength: 40 * 1024 * 1024,
+      });
+      return response.data;
+    } catch (cause) {
       throw Object.assign(error('Chatwoot API request failed', 502), { upstreamStatus: cause.response?.status });
     }
   }
@@ -146,11 +166,11 @@ export class ChatwootService {
    * status: the Chatwoot conversation status to set ('pending' while the assistant handles it,
    * 'open' once a person is needed); defaults to 'open', as before.
    */
-  async enqueueInbound({ inbox, customerId, name, content, externalId, direction = 'inbound', status = null, isPrivate = false }) {
+  async enqueueInbound({ inbox, customerId, name, content, externalId, direction = 'inbound', status = null, isPrivate = false, attachments = [] }) {
     if (!['inbound', 'bot'].includes(direction)) throw error('Unsupported bridge direction');
     if (!this.enabled || !inbox.enabled || !inbox.account_enabled) throw error('Chatwoot bridge is disabled', 503);
     const customer = normalizeChannelAddress(inbox.channel, customerId);
-    if (!externalId || String(externalId).length > 240 || !String(content || '').trim()) throw error('Message content and provider ID are required');
+    if (!externalId || String(externalId).length > 240 || (!String(content || '').trim() && !attachments?.length)) throw error('Message content and provider ID are required');
     const db = await this.db.connect();
     try {
       await db.query('BEGIN');
@@ -178,7 +198,8 @@ export class ChatwootService {
         `INSERT INTO crm_chatwoot_jobs (tenant_id, bridge_conversation_id, direction, external_id, payload)
          VALUES ($1,$2,$5,$3,$4) ON CONFLICT (bridge_conversation_id, direction, external_id) DO NOTHING RETURNING id`,
         [inbox.tenant_id, conversation.id, String(externalId),
-          JSON.stringify({ content: String(content).slice(0, 20000), ...(status ? { status } : {}), ...(isPrivate ? { private: true } : {}) }), direction]);
+          JSON.stringify({ content: String(content).slice(0, 20000), ...(status ? { status } : {}), ...(isPrivate ? { private: true } : {}),
+            ...(attachments?.length ? { attachments: attachments.slice(0, 5) } : {}) }), direction]);
       if (jobs[0] && !isPrivate) await this.logEvent(db, inbox, conversation, direction === 'bot' ? 'outbound' : 'inbound', content, direction === 'bot' ? `bot:${externalId}` : externalId, direction === 'bot' ? 'sent' : 'received');
       await db.query('COMMIT');
       return { queued: Boolean(jobs[0]), duplicate: !jobs[0], conversationId: conversation.crm_conversation_id };
@@ -376,20 +397,44 @@ export class ChatwootService {
           if (status) await this.api(binding, 'POST', `${path}/toggle_status`, { status });
           // A 'bot' job is shown as an outgoing message (or a private note); the content attribute
           // makes the webhook ignore it, so it is never sent to the customer a second time.
-          const message = await this.api(binding, 'POST', `${path}/messages`, {
-            content: job.payload.content, message_type: job.direction === 'bot' ? 'outgoing' : 'incoming',
-            private: job.direction === 'bot' && job.payload.private === true,
-            content_attributes: { mediczy_bridge_job_id: String(job.id), ...(job.direction === 'bot' ? { mediczy_automated: true } : {}) },
-          });
+          let message;
+          const incomingFiles = job.direction === 'inbound' && job.payload.attachments?.length && this.media ? job.payload.attachments : [];
+          if (incomingFiles.length) {
+            // The customer's photo or document: fetched, scanned, then attached in Chatwoot. A file
+            // that cannot be passed on still leaves the message, with a line saying why.
+            const files = [];
+            const problems = [];
+            for (const attachment of incomingFiles) {
+              try { files.push(await this.media.fetch(attachment)); }
+              catch (cause) { problems.push(cause.publicMessage || 'The attachment could not be retrieved.'); }
+            }
+            const content = [job.payload.content, ...problems.map((p) => `[${p}]`)].filter(Boolean).join('\n') || '[Attachment]';
+            message = files.length
+              ? await this.apiMultipart(binding, `${path}/messages`, {
+                content, message_type: 'incoming', private: 'false',
+                'content_attributes[mediczy_bridge_job_id]': String(job.id),
+              }, files)
+              : await this.api(binding, 'POST', `${path}/messages`, {
+                content, message_type: 'incoming', private: false, content_attributes: { mediczy_bridge_job_id: String(job.id) },
+              });
+          } else {
+            message = await this.api(binding, 'POST', `${path}/messages`, {
+              content: job.payload.content, message_type: job.direction === 'bot' ? 'outgoing' : 'incoming',
+              private: job.direction === 'bot' && job.payload.private === true,
+              content_attributes: { mediczy_bridge_job_id: String(job.id), ...(job.direction === 'bot' ? { mediczy_automated: true } : {}) },
+            });
+          }
           providerId = message.id;
           if (status) await db.query('UPDATE crm_conversations SET status = $3 WHERE tenant_id = $1 AND id = $2',
             [job.tenant_id, binding.crm_conversation_id, status]);
         }
       } else {
         // Validation happens before network delivery, so unsupported messages are recoverable failures.
-        if (job.payload.contentType !== 'text' || job.payload.attachments?.length) throw error('Only text agent replies are supported by this channel bridge');
+        const filesAllowed = binding.provider === 'gupshup';
+        if (job.payload.contentType !== 'text' || (job.payload.attachments?.length && !filesAllowed)) throw error('Only text agent replies are supported by this channel bridge');
         sendStarted = true;
-        const delivered = await this.dispatch({ inbox: binding, to: binding.customer_id, content: job.payload.content, externalId: job.external_id, bridgeConversationId: binding.id });
+        const delivered = await this.dispatch({ inbox: binding, to: binding.customer_id, content: job.payload.content, externalId: job.external_id,
+          bridgeConversationId: binding.id, attachments: filesAllowed ? (job.payload.attachments || []) : [] });
         providerId = delivered.id;
         await db.query(`UPDATE crm_communication_events SET status = 'sent', sent_at = NOW()
           WHERE tenant_id = $1 AND conversation_id = $2 AND provider = 'chatwoot' AND provider_message_id = $3`,

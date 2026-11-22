@@ -21,3 +21,17 @@ test('hand-off state is keyed by the normalised number', async () => {
   await clearHandoffState('+919000000001');
   expect(await getHandoffState('9000000001')).toBeNull();
 });
+
+test('a Gupshup photo or document message carries its file for the desk', async () => {
+  const { normalizeGupshupEvent } = await import('../services/gupshup-webhook.service.js');
+  const env = { GUPSHUP_APP_NAME: 'App', GUPSHUP_SOURCE_NUMBER: '918098998998' };
+  const base = { app: 'App', version: 2, type: 'message' };
+  const doc = normalizeGupshupEvent({ ...base, payload: { id: 'm1', source: '919000000001', type: 'file', sender: { name: 'A' },
+    payload: { url: 'https://filemanager.gupshup.io/wa/x', name: 'report.pdf', contentType: 'application/pdf', caption: 'my report' } } }, env);
+  expect(doc).toMatchObject({ unsupportedMedia: true, media: { type: 'file', name: 'report.pdf', caption: 'my report' },
+    message: { Body: 'my report', NumMedia: '1', MediaUrl0: 'https://filemanager.gupshup.io/wa/x' } });
+  const insecure = normalizeGupshupEvent({ ...base, payload: { id: 'm2', source: '919000000001', type: 'image', payload: { url: 'http://x/y.jpg' } } }, env);
+  expect(insecure.media).toBeNull();
+  const text = normalizeGupshupEvent({ ...base, payload: { id: 'm3', source: '919000000001', type: 'text', payload: { text: 'hi' } } }, env);
+  expect(text).toMatchObject({ unsupportedMedia: false, media: null, message: { NumMedia: '0' } });
+});

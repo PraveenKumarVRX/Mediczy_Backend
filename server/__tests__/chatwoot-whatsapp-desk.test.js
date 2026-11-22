@@ -5,17 +5,21 @@ import { jest } from '@jest/globals';
 const poolQuery = jest.fn();
 jest.unstable_mockModule('../db/pgPool.js', () => ({ default: { query: poolQuery, connect: jest.fn() } }));
 const sendText = jest.fn();
-jest.unstable_mockModule('../services/gupshup-whatsapp.service.js', () => ({ default: { sendText } }));
+const sendMedia = jest.fn();
+jest.unstable_mockModule('../services/gupshup-whatsapp.service.js', () => ({ default: { sendText, sendMedia } }));
+const scanOnly = jest.fn(async () => ({ clean: true }));
+jest.unstable_mockModule('../services/minio-upload.service.js', () => ({ scanOnly }));
 const handoff = { set: jest.fn(async () => ({})), clear: jest.fn(async () => true) };
 jest.unstable_mockModule('../services/whatsapp-handoff.service.js', () => ({ setHandoffState: handoff.set, clearHandoffState: handoff.clear }));
-jest.unstable_mockModule('../integrations/axios.js', () => ({ default: { request: jest.fn() } }));
+const httpRequest = jest.fn();
+jest.unstable_mockModule('../integrations/axios.js', () => ({ default: { request: httpRequest } }));
 jest.unstable_mockModule('../integrations/twilio.js', () => ({ default: jest.fn() }));
 jest.unstable_mockModule('../integrations/nodemailer.js', () => ({ default: { createTransport: jest.fn() } }));
 
 const { dispatch, chatwootBridge, whatsappDesk } = await import('../services/chatwoot-bridge.service.js');
 const { ChatwootService } = await import('../services/chatwoot.service.js');
 const inbox = { provider: 'gupshup', channel: 'whatsapp', channel_address: '+918098998998' };
-beforeEach(() => { poolQuery.mockReset(); sendText.mockReset(); handoff.set.mockClear(); handoff.clear.mockClear(); });
+beforeEach(() => { poolQuery.mockReset(); sendText.mockReset(); sendMedia.mockReset(); httpRequest.mockReset(); scanOnly.mockClear(); handoff.set.mockClear(); handoff.clear.mockClear(); });
 
 describe('agent replies go out through Gupshup, within WhatsApp\'s 24-hour window', () => {
   test('a reply within 24 hours of the member\'s last message is sent', async () => {
@@ -110,5 +114,69 @@ describe('the bridge hooks for WhatsApp', () => {
     expect(handoff.clear).toHaveBeenCalledWith('+919000000001');
     await chatwootBridge.hooks.onResolved({ channel: 'email', customer_id: 'a@b.c' });
     expect(handoff.clear).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('files: agent attachments go out on WhatsApp', () => {
+  const pdf = { file_type: 'file', extension: 'pdf', file_size: 120000, data_url: 'https://chat.mediqzy.com/rails/active_storage/blobs/redirect/abc/Lab%20report.pdf' };
+  const photo = { file_type: 'image', extension: 'jpg', file_size: 90000, data_url: 'https://chat.mediqzy.com/rails/active_storage/blobs/redirect/def/photo.jpg' };
+  beforeEach(() => poolQuery.mockResolvedValue({ rows: [{ at: new Date().toISOString() }] }));
+
+  test('a PDF goes as a document with its name, the text as its caption', async () => {
+    sendMedia.mockResolvedValue({ messageId: 'gs-pdf' });
+    await expect(dispatch({ inbox, to: '+919000000001', content: 'Your report', bridgeConversationId: 5, attachments: [pdf] })).resolves.toEqual({ id: 'gs-pdf' });
+    expect(sendMedia).toHaveBeenCalledWith({ to: '+919000000001', mediaUrl: pdf.data_url, mediaType: 'file', caption: 'Your report', filename: 'Lab report.pdf' });
+    expect(sendText).not.toHaveBeenCalled();
+  });
+
+  test("WhatsApp gets the file's own address, not Chatwoot's redirect; a redirect off Chatwoot is ignored", async () => {
+    sendMedia.mockResolvedValue({ messageId: 'gs-r' });
+    httpRequest.mockResolvedValueOnce({ status: 302, headers: { location: '/rails/active_storage/disk/zz/Lab%20report.pdf' } });
+    await dispatch({ inbox, to: '+919000000001', content: '', bridgeConversationId: 5, attachments: [pdf] });
+    expect(sendMedia.mock.calls[0][0].mediaUrl).toBe('https://chat.mediqzy.com/rails/active_storage/disk/zz/Lab%20report.pdf');
+    expect(httpRequest.mock.calls[0][0]).toMatchObject({ method: 'HEAD', maxRedirects: 0 });
+    httpRequest.mockResolvedValueOnce({ status: 302, headers: { location: 'https://elsewhere.example/x.pdf' } });
+    await dispatch({ inbox, to: '+919000000001', content: '', bridgeConversationId: 5, attachments: [pdf] });
+    expect(sendMedia.mock.calls[1][0].mediaUrl).toBe(pdf.data_url);
+  });
+
+  test('two files: the caption rides on the first only; a photo goes as an image', async () => {
+    sendMedia.mockResolvedValue({ messageId: 'gs-x' });
+    await dispatch({ inbox, to: '+919000000001', content: 'See these', bridgeConversationId: 5, attachments: [photo, pdf] });
+    expect(sendMedia.mock.calls.map((c) => [c[0].mediaType, c[0].caption])).toEqual([['image', 'See these'], ['file', '']]);
+  });
+
+  test('a link that is not a Chatwoot file, or a file over 16 MB, is refused before anything is sent', async () => {
+    await expect(dispatch({ inbox, to: '+919000000001', content: '', bridgeConversationId: 5, attachments: [{ ...pdf, data_url: 'https://evil.example/x.pdf' }] }))
+      .rejects.toMatchObject({ definitelyNotSent: true });
+    await expect(dispatch({ inbox, to: '+919000000001', content: '', bridgeConversationId: 5, attachments: [{ ...pdf, file_size: 17 * 1024 * 1024 }] }))
+      .rejects.toMatchObject({ definitelyNotSent: true, publicMessage: expect.stringContaining('16 MB') });
+    expect(sendMedia).not.toHaveBeenCalled();
+  });
+
+  test('if the second of two files fails, the agent is told only part arrived', async () => {
+    sendMedia.mockResolvedValueOnce({ messageId: 'gs-1' }).mockRejectedValueOnce(new Error('timeout'));
+    await expect(dispatch({ inbox, to: '+919000000001', content: 'x', bridgeConversationId: 5, attachments: [photo, pdf] }))
+      .rejects.toMatchObject({ definitelyNotSent: false, publicMessage: expect.stringContaining('Only part') });
+  });
+});
+
+describe('files: a member\'s photo or document reaches Chatwoot, scanned', () => {
+  const fetchFile = (att) => chatwootBridge.media.fetch(att);
+  test('a clean PDF is passed on with a safe name', async () => {
+    httpRequest.mockResolvedValue({ data: Buffer.from('%PDF-1.4 test'), headers: { 'content-type': 'application/pdf' } });
+    const f = await fetchFile({ url: 'https://filemanager.gupshup.io/wa/abc', name: 'claim form?.pdf', contentType: 'application/pdf' });
+    expect(f).toMatchObject({ contentType: 'application/pdf', filename: 'claim form_.pdf' });
+    expect(scanOnly).toHaveBeenCalled();
+    expect(httpRequest.mock.calls[0][0]).toMatchObject({ responseType: 'arraybuffer', maxContentLength: 16 * 1024 * 1024 });
+  });
+  test('an infected file, a file type we do not pass on, or an http link is refused with a reason for the agent', async () => {
+    httpRequest.mockResolvedValue({ data: Buffer.from('x'), headers: { 'content-type': 'application/pdf' } });
+    scanOnly.mockResolvedValueOnce({ clean: false });
+    await expect(fetchFile({ url: 'https://filemanager.gupshup.io/wa/abc' })).rejects.toMatchObject({ publicMessage: expect.stringContaining('virus scan') });
+    httpRequest.mockResolvedValue({ data: Buffer.from('MZ'), headers: { 'content-type': 'application/x-msdownload' } });
+    await expect(fetchFile({ url: 'https://filemanager.gupshup.io/wa/abc' })).rejects.toMatchObject({ publicMessage: expect.stringContaining('not passed on') });
+    await expect(fetchFile({ url: 'http://filemanager.gupshup.io/wa/abc' })).rejects.toMatchObject({ publicMessage: expect.stringContaining('not secure') });
   });
 });

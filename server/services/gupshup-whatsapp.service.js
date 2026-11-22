@@ -62,14 +62,14 @@ export class GupshupWhatsAppService {
     if (params.some(v => !String(v).trim())) throw new Error('Every WhatsApp template parameter needs a value; an empty one is rejected by WhatsApp');
     return this.submit(to, { template: JSON.stringify({ id: templateId, params: params.map(String) }) }, '/wa/api/v1/template/msg');
   }
-  sendMedia({ to, mediaUrl, caption = '', mediaType }) {
+  sendMedia({ to, mediaUrl, caption = '', mediaType, filename = null }) {
     const url = new URL(mediaUrl);
     if (url.protocol !== 'https:') throw new Error('WhatsApp media requires an HTTPS URL');
     const ext = url.pathname.split('.').pop().toLowerCase();
     const type = mediaType || ({ jpg: 'image', jpeg: 'image', png: 'image', pdf: 'file', mp3: 'audio', ogg: 'audio', mp4: 'video' })[ext];
     if (!['image', 'file', 'audio', 'video'].includes(type)) throw new Error('Specify a supported WhatsApp media type');
     const message = type === 'image' ? { type, originalUrl: mediaUrl, previewUrl: mediaUrl, caption }
-      : { type, url: mediaUrl, ...(type === 'file' ? { filename: url.pathname.split('/').pop() || 'document' } : {}), ...(type !== 'audio' ? { caption } : {}) };
+      : { type, url: mediaUrl, ...(type === 'file' ? { filename: String(filename || decodeURIComponent(url.pathname.split('/').pop() || '') || 'document').slice(0, 240) } : {}), ...(type !== 'audio' ? { caption } : {}) };
     return this.submit(to, { message: JSON.stringify(message) }, '/wa/api/v1/msg');
   }
   async getMessageStatus(id) {

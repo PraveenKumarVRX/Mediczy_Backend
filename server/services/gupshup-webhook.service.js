@@ -42,9 +42,27 @@ export function normalizeGupshupEvent(body, env = process.env) {
   const supported = ['text', 'quick_reply', 'button_reply', 'list_reply'].includes(p.type);
   const text = supported ? (data.text || data.title || data.postbackText || '') : '';
   if (typeof text !== 'string' || (supported && !text.trim()) || text.length > 4096) throw invalid('Invalid message text');
-  return { kind: 'message', app: body.app, id: p.id, unsupportedMedia: !supported,
-    message: { From: `whatsapp:+${from}`, To: `whatsapp:+${to}`, Body: text,
-      MessageSid: p.id, ProfileName: String(p.sender?.name || '').slice(0, 200), NumMedia: '0' } };
+  // A photo or document: kept for the Team's Chatwoot desk (the assistant cannot read files).
+  // The link is Gupshup's own, short-lived and fetched once by the bridge; only https is accepted.
+  const MEDIA = ['image', 'file', 'document', 'video', 'audio', 'sticker'];
+  let media = null;
+  if (MEDIA.includes(p.type)) {
+    const m = data && typeof data === 'object' ? data : {};
+    const url = typeof m.url === 'string' && /^https:\/\//i.test(m.url) && m.url.length <= 2000 ? m.url : null;
+    if (url) {
+      media = {
+        type: p.type === 'document' ? 'file' : p.type,
+        url,
+        contentType: typeof m.contentType === 'string' ? m.contentType.slice(0, 100) : null,
+        name: typeof m.name === 'string' ? m.name.slice(0, 200) : null,
+        caption: typeof m.caption === 'string' ? m.caption.slice(0, 1024) : '',
+      };
+    }
+  }
+  return { kind: 'message', app: body.app, id: p.id, unsupportedMedia: !supported, media,
+    message: { From: `whatsapp:+${from}`, To: `whatsapp:+${to}`, Body: media?.caption || text,
+      MessageSid: p.id, ProfileName: String(p.sender?.name || '').slice(0, 200), NumMedia: media ? '1' : '0',
+      ...(media ? { MediaUrl0: media.url, MediaContentType0: media.contentType || '', MediaName0: media.name || '' } : {}) } };
 }
 export const gupshupJobId = event => crypto.createHash('sha256').update(`${event.app}\0${event.id}`).digest('hex');
 
