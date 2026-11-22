@@ -28,6 +28,9 @@ describe('agent replies go out through Gupshup, within WhatsApp\'s 24-hour windo
     await expect(dispatch({ inbox, to: '+919000000001', content: 'Hello from the team', bridgeConversationId: 5 })).resolves.toEqual({ id: 'gs-9' });
     expect(poolQuery.mock.calls[0][1]).toEqual([5]);
     expect(sendText).toHaveBeenCalledWith({ to: '+919000000001', body: 'Hello from the team' });
+    // Sent once: a text-only reply went out twice after the attachment change (2026-11-22, 'Yes sir').
+    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(sendMedia).not.toHaveBeenCalled();
   });
 
   test('after 24 hours nothing is sent, and the agent is told why', async () => {
@@ -127,6 +130,7 @@ describe('files: agent attachments go out on WhatsApp', () => {
     sendMedia.mockResolvedValue({ messageId: 'gs-pdf' });
     await expect(dispatch({ inbox, to: '+919000000001', content: 'Your report', bridgeConversationId: 5, attachments: [pdf] })).resolves.toEqual({ id: 'gs-pdf' });
     expect(sendMedia).toHaveBeenCalledWith({ to: '+919000000001', mediaUrl: pdf.data_url, mediaType: 'file', caption: 'Your report', filename: 'Lab report.pdf' });
+    expect(sendMedia).toHaveBeenCalledTimes(1);
     expect(sendText).not.toHaveBeenCalled();
   });
 
@@ -160,6 +164,15 @@ describe('files: agent attachments go out on WhatsApp', () => {
     await expect(dispatch({ inbox, to: '+919000000001', content: 'x', bridgeConversationId: 5, attachments: [photo, pdf] }))
       .rejects.toMatchObject({ definitelyNotSent: false, publicMessage: expect.stringContaining('Only part') });
   });
+});
+
+test('an audio file goes with its text sent once, separately', async () => {
+  poolQuery.mockResolvedValue({ rows: [{ at: new Date().toISOString() }] });
+  sendText.mockResolvedValue({ messageId: 'gs-t' }); sendMedia.mockResolvedValue({ messageId: 'gs-a' });
+  await dispatch({ inbox, to: '+919000000001', content: 'Listen to this', bridgeConversationId: 5,
+    attachments: [{ file_type: 'audio', extension: 'ogg', file_size: 1000, data_url: 'https://chat.mediqzy.com/rails/active_storage/blobs/redirect/a/note.ogg' }] });
+  expect(sendText).toHaveBeenCalledTimes(1);
+  expect(sendMedia).toHaveBeenCalledTimes(1);
 });
 
 describe('files: a member\'s photo or document reaches Chatwoot, scanned', () => {

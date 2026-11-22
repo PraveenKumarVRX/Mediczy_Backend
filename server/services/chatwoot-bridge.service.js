@@ -94,7 +94,8 @@ export async function dispatch({ inbox, to, content, bridgeConversationId, attac
       let last;
       // Agent files go out as WhatsApp images/documents; the text rides as the first caption
       // (audio cannot carry one, so the text is sent on its own).
-      const textAsCaption = files.length && files[0].file_type !== 'audio';
+      const textAsCaption = files.length > 0 && files[0].file_type !== 'audio';
+      // Text goes on its own only when there is no file to carry it (no files, or an audio file).
       if (String(content || '').trim() && !textAsCaption) { last = await gupshup.sendText({ to: destination, body: content }); sentCount += 1; }
       for (const [i, f] of files.entries()) {
         const fileUrl = new URL(f.data_url);
@@ -105,7 +106,6 @@ export async function dispatch({ inbox, to, content, bridgeConversationId, attac
         });
         sentCount += 1;
       }
-      if (!files.length) last = await gupshup.sendText({ to: destination, body: content });
       return { id: last?.messageId || last?.id || null };
     } catch (cause) {
       if (sentCount > 0) throw Object.assign(new Error('Tenant channel delivery failed'), { definitelyNotSent: false, publicMessage: 'Only part of this message reached WhatsApp; check with the member before resending.' });
