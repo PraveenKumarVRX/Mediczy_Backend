@@ -65,8 +65,9 @@ export const DEMO_BLOCKED_REQUESTS = [
   [WRITE, /^\/api\/corporate\/benefit-wallet\/authorizations/, PAYMENT],
   [WRITE, /^\/api\/medical-ai\/instant-triage-call$/, LIVE_DOCTOR],
   [WRITE, /^\/api\/video\/room\/invite$/, LIVE_DOCTOR],
-  [WRITE, /^\/api\/employee\/insurance\/(link|refresh)$/, INSURER],
-  [WRITE, /^\/api\/employee\/enrolment(\/|$)/, INSURER],
+  // /api/employee/insurance/* and /api/employee/enrolment/* are allowed (owner, 2026-11-22): the demo
+  // employer is bound to SmartCRM's demo company, and services/smartcrm/partner-client.js refuses any
+  // SmartCRM call from the demo login that is not to that demo company (isDemoBinding).
   [/./, /^\/api\/tpa(\/|$)/, INSURER],
   [WRITE, /^\/api\/tickets(\/|$)/, SUPPORT],
   [WRITE, /^\/api\/support\/chat(\/|$)/, SUPPORT],

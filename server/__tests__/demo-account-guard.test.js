@@ -45,7 +45,7 @@ describe('what the demo account may and may not do', () => {
     ['POST', '/api/membership/payment-order'], ['POST', '/api/health-checkups/bookings/12/payment'],
     ['POST', '/api/health-checkups/bookings/12/payment/verify'], ['POST', '/api/consultation/payment/initiate/4'],
     ['POST', '/api/corporate/benefit-wallet/authorizations'], ['POST', '/api/medical-ai/instant-triage-call'],
-    ['POST', '/api/employee/insurance/link'], ['PUT', '/api/employee/enrolment/draft'], ['GET', '/api/tpa/providers'],
+    ['GET', '/api/tpa/providers'],
     ['POST', '/api/tickets'], ['POST', '/api/support/chat/start'], ['POST', '/v1/7/homecare/bookings'],
     ['POST', '/api/users/change-password'], ['DELETE', '/api/users/account'], ['PUT', '/api/users/profile'],
     ['POST', '/api/users/data/erasure'], ['DELETE', '/api/privacy/delete-account'], ['DELETE', '/api/privacy/consents/ai_assistant'],
@@ -65,6 +65,7 @@ describe('what the demo account may and may not do', () => {
     ['POST', '/api/consultation/book'], ['POST', '/api/appointments'], ['POST', '/api/lab-tests/checkout'],
     ['POST', '/api/health-checkups/bookings'], ['POST', '/api/pharmacy-orders'], ['POST', '/api/family-members'],
     ['POST', '/api/employee/claims'], ['GET', '/api/employee/policies'], ['GET', '/api/payments/history'],
+    ['POST', '/api/employee/insurance/link'], ['PUT', '/api/employee/enrolment/draft'], ['POST', '/api/employee/enrolment/quote'],
   ])('lets %s %s through, inside the demo context', async (method, url) => {
     const r = await run(method, `${url}?x=1`, { id: DEMO, role: 'patient', userType: 'patient' });
     expect(r).toEqual({ kind: 'next', demoId: DEMO, headers: { 'X-Demo-Account': 'true' } });
