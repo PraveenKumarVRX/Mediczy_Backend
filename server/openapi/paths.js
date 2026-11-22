@@ -94,6 +94,8 @@ const employee = {
 const smartcrmTag = 'Insurance (SmartCRM)';
 const passThrough = { type: 'object', additionalProperties: true, description: 'SmartCRM\'s own payload, passed through unchanged.' };
 const idempotencyKey = { name: 'Idempotency-Key', in: 'header', required: true, schema: { type: 'string', pattern: '^[A-Za-z0-9_-]{8,128}$' }, description: 'Same key + same body replays the stored answer (header Idempotent-Replayed: true); same key + different body is 422.' };
+// 409 includes SESSION_REVALIDATE_REQUIRED (details.session_revalidate_required: true): the enrolment session token
+// (body enrollment_session_token, 30 min) is missing or expired; start a session again and resend with a NEW Idempotency-Key.
 const enrolmentRefusals = { 409: R('SmartCrmRefusal'), 503: R('SmartCrmRefusal') };
 const enrol = (summary, { requestBody, idempotent, description, query, ok } = {}) => op(smartcrmTag, summary, {
   description,
@@ -107,7 +109,7 @@ const enrol = (summary, { requestBody, idempotent, description, query, ok } = {}
     ...enrolmentRefusals,
   },
 });
-const queryParam = (name) => ({ name, in: 'query', required: false, schema: { type: 'string', maxLength: 200 } });
+const queryParam = (name) => ({ name, in: 'query', required: false, schema: { type: 'string', maxLength: 2048 } });
 
 const insurance = {
   '/api/employee/insurance/link': {
@@ -128,9 +130,9 @@ const insurance = {
   },
   '/api/employee/enrolment/window': { get: enrol('Enrolment window state (fails closed: only state "open" is open)') },
   '/api/employee/enrolment/session': { post: enrol('Start an enrolment session', { requestBody: body(passThrough, false),
-    description: 'SmartCRM\'s session, plus data.policyOptions: each SmartCRM policy option (a flat-priced bundle) as {id, name, type: "single", slabs: [one slab with premium in rupees, gst null, prorate false], selectionGroup, participationThresholdPct, benefits[{name, limit, note}]}. Options sharing a selectionGroup are alternatives; choose one.' }) },
+    description: 'SmartCRM\'s session as sent (live reply is NOT wrapped in data; plans at enrollment_ui.plans[{id, name ("E" | "E+S+2C" = the plan code to submit), family_structure, sum_insured}], options at enrollment_ui.policy_options, enrollment_session_token valid 30 min and required on draft/payment/submit), plus policyOptions (top level, or data.policyOptions when SmartCRM wraps): each option (a flat-priced bundle) as {id, name, type: "single", slabs: [one slab with premium in rupees, gst = premium x gstRatePct when SmartCRM gives a rate else null, prorate false], selectionGroup, participationThresholdPct, benefits[{name, limit, note}]}. Options sharing a selectionGroup are alternatives; choose one.' }) },
   '/api/employee/enrolment/draft': {
-    get: enrol('Read the server-side draft'),
+    get: enrol('Read the server-side draft', { query: ['enrollment_session_token'].map(queryParam) }),
     put: enrol('Save the draft (refused while the window is closed)', { requestBody: body(passThrough) }),
     delete: enrol('Discard the draft'),
   },

@@ -16,7 +16,7 @@ import { schemas, securitySchemes, responses } from './components.js';
 import { paths } from './paths.js';
 import { mobilePaths, mobileSchemas, mobileResponses } from './mobile.js';
 
-export const APP_SPEC_VERSION = '2.2.0'; // 2.2.0: quote forwards payment_mode and keeps SmartCRM's GST lines, gstTotal and payment methods. 2.1.0: 2.1.0: enrolment/quote translated to and from SmartCRM (request selection, reply lines/total/gstIncluded); enrolment/session adds data.policyOptions. 2.0.0: 2.0.0: removed POST /api/employee/enrolment/dependents and renamed payment/status query params (both never worked: SmartCRM has no such endpoint/names); added insurance/claims, insurance/e-card, ecard.download
+export const APP_SPEC_VERSION = '2.2.1'; // 2.2.1: enrolment query values up to 2048 chars (session token ~240), draft GET forwards enrollment_session_token, 409 SESSION_REVALIDATE_REQUIRED for an expired session token, session description matches the live reply. 2.2.0: quote forwards payment_mode and keeps SmartCRM's GST lines, gstTotal and payment methods. 2.1.0: 2.1.0: enrolment/quote translated to and from SmartCRM (request selection, reply lines/total/gstIncluded); enrolment/session adds data.policyOptions. 2.0.0: 2.0.0: removed POST /api/employee/enrolment/dependents and renamed payment/status query params (both never worked: SmartCRM has no such endpoint/names); added insurance/claims, insurance/e-card, ecard.download
 
 export function buildAppSpec() {
   return JSON.parse(JSON.stringify({

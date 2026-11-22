@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "My SmartHealth app API (Mediqzy)",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "description": "The contract the My SmartHealth mobile app and partners build against.\n\nAuthentication uses a bearer JWT from sign-in. Patient endpoints enforce ownership; provider and admin endpoints additionally enforce their roles and tenant scope. Refresh and revocation endpoints accept refresh credentials rather than a bearer token.\n\nError envelopes vary by endpoint; many carry `success: false` and `message`. Integration and SmartCRM errors add a stable `code` to branch on.\n\nScope: employee benefits and insurance, addresses, sign-in and session rotation, appointments, lab booking/cart/history, pharmacy and pharmacy orders, billing/payments, membership, and admin integration status."
   },
   "servers": [
@@ -1066,7 +1066,7 @@
           "Insurance (SmartCRM)"
         ],
         "summary": "Start an enrolment session",
-        "description": "SmartCRM's session, plus data.policyOptions: each SmartCRM policy option (a flat-priced bundle) as {id, name, type: \"single\", slabs: [one slab with premium in rupees, gst null, prorate false], selectionGroup, participationThresholdPct, benefits[{name, limit, note}]}. Options sharing a selectionGroup are alternatives; choose one.",
+        "description": "SmartCRM's session as sent (live reply is NOT wrapped in data; plans at enrollment_ui.plans[{id, name (\"E\" | \"E+S+2C\" = the plan code to submit), family_structure, sum_insured}], options at enrollment_ui.policy_options, enrollment_session_token valid 30 min and required on draft/payment/submit), plus policyOptions (top level, or data.policyOptions when SmartCRM wraps): each option (a flat-priced bundle) as {id, name, type: \"single\", slabs: [one slab with premium in rupees, gst = premium x gstRatePct when SmartCRM gives a rate else null, prorate false], selectionGroup, participationThresholdPct, benefits[{name, limit, note}]}. Options sharing a selectionGroup are alternatives; choose one.",
         "requestBody": {
           "required": false,
           "content": {
@@ -1125,6 +1125,17 @@
           "Insurance (SmartCRM)"
         ],
         "summary": "Read the server-side draft",
+        "parameters": [
+          {
+            "name": "enrollment_session_token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "SmartCRM's answer",
@@ -1606,7 +1617,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "maxLength": 200
+              "maxLength": 2048
             }
           },
           {
@@ -1615,7 +1626,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "maxLength": 200
+              "maxLength": 2048
             }
           }
         ],

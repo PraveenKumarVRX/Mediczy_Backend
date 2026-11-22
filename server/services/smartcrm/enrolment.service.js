@@ -73,6 +73,14 @@ export async function enrolmentContext(userId, db = pool) {
 
 /** A 401/403 from SmartCRM is our key, not the member's fault: never shown as theirs. */
 function guardUpstream(response) {
+  // Except the member's enrolment session token missing or expired (30 min; SmartCRM 2026-11-22):
+  // the app must call session again and resend with the fresh token and a NEW Idempotency-Key.
+  // 409, not 401, so the app's login handling does not take it for an expired login.
+  const b = response.body && typeof response.body === 'object' ? response.body : {};
+  if (response.status === 401 && (b.session_revalidate_required === true || b.data?.session_revalidate_required === true)) {
+    throw new SmartCrmError('SESSION_REVALIDATE_REQUIRED',
+      'Your enrolment session has expired. Please check your choices and submit again.', 409, { session_revalidate_required: true });
+  }
   if (response.status === 401 || response.status === 403) {
     throw new SmartCrmError('NOT_CONFIGURED', 'Enrolment is not configured correctly for your employer.', 503);
   }

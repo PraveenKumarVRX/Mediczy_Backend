@@ -492,6 +492,16 @@ describe('enrolment', () => {
     expect(stored.params.slice(0, 3)).toEqual([77, 'done', 202]);
   });
 
+  it('an expired enrolment session token comes back as SESSION_REVALIDATE_REQUIRED (409), not a configuration fault', async () => {
+    handlers.push(
+      [/INSERT INTO insurance_enrolment_requests/, () => [{ id: 78 }]],
+      [/UPDATE insurance_enrolment_requests SET state = \$2/, () => []],
+    );
+    const fetchImpl = fetchReturning(OPEN, { status: 401, body: { success: false, session_revalidate_required: true } });
+    await expect(enrolment.runOperation('submit', { userId: 7646, body: { plan: 'E', enrollment_session_token: 'old' }, idempotencyKey: 'key-87654321', fetchImpl }, fakeDb))
+      .rejects.toMatchObject({ code: 'SESSION_REVALIDATE_REQUIRED', status: 409, details: { session_revalidate_required: true } });
+  });
+
   it("translates the app's quote to SmartCRM's and the reply back (price from optionalPremiumTotal)", async () => {
     const fetchImpl = fetchReturning(OPEN, { status: 200, body: { success: true, data: { optionalPremiumTotal: 53846, currency: 'INR', paymentRequired: true, options: [{ id: 'opt-4', name: 'Option IV' }] } } });
     const out = await enrolment.runOperation('quote', { userId: 7646, body: { policyId: '1', sessionId: 's', selection: { selectedPolicyOptionIds: ['opt-4'] } }, fetchImpl }, fakeDb);
@@ -553,6 +563,11 @@ describe('route', () => {
     expect(src.match(/req\.query\.memberId/g)).toHaveLength(1);
     const svc = readFileSync(join(ROOT, 'services/smartcrm/member-documents.service.js'), 'utf8');
     expect(svc).toContain('AND pm."primaryMemberUserId" = $3');
+  });
+  it('forwards the ~240-character enrolment session token on the enrolment GETs', () => {
+    expect(src).toContain("const FORWARDABLE_QUERY = ['enrollment_session_token', 'payment_ref'];");
+    expect(src).toContain('const MAX_QUERY_VALUE = 2048;');
+    expect(src).toContain('q[k].length <= MAX_QUERY_VALUE');
   });
   it('is mounted under /api/employee, which ring-fencing already allows', () => {
     const app = readFileSync(join(ROOT, 'app.js'), 'utf8');

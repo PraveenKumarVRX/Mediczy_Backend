@@ -53,8 +53,10 @@ function sendError(res, error) {
 
 /** Query params the enrolment GETs may forward (SmartCRM's names); nothing else is passed on. */
 const FORWARDABLE_QUERY = ['enrollment_session_token', 'payment_ref'];
-const pickQuery = (q = {}) => Object.fromEntries(
-  FORWARDABLE_QUERY.filter((k) => typeof q[k] === 'string' && q[k].length <= 200).map((k) => [k, q[k]])
+// SmartCRM's enrolment session token is ~240 characters (2026-11-22); 200 silently dropped it.
+const MAX_QUERY_VALUE = 2048;
+export const pickQuery = (q = {}) => Object.fromEntries(
+  FORWARDABLE_QUERY.filter((k) => typeof q[k] === 'string' && q[k].length <= MAX_QUERY_VALUE).map((k) => [k, q[k]])
 );
 const bodyOf = (req) => (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {});
 
