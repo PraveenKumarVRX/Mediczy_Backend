@@ -34,6 +34,9 @@ import sharedPool from '../db/pgPool.js';
 import { bridgeInboundWhatsAppToCrm } from '../services/crm-inbound-bridge.service.js';
 import { handleChatwootTwilioInbound } from '../services/chatwoot-bridge.service.js';
 import whatsAppIdentityService, { genericLinkMessage } from '../services/whatsapp-identity.service.js';
+import { getHandoffState, setHandoffState, clearHandoffState as clearHandoff, asksForPerson, normalizeWhatsAppNumber } from '../services/whatsapp-handoff.service.js';
+import { whatsappDesk } from '../services/chatwoot-bridge.service.js';
+const clearHandoffState = async (phoneNumber) => { const done = await clearHandoff(phoneNumber); logger.info('🤖 Handoff cleared - conversation returned to bot', { phoneNumber }); return done; };
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -215,50 +218,7 @@ const hasInternalContextMarker = (text) => /(?:\[\s*(?:PATIENT\s+CONTEXT|RECENT\
 const GENERAL_HEALTH_UPDATE_REPLY = 'I can check your appointments, prescriptions, reports, or recent health information. Which one would you like to review?';
 const ANSWER_FEEDBACK_REPLY = 'You’re right — that response did not match your question. I can check your appointments, prescriptions, reports, or recent health information. Which one would you like to review?';
 
-const HANDOFF_KEY_PREFIX = 'whatsapp:handoff:';
-const HANDOFF_TTL_SECONDS = parseInt(process.env.WHATSAPP_HANDOFF_TTL || '86400', 10);
 const WHATSAPP_ROOM_ID = 'whatsapp_general';
-
-const normalizeWhatsAppNumber = (value) => {
-  if (!value) return '';
-  const trimmed = String(value).trim().replace(/^whatsapp:/i, '');
-  if (trimmed.startsWith('+')) return trimmed;
-  const digits = trimmed.replace(/[^\d]/g, '');
-  if (digits.length === 10) {
-    const countryCode = process.env.DEFAULT_COUNTRY_CODE || '91';
-    return `+${countryCode}${digits}`;
-  }
-  if (digits.length >= 11) return `+${digits}`;
-  return digits;
-};
-
-const getHandoffKey = (phoneNumber) => `${HANDOFF_KEY_PREFIX}${normalizeWhatsAppNumber(phoneNumber)}`;
-
-const getHandoffState = async (phoneNumber) => {
-  if (!phoneNumber) return null;
-  return await cache.get(getHandoffKey(phoneNumber));
-};
-
-const setHandoffState = async (phoneNumber, payload = {}) => {
-  if (!phoneNumber) return null;
-  const state = {
-    active: true,
-    updatedAt: new Date().toISOString(),
-    ...payload
-  };
-  await cache.set(getHandoffKey(phoneNumber), state, HANDOFF_TTL_SECONDS);
-  return state;
-};
-
-/**
- * Clear handoff state - returns conversation to bot
- */
-const clearHandoffState = async (phoneNumber) => {
-  if (!phoneNumber) return false;
-  await cache.del(getHandoffKey(phoneNumber));
-  logger.info('🤖 Handoff cleared - conversation returned to bot', { phoneNumber });
-  return true;
-};
 
 /**
  * Detect appointment booking intent from user message
@@ -1184,8 +1144,12 @@ router.post('/webhook', (req, res, next) => {
 async function sendIncomingGupshup(req, text) {
   if (req.gupshupReplyAttempted) throw new Error('Reply already attempted; reconcile before retrying');
   req.gupshupReplyAttempted = true;
-  try { return await gupshup.sendText({ to: req.body.From, body: text }); }
+  let sent;
+  try { sent = await gupshup.sendText({ to: req.body.From, body: text }); }
   catch (error) { req.gupshupDeliveryError = error; throw error; }
+  // Shown in Chatwoot so agents see what the assistant said; never re-sent.
+  await whatsappDesk.botReply({ to: normalizeWhatsAppNumber(req.body.From), name: req.body.ProfileName, text });
+  return sent;
 }
 
 async function incomingReply(req, res, text = '') {
@@ -1212,6 +1176,20 @@ export async function handleIncomingWhatsApp(req, res) {
     // Extract phone number (remove whatsapp: prefix and trim)
     const phoneNumber = (From?.replace('whatsapp:', '') || '').trim();
     const customerName = ProfileName || phoneNumber;
+
+    // Chatwoot desk (Gupshup number): every message is shown to the Team in Chatwoot. The
+    // assistant answers first; a member who asks for a person is handed to the Team.
+    if (req.whatsappProvider === 'gupshup') {
+      const deskNumber = normalizeWhatsAppNumber(phoneNumber);
+      const handoffNow = await getHandoffState(phoneNumber).catch(() => null);
+      const wantsPerson = !handoffNow?.active && asksForPerson(Body);
+      await whatsappDesk.inbound({ from: deskNumber, name: customerName, body: Body, messageId: MessageSid, mediaUrl: MediaUrl0, withPerson: Boolean(handoffNow?.active || wantsPerson) });
+      if (wantsPerson && await whatsappDesk.enabled()) {
+        await setHandoffState(phoneNumber, { reason: 'asked_for_person', source: 'whatsapp' });
+        await whatsappDesk.handoff({ to: deskNumber, name: customerName, reason: 'the member asked to talk to a person' });
+        return await incomingReply(req, res, "I've passed this to our support team. Someone will reply here shortly.");
+      }
+    }
 
     // CRM bridge: no-ops silently if this number isn't a known CRM lead.
     // Never allowed to affect the response below — this handler serves live
@@ -1375,6 +1353,9 @@ export async function handleIncomingWhatsApp(req, res) {
           requested: teamMemberRequested,
           source: 'whatsapp'
         });
+        if (req.whatsappProvider === 'gupshup') {
+          await whatsappDesk.handoff({ to: normalizeWhatsAppNumber(phoneNumber), name: customerName, reason: `the member asked for ${teamMemberRequested}` });
+        }
         
         const teamAckMsg = `I've notified our team. ${teamMemberRequested.charAt(0).toUpperCase() + teamMemberRequested.slice(1)} or another team member will respond to you shortly. 👍`;
         logger.info('✅ Team member request forwarded to the agent workspace', {
@@ -1701,6 +1682,13 @@ bookingType === 'health_checkup'
         const compactResponseText = compactWhatsAppReply(safeResponseText);
         const normalizedResponseText = rawResponseText.toLowerCase();
         const isGenericErrorReply = normalizedResponseText.includes('there was an error processing your request');
+
+        // The assistant could not answer (provider down or an error reply): hand to the Team.
+        if (req.whatsappProvider === 'gupshup' && (aiResponse?.provider === 'fallback' || isGenericErrorReply) && await whatsappDesk.enabled()) {
+          await setHandoffState(phoneNumber, { reason: 'assistant_could_not_answer', source: 'whatsapp' });
+          await whatsappDesk.handoff({ to: normalizeWhatsAppNumber(phoneNumber), name: customerName, reason: 'the assistant could not answer this message' });
+          return await incomingReply(req, res, "I've passed your message to our support team. Someone will reply here shortly.");
+        }
 
         if (aiResponse.shouldReply) {
           const replyText = compactResponseText

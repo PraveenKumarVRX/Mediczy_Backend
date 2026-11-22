@@ -28,7 +28,8 @@ jest.unstable_mockModule('../config/logger.js', () => ({ default: { info() {}, w
 jest.unstable_mockModule('../services/autoTicketService.js', () => ({ detectServiceIntent: () => null, createAutoTicket: jest.fn() }));
 jest.unstable_mockModule('../db/pgPool.js', () => ({ default: { query: async () => ({ rows: [] }) } }));
 jest.unstable_mockModule('../services/crm-inbound-bridge.service.js', () => ({ bridgeInboundWhatsAppToCrm: async () => {} }));
-jest.unstable_mockModule('../services/chatwoot-bridge.service.js', () => ({ handleChatwootTwilioInbound: jest.fn() }));
+const desk = { inbound: jest.fn(async () => null), botReply: jest.fn(async () => null), handoff: jest.fn(async () => null), enabled: jest.fn(async () => false) };
+jest.unstable_mockModule('../services/chatwoot-bridge.service.js', () => ({ handleChatwootTwilioInbound: jest.fn(), whatsappDesk: desk }));
 jest.unstable_mockModule('../services/whatsapp-identity.service.js', () => ({
   default: {
     getSession: async () => null,
@@ -47,6 +48,28 @@ beforeEach(() => {
   enqueue.mockReset().mockResolvedValue(undefined);
   identityRequest.mockReset().mockResolvedValue({ success: true, message: 'If this WhatsApp number is linked to a Mediczy account, I’ll send a verification code here.' });
   identityVerify.mockReset().mockResolvedValue({ success: false, message: 'That verification code is invalid or expired.' });
+  for (const fn of Object.values(desk)) fn.mockClear();
+  desk.enabled.mockResolvedValue(false);
+});
+
+// Chatwoot WhatsApp desk (2026-11-22): the assistant answers first, a person when asked.
+it('mirrors every member message to the Chatwoot desk, and hands to the Team when they ask for a person', async () => {
+  desk.enabled.mockResolvedValue(true);
+  const res = response();
+  await handleIncomingWhatsApp(reqFor('talk to a person please'), res);
+  expect(desk.inbound).toHaveBeenCalledWith(expect.objectContaining({ from: '+919000000001', body: 'talk to a person please', messageId: 'wa-test', withPerson: true }));
+  expect(desk.handoff).toHaveBeenCalledWith(expect.objectContaining({ to: '+919000000001', reason: 'the member asked to talk to a person' }));
+  expect(sendText).toHaveBeenCalledWith({ to: 'whatsapp:+919000000001', body: "I've passed this to our support team. Someone will reply here shortly." });
+  expect(desk.botReply).toHaveBeenCalledWith(expect.objectContaining({ to: '+919000000001', text: "I've passed this to our support team. Someone will reply here shortly." }));
+  expect(ai).not.toHaveBeenCalled();
+});
+
+it('with the desk switched off, asking for a person does not promise a reply from the Team', async () => {
+  const res = response();
+  ai.mockReset().mockResolvedValue({ response: 'How can I help?', shouldReply: true });
+  await handleIncomingWhatsApp(reqFor('agent'), res);
+  expect(desk.handoff).not.toHaveBeenCalled();
+  expect(sendText).not.toHaveBeenCalledWith(expect.objectContaining({ body: "I've passed this to our support team. Someone will reply here shortly." }));
 });
 it('recognizes broad health-update requests without treating them as symptoms', () => {
   expect(isGeneralHealthUpdateQuery('Hi any updates on my health')).toBe(true);

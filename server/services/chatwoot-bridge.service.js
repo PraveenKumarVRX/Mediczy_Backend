@@ -3,6 +3,13 @@ import twilio from '../integrations/twilio.js';
 import nodemailer from '../integrations/nodemailer.js';
 import pool from '../db/pgPool.js';
 import { ChatwootService, normalizeChannelAddress } from './chatwoot.service.js';
+import gupshup from './gupshup-whatsapp.service.js';
+import { setHandoffState, clearHandoffState } from './whatsapp-handoff.service.js';
+
+// WhatsApp lets a business reply freely only within 24 hours of the customer's last message.
+// Outside it a template is required, and none is approved for agent replies.
+export const WHATSAPP_REPLY_WINDOW_HOURS = 24;
+const notSent = (publicMessage) => Object.assign(new Error(publicMessage), { definitelyNotSent: true, publicMessage });
 
 function credential(prefix, suffix) {
   if (!/^[A-Z][A-Z0-9_]{0,99}$/.test(prefix || '')) throw new Error('Invalid channel credential reference');
@@ -11,8 +18,24 @@ function credential(prefix, suffix) {
   return value;
 }
 
-async function dispatch({ inbox, to, content }) {
+export async function dispatch({ inbox, to, content, bridgeConversationId }) {
   let deliver;
+  if (inbox.provider === 'gupshup' && inbox.channel === 'whatsapp') {
+    const { rows: [last] } = await pool.query(
+      `SELECT max(created_at) AS at FROM crm_chatwoot_jobs WHERE bridge_conversation_id = $1 AND direction = 'inbound'`,
+      [bridgeConversationId]);
+    if (!last?.at || Date.now() - new Date(last.at).getTime() > WHATSAPP_REPLY_WINDOW_HOURS * 3600 * 1000) {
+      throw notSent('WhatsApp only allows a reply within 24 hours of the member\'s last message. Ask them to message 8098998998 again, or call them.');
+    }
+    try {
+      const sent = await gupshup.sendText({ to: normalizeChannelAddress('whatsapp', to), body: content });
+      return { id: sent?.messageId || sent?.id || null };
+    } catch (cause) {
+      // Gupshup refused the submit (bad number, account issue): nothing was sent. A timeout is ambiguous.
+      if (cause?.definitelyNotSent) throw notSent('WhatsApp did not accept this message. Check the member\'s number.');
+      throw Object.assign(new Error('Tenant channel delivery failed'), { definitelyNotSent: false });
+    }
+  }
   try {
     if (inbox.provider === 'twilio' && ['whatsapp', 'sms'].includes(inbox.channel)) {
       const client = twilio(credential(inbox.credentials_prefix, 'ACCOUNT_SID'), credential(inbox.credentials_prefix, 'AUTH_TOKEN'),
@@ -45,7 +68,57 @@ async function dispatch({ inbox, to, content }) {
   }
 }
 
-export const chatwootBridge = new ChatwootService({ db: pool, http: axios, dispatch });
+// For the Gupshup WhatsApp desk: an agent's reply in Chatwoot hands the chat to the Team (the
+// assistant goes quiet); resolving the conversation hands it back to the assistant.
+const deskHooks = {
+  onAgentReply: async (mapping) => {
+    if (mapping.channel !== 'whatsapp') return;
+    await setHandoffState(mapping.customer_id, { reason: 'agent_replied', source: 'chatwoot' });
+  },
+  onResolved: async (mapping) => {
+    if (mapping.channel !== 'whatsapp') return;
+    await clearHandoffState(mapping.customer_id);
+  },
+};
+
+export const chatwootBridge = new ChatwootService({ db: pool, http: axios, dispatch, hooks: deskHooks });
+
+/**
+ * The WhatsApp number's Chatwoot desk (Gupshup). Every call is a no-op when the desk is not set up
+ * or switched off, and never throws: WhatsApp handling must not depend on Chatwoot.
+ */
+async function deskInbox() {
+  const number = process.env.GUPSHUP_SOURCE_NUMBER;
+  if (!chatwootBridge.enabled || !number) return null;
+  const inbox = await chatwootBridge.findInbox('whatsapp', `+${String(number).replace(/\D/g, '')}`);
+  return inbox?.provider === 'gupshup' ? inbox : null;
+}
+const quietly = (label, fn) => fn().catch((e) => { console.warn(`[Chatwoot desk] ${label} not mirrored: ${e.message}`); return null; });
+let botSeq = 0;
+const botId = (prefix) => `${prefix}-${Date.now()}-${process.pid}-${(botSeq += 1)}`;
+
+export const whatsappDesk = {
+  /** The member's message. withPerson: a hand-off is active, so the conversation opens for an agent. */
+  inbound: ({ from, name, body, messageId, mediaUrl, withPerson = false }) => quietly('inbound', async () => {
+    const inbox = await deskInbox();
+    if (!inbox || !messageId) return null;
+    const content = [body, mediaUrl ? '[The member sent an attachment. Ask them to describe it, or view it in Gupshup.]' : null].filter(Boolean).join('\n') || '[Empty message]';
+    return chatwootBridge.enqueueInbound({ inbox, customerId: from, name, content, externalId: messageId, status: withPerson ? 'open' : 'pending' });
+  }),
+  /** The assistant's reply, already delivered on WhatsApp: shown in Chatwoot only. */
+  botReply: ({ to, name, text }) => quietly('assistant reply', async () => {
+    const inbox = await deskInbox();
+    if (!inbox || !String(text || '').trim()) return null;
+    return chatwootBridge.enqueueInbound({ inbox, customerId: to, name, content: `🤖 ${text}`, externalId: botId('bot'), direction: 'bot' });
+  }),
+  /** Hand the chat to the Team: opens the conversation in Chatwoot with a private note saying why. */
+  handoff: ({ to, name, reason }) => quietly('hand-off', async () => {
+    const inbox = await deskInbox();
+    if (!inbox) return null;
+    return chatwootBridge.enqueueInbound({ inbox, customerId: to, name, content: `Needs a person: ${reason}`, externalId: botId('handoff'), direction: 'bot', status: 'open', isPrivate: true });
+  }),
+  enabled: async () => Boolean(await deskInbox().catch(() => null)),
+};
 
 export async function handleChatwootTwilioInbound(req) {
   if (!chatwootBridge.enabled) return { handled: false };

@@ -32,11 +32,14 @@ export function verifyChatwootSignature({ rawBody, timestamp, signature, secret,
 }
 
 export class ChatwootService {
-  constructor({ db, http, dispatch, env = process.env }) {
+  constructor({ db, http, dispatch, env = process.env, hooks = {} }) {
     this.db = db;
     this.http = http;
     this.dispatch = dispatch;
     this.env = env;
+    // onAgentReply(mapping) / onResolved(mapping): an agent answered in Chatwoot / resolved the
+    // conversation. Used to hand a WhatsApp chat to the Team and back to the assistant. Never throw.
+    this.hooks = hooks;
   }
 
   get enabled() { return this.env.CHATWOOT_ENABLED === 'true'; }
@@ -137,7 +140,14 @@ export class ChatwootService {
     }
   }
 
-  async enqueueInbound({ inbox, customerId, name, content, externalId }) {
+  /**
+   * direction 'inbound': the customer's message. 'bot': the automatic assistant's reply or a
+   * hand-off note, shown in Chatwoot only (never delivered to the customer, the channel already did).
+   * status: the Chatwoot conversation status to set ('pending' while the assistant handles it,
+   * 'open' once a person is needed); defaults to 'open', as before.
+   */
+  async enqueueInbound({ inbox, customerId, name, content, externalId, direction = 'inbound', status = null, isPrivate = false }) {
+    if (!['inbound', 'bot'].includes(direction)) throw error('Unsupported bridge direction');
     if (!this.enabled || !inbox.enabled || !inbox.account_enabled) throw error('Chatwoot bridge is disabled', 503);
     const customer = normalizeChannelAddress(inbox.channel, customerId);
     if (!externalId || String(externalId).length > 240 || !String(content || '').trim()) throw error('Message content and provider ID are required');
@@ -166,9 +176,10 @@ export class ChatwootService {
       const conversation = rows[0];
       const { rows: jobs } = await db.query(
         `INSERT INTO crm_chatwoot_jobs (tenant_id, bridge_conversation_id, direction, external_id, payload)
-         VALUES ($1,$2,'inbound',$3,$4) ON CONFLICT (bridge_conversation_id, direction, external_id) DO NOTHING RETURNING id`,
-        [inbox.tenant_id, conversation.id, String(externalId), JSON.stringify({ content: String(content).slice(0, 20000) })]);
-      if (jobs[0]) await this.logEvent(db, inbox, conversation, 'inbound', content, externalId, 'received');
+         VALUES ($1,$2,$5,$3,$4) ON CONFLICT (bridge_conversation_id, direction, external_id) DO NOTHING RETURNING id`,
+        [inbox.tenant_id, conversation.id, String(externalId),
+          JSON.stringify({ content: String(content).slice(0, 20000), ...(status ? { status } : {}), ...(isPrivate ? { private: true } : {}) }), direction]);
+      if (jobs[0] && !isPrivate) await this.logEvent(db, inbox, conversation, direction === 'bot' ? 'outbound' : 'inbound', content, `${direction}:${externalId}`, direction === 'bot' ? 'sent' : 'received');
       await db.query('COMMIT');
       return { queued: Boolean(jobs[0]), duplicate: !jobs[0], conversationId: conversation.crm_conversation_id };
     } catch (cause) {
@@ -213,6 +224,7 @@ export class ChatwootService {
       const crmStatus = { open: 'open', pending: 'pending', snoozed: 'pending', resolved: 'closed' }[status];
       if (crmStatus) await this.db.query('UPDATE crm_conversations SET status = $3, updated_at = NOW() WHERE tenant_id = $1 AND id = $2',
         [account.tenant_id, mapping.crm_conversation_id, crmStatus]);
+      if (status === 'resolved') await this.hooks.onResolved?.(mapping).catch?.(() => {});
       return { synced: Boolean(crmStatus) };
     }
     if (payload.event !== 'message_created' || payload.private !== false ||
@@ -231,6 +243,7 @@ export class ChatwootService {
         attachments: payload.attachments || [], contentType: payload.content_type || 'text' })]);
       if (jobs[0]) await this.logEvent(db, { ...mapping, tenant_id: account.tenant_id }, mapping, 'outbound', payload.content || '[Attachment]', messageId, 'queued');
       await db.query('COMMIT');
+      if (jobs[0]) await this.hooks.onAgentReply?.(mapping).catch?.(() => {});
       return { queued: Boolean(jobs[0]), duplicate: !jobs[0] };
     } catch (cause) {
       await db.query('ROLLBACK');
@@ -306,7 +319,7 @@ export class ChatwootService {
     if (!this.enabled) return false;
     // A provider may have accepted an outbound send before the process stopped.
     // Preserve that uncertainty instead of automatically sending it again.
-    const { rows: interrupted } = await this.db.query(`UPDATE crm_chatwoot_jobs SET status = CASE WHEN direction = 'inbound' THEN 'pending' ELSE 'uncertain' END,
+    const { rows: interrupted } = await this.db.query(`UPDATE crm_chatwoot_jobs SET status = CASE WHEN direction IN ('inbound', 'bot') THEN 'pending' ELSE 'uncertain' END,
       last_error = 'Worker interrupted; outbound delivery requires reconciliation', updated_at = NOW()
       WHERE status = 'processing' AND claimed_at < NOW() - INTERVAL '5 minutes' RETURNING id`);
     if (interrupted.length) await this.db.query(`UPDATE crm_communication_events e SET status = 'uncertain',
@@ -350,7 +363,7 @@ export class ChatwootService {
       const binding = bindings[0];
       if (!binding) throw error('Tenant agent inbox is disabled', 503);
       let providerId;
-      if (job.direction === 'inbound') {
+      if (job.direction === 'inbound' || job.direction === 'bot') {
         const mapping = await this.ensureRemoteConversation(db, binding, binding, binding);
         // Persist the mapping before Chatwoot can emit a reply/status callback.
         await db.query('COMMIT');
@@ -359,20 +372,24 @@ export class ChatwootService {
         const previous = job.attempts > 1 ? await this.findDeliveredMessage(binding, path, job) : null;
         if (previous) providerId = previous.id;
         else {
-          await this.api(binding, 'POST', `${path}/toggle_status`, { status: 'open' });
+          const status = ['open', 'pending'].includes(job.payload.status) ? job.payload.status : (job.direction === 'inbound' ? 'open' : null);
+          if (status) await this.api(binding, 'POST', `${path}/toggle_status`, { status });
+          // A 'bot' job is shown as an outgoing message (or a private note); the content attribute
+          // makes the webhook ignore it, so it is never sent to the customer a second time.
           const message = await this.api(binding, 'POST', `${path}/messages`, {
-            content: job.payload.content, message_type: 'incoming', private: false,
-            content_attributes: { mediczy_bridge_job_id: String(job.id) },
+            content: job.payload.content, message_type: job.direction === 'bot' ? 'outgoing' : 'incoming',
+            private: job.direction === 'bot' && job.payload.private === true,
+            content_attributes: { mediczy_bridge_job_id: String(job.id), ...(job.direction === 'bot' ? { mediczy_automated: true } : {}) },
           });
           providerId = message.id;
+          if (status) await db.query('UPDATE crm_conversations SET status = $3 WHERE tenant_id = $1 AND id = $2',
+            [job.tenant_id, binding.crm_conversation_id, status]);
         }
-        await db.query('UPDATE crm_conversations SET status = $3 WHERE tenant_id = $1 AND id = $2',
-          [job.tenant_id, binding.crm_conversation_id, 'open']);
       } else {
         // Validation happens before network delivery, so unsupported messages are recoverable failures.
         if (job.payload.contentType !== 'text' || job.payload.attachments?.length) throw error('Only text agent replies are supported by this channel bridge');
         sendStarted = true;
-        const delivered = await this.dispatch({ inbox: binding, to: binding.customer_id, content: job.payload.content, externalId: job.external_id });
+        const delivered = await this.dispatch({ inbox: binding, to: binding.customer_id, content: job.payload.content, externalId: job.external_id, bridgeConversationId: binding.id });
         providerId = delivered.id;
         await db.query(`UPDATE crm_communication_events SET status = 'sent', sent_at = NOW()
           WHERE tenant_id = $1 AND conversation_id = $2 AND provider = 'chatwoot' AND provider_message_id = $3`,
@@ -386,7 +403,7 @@ export class ChatwootService {
     } catch (cause) {
       if (db) await db.query('ROLLBACK');
       const uncertain = job.direction === 'outbound' && sendStarted && !cause.definitelyNotSent;
-      const retry = job.direction === 'inbound' && job.attempts < 5;
+      const retry = (job.direction === 'inbound' || job.direction === 'bot') && job.attempts < 5;
       await this.db.query(`UPDATE crm_chatwoot_jobs SET status = $3, last_error = $4,
         available_at = NOW() + ($5 * INTERVAL '1 second'), updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
         [job.tenant_id, job.id, uncertain ? 'uncertain' : retry ? 'pending' : 'failed',
@@ -405,6 +422,7 @@ export class ChatwootService {
           try {
             await this.api(mappings[0], 'POST', `/conversations/${mappings[0].conversation_id}/messages`, {
               content: uncertain ? `Mediczy could not confirm delivery of message #${job.external_id}. Check the channel provider before sending again.` :
+                cause.publicMessage ? `Not delivered: ${cause.publicMessage}` :
                 `Mediczy could not deliver message #${job.external_id}. Check channel credentials; this bridge currently supports text replies only.`,
               message_type: 'outgoing', private: true, content_attributes: { mediczy_bridge_job_id: String(job.id) },
             });
