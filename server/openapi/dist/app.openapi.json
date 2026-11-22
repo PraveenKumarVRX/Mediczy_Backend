@@ -1271,7 +1271,7 @@
           "Insurance (SmartCRM)"
         ],
         "summary": "Price a selection (refused while the window is closed)",
-        "description": "Priced by SmartCRM. Send either SmartCRM's own selected_policy_options [{id}] or selection.selectedPolicyOptionIds; it goes on as {selected_policy_options: [{id}]}. The reply keeps SmartCRM's fields (optionalPremiumTotal, options, currency, paymentRequired, policyNo) and adds lines/total/gstIncluded/collectionMode. total is SmartCRM's optionalPremiumTotal in rupees; SmartCRM adds no GST to these bundles, so gstIncluded is false. Two options from one selectionGroup are refused (400, error.code SELECTION_GROUP_CONFLICT).",
+        "description": "Priced by SmartCRM. Send either SmartCRM's own selected_policy_options [{id}] or selection.selectedPolicyOptionIds; it goes on as {selected_policy_options: [{id}]}. The reply keeps SmartCRM's fields (optionalPremiumTotal, options, currency, paymentRequired, policyNo) and adds lines/total/gstIncluded/collectionMode. total is SmartCRM's optionalPremiumTotal in rupees; gstIncluded is true when SmartCRM adds GST and null when it sends none. Two options from one selectionGroup are refused (400, error.code SELECTION_GROUP_CONFLICT).",
         "requestBody": {
           "required": true,
           "content": {
@@ -1410,7 +1410,9 @@
                           "description": "Rupees, including GST when gstIncluded"
                         },
                         "gstIncluded": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "nullable": true,
+                          "description": "true when SmartCRM added GST; null when it sent no GST information"
                         },
                         "gstTotal": {
                           "type": "number",

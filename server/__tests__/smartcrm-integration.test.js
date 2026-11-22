@@ -466,7 +466,7 @@ describe('enrolment', () => {
     const out = await enrolment.runOperation('quote', { userId: 7646, body: { policyId: '1', sessionId: 's', selection: { selectedPolicyOptionIds: ['opt-4'] } }, fetchImpl }, fakeDb);
     expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({ selected_policy_options: [{ id: 'opt-4' }] });
     expect(out.status).toBe(200);
-    expect(out.body.data).toMatchObject({ total: 53846, gstIncluded: false, collectionMode: 'online', lines: [{ id: 'opt-4', name: 'Option IV' }] });
+    expect(out.body.data).toMatchObject({ total: 53846, gstIncluded: null, collectionMode: 'online', lines: [{ id: 'opt-4', name: 'Option IV' }] });
   });
 
   it('replays a completed request without calling SmartCRM again', async () => {

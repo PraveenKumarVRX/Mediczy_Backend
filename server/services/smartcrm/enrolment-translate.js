@@ -100,7 +100,8 @@ export function fromSmartCrmQuote(body) {
       lines,
       total,
       // optionalPremiumTotal includes GST once SmartCRM adds it; before that there was none.
-      gstIncluded: gstTotal !== null ? true : false,
+      // true once SmartCRM adds GST; null (unknown, not 'no GST') when it sends none (app request).
+      gstIncluded: gstTotal !== null ? true : null,
       gstTotal,
       collectionMode: mode === 'payroll' ? 'salary' : mode === 'online' ? 'online' : d.paymentRequired === true ? 'online' : null,
       currency: text(d.currency, 8) || 'INR',

@@ -27,7 +27,7 @@ describe('quote reply', () => {
       optionalPremiumTotal: 53846, options: [{ id: 'opt-4', name: 'Option IV', premium: 53846 }],
       // ... and the app-shaped fields are added beside them.
       lines: [{ id: 'opt-4', name: 'Option IV', annual: 53846, days: null, premium: 53846, gst: null, total: 53846 }],
-      total: 53846, gstIncluded: false, gstTotal: null, collectionMode: 'online', currency: 'INR', paymentRequired: true, policyNo: 'P1' } });
+      total: 53846, gstIncluded: null, gstTotal: null, collectionMode: 'online', currency: 'INR', paymentRequired: true, policyNo: 'P1' } });
   });
   test('the total is never a sum computed here', () => {
     const out = fromSmartCrmQuote({ success: true, data: { optionalPremiumTotal: '1,000', options: [{ id: 'a', premium: 600 }, { id: 'b', premium: 600 }] } });

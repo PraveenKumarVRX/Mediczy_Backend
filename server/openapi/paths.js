@@ -135,7 +135,7 @@ const insurance = {
     delete: enrol('Discard the draft'),
   },
   '/api/employee/enrolment/quote': { post: enrol('Price a selection (refused while the window is closed)', {
-    description: 'Priced by SmartCRM. Send either SmartCRM\'s own selected_policy_options [{id}] or selection.selectedPolicyOptionIds; it goes on as {selected_policy_options: [{id}]}. The reply keeps SmartCRM\'s fields (optionalPremiumTotal, options, currency, paymentRequired, policyNo) and adds lines/total/gstIncluded/collectionMode. total is SmartCRM\'s optionalPremiumTotal in rupees; SmartCRM adds no GST to these bundles, so gstIncluded is false. Two options from one selectionGroup are refused (400, error.code SELECTION_GROUP_CONFLICT).',
+    description: 'Priced by SmartCRM. Send either SmartCRM\'s own selected_policy_options [{id}] or selection.selectedPolicyOptionIds; it goes on as {selected_policy_options: [{id}]}. The reply keeps SmartCRM\'s fields (optionalPremiumTotal, options, currency, paymentRequired, policyNo) and adds lines/total/gstIncluded/collectionMode. total is SmartCRM\'s optionalPremiumTotal in rupees; gstIncluded is true when SmartCRM adds GST and null when it sends none. Two options from one selectionGroup are refused (400, error.code SELECTION_GROUP_CONFLICT).',
     requestBody: body({ type: 'object', properties: {
       policyId: { type: 'string' }, sessionId: { type: 'string', nullable: true },
       payment_mode: { type: 'string', enum: ['online', 'payroll', 'salary'], description: 'Required when the policy offers both; salary = payroll' },
@@ -151,7 +151,7 @@ const insurance = {
       lines: { type: 'array', items: { type: 'object', properties: {
         id: { type: 'string', nullable: true }, name: { type: 'string' }, annual: { type: 'number', nullable: true }, days: { type: 'number', nullable: true },
         premium: { type: 'number', nullable: true }, gst: { type: 'number', nullable: true }, total: { type: 'number', nullable: true } } } },
-      total: { type: 'number', nullable: true, description: 'Rupees, including GST when gstIncluded' }, gstIncluded: { type: 'boolean' },
+      total: { type: 'number', nullable: true, description: 'Rupees, including GST when gstIncluded' }, gstIncluded: { type: 'boolean', nullable: true, description: 'true when SmartCRM added GST; null when it sent no GST information' },
       gstTotal: { type: 'number', nullable: true }, paymentModes: { type: 'array', items: { type: 'string' } },
       paymentModeRequired: { type: 'boolean' }, salaryDeduction: { type: 'object', nullable: true, additionalProperties: true },
       collectionMode: { type: 'string', enum: ['online', 'salary'], nullable: true }, currency: { type: 'string' },
